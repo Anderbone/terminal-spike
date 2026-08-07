@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.terminal.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +28,17 @@ class TerminalBufferTest {
         assertEquals(1L, second.id)
         assertEquals("first", buffer.lineAt(0)?.text)
         assertEquals("second", buffer.lineAt(1)?.text)
+    }
+
+    @Test
+    fun assigningAnIdReusesAlreadyValidatedImmutablePayload() {
+        val line = TerminalLine.styled(listOf(TerminalRun("safe 🚀", TerminalStyle(bold = true))))
+
+        val assigned = line.withId(42)
+
+        assertEquals("safe 🚀", assigned.text)
+        assertSame(line.text, assigned.text)
+        assertSame(line.runs, assigned.runs)
     }
 
     @Test

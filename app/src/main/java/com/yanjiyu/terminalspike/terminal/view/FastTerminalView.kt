@@ -4,6 +4,7 @@ import android.content.Context
 import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.util.TypedValue
@@ -20,6 +21,7 @@ import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import kotlin.math.ceil
+import kotlin.math.sign
 
 class FastTerminalView @JvmOverloads constructor(
     context: Context,
@@ -37,20 +39,26 @@ class FastTerminalView @JvmOverloads constructor(
     private var fontMetrics = textPaint.fontMetrics
     private var lineHeightPx = 1f
     private var cellWidthPx = 1f
+    private var mouseWheelRemainderPx = 0f
     private var terminalController: TerminalController? = null
+    private val gestureActions = TerminalGestureActions(
+        stopFling = { scroller.forceFinished(true) },
+        requestFocus = { requestFocus() },
+        scrollBy = ::handleGestureScroll,
+        fling = ::startFling,
+        showKeyboard = ::showKeyboard,
+        performClick = { performClick() },
+    )
     private val gestureDetector = GestureDetector(
         context,
-        TerminalGestureHandler(
-            stopFling = { scroller.forceFinished(true) },
-            scrollBy = ::scrollViewportBy,
-            fling = ::startFling,
-            focusAndShowKeyboard = ::focusAndShowKeyboard,
-        ),
+        TerminalGestureHandler(gestureActions),
     )
     private val frameStatsCollector = FrameStatsCollector { timing ->
         val controller = terminalController ?: return@FrameStatsCollector
         controller.reportFrameTiming(timing, controller.viewport.visibleRows(0).count)
     }
+    private val publishIdleStats = Runnable { frameStatsCollector.publishIdle() }
+    private val publishTerminalSize = Runnable { reportTerminalSizeNow() }
 
     init {
         isFocusable = true
@@ -68,13 +76,9 @@ class FastTerminalView @JvmOverloads constructor(
         controller.addListener(this)
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        frameStatsCollector.start()
-    }
-
     override fun onDetachedFromWindow() {
-        frameStatsCollector.stop()
+        removeCallbacks(publishIdleStats)
+        removeCallbacks(publishTerminalSize)
         terminalController?.removeListener(this)
         super.onDetachedFromWindow()
     }
@@ -91,12 +95,14 @@ class FastTerminalView @JvmOverloads constructor(
             heightPx = (height - verticalPaddingPx * 2f).toInt().coerceAtLeast(0),
             newLineHeightPx = lineHeightPx,
         )
+        scheduleTerminalSizeReport()
     }
 
     @SuppressLint("UseKtx")
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val controller = terminalController ?: return
+        val drawStartNanos = System.nanoTime()
         val viewport = controller.viewport
         val rows = viewport.visibleRows(OVERSCAN_ROWS)
         canvas.save()
@@ -116,6 +122,9 @@ class FastTerminalView @JvmOverloads constructor(
         drawCursor(canvas, controller, viewport.scrollY)
         if (!viewport.autoFollow) drawNewOutputBadge(canvas)
         canvas.restore()
+        frameStatsCollector.recordDraw(drawStartNanos, System.nanoTime())
+        removeCallbacks(publishIdleStats)
+        postDelayed(publishIdleStats, FrameStatsCollector.IDLE_DELAY_MS)
     }
 
     private fun drawLine(canvas: Canvas, runs: List<TerminalRun>, baseline: Float, rowTop: Float) {
@@ -180,19 +189,29 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            parent?.requestDisallowInterceptTouchEvent(true)
-        } else if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            parent?.requestDisallowInterceptTouchEvent(false)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                mouseWheelRemainderPx = 0f
+                parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> gestureActions.onMultiPointerGesture()
+            MotionEvent.ACTION_CANCEL -> {
+                gestureActions.onCancel()
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_UP -> parent?.requestDisallowInterceptTouchEvent(false)
         }
-        val handled = gestureDetector.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
-        return handled || super.onTouchEvent(event)
+        return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
     }
 
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        terminalController?.reportFocus(gainFocus)
     }
 
     override fun computeScroll() {
@@ -242,8 +261,32 @@ class FastTerminalView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
+    private fun handleGestureScroll(distanceY: Float, x: Float, y: Float) {
+        val controller = terminalController ?: return
+        if (!controller.isMouseTrackingEnabled()) {
+            mouseWheelRemainderPx = 0f
+            scrollViewportBy(distanceY)
+            return
+        }
+
+        mouseWheelRemainderPx += distanceY
+        val stepPx = lineHeightPx * MOUSE_WHEEL_LINES_PER_STEP
+        var steps = 0
+        while (kotlin.math.abs(mouseWheelRemainderPx) >= stepPx && steps < MAX_MOUSE_WHEEL_STEPS_PER_EVENT) {
+            val direction = mouseWheelRemainderPx.sign
+            controller.sendMouseWheel(
+                up = direction < 0f,
+                column = ((x - horizontalPaddingPx) / cellWidthPx).toInt(),
+                row = ((y - verticalPaddingPx) / lineHeightPx).toInt(),
+            )
+            mouseWheelRemainderPx -= direction * stepPx
+            steps += 1
+        }
+    }
+
     private fun startFling(velocityY: Float) {
         val controller = terminalController ?: return
+        if (controller.isMouseTrackingEnabled()) return
         scroller.fling(
             0,
             controller.viewport.scrollY.toInt(),
@@ -257,8 +300,7 @@ class FastTerminalView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
-    private fun focusAndShowKeyboard() {
-        requestFocus()
+    private fun showKeyboard() {
         val inputMethodManager = context.getSystemService(InputMethodManager::class.java)
         inputMethodManager?.showSoftInput(this, 0)
     }
@@ -272,10 +314,22 @@ class FastTerminalView @JvmOverloads constructor(
             heightPx = (height - verticalPaddingPx * 2f).toInt().coerceAtLeast(0),
             newLineHeightPx = lineHeightPx,
         )
+        scheduleTerminalSizeReport()
     }
 
     private fun updateTextPaintSize(fontSizeSp: Float) {
         textPaint.textSize = spToPx(fontSizeSp)
+    }
+
+    private fun scheduleTerminalSizeReport() {
+        removeCallbacks(publishTerminalSize)
+        postDelayed(publishTerminalSize, TERMINAL_RESIZE_SETTLE_MS)
+    }
+
+    private fun reportTerminalSizeNow() {
+        val columns = ((width - horizontalPaddingPx * 2f) / cellWidthPx).toInt().coerceAtLeast(1)
+        val rows = ((height - verticalPaddingPx * 2f) / lineHeightPx).toInt().coerceAtLeast(1)
+        terminalController?.reportTerminalSize(columns, rows)
     }
 
     private fun spToPx(sp: Float): Float = TypedValue.applyDimension(
@@ -290,5 +344,8 @@ class FastTerminalView @JvmOverloads constructor(
     companion object {
         private const val OVERSCAN_ROWS = 2
         private const val CURSOR_ALPHA = 150
+        private const val MOUSE_WHEEL_LINES_PER_STEP = 1.5f
+        private const val MAX_MOUSE_WHEEL_STEPS_PER_EVENT = 6
+        private const val TERMINAL_RESIZE_SETTLE_MS = 120L
     }
 }

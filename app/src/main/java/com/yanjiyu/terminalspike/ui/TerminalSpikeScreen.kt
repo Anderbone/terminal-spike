@@ -5,15 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -29,14 +27,14 @@ import com.yanjiyu.terminalspike.performance.PerformanceSnapshot
 import com.yanjiyu.terminalspike.terminal.view.TerminalViewBridge
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalSpikeScreen(
     viewModel: TerminalSpikeViewModel,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val performance by viewModel.controller.performance.collectAsStateWithLifecycle()
+    val activeController = viewModel.controllerFor(state.activeSessionId)
+    val performance by activeController.performance.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val rootView = LocalView.current
 
@@ -53,46 +51,71 @@ fun TerminalSpikeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    DisposableEffect(rootView, state.isRunning, state.isPreloading) {
-        rootView.keepScreenOn = state.isRunning || state.isPreloading
+    val activeConnection = state.activeSession.connectionState
+    DisposableEffect(rootView, state.isRunning, state.isPreloading, activeConnection) {
+        rootView.keepScreenOn =
+            state.isRunning || state.isPreloading || activeConnection is com.yanjiyu.terminalspike.connection.ConnectionState.Connected
         onDispose { rootView.keepScreenOn = false }
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("Terminal Spike") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
-        },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            TerminalControls(
-                state = state,
-                autoFollow = performance.autoFollow,
-                onModeSelected = viewModel::selectMode,
-                onStreamingRateSelected = viewModel::selectStreamingRate,
-                onFullScreenRateSelected = viewModel::selectFullScreenRate,
-                onPreloadSelected = viewModel::selectPreloadSize,
-                onStart = viewModel::start,
-                onStop = viewModel::stop,
-                onPreload = viewModel::preload,
-                onClear = viewModel::clear,
-                onJumpToBottom = viewModel::jumpToBottom,
-                onPerformanceVisible = viewModel::setPerformanceVisible,
+            SessionChrome(
+                sessions = state.sessions,
+                activeSessionId = state.activeSessionId,
+                notice = state.notice,
+                canAddSession = state.canAddSshSession,
+                profiles = state.profiles,
+                identities = state.identities,
+                knownHosts = state.knownHosts,
+                snippets = state.snippets,
+                extraKeys = state.extraKeys,
+                settingsReady = state.settingsReady,
+                onSelectSession = viewModel::selectSession,
+                onCloseSession = viewModel::closeSession,
+                onConnect = viewModel::connectSsh,
+                onDisconnect = viewModel::disconnectSsh,
+                onHostKeyAnswer = viewModel::answerHostKeyPrompt,
+                onSaveProfile = viewModel::saveSshProfile,
+                onDeleteProfile = viewModel::deleteSshProfile,
+                onForgetSavedPassword = viewModel::forgetSavedPassword,
+                onImportIdentity = viewModel::importSshIdentity,
+                onDeleteIdentity = viewModel::deleteSshIdentity,
+                onForgetKnownHost = viewModel::forgetKnownHost,
+                onSaveSnippet = viewModel::saveSnippet,
+                onDeleteSnippet = viewModel::deleteSnippet,
+                onSendSnippet = viewModel::sendSnippet,
+                onSetKeyVisible = viewModel::setExtraKeyVisible,
+                onMoveKey = viewModel::moveExtraKey,
+                onResetKeys = viewModel::resetExtraKeys,
             )
+            if (!state.sshMode) {
+                TerminalControls(
+                    state = state,
+                    autoFollow = performance.autoFollow,
+                    onModeSelected = viewModel::selectMode,
+                    onStreamingRateSelected = viewModel::selectStreamingRate,
+                    onFullScreenRateSelected = viewModel::selectFullScreenRate,
+                    onPreloadSelected = viewModel::selectPreloadSize,
+                    onStart = viewModel::start,
+                    onStop = viewModel::stop,
+                    onPreload = viewModel::preload,
+                    onClear = viewModel::clear,
+                    onJumpToBottom = viewModel::jumpToBottom,
+                    onPerformanceVisible = viewModel::setPerformanceVisible,
+                )
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background),
             ) {
-                TerminalViewBridge(controller = viewModel.controller)
-                if (state.showPerformance) {
+                TerminalViewBridge(controller = activeController)
+                if (state.showPerformance && !state.sshMode) {
                     PerformanceOverlay(
                         snapshot = performance,
                         modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
@@ -100,11 +123,10 @@ fun TerminalSpikeScreen(
                 }
             }
             ExtraKeysBar(
+                keys = state.extraKeys,
                 ctrlArmed = state.ctrlArmed,
                 altArmed = state.altArmed,
-                onCtrl = viewModel::toggleCtrl,
-                onAlt = viewModel::toggleAlt,
-                onKey = viewModel::sendExtraKey,
+                onKey = viewModel::activateExtraKey,
             )
         }
     }
@@ -118,12 +140,13 @@ private fun PerformanceOverlay(
     val timing = snapshot.timing
     val text = String.format(
         Locale.US,
-        "Diagnostic approximation\n%.1f FPS  avg %.2f ms  p95 %.2f ms\n>8.3 ms %d   >16.7 ms %d\nscrollback %,d  visible %d  pending %,d\nheap %.1f MiB  follow %s\n%s · %s",
-        timing.fps,
-        timing.averageFrameMs,
-        timing.p95FrameMs,
-        timing.slowerThan8Ms,
-        timing.slowerThan16Ms,
+        "Renderer %s\n%.1f draws/s  avg %.2f ms  p95 %.2f ms\nCPU >8.3 ms %d   >16.7 ms %d\nscrollback %,d  visible %d  pending %,d\nheap %.1f MiB  follow %s\n%s · %s",
+        if (timing.idle) "idle" else "diagnostic",
+        timing.drawsPerSecond,
+        timing.averageDrawMs,
+        timing.p95DrawMs,
+        timing.drawsSlowerThan8Ms,
+        timing.drawsSlowerThan16Ms,
         snapshot.scrollbackLines,
         snapshot.visibleLines,
         snapshot.pendingOutputLines,

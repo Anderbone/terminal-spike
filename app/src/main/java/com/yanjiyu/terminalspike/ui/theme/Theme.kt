@@ -5,7 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
 private val TerminalColourScheme = darkColorScheme(
-    primary = TerminalGreen,
+    primary = TerminalAccent,
     secondary = TerminalBlue,
     tertiary = TerminalAmber,
     background = TerminalBackground,

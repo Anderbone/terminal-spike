@@ -15,14 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 
 @Composable
 fun ExtraKeysBar(
+    keys: List<TerminalExtraKey>,
     ctrlArmed: Boolean,
     altArmed: Boolean,
-    onCtrl: () -> Unit,
-    onAlt: () -> Unit,
-    onKey: (ExtraKey) -> Unit,
+    onKey: (TerminalExtraKey) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -33,46 +33,27 @@ fun ExtraKeysBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        keyOrder.forEach { item ->
-            when (item) {
-                KeyBarItem.Ctrl -> FilterChip(
+        keys.forEach { key ->
+            when (key) {
+                TerminalExtraKey.CTRL -> FilterChip(
                     selected = ctrlArmed,
-                    onClick = onCtrl,
+                    onClick = { onKey(key) },
                     label = { Text("CTRL") },
                     modifier = Modifier.semantics { contentDescription = "One-shot Control modifier" },
                 )
-                KeyBarItem.Alt -> FilterChip(
+                TerminalExtraKey.ALT -> FilterChip(
                     selected = altArmed,
-                    onClick = onAlt,
+                    onClick = { onKey(key) },
                     label = { Text("ALT") },
                     modifier = Modifier.semantics { contentDescription = "One-shot Alt modifier" },
                 )
-                is KeyBarItem.Key -> OutlinedButton(
-                    onClick = { onKey(item.key) },
-                    modifier = Modifier.semantics { contentDescription = "Terminal key ${item.key.label}" },
+                else -> OutlinedButton(
+                    onClick = { onKey(key) },
+                    modifier = Modifier.semantics { contentDescription = "Terminal key ${key.label}" },
                 ) {
-                    Text(item.key.label)
+                    Text(key.label)
                 }
             }
         }
     }
 }
-
-private sealed interface KeyBarItem {
-    data object Ctrl : KeyBarItem
-    data object Alt : KeyBarItem
-    data class Key(val key: ExtraKey) : KeyBarItem
-}
-
-private val keyOrder = listOf(
-    KeyBarItem.Key(ExtraKey.ESC),
-    KeyBarItem.Ctrl,
-    KeyBarItem.Alt,
-    KeyBarItem.Key(ExtraKey.TAB),
-    KeyBarItem.Key(ExtraKey.UP),
-    KeyBarItem.Key(ExtraKey.DOWN),
-    KeyBarItem.Key(ExtraKey.LEFT),
-    KeyBarItem.Key(ExtraKey.RIGHT),
-    KeyBarItem.Key(ExtraKey.PAGE_UP),
-    KeyBarItem.Key(ExtraKey.PAGE_DOWN),
-)

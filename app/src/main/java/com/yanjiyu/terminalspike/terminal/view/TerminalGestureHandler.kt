@@ -3,22 +3,15 @@ package com.yanjiyu.terminalspike.terminal.view
 import android.view.GestureDetector
 import android.view.MotionEvent
 
-class TerminalGestureHandler(
-    private val stopFling: () -> Unit,
-    private val scrollBy: (Float) -> Unit,
-    private val fling: (Float) -> Unit,
-    private val focusAndShowKeyboard: () -> Unit,
+internal class TerminalGestureHandler(
+    private val actions: TerminalGestureActions,
 ) : GestureDetector.SimpleOnGestureListener() {
     override fun onDown(event: MotionEvent): Boolean {
-        stopFling()
-        focusAndShowKeyboard()
+        actions.onTouchDown()
         return true
     }
 
-    override fun onSingleTapUp(event: MotionEvent): Boolean {
-        focusAndShowKeyboard()
-        return true
-    }
+    override fun onSingleTapUp(event: MotionEvent): Boolean = actions.onTapConfirmed()
 
     override fun onScroll(
         firstEvent: MotionEvent?,
@@ -26,7 +19,7 @@ class TerminalGestureHandler(
         distanceX: Float,
         distanceY: Float,
     ): Boolean {
-        scrollBy(distanceY)
+        actions.onScroll(distanceY, currentEvent.x, currentEvent.y)
         return true
     }
 
@@ -36,7 +29,7 @@ class TerminalGestureHandler(
         velocityX: Float,
         velocityY: Float,
     ): Boolean {
-        fling(velocityY)
+        actions.onFling(velocityY)
         return true
     }
 }

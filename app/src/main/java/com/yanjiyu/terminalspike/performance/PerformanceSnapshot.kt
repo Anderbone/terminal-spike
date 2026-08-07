@@ -1,11 +1,12 @@
 package com.yanjiyu.terminalspike.performance
 
 data class FrameTimingSnapshot(
-    val fps: Double = 0.0,
-    val averageFrameMs: Double = 0.0,
-    val p95FrameMs: Double = 0.0,
-    val slowerThan8Ms: Int = 0,
-    val slowerThan16Ms: Int = 0,
+    val drawsPerSecond: Double = 0.0,
+    val averageDrawMs: Double = 0.0,
+    val p95DrawMs: Double = 0.0,
+    val drawsSlowerThan8Ms: Int = 0,
+    val drawsSlowerThan16Ms: Int = 0,
+    val idle: Boolean = true,
 )
 
 data class PerformanceSnapshot(

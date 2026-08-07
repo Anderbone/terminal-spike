@@ -1,6 +1,6 @@
 # ADR-001: Native renderer spike
 
-- Status: Accepted for Phase 0 experiment
+- Status: Superseded in part by ADR-002; renderer decision retained
 - Date: 2026-08-07
 
 ## Context
@@ -13,4 +13,4 @@ Use native Kotlin. Compose owns UI outside the hot terminal area. A custom hardw
 
 ## Consequences
 
-The project can measure its own bounded buffer, batching, Canvas drawing, touch/fling, and input path. It is not yet a terminal emulator and deliberately defers complex Unicode/cell semantics. The decision is temporary and will be revisited after measured comparisons with candidate open-source engines and renderers, including licensing review for a possible closed-source commercial product.
+The project can measure its own bounded buffer, batching, Canvas drawing, touch/fling, and input path. ADR-002 retains this renderer and ends the temporary no-parser constraint by selecting the project-owned bounded VT engine. Third-party engine adoption still requires measured comparison and a separate licensing decision.

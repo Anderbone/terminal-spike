@@ -42,4 +42,4 @@ Add a dedicated Macrobenchmark module and Baseline Profile only after the render
 
 ## Measurement limitations
 
-The overlay derives approximate intervals from Choreographer callbacks. It includes unrelated application frames, cannot separate CPU/GPU/display latency, and may itself have a small cost. Percentiles use a bounded recent sample. Heap is the Java runtime estimate, not total process PSS. Use Perfetto, Macrobenchmark, `gfxinfo`, and device-level power/thermal observations for decisions.
+The overlay records actual `FastTerminalView.onDraw` start/end timestamps in fixed primitive rings and reports recent draw rate plus CPU duration. An idle terminal explicitly reports idle instead of display refresh rate. It still cannot separate GPU/display latency and may itself have a small cost. Percentiles use a bounded recent sample. Heap is the Java runtime estimate, not total process PSS. Use Perfetto, Macrobenchmark, `gfxinfo`, and device-level power/thermal observations for decisions.

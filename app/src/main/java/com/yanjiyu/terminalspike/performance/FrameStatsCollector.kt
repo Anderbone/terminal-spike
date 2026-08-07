@@ -1,71 +1,71 @@
 package com.yanjiyu.terminalspike.performance
 
-import android.view.Choreographer
 import kotlin.math.ceil
 
+/** Fixed-memory collector for actual terminal renderer draws and their CPU duration. */
 class FrameStatsCollector(
     private val onSummary: (FrameTimingSnapshot) -> Unit,
-) : Choreographer.FrameCallback {
-    private val samplesNanos = LongArray(SAMPLE_CAPACITY)
+) {
+    private val startsNanos = LongArray(SAMPLE_CAPACITY)
+    private val durationsNanos = LongArray(SAMPLE_CAPACITY)
     private val sortedScratch = LongArray(SAMPLE_CAPACITY)
     private var sampleCount = 0
     private var writeIndex = 0
-    private var previousFrameNanos = 0L
     private var lastPublishNanos = 0L
-    private var running = false
 
-    fun start() {
-        if (running) return
-        running = true
-        previousFrameNanos = 0L
-        Choreographer.getInstance().postFrameCallback(this)
-    }
-
-    fun stop() {
-        running = false
-        Choreographer.getInstance().removeFrameCallback(this)
-    }
-
-    override fun doFrame(frameTimeNanos: Long) {
-        if (!running) return
-        if (previousFrameNanos != 0L) {
-            samplesNanos[writeIndex] = frameTimeNanos - previousFrameNanos
-            writeIndex = (writeIndex + 1) % SAMPLE_CAPACITY
-            sampleCount = (sampleCount + 1).coerceAtMost(SAMPLE_CAPACITY)
-        }
-        previousFrameNanos = frameTimeNanos
-
-        if (sampleCount > 0 && frameTimeNanos - lastPublishNanos >= PUBLISH_INTERVAL_NANOS) {
-            lastPublishNanos = frameTimeNanos
+    fun recordDraw(startNanos: Long, endNanos: Long) {
+        require(endNanos >= startNanos) { "Draw end must not precede start." }
+        startsNanos[writeIndex] = startNanos
+        durationsNanos[writeIndex] = endNanos - startNanos
+        writeIndex = (writeIndex + 1) % SAMPLE_CAPACITY
+        sampleCount = (sampleCount + 1).coerceAtMost(SAMPLE_CAPACITY)
+        if (endNanos - lastPublishNanos >= PUBLISH_INTERVAL_NANOS) {
+            lastPublishNanos = endNanos
             onSummary(summarize())
         }
-        Choreographer.getInstance().postFrameCallback(this)
     }
 
-    private fun summarize(): FrameTimingSnapshot {
-        var total = 0L
-        var slow8 = 0
-        var slow16 = 0
+    fun publishIdle() {
+        onSummary(FrameTimingSnapshot(idle = true))
+    }
+
+    internal fun summarize(): FrameTimingSnapshot {
+        if (sampleCount == 0) return FrameTimingSnapshot(idle = true)
+        var totalDuration = 0L
+        var slowerThan8 = 0
+        var slowerThan16 = 0
+        var oldestStart = Long.MAX_VALUE
+        var newestStart = Long.MIN_VALUE
         repeat(sampleCount) { index ->
-            val value = samplesNanos[index]
-            sortedScratch[index] = value
-            total += value
-            if (value > FRAME_120_HZ_NANOS) slow8 += 1
-            if (value > FRAME_60_HZ_NANOS) slow16 += 1
+            val duration = durationsNanos[index]
+            val start = startsNanos[index]
+            sortedScratch[index] = duration
+            totalDuration += duration
+            oldestStart = minOf(oldestStart, start)
+            newestStart = maxOf(newestStart, start)
+            if (duration > FRAME_120_HZ_NANOS) slowerThan8 += 1
+            if (duration > FRAME_60_HZ_NANOS) slowerThan16 += 1
         }
         sortedScratch.sort(0, sampleCount)
-        val averageNanos = total.toDouble() / sampleCount
+        val averageDuration = totalDuration.toDouble() / sampleCount
         val p95Index = (ceil(sampleCount * 0.95).toInt() - 1).coerceIn(0, sampleCount - 1)
+        val span = newestStart - oldestStart
         return FrameTimingSnapshot(
-            fps = if (averageNanos == 0.0) 0.0 else NANOS_PER_SECOND / averageNanos,
-            averageFrameMs = averageNanos / NANOS_PER_MILLISECOND,
-            p95FrameMs = sortedScratch[p95Index] / NANOS_PER_MILLISECOND,
-            slowerThan8Ms = slow8,
-            slowerThan16Ms = slow16,
+            drawsPerSecond = if (sampleCount < 2 || span <= 0L) {
+                0.0
+            } else {
+                (sampleCount - 1) * NANOS_PER_SECOND / span
+            },
+            averageDrawMs = averageDuration / NANOS_PER_MILLISECOND,
+            p95DrawMs = sortedScratch[p95Index] / NANOS_PER_MILLISECOND,
+            drawsSlowerThan8Ms = slowerThan8,
+            drawsSlowerThan16Ms = slowerThan16,
+            idle = false,
         )
     }
 
     companion object {
+        const val IDLE_DELAY_MS = 1_000L
         private const val SAMPLE_CAPACITY = 240
         private const val PUBLISH_INTERVAL_NANOS = 500_000_000L
         private const val FRAME_120_HZ_NANOS = 8_333_333L

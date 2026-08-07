@@ -2,25 +2,27 @@ package com.yanjiyu.terminalspike.terminal.model
 
 class TerminalLine private constructor(
     val id: Long,
-    runs: List<TerminalRun>,
+    val runs: List<TerminalRun>,
+    val text: String,
 ) {
-    val runs: List<TerminalRun> = runs.map { run ->
-        TerminalRun(sanitizeUnicode(run.text), run.style)
-    }
-    val text: String = buildString {
-        this@TerminalLine.runs.forEach { append(it.text) }
-    }
-
-    fun withId(newId: Long): TerminalLine = TerminalLine(newId, runs)
+    fun withId(newId: Long): TerminalLine = TerminalLine(newId, runs, text)
 
     companion object {
         const val UNASSIGNED_ID: Long = -1L
 
         fun plain(text: String, style: TerminalStyle = TerminalStyle()): TerminalLine =
-            TerminalLine(UNASSIGNED_ID, listOf(TerminalRun(text, style)))
+            create(listOf(TerminalRun(text, style)))
 
         fun styled(runs: List<TerminalRun>): TerminalLine =
-            TerminalLine(UNASSIGNED_ID, runs.ifEmpty { listOf(TerminalRun("")) })
+            create(runs.ifEmpty { listOf(TerminalRun("")) })
+
+        private fun create(sourceRuns: List<TerminalRun>): TerminalLine {
+            val sanitizedRuns = sourceRuns.map { run ->
+                TerminalRun(sanitizeUnicode(run.text), run.style)
+            }
+            val text = buildString { sanitizedRuns.forEach { append(it.text) } }
+            return TerminalLine(UNASSIGNED_ID, sanitizedRuns, text)
+        }
 
         private fun sanitizeUnicode(value: String): String {
             var firstInvalid = -1
