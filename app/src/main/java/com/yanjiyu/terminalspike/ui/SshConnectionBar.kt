@@ -1,9 +1,5 @@
 package com.yanjiyu.terminalspike.ui
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,12 +51,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.connection.HostKeyPrompt
-import com.yanjiyu.terminalspike.connection.KnownHostSummary
-import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
-import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 
 @Composable
 fun SessionChrome(
@@ -67,47 +61,16 @@ fun SessionChrome(
     activeSessionId: Long,
     notice: String?,
     canAddSession: Boolean,
-    profiles: List<SavedSshProfile>,
-    identities: List<SavedSshIdentity>,
-    knownHosts: List<KnownHostSummary>,
-    snippets: List<CommandSnippet>,
-    extraKeys: List<TerminalExtraKey>,
     settingsReady: Boolean,
     onSelectSession: (Long) -> Unit,
     onCloseSession: (Long) -> Unit,
-    onConnect: (
-        host: String,
-        port: String,
-        username: String,
-        password: String,
-        identityId: Long?,
-        passphrase: String,
-        saveProfile: Boolean,
-        savedPasswordProfileId: Long?,
-        savePassword: Boolean,
-    ) -> Unit,
     onDisconnect: (Long) -> Unit,
     onHostKeyAnswer: (sessionId: Long, accept: Boolean) -> Unit,
-    onSaveProfile: (label: String, host: String, port: String, username: String, existingId: Long?) -> Unit,
-    onDeleteProfile: (Long) -> Unit,
-    onForgetSavedPassword: (Long) -> Unit,
-    onImportIdentity: (Uri) -> Unit,
-    onDeleteIdentity: (Long) -> Unit,
-    onForgetKnownHost: (host: String, algorithm: String) -> Unit,
-    onSaveSnippet: (label: String, command: String, appendEnter: Boolean, existingId: Long?) -> Unit,
-    onDeleteSnippet: (Long) -> Unit,
-    onSendSnippet: (Long) -> Unit,
-    onSetKeyVisible: (TerminalExtraKey, Boolean) -> Unit,
-    onMoveKey: (TerminalExtraKey, Int) -> Unit,
-    onResetKeys: () -> Unit,
+    onNavigateBack: () -> Unit,
+    onNewSession: () -> Unit,
+    onShowTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showConnectDialog by remember { mutableStateOf(false) }
-    var showTools by remember { mutableStateOf(false) }
-    var initialProfile by remember { mutableStateOf<SavedSshProfile?>(null) }
-    val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onImportIdentity(uri)
-    }
     val active = sessions.first { it.id == activeSessionId }
 
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
@@ -116,14 +79,18 @@ fun SessionChrome(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = "TERM",
-                color = MaterialTheme.colorScheme.primary,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Black,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(end = 4.dp),
-            )
+            Surface(
+                onClick = onNavigateBack,
+                modifier = Modifier
+                    .size(42.dp)
+                    .semantics { contentDescription = "Back to local workspace" },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("‹", style = MaterialTheme.typography.headlineMedium)
+                }
+            }
             Row(
                 modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -138,17 +105,14 @@ fun SessionChrome(
                 }
             }
             TextButton(
-                onClick = { showTools = true },
+                onClick = onShowTools,
                 enabled = settingsReady,
                 modifier = Modifier.semantics { contentDescription = "Open local tools" },
             ) {
                 Text("TOOLS", maxLines = 1)
             }
             OutlinedButton(
-                onClick = {
-                    initialProfile = null
-                    showConnectDialog = true
-                },
+                onClick = onNewSession,
                 enabled = canAddSession,
                 modifier = Modifier.semantics { contentDescription = "New SSH session" },
             ) {
@@ -182,66 +146,6 @@ fun SessionChrome(
                 TextButton(onClick = { onDisconnect(active.id) }) { Text("Disconnect") }
             }
         }
-    }
-
-    if (showConnectDialog) {
-        SshConnectDialog(
-            profiles = profiles,
-            identities = identities,
-            initialProfile = initialProfile,
-            settingsReady = settingsReady,
-            onDismiss = { showConnectDialog = false },
-            onConnect = {
-                    host, port, username, password, identityId, passphrase, saveProfile,
-                    savedPasswordProfileId, savePassword,
-                ->
-                showConnectDialog = false
-                onConnect(
-                    host,
-                    port,
-                    username,
-                    password,
-                    identityId,
-                    passphrase,
-                    saveProfile,
-                    savedPasswordProfileId,
-                    savePassword,
-                )
-            },
-            onForgetSavedPassword = onForgetSavedPassword,
-        )
-    }
-
-    if (showTools) {
-        TerminalToolsSheet(
-            profiles = profiles,
-            identities = identities,
-            knownHosts = knownHosts,
-            snippets = snippets,
-            extraKeys = extraKeys,
-            onDismiss = { showTools = false },
-            onUseProfile = { profile ->
-                initialProfile = profile
-                showTools = false
-                showConnectDialog = true
-            },
-            onSaveProfile = onSaveProfile,
-            onDeleteProfile = onDeleteProfile,
-            onImportIdentity = {
-                identityImportLauncher.launch(arrayOf("application/x-pem-file", "application/octet-stream", "text/plain"))
-            },
-            onDeleteIdentity = onDeleteIdentity,
-            onForgetKnownHost = onForgetKnownHost,
-            onSaveSnippet = onSaveSnippet,
-            onDeleteSnippet = onDeleteSnippet,
-            onSendSnippet = { id ->
-                onSendSnippet(id)
-                showTools = false
-            },
-            onSetKeyVisible = onSetKeyVisible,
-            onMoveKey = onMoveKey,
-            onResetKeys = onResetKeys,
-        )
     }
 
     val promptSession = sessions.firstOrNull { it.connectionState is ConnectionState.AwaitingApproval }
@@ -343,7 +247,7 @@ private fun sessionStatus(session: SessionTabUi): String {
 }
 
 @Composable
-private fun SshConnectDialog(
+internal fun SshConnectDialog(
     profiles: List<SavedSshProfile>,
     identities: List<SavedSshIdentity>,
     initialProfile: SavedSshProfile?,

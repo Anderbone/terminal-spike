@@ -1,9 +1,11 @@
 package com.yanjiyu.terminalspike.settings
 
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.terminal.view.TerminalKeySequences
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -85,8 +87,18 @@ class UserSettingsCodecTest {
     }
 
     @Test
-    fun defaultLayoutIncludesEverySupportedKeyOnce() {
-        assertEquals(TerminalExtraKey.entries, TerminalExtraKey.DEFAULT_ORDER)
+    fun defaultLayoutUsesSupportedKeysWithoutDuplicates() {
+        assertEquals(17, TerminalExtraKey.DEFAULT_ORDER.size)
+        assertTrue(TerminalExtraKey.DEFAULT_ORDER.all { it in TerminalExtraKey.entries })
         assertEquals(TerminalExtraKey.DEFAULT_ORDER.size, TerminalExtraKey.DEFAULT_ORDER.distinct().size)
+    }
+
+    @Test
+    fun addedTerminalKeysHaveExpectedPayloads() {
+        assertArrayEquals(byteArrayOf(0x03), requireNotNull(TerminalExtraKey.CTRL_C.bytes))
+        assertArrayEquals(byteArrayOf(0x17), requireNotNull(TerminalExtraKey.CTRL_W.bytes))
+        assertArrayEquals(TerminalKeySequences.F12, requireNotNull(TerminalExtraKey.F12.bytes))
+        assertTrue(TerminalExtraKey.HIDE_KEYBOARD.isLocalAction)
+        assertEquals(null, TerminalExtraKey.HIDE_KEYBOARD.bytes)
     }
 }

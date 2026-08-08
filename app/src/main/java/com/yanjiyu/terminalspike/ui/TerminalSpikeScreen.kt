@@ -1,5 +1,14 @@
 package com.yanjiyu.terminalspike.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,15 +24,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yanjiyu.terminalspike.performance.PerformanceSnapshot
+import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.terminal.view.TerminalViewBridge
 import java.util.Locale
 
@@ -37,6 +52,26 @@ fun TerminalSpikeScreen(
     val performance by activeController.performance.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val rootView = LocalView.current
+    val softwareKeyboardController = LocalSoftwareKeyboardController.current
+    var toolsSection by remember { mutableStateOf(ToolSection.PROFILES) }
+    var connectDialogVisible by remember { mutableStateOf(false) }
+    var connectProfile by remember { mutableStateOf<SavedSshProfile?>(null) }
+    var destination by rememberSaveable { mutableStateOf(AppDestination.WORKSPACE) }
+    var toolsReturnDestination by rememberSaveable { mutableStateOf(AppDestination.WORKSPACE) }
+    val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importSshIdentity(uri)
+    }
+
+    fun showTools(section: ToolSection) {
+        toolsSection = section
+        if (destination != AppDestination.TOOLS) toolsReturnDestination = destination
+        destination = AppDestination.TOOLS
+    }
+
+    fun showConnect(profile: SavedSshProfile? = null) {
+        connectProfile = profile
+        connectDialogVisible = true
+    }
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -58,77 +93,173 @@ fun TerminalSpikeScreen(
         onDispose { rootView.keepScreenOn = false }
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize().imePadding(),
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            SessionChrome(
-                sessions = state.sessions,
-                activeSessionId = state.activeSessionId,
-                notice = state.notice,
-                canAddSession = state.canAddSshSession,
+    BackHandler(enabled = destination != AppDestination.WORKSPACE) {
+        destination = if (destination == AppDestination.TOOLS) toolsReturnDestination else AppDestination.WORKSPACE
+    }
+
+    AnimatedContent(
+        targetState = destination,
+        modifier = modifier.fillMaxSize(),
+        transitionSpec = {
+            (fadeIn() + slideInHorizontally(initialOffsetX = { it / 10 })).togetherWith(
+                fadeOut() + slideOutHorizontally(targetOffsetX = { -it / 10 }),
+            )
+        },
+        label = "primary-workspace",
+    ) { target ->
+        when (target) {
+            AppDestination.WORKSPACE -> LocalWorkspaceScreen(
+                profiles = state.profiles,
+                identities = state.identities,
+                snippets = state.snippets,
+                knownHostCount = state.knownHosts.size,
+                visibleKeyCount = state.extraKeys.size,
+                settingsReady = state.settingsReady,
+                onOpenSection = ::showTools,
+                onOpenTerminal = { destination = AppDestination.TERMINAL },
+                onQuickConnect = {
+                    destination = AppDestination.TERMINAL
+                    showConnect()
+                },
+                onOpenTools = { showTools(ToolSection.PROFILES) },
+            )
+            AppDestination.TERMINAL -> Scaffold(
+                modifier = Modifier.fillMaxSize().imePadding(),
+                containerColor = MaterialTheme.colorScheme.background,
+            ) { innerPadding ->
+                Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    SessionChrome(
+                        sessions = state.sessions,
+                        activeSessionId = state.activeSessionId,
+                        notice = state.notice,
+                        canAddSession = state.canAddSshSession,
+                        settingsReady = state.settingsReady,
+                        onSelectSession = viewModel::selectSession,
+                        onCloseSession = viewModel::closeSession,
+                        onDisconnect = viewModel::disconnectSsh,
+                        onHostKeyAnswer = viewModel::answerHostKeyPrompt,
+                        onNavigateBack = { destination = AppDestination.WORKSPACE },
+                        onNewSession = { showConnect() },
+                        onShowTools = { showTools(ToolSection.PROFILES) },
+                    )
+                    if (!state.sshMode) {
+                        TerminalControls(
+                            state = state,
+                            autoFollow = performance.autoFollow,
+                            onModeSelected = viewModel::selectMode,
+                            onStreamingRateSelected = viewModel::selectStreamingRate,
+                            onFullScreenRateSelected = viewModel::selectFullScreenRate,
+                            onPreloadSelected = viewModel::selectPreloadSize,
+                            onStart = viewModel::start,
+                            onStop = viewModel::stop,
+                            onPreload = viewModel::preload,
+                            onClear = viewModel::clear,
+                            onJumpToBottom = viewModel::jumpToBottom,
+                            onPerformanceVisible = viewModel::setPerformanceVisible,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        TerminalViewBridge(controller = activeController)
+                        if (state.showPerformance && !state.sshMode) {
+                            PerformanceOverlay(
+                                snapshot = performance,
+                                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                            )
+                        }
+                    }
+                    ExtraKeysBar(
+                        keys = state.extraKeys,
+                        ctrlArmed = state.ctrlArmed,
+                        altArmed = state.altArmed,
+                        customizationEnabled = state.settingsReady,
+                        onKey = { key ->
+                            if (key.isLocalAction) {
+                                softwareKeyboardController?.hide()
+                            } else {
+                                viewModel.activateExtraKey(key)
+                            }
+                        },
+                        onCustomize = { showTools(ToolSection.KEYS) },
+                    )
+                }
+            }
+            AppDestination.TOOLS -> LocalToolsScreen(
                 profiles = state.profiles,
                 identities = state.identities,
                 knownHosts = state.knownHosts,
                 snippets = state.snippets,
                 extraKeys = state.extraKeys,
-                settingsReady = state.settingsReady,
-                onSelectSession = viewModel::selectSession,
-                onCloseSession = viewModel::closeSession,
-                onConnect = viewModel::connectSsh,
-                onDisconnect = viewModel::disconnectSsh,
-                onHostKeyAnswer = viewModel::answerHostKeyPrompt,
+                onNavigateBack = { destination = toolsReturnDestination },
+                onOpenWorkspace = { destination = AppDestination.WORKSPACE },
+                onOpenTerminal = { destination = AppDestination.TERMINAL },
+                onUseProfile = { profile ->
+                    destination = AppDestination.TERMINAL
+                    showConnect(profile)
+                },
                 onSaveProfile = viewModel::saveSshProfile,
                 onDeleteProfile = viewModel::deleteSshProfile,
-                onForgetSavedPassword = viewModel::forgetSavedPassword,
-                onImportIdentity = viewModel::importSshIdentity,
+                onImportIdentity = {
+                    identityImportLauncher.launch(
+                        arrayOf("application/x-pem-file", "application/octet-stream", "text/plain"),
+                    )
+                },
                 onDeleteIdentity = viewModel::deleteSshIdentity,
                 onForgetKnownHost = viewModel::forgetKnownHost,
                 onSaveSnippet = viewModel::saveSnippet,
                 onDeleteSnippet = viewModel::deleteSnippet,
-                onSendSnippet = viewModel::sendSnippet,
+                onSendSnippet = { id ->
+                    viewModel.sendSnippet(id)
+                    destination = AppDestination.TERMINAL
+                },
                 onSetKeyVisible = viewModel::setExtraKeyVisible,
+                onReplaceKey = viewModel::replaceExtraKey,
                 onMoveKey = viewModel::moveExtraKey,
                 onResetKeys = viewModel::resetExtraKeys,
-            )
-            if (!state.sshMode) {
-                TerminalControls(
-                    state = state,
-                    autoFollow = performance.autoFollow,
-                    onModeSelected = viewModel::selectMode,
-                    onStreamingRateSelected = viewModel::selectStreamingRate,
-                    onFullScreenRateSelected = viewModel::selectFullScreenRate,
-                    onPreloadSelected = viewModel::selectPreloadSize,
-                    onStart = viewModel::start,
-                    onStop = viewModel::stop,
-                    onPreload = viewModel::preload,
-                    onClear = viewModel::clear,
-                    onJumpToBottom = viewModel::jumpToBottom,
-                    onPerformanceVisible = viewModel::setPerformanceVisible,
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background),
-            ) {
-                TerminalViewBridge(controller = activeController)
-                if (state.showPerformance && !state.sshMode) {
-                    PerformanceOverlay(
-                        snapshot = performance,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                    )
-                }
-            }
-            ExtraKeysBar(
-                keys = state.extraKeys,
-                ctrlArmed = state.ctrlArmed,
-                altArmed = state.altArmed,
-                onKey = viewModel::activateExtraKey,
+                onSaveKeys = {
+                    viewModel.saveExtraKeys()
+                    destination = toolsReturnDestination
+                },
+                initialSection = toolsSection,
             )
         }
+    }
+
+    if (connectDialogVisible) {
+        SshConnectDialog(
+            profiles = state.profiles,
+            identities = state.identities,
+            initialProfile = connectProfile,
+            settingsReady = state.settingsReady,
+            onDismiss = {
+                connectDialogVisible = false
+                connectProfile = null
+            },
+            onConnect = {
+                    host, port, username, password, identityId, passphrase, saveProfile,
+                    savedPasswordProfileId, savePassword,
+                ->
+                connectDialogVisible = false
+                connectProfile = null
+                destination = AppDestination.TERMINAL
+                viewModel.connectSsh(
+                    host,
+                    port,
+                    username,
+                    password,
+                    identityId,
+                    passphrase,
+                    saveProfile,
+                    savedPasswordProfileId,
+                    savePassword,
+                )
+            },
+            onForgetSavedPassword = viewModel::forgetSavedPassword,
+        )
     }
 }
 

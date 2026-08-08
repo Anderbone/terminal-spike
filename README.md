@@ -1,6 +1,6 @@
 # Terminal Spike
 
-Terminal Spike is an early native Android SSH terminal and renderer benchmark. A Compose application shell surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
+Terminal Spike is an early native Android SSH terminal and renderer benchmark. It opens on a local, device-only workspace for hosts, identities, snippets, trusted host keys, and terminal configuration. A dedicated Compose terminal workspace surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
 
 Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, encrypted local host profiles, identities and snippets, a customizable extra-key bar, bounded VT/xterm screen semantics, and up to four simultaneous SSH session tabs are available for real-device shell testing. There is no Mosh, SFTP, sync, analytics, advertising, AI, or subscription code.
 
@@ -41,10 +41,10 @@ Run the device smoke test with:
 
 ## Try a real SSH shell
 
-1. Tap **+ SSH**.
+1. From the local workspace, tap **New connection**. You can also open **Terminal** and tap **+ SSH**.
 2. Enter a host, port, and username, then use a password or an imported private key. Password saving is off by default; opt in with **Save password on this device** while also saving the host. Key passphrases remain one-time only.
 3. On first contact, compare the displayed SHA-256 fingerprint with a trusted fingerprint from the server administrator, then tap **Trust and connect**.
-4. Tap the terminal to open the keyboard. The workspace resizes above the IME; hiding the keyboard restores the full terminal height. PTY resize is settled at the end of the keyboard animation to avoid repeated remote redraws. Use the extra-key row for Escape, Tab, arrows, and paging.
+4. Tap the terminal to open the keyboard. The workspace resizes above the IME; hiding the keyboard restores the full terminal height. PTY resize is settled at the end of the keyboard animation to avoid repeated remote redraws. The default full-width deck has nine buttons on each of its two rows, including **EDIT**; use it to choose and reorder navigation keys, Ctrl shortcuts, symbols, function keys, and the hide-keyboard action.
 5. Add another tab with **+ SSH**, or switch and close sessions from the tab rail. Each SSH tab keeps an isolated 20,000-line scrollback and live connection.
 6. Tap **Disconnect** when finished.
 
@@ -52,7 +52,7 @@ Accepted host keys are stored in app-private storage. If a known key changes, co
 
 ## Local tools
 
-Tap **TOOLS** to manage saved hosts, extra keys, and command snippets.
+Use the resource rows or **Tools** destination on the local workspace to manage saved hosts, extra keys, and command snippets. The same tools remain available from the terminal header.
 
 - Host profiles save a display name, host, port, and username. A password can be saved separately only with explicit opt-in. Selecting that profile later enables Connect without entering the password; **Forget** removes it.
 - SSH private keys are imported through Android's document picker, validated by the SSH library, encrypted under an app-specific Android Keystore key, and stored only in app-private storage. Encrypted-key passphrases are requested for each connection and never saved. Trusted host keys can be reviewed and removed from **Tools → Security**.

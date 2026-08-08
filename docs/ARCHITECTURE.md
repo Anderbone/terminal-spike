@@ -2,7 +2,7 @@
 
 ## Compose shell
 
-`TerminalSpikeScreen` owns the scaffold, compact session chrome, workload controls, diagnostic overlay, lifecycle forwarding, and extra-key toolbar. Its state is a small immutable `TerminalSpikeUiState`. The active controller's diagnostic flow updates at low frequency. Terminal content and scrolling never travel through Compose state. The Activity uses `adjustResize` and the root scaffold consumes IME insets so the complete workspace moves above the software keyboard and restores when it closes.
+`TerminalSpikeScreen` owns page-level navigation between the local workspace, terminal, and local-tools destinations, plus the SSH connection dialog, compact session chrome, workload controls, diagnostic overlay, lifecycle forwarding, and extra-key toolbar. `LocalWorkspaceScreen` presents device-local resources, while `LocalToolsScreen` keeps hosts, security, snippets, and terminal-key settings on a dedicated full-screen surface. The UI state remains a small immutable `TerminalSpikeUiState`, and the active controller's diagnostic flow updates at low frequency. Terminal content and scrolling never travel through Compose state. The Activity uses `adjustResize` and the terminal scaffold consumes IME insets so the complete terminal workspace moves above the software keyboard and restores when it closes.
 
 ## Native renderer
 

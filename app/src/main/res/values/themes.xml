@@ -2,7 +2,9 @@
     <style name="Theme.TerminalSpike" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#090C10</item>
+        <item name="android:windowBackground">#171A2B</item>
+        <item name="android:navigationBarColor">#202438</item>
+        <item name="android:statusBarColor">#171A2B</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowNoTitle">true</item>
     </style>

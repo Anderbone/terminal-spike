@@ -526,6 +526,18 @@ class TerminalSpikeViewModel(
         queueSettings(_uiState.value)
     }
 
+    fun replaceExtraKey(currentKey: TerminalExtraKey, replacementKey: TerminalExtraKey) {
+        if (!_uiState.value.settingsReady || currentKey == replacementKey) return
+        _uiState.update { state ->
+            val index = state.extraKeys.indexOf(currentKey)
+            if (index < 0 || replacementKey in state.extraKeys) return@update state
+            val keys = state.extraKeys.toMutableList()
+            keys[index] = replacementKey
+            state.copy(extraKeys = keys, notice = null)
+        }
+        queueSettings(_uiState.value)
+    }
+
     fun moveExtraKey(key: TerminalExtraKey, direction: Int) {
         if (!_uiState.value.settingsReady || direction !in listOf(-1, 1)) return
         _uiState.update { state ->
@@ -547,6 +559,13 @@ class TerminalSpikeViewModel(
             state.copy(extraKeys = TerminalExtraKey.DEFAULT_ORDER, notice = null)
         }
         queueSettings(_uiState.value)
+    }
+
+    fun saveExtraKeys() {
+        val state = _uiState.value
+        if (!state.settingsReady) return
+        queueSettings(state)
+        _uiState.update { it.copy(notice = "Terminal keys saved.") }
     }
 
     fun answerHostKeyPrompt(sessionId: Long, accept: Boolean) {

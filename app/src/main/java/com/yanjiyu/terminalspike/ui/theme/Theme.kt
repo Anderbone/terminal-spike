@@ -6,7 +6,11 @@ import androidx.compose.runtime.Composable
 
 private val TerminalColourScheme = darkColorScheme(
     primary = TerminalAccent,
+    primaryContainer = TerminalAccentContainer,
+    onPrimaryContainer = TerminalOnAccentContainer,
     secondary = TerminalBlue,
+    secondaryContainer = TerminalBlueContainer,
+    onSecondaryContainer = TerminalOnBlueContainer,
     tertiary = TerminalAmber,
     background = TerminalBackground,
     surface = TerminalSurface,
@@ -15,6 +19,8 @@ private val TerminalColourScheme = darkColorScheme(
     onBackground = TerminalText,
     onSurface = TerminalText,
     onSurfaceVariant = TerminalMuted,
+    outline = TerminalOutline,
+    outlineVariant = TerminalOutlineVariant,
 )
 
 @Composable

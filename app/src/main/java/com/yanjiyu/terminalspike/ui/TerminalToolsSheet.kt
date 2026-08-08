@@ -1,17 +1,23 @@
 package com.yanjiyu.terminalspike.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -24,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,8 +45,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.connection.KnownHostSummary
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
@@ -47,7 +54,7 @@ import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 
-private enum class ToolSection(val label: String) {
+internal enum class ToolSection(val label: String) {
     PROFILES("Hosts"),
     IDENTITIES("Security"),
     KEYS("Keys"),
@@ -55,13 +62,15 @@ private enum class ToolSection(val label: String) {
 }
 
 @Composable
-fun TerminalToolsSheet(
+internal fun LocalToolsScreen(
     profiles: List<SavedSshProfile>,
     identities: List<SavedSshIdentity>,
     knownHosts: List<KnownHostSummary>,
     snippets: List<CommandSnippet>,
     extraKeys: List<TerminalExtraKey>,
-    onDismiss: () -> Unit,
+    onNavigateBack: () -> Unit,
+    onOpenWorkspace: () -> Unit,
+    onOpenTerminal: () -> Unit,
     onUseProfile: (SavedSshProfile) -> Unit,
     onSaveProfile: (label: String, host: String, port: String, username: String, existingId: Long?) -> Unit,
     onDeleteProfile: (Long) -> Unit,
@@ -72,92 +81,121 @@ fun TerminalToolsSheet(
     onDeleteSnippet: (Long) -> Unit,
     onSendSnippet: (Long) -> Unit,
     onSetKeyVisible: (TerminalExtraKey, Boolean) -> Unit,
+    onReplaceKey: (TerminalExtraKey, TerminalExtraKey) -> Unit,
     onMoveKey: (TerminalExtraKey, Int) -> Unit,
     onResetKeys: () -> Unit,
+    onSaveKeys: () -> Unit,
+    initialSection: ToolSection = ToolSection.PROFILES,
 ) {
-    var section by remember { mutableStateOf(ToolSection.PROFILES) }
+    var section by remember(initialSection) {
+        mutableStateOf(initialSection)
+    }
     var addingProfile by remember { mutableStateOf(false) }
     var addingSnippet by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<SavedSshProfile?>(null) }
     var editingSnippet by remember { mutableStateOf<CommandSnippet?>(null) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF171A2B)),
+        color = Color(0xFF171A2B),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 720.dp),
-                shape = MaterialTheme.shapes.extraLarge,
-                tonalElevation = 6.dp,
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.semantics { contentDescription = "Back from local tools" },
+                ) {
+                    Text("‹", style = MaterialTheme.typography.headlineSmall)
+                }
+                Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(
                         text = "Local tools",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(horizontal = 20.dp),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Encrypted on this device · passwords are saved only when you opt in",
+                        text = "Private, encrypted, and stored on this device",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 3.dp),
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ToolSection.entries.forEach { item ->
-                            FilterChip(
-                                selected = section == item,
-                                onClick = { section = item },
-                                label = { Text(item.label) },
-                            )
-                        }
-                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ToolSection.entries.forEach { item ->
+                    FilterChip(
+                        selected = section == item,
+                        onClick = { section = item },
+                        label = { Text(item.label) },
+                    )
+                }
+            }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when (section) {
-                        ToolSection.PROFILES -> ProfilesSection(
-                            profiles = profiles,
-                            onAdd = { addingProfile = true },
-                            onUse = onUseProfile,
-                            onEdit = {
-                                editingProfile = it
-                                addingProfile = true
-                            },
-                            onDelete = onDeleteProfile,
-                        )
-                        ToolSection.KEYS -> KeysSection(
-                            selectedKeys = extraKeys,
-                            onSetVisible = onSetKeyVisible,
-                            onMove = onMoveKey,
-                            onReset = onResetKeys,
-                        )
-                        ToolSection.SNIPPETS -> SnippetsSection(
-                            snippets = snippets,
-                            onAdd = { addingSnippet = true },
-                            onSend = onSendSnippet,
-                            onEdit = {
-                                editingSnippet = it
-                                addingSnippet = true
-                            },
-                            onDelete = onDeleteSnippet,
-                        )
-                        ToolSection.IDENTITIES -> IdentitiesSection(
-                            identities = identities,
-                            knownHosts = knownHosts,
-                            onImport = onImportIdentity,
-                            onDelete = onDeleteIdentity,
-                            onForgetKnownHost = onForgetKnownHost,
-                        )
+                    ToolSection.PROFILES -> ProfilesSection(
+                        profiles = profiles,
+                        onAdd = { addingProfile = true },
+                        onUse = onUseProfile,
+                        onEdit = {
+                            editingProfile = it
+                            addingProfile = true
+                        },
+                        onDelete = onDeleteProfile,
+                    )
+                    ToolSection.KEYS -> KeysSection(
+                        selectedKeys = extraKeys,
+                        onSetVisible = onSetKeyVisible,
+                        onReplace = onReplaceKey,
+                        onMove = onMoveKey,
+                        onReset = onResetKeys,
+                        onSave = onSaveKeys,
+                    )
+                    ToolSection.SNIPPETS -> SnippetsSection(
+                        snippets = snippets,
+                        onAdd = { addingSnippet = true },
+                        onSend = onSendSnippet,
+                        onEdit = {
+                            editingSnippet = it
+                            addingSnippet = true
+                        },
+                        onDelete = onDeleteSnippet,
+                    )
+                    ToolSection.IDENTITIES -> IdentitiesSection(
+                        identities = identities,
+                        knownHosts = knownHosts,
+                        onImport = onImportIdentity,
+                        onDelete = onDeleteIdentity,
+                        onForgetKnownHost = onForgetKnownHost,
+                    )
                     }
                 }
             }
+            WorkspaceBottomBar(
+                selected = AppDestination.TOOLS,
+                onWorkspace = onOpenWorkspace,
+                onTerminal = onOpenTerminal,
+                onTools = {},
+            )
         }
     }
 
@@ -343,43 +381,369 @@ private fun SnippetsSection(
 private fun KeysSection(
     selectedKeys: List<TerminalExtraKey>,
     onSetVisible: (TerminalExtraKey, Boolean) -> Unit,
+    onReplace: (TerminalExtraKey, TerminalExtraKey) -> Unit,
     onMove: (TerminalExtraKey, Int) -> Unit,
     onReset: () -> Unit,
+    onSave: () -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+    var focusedKey by remember { mutableStateOf<TerminalExtraKey?>(null) }
+    val groups = listOf(
+        KeyPickerGroup(
+            label = "Modifiers",
+            keys = listOf(TerminalExtraKey.CTRL, TerminalExtraKey.ALT),
+        ),
+        KeyPickerGroup(
+            label = "Navigation",
+            keys = listOf(
+                TerminalExtraKey.ESC,
+                TerminalExtraKey.TAB,
+                TerminalExtraKey.ENTER,
+                TerminalExtraKey.BACKSPACE,
+                TerminalExtraKey.INSERT,
+                TerminalExtraKey.HOME,
+                TerminalExtraKey.END,
+                TerminalExtraKey.PAGE_UP,
+                TerminalExtraKey.PAGE_DOWN,
+                TerminalExtraKey.DELETE,
+            ),
+        ),
+        KeyPickerGroup(
+            label = "Arrows",
+            keys = listOf(
+                TerminalExtraKey.UP,
+                TerminalExtraKey.DOWN,
+                TerminalExtraKey.LEFT,
+                TerminalExtraKey.RIGHT,
+            ),
+        ),
+        KeyPickerGroup(
+            label = "Ctrl shortcuts",
+            keys = listOf(
+                TerminalExtraKey.CTRL_C,
+                TerminalExtraKey.CTRL_D,
+                TerminalExtraKey.CTRL_Z,
+                TerminalExtraKey.CTRL_A,
+                TerminalExtraKey.CTRL_B,
+                TerminalExtraKey.CTRL_E,
+                TerminalExtraKey.CTRL_R,
+                TerminalExtraKey.CTRL_W,
+                TerminalExtraKey.CTRL_L,
+                TerminalExtraKey.CTRL_U,
+                TerminalExtraKey.CTRL_K,
+            ),
+        ),
+        KeyPickerGroup(
+            label = "Symbols",
+            keys = listOf(
+                TerminalExtraKey.SLASH,
+                TerminalExtraKey.PIPE,
+                TerminalExtraKey.DASH,
+                TerminalExtraKey.TILDE,
+                TerminalExtraKey.BACKTICK,
+                TerminalExtraKey.BACKSLASH,
+                TerminalExtraKey.COLON,
+                TerminalExtraKey.SEMICOLON,
+                TerminalExtraKey.AT,
+                TerminalExtraKey.HASH,
+                TerminalExtraKey.DOLLAR,
+                TerminalExtraKey.EQUALS,
+                TerminalExtraKey.SPACE,
+                TerminalExtraKey.EXCLAMATION,
+                TerminalExtraKey.QUESTION,
+                TerminalExtraKey.ASTERISK,
+                TerminalExtraKey.PLUS,
+                TerminalExtraKey.UNDERSCORE,
+                TerminalExtraKey.PERIOD,
+                TerminalExtraKey.COMMA,
+                TerminalExtraKey.LEFT_PAREN,
+                TerminalExtraKey.RIGHT_PAREN,
+                TerminalExtraKey.LEFT_BRACKET,
+                TerminalExtraKey.RIGHT_BRACKET,
+                TerminalExtraKey.LEFT_BRACE,
+                TerminalExtraKey.RIGHT_BRACE,
+                TerminalExtraKey.SINGLE_QUOTE,
+                TerminalExtraKey.DOUBLE_QUOTE,
+                TerminalExtraKey.LESS_THAN,
+                TerminalExtraKey.GREATER_THAN,
+                TerminalExtraKey.AMPERSAND,
+                TerminalExtraKey.CARET,
+                TerminalExtraKey.PERCENT,
+            ),
+        ),
+        KeyPickerGroup(
+            label = "Function keys",
+            keys = listOf(
+                TerminalExtraKey.F1,
+                TerminalExtraKey.F2,
+                TerminalExtraKey.F3,
+                TerminalExtraKey.F4,
+                TerminalExtraKey.F5,
+                TerminalExtraKey.F6,
+                TerminalExtraKey.F7,
+                TerminalExtraKey.F8,
+                TerminalExtraKey.F9,
+                TerminalExtraKey.F10,
+                TerminalExtraKey.F11,
+                TerminalExtraKey.F12,
+            ),
+        ),
+        KeyPickerGroup(
+            label = "Special",
+            keys = listOf(TerminalExtraKey.HIDE_KEYBOARD),
+        ),
+    )
+
+    LaunchedEffect(selectedKeys) {
+        if (focusedKey !in selectedKeys) focusedKey = null
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
+    ) {
         item {
-            SectionAction(title = "Extra-key bar", action = "Reset", onAction = onReset)
-            Text(
-                text = "Choose visible keys and arrange their left-to-right order.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-            )
-        }
-        items(TerminalExtraKey.entries, key = { it.name }) { key ->
-            val selectedIndex = selectedKeys.indexOf(key)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSetVisible(key, selectedIndex < 0) }
-                    .padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Checkbox(
-                    checked = selectedIndex >= 0,
-                    onCheckedChange = { onSetVisible(key, it) },
-                )
-                Text(key.label, modifier = Modifier.weight(1f), fontFamily = FontFamily.Monospace)
-                TextButton(
-                    enabled = selectedIndex > 0,
-                    onClick = { onMove(key, -1) },
-                ) { Text("↑") }
-                TextButton(
-                    enabled = selectedIndex >= 0 && selectedIndex < selectedKeys.lastIndex,
-                    onClick = { onMove(key, 1) },
-                ) { Text("↓") }
+                Text("Terminal keys", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onReset) { Text("Reset") }
+                Button(onClick = onSave) { Text("Save") }
             }
-            HorizontalDivider()
+            Text(
+                text = "Tap an option to add it. To change a key, tap it in the live deck, then tap its replacement below. Tap Save when finished.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+            )
+        }
+        item {
+            Text(
+                text = "LIVE DECK · ${selectedKeys.size} KEYS",
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    val columnCount = (selectedKeys.size + 1) / 2
+                    KeyDeckPreviewRow(
+                        keys = selectedKeys.take(columnCount),
+                        columnCount = columnCount,
+                        focusedKey = focusedKey,
+                        onFocus = { focusedKey = it },
+                    )
+                    KeyDeckPreviewRow(
+                        keys = selectedKeys.drop(columnCount),
+                        columnCount = columnCount,
+                        focusedKey = focusedKey,
+                        onFocus = { focusedKey = it },
+                    )
+                }
+            }
+            focusedKey?.let { key ->
+                val selectedIndex = selectedKeys.indexOf(key)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "Selected slot ${selectedIndex + 1} · ${key.label}",
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "Tap a new option below to replace this key.",
+                        modifier = Modifier.padding(start = 4.dp, top = 3.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            enabled = selectedIndex > 0,
+                            onClick = { onMove(key, -1) },
+                        ) { Text("← Move left") }
+                        TextButton(onClick = { onSetVisible(key, false) }) { Text("Remove") }
+                        TextButton(
+                            enabled = selectedIndex in 0 until selectedKeys.lastIndex,
+                            onClick = { onMove(key, 1) },
+                        ) { Text("Move right →") }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                text = "AVAILABLE KEYS",
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 2.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        groups.forEach { group ->
+            item(key = group.label) {
+                Text(
+                    text = group.label,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 9.dp),
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    group.keys.chunked(4).forEach { rowKeys ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowKeys.forEach { key ->
+                                KeyPickerButton(
+                                    key = key,
+                                    selectedIndex = selectedKeys.indexOf(key),
+                                    onClick = {
+                                        if (key in selectedKeys) {
+                                            focusedKey = key
+                                        } else {
+                                            val keyToReplace = focusedKey
+                                            if (keyToReplace == null) {
+                                                onSetVisible(key, true)
+                                            } else {
+                                                onReplace(keyToReplace, key)
+                                                focusedKey = key
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                            repeat(4 - rowKeys.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class KeyPickerGroup(
+    val label: String,
+    val keys: List<TerminalExtraKey>,
+)
+
+@Composable
+private fun KeyDeckPreviewRow(
+    keys: List<TerminalExtraKey>,
+    columnCount: Int,
+    focusedKey: TerminalExtraKey?,
+    onFocus: (TerminalExtraKey) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        keys.forEach { key ->
+            val focused = key == focusedKey
+            Surface(
+                onClick = { onFocus(key) },
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 42.dp)
+                    .semantics { contentDescription = "Edit ${key.label} terminal key" },
+                shape = RoundedCornerShape(8.dp),
+                color = if (focused) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = if (focused) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                ),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = key.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+        repeat(columnCount - keys.size) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+@Composable
+private fun RowScope.KeyPickerButton(
+    key: TerminalExtraKey,
+    selectedIndex: Int,
+    onClick: () -> Unit,
+) {
+    val selected = selectedIndex >= 0
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .heightIn(min = 48.dp)
+            .semantics {
+                contentDescription = if (selected) {
+                    "${key.label} terminal key selected at position ${selectedIndex + 1}"
+                } else {
+                    "Add ${key.label} terminal key"
+                }
+            },
+        shape = RoundedCornerShape(11.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = key.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (selected) {
+                Text(
+                    text = "  ${selectedIndex + 1}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }
