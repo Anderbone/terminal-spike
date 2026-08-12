@@ -1,0 +1,5 @@
+# "abcd", CHA 2, IRM on + "Z", IRM off + "Y", DECKPAM, blinking beam DECSCUSR.
+61 62 63 64
+1B 5B 32 47 1B 5B 34 68 5A
+1B 5B 34 6C 59
+1B 3D 1B 5B 35 20 71

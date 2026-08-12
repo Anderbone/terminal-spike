@@ -4,24 +4,29 @@ class TerminalLine private constructor(
     val id: Long,
     val runs: List<TerminalRun>,
     val text: String,
+    /** True only when autowrap, rather than a line feed, continues this row into the next row. */
+    val softWrappedToNext: Boolean,
 ) {
-    fun withId(newId: Long): TerminalLine = TerminalLine(newId, runs, text)
+    fun withId(newId: Long): TerminalLine = TerminalLine(newId, runs, text, softWrappedToNext)
 
     companion object {
         const val UNASSIGNED_ID: Long = -1L
 
-        fun plain(text: String, style: TerminalStyle = TerminalStyle()): TerminalLine =
-            create(listOf(TerminalRun(text, style)))
+        fun plain(
+            text: String,
+            style: TerminalStyle = TerminalStyle(),
+            softWrappedToNext: Boolean = false,
+        ): TerminalLine = create(listOf(TerminalRun(text, style)), softWrappedToNext)
 
-        fun styled(runs: List<TerminalRun>): TerminalLine =
-            create(runs.ifEmpty { listOf(TerminalRun("")) })
+        fun styled(runs: List<TerminalRun>, softWrappedToNext: Boolean = false): TerminalLine =
+            create(runs.ifEmpty { listOf(TerminalRun("")) }, softWrappedToNext)
 
-        private fun create(sourceRuns: List<TerminalRun>): TerminalLine {
+        private fun create(sourceRuns: List<TerminalRun>, softWrappedToNext: Boolean): TerminalLine {
             val sanitizedRuns = sourceRuns.map { run ->
-                TerminalRun(sanitizeUnicode(run.text), run.style)
+                run.copy(text = sanitizeUnicode(run.text))
             }
             val text = buildString { sanitizedRuns.forEach { append(it.text) } }
-            return TerminalLine(UNASSIGNED_ID, sanitizedRuns, text)
+            return TerminalLine(UNASSIGNED_ID, sanitizedRuns, text, softWrappedToNext)
         }
 
         private fun sanitizeUnicode(value: String): String {

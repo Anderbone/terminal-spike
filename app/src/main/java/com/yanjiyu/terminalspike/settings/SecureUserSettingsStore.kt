@@ -10,7 +10,10 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
+import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
+import javax.crypto.IllegalBlockSizeException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -18,6 +21,18 @@ import javax.crypto.spec.GCMParameterSpec
 data class SettingsLoadResult(
     val settings: UserSettings,
     val warning: String? = null,
+    val failure: SettingsLoadFailure? = null,
+)
+
+enum class SettingsLoadFailure {
+    KEY_UNAVAILABLE,
+    CORRUPT_OR_UNSUPPORTED,
+    /** Authoritative Room or Proto DataStore data could not be read and was preserved in place. */
+    APP_DATA_UNAVAILABLE,
+}
+
+class SettingsRecoveryRequiredException : IllegalStateException(
+    "Encrypted local data is unavailable; recover or explicitly reset it before saving.",
 )
 
 class SecureUserSettingsStore(
@@ -29,14 +44,20 @@ class SecureUserSettingsStore(
     private val file by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AtomicFile(appContext.filesDir.resolve(fileName))
     }
+    private var recoveryRequired = false
 
     @Synchronized
     fun load(): SettingsLoadResult {
-        if (!file.baseFile.isFile) return SettingsLoadResult(UserSettings())
+        val backupFile = file.baseFile.resolveSibling("${file.baseFile.name}.bak")
+        if (!file.baseFile.isFile && !backupFile.isFile) {
+            recoveryRequired = false
+            return SettingsLoadResult(UserSettings())
+        }
         return try {
             val encrypted = file.openRead().use(::readEnvelope)
+            val key = getExistingKey() ?: return unavailable(SettingsLoadFailure.KEY_UNAVAILABLE)
             val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-                init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(TAG_BITS, encrypted.iv))
+                init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, encrypted.iv))
                 updateAAD(ASSOCIATED_DATA)
             }
             val cleartext = cipher.doFinal(encrypted.ciphertext)
@@ -45,22 +66,27 @@ class SecureUserSettingsStore(
             } finally {
                 cleartext.fill(0)
             }
+            recoveryRequired = false
             SettingsLoadResult(settings)
-        } catch (error: Exception) {
-            if (error is GeneralSecurityException) resetInvalidKey()
-            runCatching { file.delete() }
-            SettingsLoadResult(
-                settings = UserSettings(),
-                warning = "Saved local tools could not be unlocked and were reset.",
-            )
+        } catch (_: AEADBadTagException) {
+            unavailable(SettingsLoadFailure.CORRUPT_OR_UNSUPPORTED)
+        } catch (_: BadPaddingException) {
+            unavailable(SettingsLoadFailure.CORRUPT_OR_UNSUPPORTED)
+        } catch (_: IllegalBlockSizeException) {
+            unavailable(SettingsLoadFailure.CORRUPT_OR_UNSUPPORTED)
+        } catch (_: GeneralSecurityException) {
+            unavailable(SettingsLoadFailure.KEY_UNAVAILABLE)
+        } catch (_: Exception) {
+            unavailable(SettingsLoadFailure.CORRUPT_OR_UNSUPPORTED)
         }
     }
 
     @Synchronized
     fun save(settings: UserSettings) {
+        if (recoveryRequired) throw SettingsRecoveryRequiredException()
         val cleartext = ByteArrayOutputStream().also { UserSettingsCodec.write(settings, it) }.toByteArray()
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+            init(Cipher.ENCRYPT_MODE, getOrCreateKeyForWrite())
             updateAAD(ASSOCIATED_DATA)
         }
         val ciphertext = try {
@@ -85,6 +111,21 @@ class SecureUserSettingsStore(
         }
     }
 
+    /**
+     * Irreversibly discards preserved settings only after the UI has obtained explicit user
+     * confirmation. Ordinary load/save paths never call this method and never replace ciphertext
+     * while recovery is required.
+     */
+    @Synchronized
+    fun resetAfterRecoveryConfirmation() {
+        check(recoveryRequired) { "No encrypted settings recovery is pending." }
+        file.delete()
+        KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }.run {
+            if (containsAlias(keyAlias)) deleteEntry(keyAlias)
+        }
+        recoveryRequired = false
+    }
+
     private fun readEnvelope(input: java.io.InputStream): EncryptedEnvelope = DataInputStream(input).use { data ->
         require(data.readInt() == ENVELOPE_MAGIC) { "Invalid encrypted settings header." }
         require(data.readInt() == ENVELOPE_VERSION) { "Unsupported encrypted settings version." }
@@ -98,9 +139,13 @@ class SecureUserSettingsStore(
         EncryptedEnvelope(iv, ciphertext)
     }
 
-    private fun getOrCreateKey(): SecretKey {
+    private fun getExistingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
+        return keyStore.getKey(keyAlias, null) as? SecretKey
+    }
+
+    private fun getOrCreateKeyForWrite(): SecretKey {
+        getExistingKey()?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER).run {
             init(
                 KeyGenParameterSpec.Builder(
@@ -116,10 +161,13 @@ class SecureUserSettingsStore(
         }
     }
 
-    private fun resetInvalidKey() {
-        runCatching {
-            KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }.deleteEntry(keyAlias)
-        }
+    private fun unavailable(failure: SettingsLoadFailure): SettingsLoadResult {
+        recoveryRequired = true
+        return SettingsLoadResult(
+            settings = UserSettings(),
+            warning = "Saved connections and settings could not be unlocked. The encrypted data was preserved for recovery.",
+            failure = failure,
+        )
     }
 
     private data class EncryptedEnvelope(val iv: ByteArray, val ciphertext: ByteArray)

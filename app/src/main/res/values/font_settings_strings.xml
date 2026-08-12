@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_font_source_code_pro">Source Code Pro</string>
+    <string name="settings_font_jetbrains_mono">JetBrains Mono</string>
+    <string name="settings_font_ibm_plex_mono">IBM Plex Mono</string>
+    <string name="settings_font_cascadia_mono">Cascadia Mono</string>
+    <string name="settings_font_nerd_fallback_summary">Powerline and Nerd symbols use the bundled Symbols Nerd Font Mono fallback.</string>
+    <string name="settings_font_bold_rendering">Bold rendering</string>
+    <string name="settings_font_bold_rendering_summary">Use the selected font’s bold face for bold terminal text.</string>
+    <string name="settings_font_ligatures">Programming ligatures</string>
+    <string name="settings_font_ligatures_summary">Off by default. Terminal cell positions remain fixed when enabled.</string>
+    <string name="settings_font_pinch_zoom">Pinch to zoom</string>
+    <string name="settings_font_pinch_zoom_summary">Adjust this session’s terminal text size with a two-finger pinch.</string>
+    <string name="settings_terminal_copy_on_selection">Copy on selection</string>
+    <string name="settings_terminal_copy_on_selection_summary">Copy text after a local selection gesture finishes.</string>
+</resources>

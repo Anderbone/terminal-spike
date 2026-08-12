@@ -1,10 +1,22 @@
 package com.yanjiyu.terminalspike.settings
 
+import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
+import com.yanjiyu.terminalspike.core.model.MoshPortRange
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+
+enum class SavedHostConnectionCompatibility {
+    SSH_PASSWORD,
+    /** Password bootstrap is supported when the separately verified extension is available. */
+    MOSH_PASSWORD,
+    MOSH_UNAVAILABLE,
+    PRIVATE_KEY_REQUIRES_FULL_UI,
+    KEYBOARD_INTERACTIVE_UNAVAILABLE,
+    PROFILE_OPTIONS_REQUIRE_FULL_UI,
+}
 
 data class SavedSshProfile(
     val id: Long,
@@ -13,13 +25,32 @@ data class SavedSshProfile(
     val port: Int,
     val username: String,
     val hasSavedPassword: Boolean = false,
-)
+    /** Prevents the compatibility UI from silently changing protocol or authentication type. */
+    val connectionCompatibility: SavedHostConnectionCompatibility =
+        SavedHostConnectionCompatibility.SSH_PASSWORD,
+    /** Stable Room identity used by session/recent presentation; never serialized by the legacy codec. */
+    val persistentId: String? = null,
+    /** Room-backed favourite state presented as a pinned Workspace host. */
+    val isFavorite: Boolean = false,
+    val protocol: ConnectionProtocol = ConnectionProtocol.SSH,
+    val moshPort: Int? = null,
+    val moshPortRange: MoshPortRange? = null,
+    val moshServerCommand: String? = null,
+) {
+    val canConnectFromCompatibilityUi: Boolean
+        get() = connectionCompatibility == SavedHostConnectionCompatibility.SSH_PASSWORD ||
+            connectionCompatibility == SavedHostConnectionCompatibility.MOSH_PASSWORD
+}
 
 data class CommandSnippet(
     val id: Long,
     val label: String,
     val command: String,
     val appendEnter: Boolean,
+    /** Authoritative Room policy; legacy codec rows default to safe multiline confirmation. */
+    val confirmMultilineExecution: Boolean = true,
+    /** False for Room INSERT snippets until the compatibility terminal gains an insert surface. */
+    val sendsImmediately: Boolean = true,
 )
 
 data class SavedSshIdentity(
@@ -28,6 +59,10 @@ data class SavedSshIdentity(
     val keyType: String,
     val fingerprint: String,
     val passphraseRequired: Boolean,
+    /** False when legacy metadata was preserved but its encrypted private payload could not migrate. */
+    val isAvailable: Boolean = true,
+    /** Stable, non-secret Room UUID used only to target recovery across Activity/process recreation. */
+    val recoveryToken: String? = null,
 )
 
 data class UserSettings(
@@ -35,6 +70,8 @@ data class UserSettings(
     val snippets: List<CommandSnippet> = emptyList(),
     val extraKeys: List<TerminalExtraKey> = TerminalExtraKey.DEFAULT_ORDER,
     val identities: List<SavedSshIdentity> = emptyList(),
+    /** False when the authoritative keyboard profile needs runtime semantics not yet carried here. */
+    val keyboardRuntimeCompatible: Boolean = true,
 ) {
     companion object {
         const val MAX_PROFILES = 20
@@ -47,6 +84,31 @@ data class UserSettings(
         const val MAX_KEY_TYPE_LENGTH = 32
         const val MAX_FINGERPRINT_LENGTH = 128
     }
+}
+
+internal fun UserSettings.nextAvailableSettingsId(): Long {
+    val maximumId = sequenceOf(
+        profiles.asSequence().map(SavedSshProfile::id),
+        snippets.asSequence().map(CommandSnippet::id),
+        identities.asSequence().map(SavedSshIdentity::id),
+    ).flatten().maxOrNull() ?: 0L
+    require(maximumId < Long.MAX_VALUE) { "Settings IDs are exhausted." }
+    return maximumId + 1L
+}
+
+internal fun SavedSshProfile.hostPreservingLegacyPasswordScope(
+    editedHost: String,
+    editedPort: Int,
+    editedUsername: String,
+): String = if (
+    hasSavedPassword &&
+    host.equals(editedHost, ignoreCase = true) &&
+    port == editedPort &&
+    username == editedUsername
+) {
+    host
+} else {
+    editedHost
 }
 
 internal object UserSettingsCodec {

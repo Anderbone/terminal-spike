@@ -1,0 +1,8 @@
+# Project-authored synthetic terminal performance scenarios. No third-party transcript is used.
+# id	kind	records	minimum_record_bytes	chunk_bytes	columns	rows
+plain-100k	PLAIN	100000	96	32768	120	40
+ansi-heavy	ANSI_HEAVY	20000	160	32768	120	40
+cursor-redraw	CURSOR_REDRAW	20000	128	16384	120	40
+full-screen-redraw	FULL_SCREEN_REDRAW	12000	192	16384	120	40
+cjk-wide	CJK_WIDE	20000	144	32768	120	40
+tmux-status	TMUX_STATUS	20000	144	16384	120	40

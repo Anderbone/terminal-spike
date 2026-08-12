@@ -1,11 +1,12 @@
 <resources>
-    <style name="Theme.TerminalSpike" parent="android:style/Theme.Material.NoActionBar">
+    <style name="TerminalSpikeBaseTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#171A2B</item>
-        <item name="android:navigationBarColor">#202438</item>
-        <item name="android:statusBarColor">#171A2B</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/app_window_background</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">@bool/app_light_system_bars</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+    <style name="Theme.TerminalSpike" parent="@style/TerminalSpikeBaseTheme" />
 </resources>

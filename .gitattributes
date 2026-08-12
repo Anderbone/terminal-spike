@@ -1,0 +1,3 @@
+mosh-extension/licenses/** whitespace=-trailing-space,-blank-at-eof
+mosh-extension/patches/** whitespace=-trailing-space,-blank-at-eof
+mosh-extension/src/main/cpp/generated/** whitespace=-trailing-space,-blank-at-eof

@@ -3,19 +3,21 @@ package com.yanjiyu.terminalspike.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -26,34 +28,43 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.ConnectionState
-import com.yanjiyu.terminalspike.connection.HostKeyPrompt
+import com.yanjiyu.terminalspike.connection.HostIdentityDecision
+import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
+import com.yanjiyu.terminalspike.connection.KeyboardInteractiveChallenge
+import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
+
+internal const val TerminalSessionStripTestTag = "terminal-session-strip"
+internal const val TerminalSessionTabTestTagPrefix = "terminal-session-tab-"
+internal const val NewTerminalSessionTestTag = "new-terminal-session"
+internal const val KeyboardInteractiveDialogTestTag = "keyboard-interactive-dialog"
+internal const val KeyboardInteractiveFieldTestTagPrefix = "keyboard-interactive-field-"
 
 @Composable
 fun SessionChrome(
@@ -63,115 +74,325 @@ fun SessionChrome(
     canAddSession: Boolean,
     settingsReady: Boolean,
     onSelectSession: (Long) -> Unit,
+    onDuplicateSession: (Long) -> Unit,
     onCloseSession: (Long) -> Unit,
     onDisconnect: (Long) -> Unit,
-    onHostKeyAnswer: (sessionId: Long, accept: Boolean) -> Unit,
+    onSessionActions: ((Long) -> Unit)? = null,
+    onHostIdentityAnswer: (
+        sessionId: Long,
+        promptToken: Long,
+        decision: HostIdentityDecision,
+    ) -> Unit,
     onNavigateBack: () -> Unit,
+    backDestinationLabel: String = "previous screen",
     onNewSession: () -> Unit,
-    onShowTools: () -> Unit,
+    onOpenConnections: () -> Unit,
+    onKeyboardInteractiveAnswer: (
+        sessionId: Long,
+        challengeToken: Long,
+        responses: List<CharArray>,
+    ) -> Unit = { _, _, responses -> responses.forEach { it.fill('\u0000') } },
+    onKeyboardInteractiveCancel: (
+        sessionId: Long,
+        challengeToken: Long,
+    ) -> Unit = { _, _ -> },
+    showLocalTerminalSession: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val active = sessions.first { it.id == activeSessionId }
+    val newSessionDescription = stringResource(R.string.session_new_description)
+    require(sessions.any { it.id == activeSessionId }) { "The active terminal session must exist." }
+    val visibleSessions = if (showLocalTerminalSession) sessions else sessions.filterNot(SessionTabUi::isLocalTerminal)
+    var replacementConfirmationToken by remember { mutableStateOf<Long?>(null) }
 
-    Column(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(start = 6.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState())
+                .testTag(TerminalSessionStripTestTag),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Surface(
-                onClick = onNavigateBack,
-                modifier = Modifier
-                    .size(42.dp)
-                    .semantics { contentDescription = "Back to local workspace" },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("‹", style = MaterialTheme.typography.headlineMedium)
-                }
-            }
-            Row(
-                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                sessions.forEach { session ->
-                    SessionTab(
-                        session = session,
-                        selected = session.id == activeSessionId,
-                        onSelect = { onSelectSession(session.id) },
-                        onClose = if (session.isBenchmark) null else ({ onCloseSession(session.id) }),
-                    )
-                }
-            }
-            TextButton(
-                onClick = onShowTools,
-                enabled = settingsReady,
-                modifier = Modifier.semantics { contentDescription = "Open local tools" },
-            ) {
-                Text("TOOLS", maxLines = 1)
-            }
-            OutlinedButton(
-                onClick = onNewSession,
-                enabled = canAddSession,
-                modifier = Modifier.semantics { contentDescription = "New SSH session" },
-            ) {
-                Text("+ SSH", maxLines = 1)
+            visibleSessions.forEach { session ->
+                SessionTab(
+                    session = session,
+                    selected = session.id == activeSessionId,
+                    onSelect = { onSelectSession(session.id) },
+                    onDuplicate = if (!session.isLocalTerminal && canAddSession) {
+                        { onDuplicateSession(session.id) }
+                    } else {
+                        null
+                    },
+                    onClose = if (session.isLocalTerminal) {
+                        null
+                    } else {
+                        { onCloseSession(session.id) }
+                    },
+                    onActions = if (session.isLocalTerminal) null else onSessionActions?.let { actions ->
+                        { actions(session.id) }
+                    },
+                )
             }
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        IconButton(
+            onClick = onNewSession,
+            enabled = canAddSession,
+            modifier = Modifier
+                .size(40.dp)
+                .testTag(NewTerminalSessionTestTag)
+                .semantics { contentDescription = newSessionDescription },
         ) {
-            StatusDot(active.connectionState)
-            Text(
-                text = notice ?: sessionStatus(active),
-                modifier = Modifier.weight(1f),
-                color = if (notice != null || active.connectionState is ConnectionState.Failed) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (
-                !active.isBenchmark &&
-                active.connectionState !is ConnectionState.Disconnected &&
-                active.connectionState !is ConnectionState.Failed
-            ) {
-                TextButton(onClick = { onDisconnect(active.id) }) { Text("Disconnect") }
-            }
+            Text("+", style = MaterialTheme.typography.titleLarge)
         }
     }
 
     val promptSession = sessions.firstOrNull { it.connectionState is ConnectionState.AwaitingApproval }
-    val prompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt as? HostKeyPrompt
-    if (promptSession != null && prompt != null) {
-        AlertDialog(
-            onDismissRequest = { onHostKeyAnswer(promptSession.id, false) },
-            title = { Text("Trust this SSH host?") },
-            text = {
-                SelectionContainer {
-                    Text(
-                        "Host: ${prompt.host}\n" +
-                            "Key: ${prompt.algorithm}\n" +
-                            "Fingerprint: ${prompt.sha256Fingerprint}\n\n" +
-                            "Compare this fingerprint with the server administrator before trusting it.",
+    val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
+    val hostPrompt = pendingPrompt as? HostIdentityPrompt
+    val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge
+    LaunchedEffect(hostPrompt?.promptToken) {
+        if (replacementConfirmationToken != hostPrompt?.promptToken) {
+            replacementConfirmationToken = null
+        }
+    }
+    if (promptSession != null && hostPrompt != null) {
+        HostIdentityDialog(
+            prompt = hostPrompt,
+            replacementConfirmation = replacementConfirmationToken == hostPrompt.promptToken,
+            onReviewReplacement = { replacementConfirmationToken = hostPrompt.promptToken },
+            onBackFromReplacement = { replacementConfirmationToken = null },
+            onDecision = { decision ->
+                replacementConfirmationToken = null
+                onHostIdentityAnswer(promptSession.id, hostPrompt.promptToken, decision)
+            },
+        )
+    }
+    if (promptSession != null && keyboardInteractive != null) {
+        KeyboardInteractiveDialog(
+            challenge = keyboardInteractive,
+            onSubmit = { responses ->
+                onKeyboardInteractiveAnswer(
+                    promptSession.id,
+                    keyboardInteractive.challengeToken,
+                    responses,
+                )
+            },
+            onCancel = {
+                onKeyboardInteractiveCancel(
+                    promptSession.id,
+                    keyboardInteractive.challengeToken,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun KeyboardInteractiveDialog(
+    challenge: KeyboardInteractiveChallenge,
+    onSubmit: (List<CharArray>) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val fields = remember(challenge.challengeToken) {
+        List(challenge.questions.size) { WipeableSecretInputState() }
+    }
+
+    fun wipeFields() = fields.forEach(WipeableSecretInputState::wipe)
+
+    DisposableEffect(challenge.challengeToken) {
+        onDispose(::wipeFields)
+    }
+
+    AlertDialog(
+        onDismissRequest = {
+            wipeFields()
+            onCancel()
+        },
+        modifier = Modifier.testTag(KeyboardInteractiveDialogTestTag),
+        title = {
+            Text(challenge.name.ifBlank { stringResource(R.string.ssh_keyboard_interactive_title) })
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (challenge.instruction.isNotBlank()) {
+                    SelectionContainer { Text(challenge.instruction) }
+                }
+                challenge.questions.forEachIndexed { index, question ->
+                    WipeableSecretInput(
+                        state = fields[index],
+                        label = question.prompt,
+                        testTag = "$KeyboardInteractiveFieldTestTagPrefix$index",
+                        modifier = Modifier.fillMaxWidth(),
+                        masked = !question.echo,
+                        maxCharacters = MAX_KBI_RESPONSE_UTF16_CHARS,
+                        supportingText = stringResource(
+                            if (question.echo) {
+                                R.string.ssh_keyboard_interactive_visible_response
+                            } else {
+                                R.string.ssh_keyboard_interactive_hidden_response
+                            },
+                        ),
                     )
                 }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val responses = fields.map(WipeableSecretInputState::takeChars)
+                    try {
+                        onSubmit(responses)
+                    } catch (_: Exception) {
+                        responses.forEach { it.fill('\u0000') }
+                        onCancel()
+                    }
+                },
+            ) { Text(stringResource(R.string.ssh_keyboard_interactive_continue)) }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    wipeFields()
+                    onCancel()
+                },
+            ) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
+}
+
+private const val MAX_KBI_RESPONSE_UTF16_CHARS = 1_024
+
+@Composable
+private fun HostIdentityDialog(
+    prompt: HostIdentityPrompt,
+    replacementConfirmation: Boolean,
+    onReviewReplacement: () -> Unit,
+    onBackFromReplacement: () -> Unit,
+    onDecision: (HostIdentityDecision) -> Unit,
+) {
+    when (prompt) {
+        is HostIdentityPrompt.FirstContact -> AlertDialog(
+            onDismissRequest = { onDecision(HostIdentityDecision.Reject) },
+            title = { Text(stringResource(R.string.ssh_trust_first_contact_title)) },
+            text = {
+                HostIdentityDetails(
+                    message = stringResource(R.string.ssh_trust_first_contact_message),
+                    endpoint = prompt.endpoint,
+                    algorithm = prompt.algorithm,
+                    previousFingerprint = null,
+                    newFingerprint = prompt.newFingerprint,
+                )
             },
             confirmButton = {
-                Button(onClick = { onHostKeyAnswer(promptSession.id, true) }) {
-                    Text("Trust and connect")
+                Button(onClick = { onDecision(HostIdentityDecision.TrustAndSave) }) {
+                    Text(stringResource(R.string.ssh_trust_and_save))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { onHostKeyAnswer(promptSession.id, false) }) { Text("Cancel") }
+                Row {
+                    TextButton(onClick = { onDecision(HostIdentityDecision.TrustOnce) }) {
+                        Text(stringResource(R.string.ssh_trust_once))
+                    }
+                    TextButton(onClick = { onDecision(HostIdentityDecision.Reject) }) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                }
             },
+        )
+
+        is HostIdentityPrompt.Changed -> if (replacementConfirmation) {
+            AlertDialog(
+                onDismissRequest = onBackFromReplacement,
+                title = { Text(stringResource(R.string.ssh_replace_host_key_title)) },
+                text = {
+                    HostIdentityDetails(
+                        message = stringResource(R.string.ssh_replace_host_key_message),
+                        endpoint = prompt.endpoint,
+                        algorithm = prompt.algorithm,
+                        previousFingerprint = prompt.previousFingerprint,
+                        newFingerprint = prompt.newFingerprint,
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = { onDecision(HostIdentityDecision.ReplaceSavedKey) }) {
+                        Text(stringResource(R.string.ssh_replace_saved_key))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onBackFromReplacement) {
+                        Text(stringResource(R.string.ssh_replace_host_key_back))
+                    }
+                },
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { onDecision(HostIdentityDecision.Reject) },
+                title = { Text(stringResource(R.string.ssh_host_key_changed_title)) },
+                text = {
+                    HostIdentityDetails(
+                        message = stringResource(R.string.ssh_host_key_changed_message),
+                        endpoint = prompt.endpoint,
+                        algorithm = prompt.algorithm,
+                        previousFingerprint = prompt.previousFingerprint,
+                        newFingerprint = prompt.newFingerprint,
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = onReviewReplacement) {
+                        Text(stringResource(R.string.ssh_review_key_replacement))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { onDecision(HostIdentityDecision.Reject) }) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun HostIdentityDetails(
+    message: String,
+    endpoint: String,
+    algorithm: String,
+    previousFingerprint: String?,
+    newFingerprint: String,
+) {
+    val endpointLine = stringResource(R.string.ssh_host_endpoint, endpoint)
+    val algorithmLine = stringResource(R.string.ssh_host_key_algorithm, algorithm)
+    val previousLine = previousFingerprint?.let { fingerprint ->
+        stringResource(R.string.ssh_previous_fingerprint, fingerprint)
+    }
+    val newLine = stringResource(R.string.ssh_new_fingerprint, newFingerprint)
+    SelectionContainer {
+        Text(
+            buildString {
+                append(message)
+                append("\n\n")
+                append(endpointLine)
+                append('\n')
+                append(algorithmLine)
+                append('\n')
+                if (previousLine != null) {
+                    append(previousLine)
+                    append('\n')
+                }
+                append(newLine)
+            },
+            fontFamily = FontFamily.Monospace,
         )
     }
 }
@@ -181,7 +402,9 @@ private fun SessionTab(
     session: SessionTabUi,
     selected: Boolean,
     onSelect: () -> Unit,
+    onDuplicate: (() -> Unit)?,
     onClose: (() -> Unit)?,
+    onActions: (() -> Unit)?,
 ) {
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     LaunchedEffect(selected) {
@@ -191,59 +414,84 @@ private fun SessionTab(
         targetValue = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
         label = "session-tab",
     )
-    Row(
+    val stateDescription = session.connectionState.accessibilityLabel()
+    val closeDescription = onClose?.let {
+        stringResource(R.string.session_close_tab_description, session.title)
+    }
+    Surface(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(background)
+            .width(108.dp)
+            .heightIn(min = 40.dp)
             .bringIntoViewRequester(bringIntoViewRequester)
-            .clickable(onClick = onSelect)
-            .padding(start = 9.dp, end = if (onClose == null) 9.dp else 2.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .testTag("$TerminalSessionTabTestTagPrefix${session.id}")
+            .combinedClickable(
+                onClickLabel = "Open ${session.title} terminal",
+                onClick = onSelect,
+                onDoubleClick = onDuplicate,
+                onLongClickLabel = onActions?.let { "Session actions for ${session.title}" },
+                onLongClick = onActions,
+            )
+            .semantics {
+                contentDescription = buildString {
+                    append(session.title)
+                    append(" terminal tab, ")
+                    append(stateDescription)
+                    if (selected) append(", selected")
+                }
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = background,
     ) {
-        StatusDot(session.connectionState)
-        Text(
-            text = session.title,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontFamily = if (session.isBenchmark) FontFamily.Default else FontFamily.Monospace,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (onClose != null) {
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier.size(28.dp).semantics {
-                    contentDescription = "Close ${session.title} session"
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = session.title,
+                modifier = Modifier.weight(1f),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
-            ) {
-                Text("×", style = MaterialTheme.typography.titleMedium)
+                fontFamily = if (session.isLocalTerminal) FontFamily.Default else FontFamily.Monospace,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (onClose != null) {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .semantics {
+                            contentDescription = requireNotNull(closeDescription)
+                        },
+                ) {
+                    Text("×", style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
     }
 }
 
-@Composable
-private fun StatusDot(state: ConnectionState) {
-    val target = when (state) {
-        ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-        ConnectionState.Connecting, is ConnectionState.AwaitingApproval -> MaterialTheme.colorScheme.tertiary
-        is ConnectionState.Failed -> MaterialTheme.colorScheme.error
-        ConnectionState.Disconnected -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+private fun ConnectionState.accessibilityLabel(): String = when (this) {
+    ConnectionState.Disconnected -> "disconnected"
+    ConnectionState.Connecting -> "connecting"
+    ConnectionState.Connected -> "connected"
+    is ConnectionState.Reconnecting -> if (waitingForNetwork) {
+        "waiting for network before reconnect attempt $attempt of $maxAttempts"
+    } else {
+        "reconnecting, attempt $attempt of $maxAttempts"
     }
-    val colour by animateColorAsState(targetValue = target, label = "connection-state")
-    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(colour))
-}
-
-private fun sessionStatus(session: SessionTabUi): String {
-    if (session.isBenchmark) return "Native renderer lab · up to four SSH sessions"
-    return when (val state = session.connectionState) {
-        ConnectionState.Disconnected -> "Disconnected"
-        ConnectionState.Connecting -> "Connecting securely…"
-        ConnectionState.Connected -> "Connected · xterm-256color · ${session.title}"
-        is ConnectionState.AwaitingApproval -> "Verify connection identity to continue"
-        is ConnectionState.Failed -> state.message
+    is ConnectionState.AwaitingApproval -> if (prompt is KeyboardInteractiveChallenge) {
+        "awaiting interactive authentication"
+    } else {
+        "awaiting host approval"
     }
+    is ConnectionState.Failed -> "connection failed"
 }
 
 @Composable
@@ -257,46 +505,151 @@ internal fun SshConnectDialog(
         host: String,
         port: String,
         username: String,
-        password: String,
+        password: CharArray,
         identityId: Long?,
-        passphrase: String,
+        passphrase: CharArray,
         saveProfile: Boolean,
-        savedPasswordProfileId: Long?,
+        selectedProfileId: Long?,
         savePassword: Boolean,
+        connectionOptions: RemoteConnectionOptions,
+        sessionName: String,
     ) -> Unit,
     onForgetSavedPassword: (Long) -> Unit,
+    keyboardRuntimeCompatible: Boolean = true,
+    initialSeed: SshConnectionSeed? = null,
+    purpose: SshConnectPurpose = SshConnectPurpose.NEW,
+    moshExtension: MoshExtensionUiState = com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus.Absent.toUiState(),
 ) {
-    var host by remember(initialProfile?.id) { mutableStateOf(initialProfile?.host.orEmpty()) }
-    var port by remember(initialProfile?.id) { mutableStateOf(initialProfile?.port?.toString() ?: "22") }
-    var username by remember(initialProfile?.id) { mutableStateOf(initialProfile?.username.orEmpty()) }
-    var password by remember(initialProfile?.id) { mutableStateOf("") }
-    var selectedIdentityId by remember { mutableStateOf<Long?>(null) }
-    var passphrase by remember { mutableStateOf("") }
-    var selectedProfileId by remember(initialProfile?.id) { mutableStateOf(initialProfile?.id) }
-    var saveProfile by remember(initialProfile?.id) { mutableStateOf(initialProfile != null) }
-    var savePassword by remember(initialProfile?.id) { mutableStateOf(false) }
+    val initialSelectedProfileId = initialProfile?.id?.takeIf {
+        initialSeed == null || initialSeed.matches(initialProfile)
+    }
+    val dialogStateKey = Triple(initialSeed, initialProfile?.id, purpose)
+    var host by remember(dialogStateKey) {
+        mutableStateOf(initialSeed?.host ?: initialProfile?.host.orEmpty())
+    }
+    var port by remember(dialogStateKey) {
+        mutableStateOf((initialSeed?.port ?: initialProfile?.port ?: 22).toString())
+    }
+    var username by remember(dialogStateKey) {
+        mutableStateOf(initialSeed?.username ?: initialProfile?.username.orEmpty())
+    }
+    val password = remember(dialogStateKey) { WipeableSecretInputState() }
+    var selectedIdentityId by remember(dialogStateKey) { mutableStateOf<Long?>(null) }
+    val passphrase = remember(dialogStateKey) { WipeableSecretInputState() }
+    var selectedProfileId by remember(dialogStateKey) { mutableStateOf(initialSelectedProfileId) }
+    var saveProfile by remember(dialogStateKey) { mutableStateOf(initialSelectedProfileId != null) }
+    var savePassword by remember(dialogStateKey) { mutableStateOf(false) }
+    var sessionName by remember(dialogStateKey) { mutableStateOf("") }
+    val initialConnectionOptions = initialSeed?.connectionOptions
+        ?: initialProfile?.connectionSeed()?.connectionOptions
+        ?: RemoteConnectionOptions.SSH
+    var protocol by remember(dialogStateKey) { mutableStateOf(initialConnectionOptions.protocol) }
+    var moshUdpPortOrRange by remember(dialogStateKey) {
+        mutableStateOf(
+            initialConnectionOptions.moshPort?.toString()
+                ?: initialConnectionOptions.moshPortRange?.let { "${it.first}:${it.last}" }
+                .orEmpty(),
+        )
+    }
+    var moshServerExecutable by remember(dialogStateKey) {
+        mutableStateOf(initialConnectionOptions.moshServerCommand ?: DEFAULT_MOSH_SERVER_EXECUTABLE)
+    }
+    var confirmingForgetPasswordFor by remember { mutableStateOf<SavedSshProfile?>(null) }
     val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId }
-    val canUseSavedPassword = selectedIdentityId == null && selectedProfile?.hasSavedPassword == true &&
-        password.isEmpty() && selectedProfile.host.equals(host, ignoreCase = true) &&
+    val moshAvailable = moshExtension.kind == MoshExtensionUiKind.AVAILABLE
+    val parsedMoshOptions = if (protocol == ConnectionProtocol.MOSH) {
+        parseMoshConnectionOptions(moshUdpPortOrRange, moshServerExecutable)
+    } else {
+        MoshOptionsParseResult(RemoteConnectionOptions.SSH, null)
+    }
+    val connectionOptions = parsedMoshOptions.options
+    val canUseSavedPassword = selectedIdentityId == null &&
+        selectedProfile?.canConnectFromQuickUi == true && selectedProfile.hasSavedPassword &&
+        selectedProfile.connectionSeed().connectionOptions == connectionOptions &&
+        !password.hasValue && selectedProfile.host.equals(host, ignoreCase = true) &&
         selectedProfile.port.toString() == port && selectedProfile.username == username
     val validPort = port.toIntOrNull()?.let { it in 1..65_535 } == true
-    val valid = host.isNotBlank() && host.none(Char::isWhitespace) && validPort &&
+    val valid = settingsReady &&
+        selectedProfile?.canConnectFromQuickUi != false &&
+        connectionOptions != null &&
+        (protocol != ConnectionProtocol.MOSH || moshAvailable) &&
+        host.isNotBlank() && host.none(Char::isWhitespace) && validPort &&
         username.isNotBlank() && username.none { it.isWhitespace() || it.isISOControl() } &&
-        (selectedIdentityId != null || password.isNotEmpty() || canUseSavedPassword)
+        (selectedIdentityId != null || password.hasValue || canUseSavedPassword)
 
     fun dismissAndClearSecrets() {
-        password = ""
-        passphrase = ""
+        password.wipe()
+        passphrase.wipe()
         onDismiss()
     }
 
-    AlertDialog(
-        onDismissRequest = ::dismissAndClearSecrets,
-        title = { Text("New SSH session") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (profiles.isNotEmpty()) {
-                    Text("Saved hosts", style = MaterialTheme.typography.labelMedium)
+    if (confirmingForgetPasswordFor == null) {
+        AlertDialog(
+            onDismissRequest = ::dismissAndClearSecrets,
+            title = {
+                Text(
+                    when (purpose) {
+                        SshConnectPurpose.NEW -> stringResource(R.string.ssh_connect_new_title, protocol.displayName())
+                        SshConnectPurpose.RECONNECT -> stringResource(R.string.ssh_connect_reconnect_title, protocol.displayName())
+                        SshConnectPurpose.DUPLICATE -> stringResource(R.string.ssh_connect_duplicate_title, protocol.displayName())
+                    },
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                if (purpose != SshConnectPurpose.NEW) {
+                    Text(
+                        if (purpose == SshConnectPurpose.RECONNECT) {
+                            stringResource(R.string.ssh_connect_reconnect_detail)
+                        } else {
+                            stringResource(R.string.ssh_connect_duplicate_detail)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(stringResource(R.string.host_editor_protocol), style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = protocol == ConnectionProtocol.SSH,
+                        onClick = {
+                            if (protocol != ConnectionProtocol.SSH) {
+                                protocol = ConnectionProtocol.SSH
+                                selectedProfileId = null
+                                savePassword = false
+                            }
+                        },
+                        label = { Text("SSH") },
+                    )
+                    FilterChip(
+                        selected = protocol == ConnectionProtocol.MOSH,
+                        enabled = moshAvailable,
+                        onClick = {
+                            if (protocol != ConnectionProtocol.MOSH) {
+                                protocol = ConnectionProtocol.MOSH
+                                selectedProfileId = null
+                                savePassword = false
+                            }
+                        },
+                        label = { Text("Mosh") },
+                    )
+                }
+                if (!moshAvailable) {
+                    Text(
+                        stringResource(R.string.ssh_connect_mosh_status, moshExtension.statusLabel.resolve()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (protocol == ConnectionProtocol.MOSH) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                if (purpose == SshConnectPurpose.NEW && profiles.isNotEmpty()) {
+                    Text(stringResource(R.string.ssh_connect_saved_hosts), style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -307,17 +660,55 @@ internal fun SshConnectDialog(
                                     host = profile.host
                                     port = profile.port.toString()
                                     username = profile.username
-                                    password = ""
-                                    passphrase = ""
+                                    password.wipe()
+                                    passphrase.wipe()
                                     selectedIdentityId = null
                                     selectedProfileId = profile.id
+                                    val options = profile.connectionSeed().connectionOptions
+                                    protocol = options.protocol
+                                    moshUdpPortOrRange = options.moshPort?.toString()
+                                        ?: options.moshPortRange?.let { "${it.first}:${it.last}" }
+                                            .orEmpty()
+                                    moshServerExecutable = options.moshServerCommand
+                                        ?: DEFAULT_MOSH_SERVER_EXECUTABLE
                                     saveProfile = true
                                     savePassword = false
                                 },
-                                label = { Text(profile.label, maxLines = 1) },
+                                enabled = profile.canConnectFromQuickUi &&
+                                    (profile.protocol != ConnectionProtocol.MOSH || moshAvailable),
+                                label = {
+                                    Text(
+                                        if (!profile.canConnectFromQuickUi) {
+                                            stringResource(R.string.ssh_connect_host_unavailable, profile.label)
+                                        } else if (profile.protocol == ConnectionProtocol.MOSH && !moshAvailable) {
+                                            stringResource(R.string.ssh_connect_host_mosh_unavailable, profile.label)
+                                        } else {
+                                            profile.label
+                                        },
+                                        maxLines = 1,
+                                    )
+                                },
                             )
                         }
                     }
+                }
+                if (selectedProfile?.canConnectFromQuickUi == false) {
+                    Text(
+                        stringResource(R.string.ssh_connect_saved_host_incompatible),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (purpose == SshConnectPurpose.NEW) {
+                    OutlinedTextField(
+                        value = sessionName,
+                        onValueChange = { sessionName = it.take(UserSettings.MAX_LABEL_LENGTH) },
+                        label = { Text(stringResource(R.string.ssh_connect_session_name_optional)) },
+                        supportingText = {
+                            Text(stringResource(R.string.ssh_connect_session_name_default))
+                        },
+                        singleLine = true,
+                    )
                 }
                 OutlinedTextField(
                     value = host,
@@ -326,7 +717,8 @@ internal fun SshConnectDialog(
                         selectedProfileId = null
                         savePassword = false
                     },
-                    label = { Text("Host") },
+                    label = { Text(stringResource(R.string.connections_field_host)) },
+                    enabled = purpose == SshConnectPurpose.NEW,
                     singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -337,8 +729,9 @@ internal fun SshConnectDialog(
                             selectedProfileId = null
                             savePassword = false
                         },
-                        label = { Text("Username") },
+                        label = { Text(stringResource(R.string.host_editor_username)) },
                         modifier = Modifier.weight(1f),
+                        enabled = purpose == SshConnectPurpose.NEW,
                         singleLine = true,
                     )
                     OutlinedTextField(
@@ -348,14 +741,52 @@ internal fun SshConnectDialog(
                             selectedProfileId = null
                             savePassword = false
                         },
-                        label = { Text("Port") },
+                        label = { Text(stringResource(R.string.host_editor_port)) },
                         modifier = Modifier.weight(0.48f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        enabled = purpose == SshConnectPurpose.NEW,
                         singleLine = true,
                     )
                 }
+                if (protocol == ConnectionProtocol.MOSH) {
+                    Text(stringResource(R.string.ssh_connect_mosh_server), style = MaterialTheme.typography.labelMedium)
+                    OutlinedTextField(
+                        value = moshUdpPortOrRange,
+                        onValueChange = { value ->
+                            moshUdpPortOrRange = value
+                                .filter { it.isDigit() || it == ':' }
+                                .take(MAX_MOSH_PORT_INPUT_LENGTH)
+                            selectedProfileId = null
+                            savePassword = false
+                        },
+                        label = { Text(stringResource(R.string.ssh_connect_mosh_udp_optional)) },
+                        supportingText = { Text(stringResource(R.string.ssh_connect_mosh_udp_example)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = moshServerExecutable,
+                        onValueChange = { value ->
+                            moshServerExecutable = value.take(MAX_MOSH_SERVER_EXECUTABLE_LENGTH)
+                            selectedProfileId = null
+                            savePassword = false
+                        },
+                        label = { Text(stringResource(R.string.ssh_connect_mosh_executable)) },
+                        supportingText = {
+                            Text(stringResource(R.string.ssh_connect_mosh_executable_detail))
+                        },
+                        singleLine = true,
+                    )
+                    parsedMoshOptions.error?.let { error ->
+                        Text(
+                            error.resolve(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
                 if (identities.isNotEmpty()) {
-                    Text("Authentication", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.host_editor_authentication), style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -364,33 +795,41 @@ internal fun SshConnectDialog(
                             selected = selectedIdentityId == null,
                             onClick = {
                                 selectedIdentityId = null
-                                passphrase = ""
+                                passphrase.wipe()
                             },
-                            label = { Text("Password") },
+                            label = { Text(stringResource(R.string.host_editor_auth_password)) },
                         )
                         identities.forEach { identity ->
                             FilterChip(
                                 selected = selectedIdentityId == identity.id,
+                                enabled = identity.isAvailable,
                                 onClick = {
                                     selectedIdentityId = identity.id
-                                    password = ""
+                                    password.wipe()
                                 },
-                                label = { Text(identity.label, maxLines = 1) },
+                                label = {
+                                    Text(
+                                        if (identity.isAvailable) {
+                                            identity.label
+                                        } else {
+                                            stringResource(R.string.ssh_connect_identity_reimport, identity.label)
+                                        },
+                                        maxLines = 1,
+                                    )
+                                },
                             )
                         }
                     }
                 }
                 if (selectedIdentityId == null) {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it.take(MAX_PASSWORD_LENGTH)
-                            if (password.isEmpty()) savePassword = false
-                        },
-                        label = { Text(if (canUseSavedPassword) "Password saved on device" else "Password") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
+                    WipeableSecretInput(
+                        state = password,
+                        label = stringResource(
+                            if (canUseSavedPassword) R.string.ssh_connect_password_saved else R.string.host_editor_auth_password,
+                        ),
+                        testTag = SshConnectPasswordTestTag,
+                        maxCharacters = MAX_PASSWORD_LENGTH,
+                        onPresenceChanged = { present -> if (!present) savePassword = false },
                     )
                     if (canUseSavedPassword) {
                         Row(
@@ -399,19 +838,21 @@ internal fun SshConnectDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                "Encrypted password will be used.",
+                                stringResource(R.string.ssh_connect_encrypted_password_used),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            TextButton(onClick = { onForgetSavedPassword(requireNotNull(selectedProfile).id) }) {
-                                Text("Forget")
+                            TextButton(onClick = {
+                                confirmingForgetPasswordFor = requireNotNull(selectedProfile)
+                            }) {
+                                Text(stringResource(R.string.ssh_connect_forget))
                             }
                         }
                     }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = settingsReady && password.isNotEmpty()) {
+                            .clickable(enabled = settingsReady && password.hasValue) {
                                 savePassword = !savePassword
                                 if (savePassword) saveProfile = true
                             },
@@ -423,12 +864,12 @@ internal fun SshConnectDialog(
                                 savePassword = checked
                                 if (checked) saveProfile = true
                             },
-                            enabled = settingsReady && password.isNotEmpty(),
+                            enabled = settingsReady && password.hasValue,
                         )
                         Column {
-                            Text("Save password on this device")
+                            Text(stringResource(R.string.ssh_connect_save_password))
                             Text(
-                                "Keystore encrypted · not backed up · usable while the app is unlocked",
+                                stringResource(R.string.ssh_connect_save_password_detail),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -436,24 +877,18 @@ internal fun SshConnectDialog(
                     }
                 } else {
                     val identity = identities.firstOrNull { it.id == selectedIdentityId }
-                    OutlinedTextField(
-                        value = passphrase,
-                        onValueChange = { passphrase = it.take(MAX_PASSWORD_LENGTH) },
-                        label = {
-                            Text(
-                                if (identity?.passphraseRequired == true) {
-                                    "Key passphrase"
-                                } else {
-                                    "Key passphrase (if any)"
-                                },
-                            )
+                    WipeableSecretInput(
+                        state = passphrase,
+                        label = if (identity?.passphraseRequired == true) {
+                            stringResource(R.string.host_connect_key_passphrase)
+                        } else {
+                            stringResource(R.string.ssh_connect_key_passphrase_optional)
                         },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
+                        testTag = SshConnectPassphraseTestTag,
+                        maxCharacters = MAX_PASSWORD_LENGTH,
                     )
                     Text(
-                        "The passphrase is used for this connection only and is never saved.",
+                        stringResource(R.string.ssh_connect_passphrase_detail),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -469,44 +904,97 @@ internal fun SshConnectDialog(
                         enabled = settingsReady,
                     )
                     Column {
-                        Text("Save host details")
+                        Text(stringResource(R.string.ssh_connect_save_host))
                         Text(
-                            "Host, port and username only — never the password",
+                            stringResource(R.string.ssh_connect_save_host_detail),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = valid,
-                onClick = {
-                    val submittedPassword = password
-                    val submittedPassphrase = passphrase
-                    password = ""
-                    passphrase = ""
-                    onConnect(
-                        host,
-                        port,
-                        username,
-                        submittedPassword,
-                        selectedIdentityId,
-                        submittedPassphrase,
-                        saveProfile,
-                        selectedProfile?.id.takeIf { canUseSavedPassword },
-                        savePassword,
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = valid,
+                    onClick = {
+                        // Taking the password wipes the editor synchronously. Snapshot dependent
+                        // options first so the empty-editor callback cannot turn a checked save
+                        // request into a prompt-only host while this click is being dispatched.
+                        val submittedSaveProfile = saveProfile
+                        val submittedSavePassword = savePassword
+                        val submittedPassword = password.takeChars()
+                        val submittedPassphrase = passphrase.takeChars()
+                        try {
+                            onConnect(
+                                host,
+                                port,
+                                username,
+                                submittedPassword,
+                                selectedIdentityId,
+                                submittedPassphrase,
+                                submittedSaveProfile,
+                                selectedProfile?.id,
+                                submittedSavePassword,
+                                requireNotNull(connectionOptions),
+                                sessionName,
+                            )
+                        } catch (error: Exception) {
+                            submittedPassword.fill('\u0000')
+                            submittedPassphrase.fill('\u0000')
+                            throw error
+                        }
+                    },
+                ) {
+                    Text(
+                        when (purpose) {
+                            SshConnectPurpose.NEW -> stringResource(R.string.host_connect_action)
+                            SshConnectPurpose.RECONNECT -> stringResource(R.string.ssh_connect_reconnect_action)
+                            SshConnectPurpose.DUPLICATE -> stringResource(R.string.ssh_connect_duplicate_action)
+                        },
                     )
-                },
-            ) {
-                Text("Connect")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = ::dismissAndClearSecrets) { Text("Cancel") }
-        },
-    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = ::dismissAndClearSecrets) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    confirmingForgetPasswordFor?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { confirmingForgetPasswordFor = null },
+            title = { Text(stringResource(R.string.ssh_connect_forget_password_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.ssh_connect_forget_password_detail, profile.label),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmingForgetPasswordFor = null
+                        onForgetSavedPassword(profile.id)
+                    },
+                ) {
+                    Text(stringResource(R.string.ssh_connect_forget_password_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingForgetPasswordFor = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 private const val MAX_PASSWORD_LENGTH = 1_024
+internal const val SshConnectPasswordTestTag = "ssh-connect-password"
+internal const val SshConnectPassphraseTestTag = "ssh-connect-passphrase"
+private const val MAX_MOSH_PORT_INPUT_LENGTH = 11
+private const val MAX_MOSH_SERVER_EXECUTABLE_LENGTH = 512
+
+private fun ConnectionProtocol.displayName(): String = when (this) {
+    ConnectionProtocol.SSH -> "SSH"
+    ConnectionProtocol.MOSH -> "Mosh"
+}

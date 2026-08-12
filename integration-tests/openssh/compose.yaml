@@ -1,0 +1,18 @@
+services:
+  ssh:
+    build:
+      context: .
+      args:
+        OPENSSH_VERSION: 10.3_p1-r0
+    environment:
+      TERMINAL_SPIKE_TEST_PASSWORD: terminal-spike-test-only
+    init: true
+    ports:
+      - "${TERMINAL_SPIKE_SSH_BIND_ADDRESS:-127.0.0.1}:${TERMINAL_SPIKE_SSH_PORT:-22222}:22"
+    tmpfs:
+      - /run
+      - /tmp
+    volumes:
+      - ./.state/client/id_ed25519.pub:/fixtures/id_ed25519.pub:ro
+      - ./.state/server/ssh_host_ecdsa_key:/fixtures/ssh_host_ecdsa_key:ro
+      - ./.state/server/ssh_host_ecdsa_key.pub:/fixtures/ssh_host_ecdsa_key.pub:ro

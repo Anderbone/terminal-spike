@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_terminal_status">Native renderer lab · up to four SSH sessions</string>
+</resources>

@@ -1,13 +1,19 @@
 package com.yanjiyu.terminalspike.terminal.view
 
+import androidx.annotation.StringRes
+import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.ui.UiText
+import com.yanjiyu.terminalspike.ui.uiText
+
 enum class TerminalExtraKey(
     val label: String,
     val bytes: ByteArray? = null,
     val controlBytes: ByteArray? = null,
+    @StringRes private val accessibilityDescriptionRes: Int? = null,
 ) {
     ESC("ESC", TerminalKeySequences.ESCAPE),
-    CTRL("CTRL"),
-    ALT("ALT"),
+    CTRL("CTRL", accessibilityDescriptionRes = R.string.terminal_key_control_modifier),
+    ALT("ALT", accessibilityDescriptionRes = R.string.terminal_key_alt_modifier),
     TAB("TAB", TerminalKeySequences.TAB),
     ENTER("↵", TerminalKeySequences.ENTER),
     BACKSPACE("⌫", TerminalKeySequences.BACKSPACE),
@@ -21,17 +27,17 @@ enum class TerminalExtraKey(
     HOME("HOME", TerminalKeySequences.HOME),
     END("END", TerminalKeySequences.END),
     DELETE("DEL", TerminalKeySequences.DELETE),
-    CTRL_C("CTRL+C", controlByte('C')),
-    CTRL_D("CTRL+D", controlByte('D')),
-    CTRL_Z("CTRL+Z", controlByte('Z')),
-    CTRL_A("CTRL+A", controlByte('A')),
-    CTRL_B("CTRL+B", controlByte('B')),
-    CTRL_E("CTRL+E", controlByte('E')),
-    CTRL_R("CTRL+R", controlByte('R')),
-    CTRL_W("CTRL+W", controlByte('W')),
-    CTRL_L("CTRL+L", controlByte('L')),
-    CTRL_U("CTRL+U", controlByte('U')),
-    CTRL_K("CTRL+K", controlByte('K')),
+    CTRL_C("^C", controlByte('C'), accessibilityDescriptionRes = R.string.terminal_key_control_c),
+    CTRL_D("^D", controlByte('D'), accessibilityDescriptionRes = R.string.terminal_key_control_d),
+    CTRL_Z("^Z", controlByte('Z'), accessibilityDescriptionRes = R.string.terminal_key_control_z),
+    CTRL_A("^A", controlByte('A'), accessibilityDescriptionRes = R.string.terminal_key_control_a),
+    CTRL_B("^B", controlByte('B'), accessibilityDescriptionRes = R.string.terminal_key_control_b),
+    CTRL_E("^E", controlByte('E'), accessibilityDescriptionRes = R.string.terminal_key_control_e),
+    CTRL_R("^R", controlByte('R'), accessibilityDescriptionRes = R.string.terminal_key_control_r),
+    CTRL_W("^W", controlByte('W'), accessibilityDescriptionRes = R.string.terminal_key_control_w),
+    CTRL_L("^L", controlByte('L'), accessibilityDescriptionRes = R.string.terminal_key_control_l),
+    CTRL_U("^U", controlByte('U'), accessibilityDescriptionRes = R.string.terminal_key_control_u),
+    CTRL_K("^K", controlByte('K'), accessibilityDescriptionRes = R.string.terminal_key_control_k),
     SLASH("/", textBytes("/")),
     PIPE("|", textBytes("|")),
     DASH("-", textBytes("-")),
@@ -77,14 +83,18 @@ enum class TerminalExtraKey(
     F10("F10", TerminalKeySequences.F10),
     F11("F11", TerminalKeySequences.F11),
     F12("F12", TerminalKeySequences.F12),
-    HIDE_KEYBOARD("HIDE KB"),
+    HIDE_KEYBOARD("HIDE KB", accessibilityDescriptionRes = R.string.terminal_key_hide_keyboard),
     ;
 
     val isModifier: Boolean get() = this == CTRL || this == ALT
     val isLocalAction: Boolean get() = this == HIDE_KEYBOARD
+    val accessibilityDescription: UiText
+        get() = accessibilityDescriptionRes?.let(::uiText)
+            ?: uiText(R.string.terminal_key_description, label)
 
     companion object {
-        val DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
+        /** Exact v1 shipped deck, used only to distinguish that untouched default from custom decks. */
+        internal val LEGACY_DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
             ESC,
             SLASH,
             AT,
@@ -102,6 +112,55 @@ enum class TerminalExtraKey(
             DOWN,
             RIGHT,
             HIDE_KEYBOARD,
+        )
+
+        /** Exact paged v2 default, upgraded only when the user never customized its order. */
+        internal val PAGED_DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
+            ESC,
+            CTRL,
+            ALT,
+            TAB,
+            CTRL_C,
+            CTRL_W,
+            CTRL_D,
+            CTRL_L,
+            CTRL_R,
+            CTRL_U,
+            CTRL_A,
+            CTRL_E,
+            HOME,
+            UP,
+            END,
+            PAGE_UP,
+            LEFT,
+            DOWN,
+            RIGHT,
+            CTRL_B,
+            SLASH,
+            AT,
+            HIDE_KEYBOARD,
+        )
+
+        /** The complete shipped live deck: exactly two phone rows of nine direct actions. */
+        val DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
+            ESC,
+            CTRL,
+            ALT,
+            TAB,
+            CTRL_C,
+            CTRL_W,
+            CTRL_D,
+            CTRL_L,
+            CTRL_R,
+            CTRL_U,
+            CTRL_A,
+            CTRL_E,
+            HOME,
+            END,
+            UP,
+            DOWN,
+            LEFT,
+            RIGHT,
         )
     }
 }

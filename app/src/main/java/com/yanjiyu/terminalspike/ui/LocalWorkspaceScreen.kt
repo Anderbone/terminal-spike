@@ -1,63 +1,92 @@
 package com.yanjiyu.terminalspike.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.yanjiyu.terminalspike.settings.CommandSnippet
-import com.yanjiyu.terminalspike.settings.SavedSshIdentity
-import com.yanjiyu.terminalspike.settings.SavedSshProfile
+import androidx.annotation.StringRes
+import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
+import com.yanjiyu.terminalspike.ui.theme.spacing
+import com.yanjiyu.terminalspike.ui.theme.statusColors
+import kotlinx.coroutines.delay
 
-internal enum class AppDestination {
+internal enum class AppDestination(@StringRes val labelResId: Int) {
+    WORKSPACE(R.string.navigation_workspace),
+    CONNECTIONS(R.string.navigation_connections),
+    SETTINGS(R.string.navigation_settings),
+}
+
+internal enum class AppRoute {
     WORKSPACE,
-    TERMINAL,
-    TOOLS,
+    CONNECTIONS,
+    SETTINGS,
+    TERMINAL_DETAIL,
 }
 
 private enum class WorkspaceGlyph {
@@ -72,370 +101,910 @@ private enum class WorkspaceGlyph {
     TOOLS,
 }
 
-private val WorkspaceBackground = Color(0xFF171A2B)
-private val WorkspaceSurface = Color(0xFF23273B)
-private val WorkspaceSurfacePressed = Color(0xFF2A3047)
-private val WorkspaceNav = Color(0xFF202438)
-private val WorkspaceAccent = Color(0xFF6BA9F2)
-private val WorkspaceText = Color(0xFFF5F6FB)
-private val WorkspaceMuted = Color(0xFF9DA5B8)
-private val WorkspaceDivider = Color(0xFF34394F)
+private val ExpandedNavigationMinimumWidth = 600.dp
+internal const val CompactPrimaryNavigationTestTag = "primary-navigation-bar"
+internal const val ExpandedPrimaryNavigationTestTag = "primary-navigation-rail"
 
 @Composable
 internal fun LocalWorkspaceScreen(
-    profiles: List<SavedSshProfile>,
-    identities: List<SavedSshIdentity>,
-    snippets: List<CommandSnippet>,
-    knownHostCount: Int,
-    visibleKeyCount: Int,
+    workspace: WorkspaceUiState,
     settingsReady: Boolean,
-    onOpenSection: (ToolSection) -> Unit,
-    onOpenTerminal: () -> Unit,
+    onReopenSession: (Long) -> Unit,
+    onReconnectSession: (Long) -> Unit,
+    onDisconnectSession: (Long) -> Unit,
+    onDuplicateSession: (Long) -> Unit,
+    onConnectPinnedHost: (Long) -> Unit,
+    onEditPinnedHost: (Long) -> Unit = {},
+    onReconnectRecent: (String) -> Unit,
     onQuickConnect: () -> Unit,
-    onOpenTools: () -> Unit,
+    onOpenTerminal: () -> Unit,
+    onOpenConnections: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    activityClock: () -> Long = System::currentTimeMillis,
+    activityRefreshIntervalMillis: Long = WORKSPACE_ACTIVITY_REFRESH_INTERVAL_MILLIS,
 ) {
     var contentVisible by remember { mutableStateOf(false) }
+    val activityNowEpochMillis = rememberWorkspaceActivityNow(
+        clock = activityClock,
+        refreshIntervalMillis = activityRefreshIntervalMillis,
+    )
     LaunchedEffect(Unit) { contentVisible = true }
+    val newConnectionDescription = stringResource(R.string.workspace_new_connection_description)
 
-    Column(
+    AdaptivePrimaryNavigation(
+        selected = AppDestination.WORKSPACE,
+        onWorkspace = {},
+        onConnections = onOpenTerminal,
+        onSettings = onOpenSettings,
         modifier = modifier
             .fillMaxSize()
-            .background(WorkspaceBackground),
-    ) {
+            .background(MaterialTheme.colorScheme.background),
+    ) { contentModifier, expanded ->
         Column(
-            modifier = Modifier
-                .weight(1f)
+            modifier = contentModifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
-            WorkspaceHeader(settingsReady = settingsReady)
+            WorkspaceHeader(
+                title = stringResource(R.string.app_name),
+                settingsReady = settingsReady,
+                onOpenConnections = onOpenConnections,
+                onOpenSettings = onOpenSettings,
+            )
 
             AnimatedVisibility(
                 visible = contentVisible,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 }),
             ) {
-                Column {
-                    WorkspaceGroup {
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.HOSTS,
-                            title = "Hosts",
-                            detail = "Saved SSH endpoints",
-                            count = profiles.size,
-                            onClick = { onOpenSection(ToolSection.PROFILES) },
-                        )
-                        WorkspaceDivider()
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.KEYCHAIN,
-                            title = "Keychain",
-                            detail = "Private identities stored locally",
-                            count = identities.size,
-                            onClick = { onOpenSection(ToolSection.IDENTITIES) },
-                        )
-                        WorkspaceDivider()
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.SNIPPETS,
-                            title = "Snippets",
-                            detail = "Reusable terminal commands",
-                            count = snippets.size,
-                            onClick = { onOpenSection(ToolSection.SNIPPETS) },
-                        )
-                        WorkspaceDivider()
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.SHIELD,
-                            title = "Known hosts",
-                            detail = "Trusted SSH fingerprints",
-                            count = knownHostCount,
-                            onClick = { onOpenSection(ToolSection.IDENTITIES) },
-                        )
-                    }
-
-                    Text(
-                        text = "TERMINAL",
-                        modifier = Modifier.padding(start = 4.dp, top = 26.dp, bottom = 10.dp),
-                        color = WorkspaceMuted,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
+                Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraLarge)) {
+                    WorkspaceActiveSessions(
+                        sessions = workspace.activeSessions,
+                        expanded = expanded,
+                        onReopen = onReopenSession,
+                        onReconnect = onReconnectSession,
+                        onDisconnect = onDisconnectSession,
+                        onDuplicate = onDuplicateSession,
+                        onNewConnection = onQuickConnect,
+                        newConnectionEnabled = settingsReady,
+                        activityNowEpochMillis = activityNowEpochMillis,
                     )
-                    WorkspaceGroup {
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.KEYBOARD,
-                            title = "Terminal keys",
-                            detail = "$visibleKeyCount keys in the quick-access deck",
-                            onClick = { onOpenSection(ToolSection.KEYS) },
-                        )
-                        WorkspaceDivider()
-                        WorkspaceRow(
-                            glyph = WorkspaceGlyph.LAB,
-                            title = "Renderer lab",
-                            detail = "Open the native terminal workspace",
-                            onClick = onOpenTerminal,
-                        )
-                    }
-
-                    Surface(
+                    WorkspacePinnedHosts(
+                        hosts = workspace.pinnedHosts,
+                        onConnect = onConnectPinnedHost,
+                        onEdit = onEditPinnedHost,
+                    )
+                    WorkspaceRecentConnections(
+                        sessions = workspace.recentConnections,
+                        onReconnect = onReconnectRecent,
+                        activityNowEpochMillis = activityNowEpochMillis,
+                    )
+                    Button(
                         onClick = onQuickConnect,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 18.dp)
-                            .semantics { contentDescription = "Start a new SSH connection" },
-                        color = WorkspaceAccent,
-                        contentColor = Color(0xFF0B1725),
-                        shape = RoundedCornerShape(18.dp),
+                            .testTag(WorkspaceNewConnectionTestTag)
+                            .semantics { contentDescription = newConnectionDescription },
+                        enabled = settingsReady,
+                        shape = MaterialTheme.shapes.large,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "+",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Medium,
-                            )
-                            Text(
-                                text = "  New connection",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
+                        Text(
+                            stringResource(R.string.workspace_new_connection),
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(MaterialTheme.spacing.large))
                 }
             }
         }
-
-        WorkspaceBottomBar(
-            selected = AppDestination.WORKSPACE,
-            onWorkspace = {},
-            onTerminal = onOpenTerminal,
-            onTools = onOpenTools,
-        )
     }
 }
 
 @Composable
-private fun WorkspaceHeader(settingsReady: Boolean) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 26.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                shape = RoundedCornerShape(13.dp),
-                color = WorkspaceAccent,
-                contentColor = Color(0xFF0B1725),
-            ) {
-                WorkspaceIcon(
-                    glyph = WorkspaceGlyph.WORKSPACE,
-                    modifier = Modifier.padding(9.dp),
-                )
-            }
-            Text(
-                text = "Local workspace",
-                color = WorkspaceText,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Row(
-            modifier = Modifier.padding(top = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(if (settingsReady) Color(0xFF70D6A2) else WorkspaceMuted),
-            )
-            Text(
-                text = if (settingsReady) "Encrypted on this device" else "Loading local workspace…",
-                color = WorkspaceMuted,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WorkspaceGroup(content: @Composable () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = WorkspaceSurface,
-        shape = RoundedCornerShape(24.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun WorkspaceRow(
-    glyph: WorkspaceGlyph,
+private fun WorkspaceHeader(
     title: String,
-    detail: String,
-    count: Int? = null,
-    onClick: () -> Unit,
+    settingsReady: Boolean,
+    onOpenConnections: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, label = "workspace-row-press")
-    val background by animateColorAsState(
-        if (pressed) WorkspaceSurfacePressed else WorkspaceSurface,
-        label = "workspace-row-colour",
-    )
-
+    var menuExpanded by remember { mutableStateOf(false) }
+    val screenDescription = stringResource(R.string.workspace_screen_description)
+    val destinationsDescription = stringResource(R.string.workspace_destinations)
+    val connectionsMenuDescription = stringResource(R.string.workspace_open_connections_menu)
+    val settingsMenuDescription = stringResource(R.string.workspace_open_settings_menu)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .background(background)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 17.dp),
+            .testTag(WorkspaceAppBarTestTag)
+            .semantics { contentDescription = screenDescription }
+            .padding(
+                horizontal = MaterialTheme.spacing.small,
+                vertical = MaterialTheme.spacing.medium,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceIcon(
-            glyph = glyph,
-            modifier = Modifier.size(30.dp),
-            color = WorkspaceText,
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
         )
-        Column(modifier = Modifier.weight(1f).padding(start = 17.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(MaterialTheme.spacing.small)
+                    .background(
+                        if (settingsReady) {
+                            MaterialTheme.statusColors.connected
+                        } else {
+                            MaterialTheme.statusColors.disconnected
+                        },
+                        CircleShape,
+                    ),
+            )
             Text(
-                text = title,
-                color = WorkspaceText,
+                text = stringResource(
+                    if (settingsReady) {
+                        R.string.workspace_status_on_device
+                    } else {
+                        R.string.workspace_status_loading
+                    },
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Box {
+                TextButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier.semantics {
+                        contentDescription = destinationsDescription
+                    },
+                ) {
+                    Text("⋮", style = MaterialTheme.typography.titleLarge)
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.navigation_connections)) },
+                        modifier = Modifier.semantics {
+                            contentDescription = connectionsMenuDescription
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenConnections()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.navigation_settings)) },
+                        modifier = Modifier.semantics {
+                            contentDescription = settingsMenuDescription
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenSettings()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceActiveSessions(
+    sessions: List<WorkspaceActiveSessionUi>,
+    expanded: Boolean,
+    onReopen: (Long) -> Unit,
+    onReconnect: (Long) -> Unit,
+    onDisconnect: (Long) -> Unit,
+    onDuplicate: (Long) -> Unit,
+    onNewConnection: () -> Unit,
+    newConnectionEnabled: Boolean,
+    activityNowEpochMillis: Long,
+) {
+    Column(
+        modifier = Modifier.testTag(WorkspaceActiveSessionsTestTag),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+    ) {
+        WorkspaceSectionHeading(R.string.workspace_active_sessions, sessions.size)
+        if (sessions.isEmpty()) {
+            WorkspaceEmptyState(
+                titleRes = R.string.workspace_no_active_sessions,
+                detailRes = R.string.workspace_no_active_sessions_detail,
+                actionLabelRes = R.string.workspace_new_connection,
+                actionEnabled = newConnectionEnabled,
+                onAction = onNewConnection,
+            )
+        } else if (expanded) {
+            sessions.forEach { session ->
+                WorkspaceActiveSessionCard(
+                    session = session,
+                    onReopen = onReopen,
+                    onReconnect = onReconnect,
+                    onDisconnect = onDisconnect,
+                    onDuplicate = onDuplicate,
+                    activityNowEpochMillis = activityNowEpochMillis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+            ) {
+                sessions.forEach { session ->
+                    WorkspaceActiveSessionCard(
+                        session = session,
+                        onReopen = onReopen,
+                        onReconnect = onReconnect,
+                        onDisconnect = onDisconnect,
+                        onDuplicate = onDuplicate,
+                        activityNowEpochMillis = activityNowEpochMillis,
+                        modifier = Modifier.widthIn(min = 264.dp, max = 320.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceActiveSessionCard(
+    session: WorkspaceActiveSessionUi,
+    onReopen: (Long) -> Unit,
+    onReconnect: (Long) -> Unit,
+    onDisconnect: (Long) -> Unit,
+    onDuplicate: (Long) -> Unit,
+    activityNowEpochMillis: Long,
+    modifier: Modifier = Modifier,
+) {
+    var menuExpanded by remember(session.id) { mutableStateOf(false) }
+    val statusLabel = stringResource(session.status.labelResId)
+    val openDescription = stringResource(
+        R.string.workspace_open_session,
+        session.friendlyName,
+        session.protocol.name,
+        statusLabel,
+    )
+    val actionsDescription = stringResource(
+        R.string.workspace_session_actions,
+        session.friendlyName,
+    )
+    Surface(
+        onClick = { onReopen(session.id) },
+        modifier = modifier
+            .testTag("workspace-active-session-${session.id}")
+            .semantics {
+                contentDescription = openDescription
+            },
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(
+            modifier = Modifier.padding(MaterialTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WorkspaceProtocolBadge(session.protocol)
+                Spacer(Modifier.size(MaterialTheme.spacing.small))
+                WorkspaceStatusBadge(session.status)
+                Spacer(Modifier.weight(1f))
+                if (session.canReconnect || session.canDisconnect || session.canDuplicate) {
+                    Box {
+                        TextButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.semantics {
+                                contentDescription = actionsDescription
+                            },
+                        ) {
+                            Text("⋮", style = MaterialTheme.typography.titleLarge)
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            if (session.canReconnect) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.workspace_reconnect)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onReconnect(session.id)
+                                    },
+                                )
+                            }
+                            if (session.canDisconnect) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.workspace_disconnect)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDisconnect(session.id)
+                                    },
+                                )
+                            }
+                            if (session.canDuplicate) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.workspace_duplicate)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDuplicate(session.id)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                text = session.friendlyName,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            session.terminalTitle?.let { title ->
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = formatWorkspaceLastActivity(
+                    lastActivityAtEpochMillis = session.lastActivityAtEpochMillis,
+                    nowEpochMillis = activityNowEpochMillis,
+                ).resolve(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspacePinnedHosts(
+    hosts: List<WorkspacePinnedHostUi>,
+    onConnect: (Long) -> Unit,
+    onEdit: (Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier.testTag(WorkspacePinnedHostsTestTag),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+    ) {
+        WorkspaceSectionHeading(R.string.workspace_saved_hosts, hosts.size)
+        if (hosts.isEmpty()) {
+            Text(
+                text = stringResource(R.string.workspace_saved_hosts_empty),
+                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            hosts.forEachIndexed { index, host ->
+                WorkspaceHostRow(host = host, onConnect = onConnect, onEdit = onEdit)
+                if (index != hosts.lastIndex) HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceHostRow(
+    host: WorkspacePinnedHostUi,
+    onConnect: (Long) -> Unit,
+    onEdit: (Long) -> Unit,
+) {
+    val connectDescription = stringResource(R.string.workspace_connect_to_host, host.friendlyName)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("workspace-pinned-host-${host.profileId}")
+            .padding(
+                horizontal = MaterialTheme.spacing.small,
+                vertical = MaterialTheme.spacing.small,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.workspace_edit_host, host.friendlyName),
+                ) { onEdit(host.profileId) }
+                .padding(vertical = MaterialTheme.spacing.extraSmall),
+        ) {
+            Text(
+                text = host.friendlyName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = detail,
-                modifier = Modifier.padding(top = 2.dp),
-                color = WorkspaceMuted,
+                text = host.endpoint,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            WorkspaceProtocolBadge(host.protocol)
         }
-        if (count != null) {
+        TextButton(
+            onClick = { onConnect(host.profileId) },
+            enabled = host.canConnect,
+            modifier = Modifier.semantics { contentDescription = connectDescription },
+        ) {
             Text(
-                text = count.toString(),
-                modifier = Modifier.padding(end = 14.dp),
-                color = WorkspaceMuted,
-                style = MaterialTheme.typography.titleMedium,
+                text = stringResource(
+                    if (host.canConnect) R.string.workspace_connect else R.string.workspace_unavailable,
+                ),
             )
         }
+    }
+}
+
+@Composable
+private fun WorkspaceRecentConnections(
+    sessions: List<WorkspaceRecentSessionUi>,
+    onReconnect: (String) -> Unit,
+    activityNowEpochMillis: Long,
+) {
+    Column(
+        modifier = Modifier.testTag(WorkspaceRecentConnectionsTestTag),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+    ) {
+        WorkspaceSectionHeading(R.string.workspace_recent_connections, sessions.size)
+        if (sessions.isEmpty()) {
+            Text(
+                text = stringResource(R.string.workspace_recent_connections_empty),
+                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            sessions.forEachIndexed { index, session ->
+                val canReconnect = session.sourceProfileId != null
+                val reconnectDescription = stringResource(
+                    R.string.workspace_reconnect_to_host,
+                    session.friendlyName,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("workspace-recent-session-${session.id}")
+                        .clickable(
+                            enabled = canReconnect,
+                            role = Role.Button,
+                            onClickLabel = reconnectDescription,
+                        ) { onReconnect(session.id) }
+                        .padding(
+                            horizontal = MaterialTheme.spacing.small,
+                            vertical = MaterialTheme.spacing.small,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+                    ) {
+                        Text(
+                            text = session.friendlyName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+                            WorkspaceProtocolBadge(session.protocol)
+                            WorkspaceStatusBadge(session.status)
+                        }
+                        session.terminalTitle?.let { title ->
+                            Text(
+                                text = title,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Text(
+                            text = formatWorkspaceLastActivity(
+                                lastActivityAtEpochMillis = session.lastActivityAtEpochMillis,
+                                nowEpochMillis = activityNowEpochMillis,
+                            ).resolve(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    if (canReconnect) {
+                        Text(
+                            text = stringResource(R.string.workspace_reconnect),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
+                        )
+                    }
+                }
+                if (index != sessions.lastIndex) HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceSectionHeading(@StringRes titleRes: Int, count: Int) {
+    Row(
+        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            text = "›",
-            color = WorkspaceMuted,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Light,
+            text = stringResource(titleRes),
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        if (count > 0) {
+            Text(
+                text = count.toString(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceEmptyState(
+    @StringRes titleRes: Int,
+    @StringRes detailRes: Int,
+    @StringRes actionLabelRes: Int,
+    actionEnabled: Boolean,
+    onAction: () -> Unit,
+) {
+    val newConnectionDescription = stringResource(
+        R.string.workspace_new_connection_empty_description,
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(
+            modifier = Modifier.padding(MaterialTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+        ) {
+            Text(
+                stringResource(titleRes),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(detailRes),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(
+                onClick = onAction,
+                enabled = actionEnabled,
+                modifier = Modifier
+                    .testTag(WorkspaceEmptyNewConnectionTestTag)
+                    .semantics {
+                        contentDescription = newConnectionDescription
+                    },
+            ) {
+                Text(stringResource(actionLabelRes))
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceProtocolBadge(protocol: ConnectionProtocol) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            text = protocol.name,
+            modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
         )
     }
 }
 
 @Composable
-private fun WorkspaceDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 65.dp),
-        color = WorkspaceDivider,
-    )
+private fun WorkspaceStatusBadge(status: WorkspaceSessionStatus) {
+    val colors = MaterialTheme.statusColors
+    val (container, content) = when (status) {
+        WorkspaceSessionStatus.CONNECTED -> colors.connectedContainer to colors.onConnectedContainer
+        WorkspaceSessionStatus.CONNECTING -> colors.reconnectingContainer to colors.onReconnectingContainer
+        WorkspaceSessionStatus.AWAITING_APPROVAL -> colors.warningContainer to colors.onWarningContainer
+        WorkspaceSessionStatus.DISCONNECTED ->
+            MaterialTheme.colorScheme.surface to colors.disconnected
+        WorkspaceSessionStatus.FAILED -> colors.errorContainer to colors.onErrorContainer
+    }
+    Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.small) {
+        Text(
+            text = stringResource(status.labelResId),
+            modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+private val WorkspaceSessionStatus.labelResId: Int
+    get() = when (this) {
+        WorkspaceSessionStatus.CONNECTING -> R.string.workspace_status_connecting
+        WorkspaceSessionStatus.CONNECTED -> R.string.workspace_status_connected
+        WorkspaceSessionStatus.AWAITING_APPROVAL -> R.string.workspace_status_needs_approval
+        WorkspaceSessionStatus.DISCONNECTED -> R.string.workspace_status_disconnected
+        WorkspaceSessionStatus.FAILED -> R.string.workspace_status_failed
+    }
+
+internal fun formatWorkspaceLastActivity(
+    lastActivityAtEpochMillis: Long,
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): UiText {
+    if (lastActivityAtEpochMillis <= 0) {
+        return uiText(R.string.workspace_last_activity_unavailable)
+    }
+    val elapsed = (nowEpochMillis - lastActivityAtEpochMillis).coerceAtLeast(0)
+    return when {
+        elapsed < 60_000L -> uiText(R.string.workspace_last_activity_just_now)
+        elapsed < 3_600_000L -> {
+            val minutes = (elapsed / 60_000L).toInt()
+            quantityText(R.plurals.workspace_last_activity_minutes, minutes)
+        }
+        elapsed < 86_400_000L -> {
+            val hours = (elapsed / 3_600_000L).toInt()
+            quantityText(R.plurals.workspace_last_activity_hours, hours)
+        }
+        else -> {
+            val days = (elapsed / 86_400_000L).toInt()
+            quantityText(R.plurals.workspace_last_activity_days, days)
+        }
+    }
+}
+
+@Composable
+internal fun rememberWorkspaceActivityNow(
+    clock: () -> Long,
+    refreshIntervalMillis: Long = WORKSPACE_ACTIVITY_REFRESH_INTERVAL_MILLIS,
+): Long {
+    val currentClock by rememberUpdatedState(clock)
+    var nowEpochMillis by remember { mutableLongStateOf(clock()) }
+    LaunchedEffect(refreshIntervalMillis) {
+        val boundedInterval = refreshIntervalMillis.coerceAtLeast(1L)
+        while (true) {
+            delay(boundedInterval)
+            nowEpochMillis = currentClock()
+        }
+    }
+    return nowEpochMillis
+}
+
+internal const val WORKSPACE_ACTIVITY_REFRESH_INTERVAL_MILLIS = 60_000L
+
+internal const val WorkspaceAppBarTestTag = "workspace-app-bar"
+internal const val WorkspaceActiveSessionsTestTag = "workspace-active-sessions"
+internal const val WorkspacePinnedHostsTestTag = "workspace-pinned-hosts"
+internal const val WorkspaceRecentConnectionsTestTag = "workspace-recent-connections"
+internal const val WorkspaceNewConnectionTestTag = "workspace-new-connection"
+internal const val WorkspaceEmptyNewConnectionTestTag = "workspace-empty-new-connection"
+
+@Composable
+internal fun AdaptivePrimaryNavigation(
+    selected: AppDestination,
+    onWorkspace: () -> Unit,
+    onConnections: () -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+    safeContentInsets: WindowInsets = WindowInsets.safeDrawing
+        .only(WindowInsetsSides.Vertical)
+        .union(WindowInsets.displayCutout),
+    content: @Composable (contentModifier: Modifier, expanded: Boolean) -> Unit,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        if (maxWidth >= ExpandedNavigationMinimumWidth) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                WorkspaceNavigationRail(
+                    selected = selected,
+                    onWorkspace = onWorkspace,
+                    onConnections = onConnections,
+                    onSettings = onSettings,
+                    modifier = Modifier.fillMaxHeight(),
+                    windowInsets = safeContentInsets.only(
+                        WindowInsetsSides.Start + WindowInsetsSides.Vertical,
+                    ),
+                )
+                content(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .windowInsetsPadding(
+                            safeContentInsets.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.End +
+                                    WindowInsetsSides.Bottom,
+                            ),
+                        ),
+                    true,
+                )
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                content(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            safeContentInsets.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                            ),
+                        ),
+                    false,
+                )
+                WorkspaceBottomBar(
+                    selected = selected,
+                    onWorkspace = onWorkspace,
+                    onConnections = onConnections,
+                    onSettings = onSettings,
+                    windowInsets = safeContentInsets.only(
+                        WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal,
+                    ),
+                )
+            }
+        }
+    }
 }
 
 @Composable
 internal fun WorkspaceBottomBar(
     selected: AppDestination,
     onWorkspace: () -> Unit,
-    onTerminal: () -> Unit,
-    onTools: () -> Unit,
+    onConnections: () -> Unit,
+    onSettings: () -> Unit,
+    windowInsets: WindowInsets,
 ) {
-    Surface(color = WorkspaceNav) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-        ) {
-            WorkspaceNavigationItem(
-                label = "Workspace",
-                glyph = WorkspaceGlyph.WORKSPACE,
-                selected = selected == AppDestination.WORKSPACE,
-                description = "Open local workspace",
-                onClick = onWorkspace,
-            )
-            WorkspaceNavigationItem(
-                label = "Terminal",
-                glyph = WorkspaceGlyph.TERMINAL,
-                selected = selected == AppDestination.TERMINAL,
-                description = "Open terminal",
-                onClick = onTerminal,
-            )
-            WorkspaceNavigationItem(
-                label = "Tools",
-                glyph = WorkspaceGlyph.TOOLS,
-                selected = selected == AppDestination.TOOLS,
-                description = "Open local tools",
-                onClick = onTools,
-            )
-        }
+    NavigationBar(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CompactPrimaryNavigationTestTag),
+        containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = windowInsets,
+    ) {
+        WorkspaceNavigationItem(
+            label = stringResource(R.string.navigation_workspace),
+            glyph = WorkspaceGlyph.WORKSPACE,
+            selected = selected == AppDestination.WORKSPACE,
+            description = stringResource(R.string.navigation_open_workspace),
+            onClick = onWorkspace,
+        )
+        WorkspaceNavigationItem(
+            label = stringResource(R.string.navigation_terminal),
+            glyph = WorkspaceGlyph.TERMINAL,
+            // Terminal owns a dedicated immersive route. A visible navigation bar therefore
+            // belongs to Workspace, Settings, or a secondary catalog and must not claim Terminal.
+            selected = false,
+            description = stringResource(R.string.navigation_open_terminal),
+            onClick = onConnections,
+        )
+        WorkspaceNavigationItem(
+            label = stringResource(R.string.navigation_settings),
+            glyph = WorkspaceGlyph.TOOLS,
+            selected = selected == AppDestination.SETTINGS,
+            description = stringResource(R.string.navigation_open_settings),
+            onClick = onSettings,
+        )
     }
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.WorkspaceNavigationItem(
+private fun RowScope.WorkspaceNavigationItem(
     label: String,
     glyph: WorkspaceGlyph,
     selected: Boolean,
     description: String,
     onClick: () -> Unit,
 ) {
-    val colour by animateColorAsState(
-        if (selected) WorkspaceText else WorkspaceMuted,
-        label = "workspace-nav-colour",
-    )
-    val iconScale by animateFloatAsState(if (selected) 1f else 0.9f, label = "workspace-nav-scale")
-
-    Column(
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = description }
-            .padding(vertical = 5.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            color = if (selected) WorkspaceAccent.copy(alpha = 0.22f) else Color.Transparent,
-            shape = RoundedCornerShape(15.dp),
-        ) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.semantics { contentDescription = description },
+        icon = {
             WorkspaceIcon(
                 glyph = glyph,
-                modifier = Modifier
-                    .padding(horizontal = 19.dp, vertical = 7.dp)
-                    .size(24.dp)
-                    .graphicsLayer {
-                        scaleX = iconScale
-                        scaleY = iconScale
-                    },
-                color = colour,
+                modifier = Modifier.size(24.dp),
             )
-        }
-        Text(
-            text = label,
-            modifier = Modifier.padding(top = 3.dp),
-            color = colour,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        },
+        label = { Text(label) },
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+    )
+}
+
+@Composable
+private fun WorkspaceNavigationRail(
+    selected: AppDestination,
+    onWorkspace: () -> Unit,
+    onConnections: () -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+    windowInsets: WindowInsets,
+) {
+    NavigationRail(
+        modifier = modifier.testTag(ExpandedPrimaryNavigationTestTag),
+        containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = windowInsets,
+    ) {
+        WorkspaceRailNavigationItem(
+            label = stringResource(R.string.navigation_workspace),
+            glyph = WorkspaceGlyph.WORKSPACE,
+            selected = selected == AppDestination.WORKSPACE,
+            description = stringResource(R.string.navigation_open_workspace),
+            onClick = onWorkspace,
+        )
+        WorkspaceRailNavigationItem(
+            label = stringResource(R.string.navigation_terminal),
+            glyph = WorkspaceGlyph.TERMINAL,
+            selected = false,
+            description = stringResource(R.string.navigation_open_terminal),
+            onClick = onConnections,
+        )
+        WorkspaceRailNavigationItem(
+            label = stringResource(R.string.navigation_settings),
+            glyph = WorkspaceGlyph.TOOLS,
+            selected = selected == AppDestination.SETTINGS,
+            description = stringResource(R.string.navigation_open_settings),
+            onClick = onSettings,
         )
     }
+}
+
+@Composable
+private fun ColumnScope.WorkspaceRailNavigationItem(
+    label: String,
+    glyph: WorkspaceGlyph,
+    selected: Boolean,
+    description: String,
+    onClick: () -> Unit,
+) {
+    NavigationRailItem(
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.semantics { contentDescription = description },
+        icon = {
+            WorkspaceIcon(
+                glyph = glyph,
+                modifier = Modifier.size(24.dp),
+            )
+        },
+        label = { Text(label) },
+        alwaysShowLabel = true,
+        colors = NavigationRailItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+    )
 }
 
 @Composable

@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package com.yanjiyu.terminalspike.core.data.settings;
+
+option java_package = "com.yanjiyu.terminalspike.core.data.settings";
+option java_multiple_files = true;
+option optimize_for = LITE_RUNTIME;
+
+message AppSettings {
+  uint32 schema_revision = 1;
+
+  ThemeMode theme_mode = 2;
+  bool dynamic_color_enabled = 3;
+  string accent_preset = 4;
+  string default_terminal_profile_id = 5;
+  string default_keyboard_profile_id = 6;
+
+  uint32 keepalive_interval_seconds = 7;
+  bool reconnect_enabled = 8;
+  uint32 reconnect_max_attempts = 9;
+  bool background_sessions_enabled = 10;
+  bool notification_privacy_enabled = 11;
+  bool disconnect_notifications_enabled = 12;
+  bool reconnect_notifications_enabled = 13;
+  bool keep_cpu_awake = 14;
+  bool keep_screen_on_while_terminal_visible = 15;
+
+  AppLockMode app_lock_mode = 16;
+  uint32 app_lock_delay_seconds = 17;
+  bool screenshot_blocking_enabled = 18;
+  uint32 sensitive_clipboard_clear_seconds = 19;
+  Osc52Policy osc52_policy = 20;
+  bool multiline_paste_confirmation_enabled = 21;
+
+  string last_backup_mode = 22;
+
+  // Local, monotonic marker for the one-time Room keyboard-default repair. This is deliberately
+  // separate from schema_revision because the repaired keyboard profile is stored in Room.
+  uint32 keyboard_deck_revision = 23;
+
+  // Device-local marker. Portable backup deliberately omits this permission-education state.
+  bool notification_permission_education_consumed = 24;
+
+  enum ThemeMode {
+    THEME_MODE_UNSPECIFIED = 0;
+    THEME_MODE_SYSTEM = 1;
+    THEME_MODE_LIGHT = 2;
+    THEME_MODE_DARK = 3;
+  }
+
+  enum AppLockMode {
+    APP_LOCK_MODE_UNSPECIFIED = 0;
+    APP_LOCK_MODE_OFF = 1;
+    APP_LOCK_MODE_IMMEDIATE = 2;
+    APP_LOCK_MODE_DELAYED = 3;
+    APP_LOCK_MODE_ON_BACKGROUND = 4;
+  }
+
+  enum Osc52Policy {
+    OSC52_POLICY_UNSPECIFIED = 0;
+    OSC52_POLICY_DISABLED = 1;
+    OSC52_POLICY_ASK = 2;
+  }
+}

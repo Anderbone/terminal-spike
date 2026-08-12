@@ -1,12 +1,38 @@
 package com.yanjiyu.terminalspike.terminal.model
 
+/**
+ * A terminal colour together with the VT source that produced it.
+ *
+ * Keeping the source in the cell model is important: an indexed colour is resolved through the
+ * active terminal theme, while an RGB colour is always literal even when its value happens to be
+ * identical to one of that theme's ANSI entries.
+ */
+sealed interface TerminalColour {
+    data object Default : TerminalColour
+
+    data class Indexed(val index: Int) : TerminalColour {
+        init {
+            require(index in 0..255) { "Indexed terminal colours must be in the xterm 0–255 range." }
+        }
+    }
+
+    data class Rgb(val argb: Int) : TerminalColour {
+        init {
+            require(argb ushr 24 == 0xFF) { "True-colour terminal values must be opaque ARGB." }
+        }
+    }
+}
+
 data class TerminalStyle(
-    val foreground: Int = TerminalPalette.FOREGROUND,
-    val background: Int = TerminalPalette.BACKGROUND,
+    val foreground: TerminalColour = TerminalColour.Default,
+    val background: TerminalColour = TerminalColour.Default,
     val bold: Boolean = false,
+    val dim: Boolean = false,
     val italic: Boolean = false,
     val underline: Boolean = false,
     val inverse: Boolean = false,
+    val conceal: Boolean = false,
+    val strikethrough: Boolean = false,
 )
 
 object TerminalPalette {

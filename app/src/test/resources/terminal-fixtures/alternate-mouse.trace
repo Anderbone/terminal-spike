@@ -1,0 +1,4 @@
+# Alternate screen, button-event + SGR mouse, text, then disable and restore primary.
+1B 5B 3F 31 30 34 39 68
+1B 5B 3F 31 30 30 32 68 1B 5B 3F 31 30 30 36 68 6D 6F 75 73 65
+1B 5B 3F 31 30 30 36 6C 1B 5B 3F 31 30 30 32 6C 1B 5B 3F 31 30 34 39 6C

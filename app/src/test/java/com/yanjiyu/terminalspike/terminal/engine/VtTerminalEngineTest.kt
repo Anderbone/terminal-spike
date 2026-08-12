@@ -1,14 +1,169 @@
 package com.yanjiyu.terminalspike.terminal.engine
 
+import com.yanjiyu.terminalspike.core.model.CursorStyle
+import com.yanjiyu.terminalspike.terminal.model.TerminalColour
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.util.Base64
 import kotlin.random.Random
 
 class VtTerminalEngineTest {
+    @Test
+    fun textModeBelPublishesBoundedCountsAndMonotonicSequenceAcrossChunks() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+
+        val first = engine.accept(byteArrayOf(0x07))
+        val second = engine.accept(byteArrayOf(0x07, 'x'.code.toByte(), 0x07))
+        val empty = engine.accept(byteArrayOf())
+
+        assertEquals(1, first.bellCount)
+        assertEquals(1L, first.bellSequence)
+        assertEquals(2, second.bellCount)
+        assertEquals(3L, second.bellSequence)
+        assertEquals("x", second.screen[0].text)
+        assertEquals(0, empty.bellCount)
+        assertEquals(3L, empty.bellSequence)
+    }
+
+    @Test
+    fun oscTerminatorBelIsNotAnAlertAndTextFloodIsCountBounded() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+
+        val title = engine.accept("\u001B]2;title\u0007".bytes())
+        val flood = engine.accept(ByteArray(2_048) { 0x07.toByte() })
+
+        assertEquals("title", title.terminalTitle)
+        assertEquals(0, title.bellCount)
+        assertEquals(0L, title.bellSequence)
+        assertEquals(1_024, flood.bellCount)
+        assertEquals(2_048L, flood.bellSequence)
+    }
+
+    @Test
+    fun decscusrPublishesStandardShapeAndBlinkIncludingDefaultParameter() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+
+        val steadyBeam = engine.accept("\u001B[6 q".bytes())
+        assertEquals(CursorStyle.BEAM, steadyBeam.cursor.styleOverride)
+        assertEquals(false, steadyBeam.cursor.blinkOverride)
+
+        val blinkingUnderline = engine.accept("\u001B[3 q".bytes())
+        assertEquals(CursorStyle.UNDERLINE, blinkingUnderline.cursor.styleOverride)
+        assertEquals(true, blinkingUnderline.cursor.blinkOverride)
+
+        val explicitDefault = engine.accept("\u001B[0 q".bytes())
+        assertEquals(CursorStyle.BLOCK, explicitDefault.cursor.styleOverride)
+        assertEquals(true, explicitDefault.cursor.blinkOverride)
+
+        val omittedDefault = engine.accept("\u001B[ q".bytes())
+        assertEquals(CursorStyle.BLOCK, omittedDefault.cursor.styleOverride)
+        assertEquals(true, omittedDefault.cursor.blinkOverride)
+        assertTrue(omittedDefault.dirtyRows.isEmpty())
+    }
+
+    @Test
+    fun malformedOrOutOfRangeDecscusrIsIgnoredAndParserRecovers() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        engine.accept(byteArrayOf())
+        engine.accept("\u001B[3 q".bytes())
+
+        val malformed = engine.accept(
+            ("\u001B[7 q" +
+                "\u001B[?2 q" +
+                "\u001B[2;3 q" +
+                "\u001B[2q" +
+                "\u001B[2  q").bytes(),
+        )
+        assertEquals(CursorStyle.UNDERLINE, malformed.cursor.styleOverride)
+        assertEquals(true, malformed.cursor.blinkOverride)
+        assertTrue(malformed.dirtyRows.isEmpty())
+
+        val recovered = engine.accept("OK\u001B[2 q".bytes())
+        assertEquals("OK", recovered.screen[0].text)
+        assertEquals(CursorStyle.BLOCK, recovered.cursor.styleOverride)
+        assertEquals(false, recovered.cursor.blinkOverride)
+    }
+
+    @Test
+    fun osc52EmitsBoundedRequestWithoutWritingOrAnsweringTheClipboard() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val encoded = Base64.getEncoder().encodeToString("first\nsecond".toByteArray())
+
+        val request = engine.accept("\u001B]52;c;$encoded\u0007".bytes())
+
+        assertEquals(listOf("first\nsecond"), request.remoteClipboardRequests.map { it.text })
+        assertTrue(request.responses.isEmpty())
+        assertTrue(engine.accept(byteArrayOf()).remoteClipboardRequests.isEmpty())
+    }
+
+    @Test
+    fun osc52QueriesInvalidSelectorsAndUnsafePayloadsAreIgnored() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val bidi = Base64.getEncoder().encodeToString("safe\u202Etxt".toByteArray())
+
+        val update = engine.accept(
+            ("\u001B]52;c;?\u0007" +
+                "\u001B]52;p;${Base64.getEncoder().encodeToString("text".toByteArray())}\u0007" +
+                "\u001B]52;c;not-base64!\u0007" +
+                "\u001B]52;c;$bidi\u0007").bytes(),
+        )
+
+        assertTrue(update.remoteClipboardRequests.isEmpty())
+        assertTrue(update.responses.isEmpty())
+    }
+
+    @Test
+    fun osc52RequestCountAndDecodedSizeAreBoundedPerNetworkBatch() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val tiny = Base64.getEncoder().encodeToString("x".toByteArray())
+        val oversized = Base64.getEncoder().encodeToString(ByteArray(769) { 'a'.code.toByte() })
+        val batch = buildString {
+            append("\u001B]52;c;$oversized\u0007")
+            repeat(5) { append("\u001B]52;c;$tiny\u0007") }
+        }
+
+        val update = engine.accept(batch.bytes())
+
+        assertEquals(4, update.remoteClipboardRequests.size)
+        assertTrue(update.remoteClipboardRequests.all { it.text == "x" })
+    }
+
+    @Test
+    fun cursorKeypadAndOsc52RecordedTraceRetainsControlStateAndRequest() {
+        val update = VtTerminalEngine(columns = 8, rows = 2).accept(
+            fixtureBytes("cursor-keypad-osc52.trace"),
+        )
+
+        assertEquals(CursorStyle.BEAM, update.cursor.styleOverride)
+        assertEquals(false, update.cursor.blinkOverride)
+        assertTrue(update.modes.applicationKeypad)
+        assertEquals(listOf("clip"), update.remoteClipboardRequests.map { it.text })
+    }
+
+    @Test
+    fun immutableLineSnapshotsAreReusedAndDirtyRowsArePublished() {
+        val engine = VtTerminalEngine(columns = 8, rows = 3)
+        val first = engine.accept("a".bytes())
+        assertArrayEquals(intArrayOf(0, 1, 2), first.dirtyRows)
+
+        val second = engine.accept("b".bytes())
+        assertArrayEquals(intArrayOf(0), second.dirtyRows)
+        assertNotSame(first.screen[0], second.screen[0])
+        assertSame(first.screen[1], second.screen[1])
+        assertSame(first.screen[2], second.screen[2])
+
+        val modeOnly = engine.accept("\u001B[?1h".bytes())
+        assertTrue(modeOnly.dirtyRows.isEmpty())
+        assertSame(second.screen[0], modeOnly.screen[0])
+    }
+
     @Test
     fun preservesUtf8AcrossNetworkReadsAndCombiningMarks() {
         val engine = VtTerminalEngine(columns = 20, rows = 3)
@@ -42,6 +197,36 @@ class VtTerminalEngineTest {
         assertEquals("", update.screen[1].text)
         assertEquals(1, update.cursor.row)
         assertEquals(4, update.cursor.column)
+    }
+
+    @Test
+    fun ed3RequestsScrollbackClearWithoutChangingVisibleScreenOrCursor() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val before = engine.accept("one\r\ntwo\r\nthree".bytes())
+
+        val cleared = engine.accept("\u001B[3J".bytes())
+        val afterSignal = engine.accept(byteArrayOf())
+
+        assertTrue(before.completedScrollback.isNotEmpty())
+        assertTrue(cleared.clearScrollbackRequested)
+        assertTrue(cleared.completedScrollback.isEmpty())
+        assertEquals(before.screen, cleared.screen)
+        assertEquals(before.cursor, cleared.cursor)
+        assertTrue(cleared.dirtyRows.isEmpty())
+        assertFalse(afterSignal.clearScrollbackRequested)
+    }
+
+    @Test
+    fun ed3DropsRowsScrolledEarlierInTheSameParserBatch() {
+        val update = VtTerminalEngine(columns = 8, rows = 2).accept(
+            "one\r\ntwo\r\nthree\u001B[3J".bytes(),
+        )
+
+        assertTrue(update.clearScrollbackRequested)
+        assertTrue(update.completedScrollback.isEmpty())
+        assertEquals(listOf("two", "three"), update.screen.map { it.text })
+        assertEquals(1, update.cursor.row)
+        assertEquals(5, update.cursor.column)
     }
 
     @Test
@@ -109,9 +294,35 @@ class VtTerminalEngineTest {
         assertEquals("plainhotend", update.screen[0].text)
         assertEquals(3, update.screen[0].runs.size)
         assertTrue(update.screen[0].runs[1].style.bold)
-        assertEquals(TerminalPalette.xtermColour(202), update.screen[0].runs[1].style.foreground)
-        assertEquals(TerminalPalette.rgb(1, 2, 3), update.screen[0].runs[1].style.background)
+        assertEquals(TerminalColour.Indexed(202), update.screen[0].runs[1].style.foreground)
+        assertEquals(
+            TerminalColour.Rgb(TerminalPalette.rgb(1, 2, 3)),
+            update.screen[0].runs[1].style.background,
+        )
         assertFalse(update.screen[0].runs[2].style.bold)
+    }
+
+    @Test
+    fun dimConcealAndStrikethroughHaveIndependentResetsAndExactCellGeometry() {
+        val engine = VtTerminalEngine(columns = 20, rows = 2)
+
+        val update = engine.accept(
+            ("\u001B[1;2mD\u001B[22mN" +
+                "\u001B[8mH\u001B[28mV" +
+                "\u001B[9mS\u001B[29mE").bytes(),
+        )
+        val runs = update.screen[0].runs.associateBy { it.text }
+
+        assertTrue(requireNotNull(runs["D"]).style.bold)
+        assertTrue(requireNotNull(runs["D"]).style.dim)
+        assertFalse(requireNotNull(runs["N"]).style.bold)
+        assertFalse(requireNotNull(runs["N"]).style.dim)
+        assertTrue(requireNotNull(runs["H"]).style.conceal)
+        assertFalse(requireNotNull(runs["V"]).style.conceal)
+        assertTrue(requireNotNull(runs["S"]).style.strikethrough)
+        assertFalse(requireNotNull(runs["E"]).style.strikethrough)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), update.screen[0].runs.map { it.startColumn })
+        assertTrue(update.screen[0].runs.all { it.columnWidth == 1 })
     }
 
     @Test
@@ -136,6 +347,88 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun reportsApplicationKeypadInsertAndDetailedMouseModes() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+
+        val keypad = engine.accept("\u001B=ab\u001B[1G\u001B[4hZ\u001B[?1002h".bytes())
+
+        assertTrue(keypad.modes.applicationKeypad)
+        assertTrue(keypad.modes.insertMode)
+        assertEquals(TerminalMouseTrackingMode.BUTTON_EVENT, keypad.modes.mouseTrackingMode)
+        assertEquals("Zab", keypad.screen[0].text)
+
+        val reset = engine.accept("\u001B>\u001B[4l\u001B[?1002l".bytes())
+        assertFalse(reset.modes.applicationKeypad)
+        assertFalse(reset.modes.insertMode)
+        assertEquals(TerminalMouseTrackingMode.OFF, reset.modes.mouseTrackingMode)
+    }
+
+    @Test
+    fun insertModeShiftsByCellWidthAndReplaceModeOverwritesOnlyTheActiveRow() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val initial = engine.accept("abcd\r\nstay".bytes())
+
+        val modeOnly = engine.accept("\u001B[1;2H\u001B[4h".bytes())
+        assertTrue(modeOnly.modes.insertMode)
+        assertTrue(modeOnly.dirtyRows.isEmpty())
+
+        val inserted = engine.accept("界".bytes())
+        assertEquals("a界bcd", inserted.screen[0].text)
+        assertArrayEquals(intArrayOf(0), inserted.dirtyRows)
+        assertSame(initial.screen[1], inserted.screen[1])
+
+        val replaced = engine.accept("\u001B[4lZ".bytes())
+        assertFalse(replaced.modes.insertMode)
+        assertEquals("a界Zcd", replaced.screen[0].text)
+        assertArrayEquals(intArrayOf(0), replaced.dirtyRows)
+        assertSame(inserted.screen[1], replaced.screen[1])
+    }
+
+    @Test
+    fun onlyUnprefixedCsiModeFourChangesInsertReplaceMode() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        engine.accept(byteArrayOf())
+
+        val ignored = engine.accept(
+            ("\u001B[>4h" +
+                "\u001B[!4h" +
+                "\u001B[?4h" +
+                "\u001B[=4h" +
+                "\u001B[\$4h" +
+                "\u001B[4:0h" +
+                "\u001B[h" +
+                "\u001B[100001h").bytes(),
+        )
+        assertFalse(ignored.modes.insertMode)
+        assertTrue(ignored.dirtyRows.isEmpty())
+
+        val enabled = engine.accept("\u001B[4h\u001B[>4l".bytes())
+        assertTrue(enabled.modes.insertMode)
+        assertTrue(enabled.dirtyRows.isEmpty())
+
+        val disabled = engine.accept("\u001B[4l".bytes())
+        assertFalse(disabled.modes.insertMode)
+        assertTrue(disabled.dirtyRows.isEmpty())
+    }
+
+    @Test
+    fun risResetsInsertKeypadAndRemoteCursorPresentation() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val enabled = engine.accept("\u001B=\u001B[4h\u001B[6 q".bytes())
+        assertTrue(enabled.modes.applicationKeypad)
+        assertTrue(enabled.modes.insertMode)
+        assertEquals(CursorStyle.BEAM, enabled.cursor.styleOverride)
+
+        val reset = engine.accept("\u001Bc".bytes())
+
+        assertFalse(reset.modes.applicationKeypad)
+        assertFalse(reset.modes.insertMode)
+        assertEquals(null, reset.cursor.styleOverride)
+        assertEquals(null, reset.cursor.blinkOverride)
+        assertArrayEquals(intArrayOf(0, 1), reset.dirtyRows)
+    }
+
+    @Test
     fun answersStatusCursorAndDeviceAttributeQueries() {
         val engine = VtTerminalEngine(columns = 10, rows = 2)
 
@@ -148,15 +441,66 @@ class VtTerminalEngineTest {
     }
 
     @Test
-    fun resizePreservesBoundedVisibleContentAndClampsCursor() {
+    fun shrinkingHeightKeepsTheActivePromptAndMovesTopPrimaryRowsToScrollback() {
+        val engine = VtTerminalEngine(columns = 10, rows = 3)
+        engine.accept("first\r\nsecond\r\nprompt> ".bytes())
+
+        val update = engine.resize(newColumns = 10, newRows = 2)
+
+        assertEquals(listOf("first"), update.completedScrollback.map { it.text })
+        assertEquals(listOf("second", "prompt>"), update.screen.map { it.text })
+        assertEquals(1, update.cursor.row)
+        assertEquals(8, update.cursor.column)
+    }
+
+    @Test
+    fun primaryResizeScrollbackIsDeferredUntilLeavingTheAlternateScreen() {
+        val engine = VtTerminalEngine(columns = 10, rows = 3)
+        engine.accept("first\r\nsecond\r\nprompt> ".bytes())
+        engine.accept("\u001B[?1049h".bytes())
+
+        val alternateResize = engine.resize(newColumns = 10, newRows = 2)
+        val restoredPrimary = engine.accept("\u001B[?1049l".bytes())
+
+        assertTrue(alternateResize.alternateScreen)
+        assertTrue(alternateResize.completedScrollback.isEmpty())
+        assertFalse(restoredPrimary.alternateScreen)
+        assertEquals(listOf("first"), restoredPrimary.completedScrollback.map { it.text })
+        assertEquals(listOf("second", "prompt>"), restoredPrimary.screen.map { it.text })
+        assertEquals(1, restoredPrimary.cursor.row)
+        assertEquals(8, restoredPrimary.cursor.column)
+    }
+
+    @Test
+    fun shrinkingWidthWrapsTheActivePromptWithoutDiscardingItsTail() {
         val engine = VtTerminalEngine(columns = 8, rows = 3)
-        engine.accept("12345678\r\nrow2\r\nrow3".bytes())
+        engine.accept("top\r\nbody\r\nprompt12".bytes())
 
-        val update = engine.resize(newColumns = 4, newRows = 2)
+        val update = engine.resize(newColumns = 4, newRows = 3)
 
-        assertEquals(listOf("1234", "row2"), update.screen.map { it.text })
-        assertTrue(update.cursor.row in 0..1)
-        assertTrue(update.cursor.column in 0..3)
+        assertEquals(listOf("top"), update.completedScrollback.map { it.text })
+        assertEquals(listOf("body", "prom", "pt12"), update.screen.map { it.text })
+        assertTrue(update.screen[1].softWrappedToNext)
+        assertFalse(update.screen[2].softWrappedToNext)
+        assertEquals(2, update.cursor.row)
+        assertEquals(3, update.cursor.column)
+
+        val continued = engine.accept("X".bytes())
+        assertEquals(listOf("body"), continued.completedScrollback.map { it.text })
+        assertEquals(listOf("prom", "pt12", "X"), continued.screen.map { it.text })
+    }
+
+    @Test
+    fun shrinkingWidthDoesNotSplitAWideCellAtTheNewRightEdge() {
+        val engine = VtTerminalEngine(columns = 6, rows = 2)
+        engine.accept("ab界z".bytes())
+
+        val update = engine.resize(newColumns = 3, newRows = 2)
+
+        assertEquals(listOf("ab", "界z"), update.screen.map { it.text })
+        assertTrue(update.screen[0].softWrappedToNext)
+        assertEquals(listOf(0, 0), update.screen.map { line -> line.runs.first().startColumn })
+        assertEquals(listOf(2, 3), update.screen.map { line -> line.runs.sumOf { it.columnWidth } })
     }
 
     @Test
@@ -171,9 +515,124 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun oscZeroAndTwoPublishTitlesAfterBelAndStringTerminators() {
+        val engine = VtTerminalEngine(columns = 10, rows = 2)
+
+        val bel = engine.accept("\u001B]0;build shell\u0007".bytes())
+        val escapedSt = engine.accept("\u001B]2;editor\u001B\\".bytes())
+        val c1St = engine.accept("\u009D2;monitor\u009C".bytes())
+
+        assertEquals("build shell", bel.terminalTitle)
+        assertEquals("editor", escapedSt.terminalTitle)
+        assertEquals("monitor", c1St.terminalTitle)
+    }
+
+    @Test
+    fun oscTitleParsingSurvivesNetworkAndUtf8ChunkBoundaries() {
+        val engine = VtTerminalEngine(columns = 10, rows = 2)
+        val sequence = "\u001B]2;deploy 🚀\u001B\\".bytes()
+
+        sequence.forEachIndexed { index, byte ->
+            val update = engine.accept(byteArrayOf(byte))
+            if (index < sequence.lastIndex) assertEquals(null, update.terminalTitle)
+        }
+
+        assertEquals("deploy 🚀", engine.accept(byteArrayOf()).terminalTitle)
+    }
+
+    @Test
+    fun malformedUnsupportedAndControlBearingOscDoNotReplaceCurrentTitle() {
+        val engine = VtTerminalEngine(columns = 12, rows = 2)
+        engine.accept("\u001B]0;trusted\u0007".bytes())
+
+        listOf(
+            "\u001B]1;unsupported\u0007",
+            "\u001B]2missing separator\u0007",
+            "\u001B]02;invalid selector\u0007",
+            "\u001B]2;line\nbreak\u0007",
+            "\u001B]2;broken\u001Bxrest\u0007",
+            "\u001B]2;bad \uFFFD title\u0007",
+            "\u001B]2;hidden\u202Etitle\u0007",
+        ).forEach { malformed ->
+            assertEquals("trusted", engine.accept(malformed.bytes()).terminalTitle)
+        }
+        assertEquals("OK", engine.accept("OK".bytes()).screen[0].text)
+    }
+
+    @Test
+    fun osc8AttachesBoundedHttpsMetadataAndClosingSequenceStopsTheLink() {
+        val engine = VtTerminalEngine(columns = 20, rows = 2)
+
+        val update = engine.accept(
+            ("\u001B]8;id=docs;https://example.test/help\u0007link" +
+                "\u001B]8;;\u0007 plain").bytes(),
+        )
+
+        assertEquals("link plain", update.screen[0].text)
+        assertEquals(2, update.screen[0].runs.size)
+        assertEquals("https://example.test/help", update.screen[0].runs[0].hyperlink?.uri)
+        assertEquals("docs", update.screen[0].runs[0].hyperlink?.id)
+        assertEquals(0, update.screen[0].runs[0].startColumn)
+        assertEquals(4, update.screen[0].runs[0].columnWidth)
+        assertEquals(null, update.screen[0].runs[1].hyperlink)
+        assertEquals(4, update.screen[0].runs[1].startColumn)
+    }
+
+    @Test
+    fun invalidOsc8SchemeClearsPriorLinkInsteadOfMislabelingFollowingText() {
+        val engine = VtTerminalEngine(columns = 20, rows = 2)
+
+        val update = engine.accept(
+            ("\u001B]8;;https://example.test\u0007safe" +
+                "\u001B]8;;javascript:alert(1)\u0007plain").bytes(),
+        )
+
+        assertEquals("https://example.test", update.screen[0].runs[0].hyperlink?.uri)
+        assertEquals(null, update.screen[0].runs.last().hyperlink)
+    }
+
+    @Test
+    fun autowrapAndRunCellGeometrySurviveWideCharacters() {
+        val engine = VtTerminalEngine(columns = 4, rows = 2)
+
+        val update = engine.accept("A🚀Bz".bytes())
+
+        assertEquals("A🚀B", update.screen[0].text)
+        assertTrue(update.screen[0].softWrappedToNext)
+        assertEquals(0, update.screen[0].runs.single().startColumn)
+        assertEquals(4, update.screen[0].runs.single().columnWidth)
+        assertEquals("z", update.screen[1].text)
+        assertFalse(update.screen[1].softWrappedToNext)
+    }
+
+    @Test
+    fun joinedEmojiModifiersFlagsAndBoxDrawingRetainExactCellGeometry() {
+        val engine = VtTerminalEngine(columns = 12, rows = 2)
+
+        val update = engine.accept("A👩🏽‍💻🇬🇧┌─B".bytes())
+
+        assertEquals("A👩🏽‍💻🇬🇧┌─B", update.screen[0].text)
+        assertEquals(8, update.screen[0].runs.single().columnWidth)
+        assertEquals(8, update.cursor.column)
+    }
+
+    @Test
+    fun combiningMarkAtFinalColumnAttachesToTheFinalCellBeforeAutowrap() {
+        val engine = VtTerminalEngine(columns = 4, rows = 2)
+
+        val beforeWrap = engine.accept("abcZ\u0301".bytes())
+        val afterWrap = engine.accept("x".bytes())
+
+        assertEquals("abcZ\u0301", beforeWrap.screen[0].text)
+        assertEquals(4, beforeWrap.screen[0].runs.single().columnWidth)
+        assertTrue(afterWrap.screen[0].softWrappedToNext)
+        assertEquals("x", afterWrap.screen[1].text)
+    }
+
+    @Test
     fun resetClearsScreenModesAndParserState() {
         val engine = VtTerminalEngine(columns = 10, rows = 2)
-        engine.accept("text\u001B[?1049h\u001B[?2004h".bytes())
+        engine.accept("text\u001B[?1049h\u001B[?2004h\u001B]2;old title\u0007".bytes())
 
         val update = engine.reset()
 
@@ -182,6 +641,7 @@ class VtTerminalEngineTest {
         assertEquals(listOf("", ""), update.screen.map { it.text })
         assertEquals(0, update.cursor.row)
         assertEquals(0, update.cursor.column)
+        assertEquals(null, update.terminalTitle)
     }
 
     @Test
@@ -203,10 +663,104 @@ class VtTerminalEngineTest {
     @Test
     fun oversizedOscPayloadIsDiscardedUntilTerminator() {
         val engine = VtTerminalEngine(columns = 10, rows = 2)
+        engine.accept("\u001B]2;retained\u0007".bytes())
 
         val update = engine.accept(("\u001B]0;" + "x".repeat(5_000) + "\u0007OK").bytes())
 
         assertEquals("OK", update.screen[0].text)
+        assertEquals("retained", update.terminalTitle)
+    }
+
+    @Test
+    fun projectAuthoredModeFixturesReplayAcrossEveryNetworkChunkBoundary() {
+        val insertBytes = fixtureBytes("insert-keypad.trace")
+        val insert = replayOneByteAtATime(VtTerminalEngine(columns = 8, rows = 2), insertBytes)
+        assertEquals("Zab", insert.screen[0].text)
+        assertFalse(insert.modes.insertMode)
+        assertFalse(insert.modes.applicationKeypad)
+
+        val osc = replayOneByteAtATime(
+            VtTerminalEngine(columns = 4, rows = 2),
+            fixtureBytes("osc8-wrap.trace"),
+        )
+        assertEquals("link", osc.screen[0].text)
+        assertTrue(osc.screen[0].softWrappedToNext)
+        assertEquals("https://example.test", osc.screen[0].runs.single().hyperlink?.uri)
+        assertEquals("z", osc.screen[1].text)
+
+        val mouse = replayOneByteAtATime(
+            VtTerminalEngine(columns = 8, rows = 2),
+            fixtureBytes("alternate-mouse.trace"),
+        )
+        assertFalse(mouse.alternateScreen)
+        assertEquals(TerminalMouseTrackingMode.OFF, mouse.modes.mouseTrackingMode)
+
+        val unicode = replayOneByteAtATime(
+            VtTerminalEngine(columns = 12, rows = 2),
+            fixtureBytes("unicode-grapheme.trace"),
+        )
+        assertEquals("A👩🏽‍💻🇬🇧┌─B", unicode.screen[0].text)
+        assertEquals(8, unicode.screen[0].runs.single().columnWidth)
+    }
+
+    @Test
+    fun inputModeAndCursorFixtureIsInvariantAcrossRandomNetworkChunking() {
+        val bytes = fixtureBytes("input-modes-cursor.trace")
+        val expectedEngine = VtTerminalEngine(columns = 8, rows = 2)
+        expectedEngine.accept(byteArrayOf())
+        val expected = expectedEngine.accept(bytes)
+
+        assertEquals("aZYcd", expected.screen[0].text)
+        assertTrue(expected.modes.applicationKeypad)
+        assertFalse(expected.modes.insertMode)
+        assertEquals(CursorStyle.BEAM, expected.cursor.styleOverride)
+        assertEquals(true, expected.cursor.blinkOverride)
+        assertArrayEquals(intArrayOf(0), expected.dirtyRows)
+
+        repeat(64) { seed ->
+            val random = Random(seed * 7919 + 17)
+            val engine = VtTerminalEngine(columns = 8, rows = 2)
+            engine.accept(byteArrayOf())
+            val dirtyRows = sortedSetOf<Int>()
+            var offset = 0
+            var actual = engine.accept(byteArrayOf())
+            while (offset < bytes.size) {
+                val length = random.nextInt(1, minOf(9, bytes.size - offset) + 1)
+                actual = engine.accept(bytes.copyOfRange(offset, offset + length))
+                actual.dirtyRows.forEach { row -> dirtyRows.add(row) }
+                offset += length
+            }
+
+            assertEquals(expected.screen.map { it.text }, actual.screen.map { it.text })
+            assertEquals(expected.screen.map { it.runs }, actual.screen.map { it.runs })
+            assertEquals(
+                expected.screen.map { it.softWrappedToNext },
+                actual.screen.map { it.softWrappedToNext },
+            )
+            assertEquals(expected.cursor, actual.cursor)
+            assertEquals(expected.modes, actual.modes)
+            assertEquals(listOf(0), dirtyRows.toList())
+        }
+    }
+
+    private fun replayOneByteAtATime(
+        engine: VtTerminalEngine,
+        bytes: ByteArray,
+    ): TerminalFrameUpdate {
+        bytes.forEach { byte -> engine.accept(byteArrayOf(byte)) }
+        return engine.accept(byteArrayOf())
+    }
+
+    private fun fixtureBytes(name: String): ByteArray {
+        val stream = requireNotNull(javaClass.getResourceAsStream("/terminal-fixtures/$name"))
+        val output = ByteArrayOutputStream()
+        stream.bufferedReader(Charsets.US_ASCII).useLines { lines ->
+            lines.map(String::trim)
+                .filter { line -> line.isNotEmpty() && !line.startsWith('#') }
+                .flatMap { line -> line.split(Regex("\\s+")).asSequence() }
+                .forEach { token -> output.write(token.toInt(16)) }
+        }
+        return output.toByteArray()
     }
 
     private fun String.bytes(): ByteArray = toByteArray(Charsets.UTF_8)

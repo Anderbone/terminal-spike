@@ -56,6 +56,12 @@ class TerminalBuffer(
     @Synchronized
     fun lineCount(): Int = size
 
+    /** Immutable reference snapshot for transcript/search work off the renderer thread. */
+    @Synchronized
+    fun snapshot(): List<TerminalLine> = List(size) { offset ->
+        requireNotNull(lines[(head + offset) % capacity])
+    }
+
     @Synchronized
     fun oldestLineId(): Long? = if (size == 0) null else lines[head]?.id
 

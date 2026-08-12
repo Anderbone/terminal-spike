@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.security.KeyStore
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -36,8 +37,8 @@ class SecureSshPasswordStore(
         validate(scope)
         require(password.size in 1..MAX_PASSWORD_BYTES) { "Invalid SSH password size." }
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-            updateAAD(associatedData(scope))
+            init(Cipher.ENCRYPT_MODE, getOrCreateKeyForWrite())
+            updateAAD(canonicalAssociatedData(scope))
         }
         val ciphertext = cipher.doFinal(password)
         require(directory.isDirectory || directory.mkdirs()) { "Could not create credential storage." }
@@ -70,7 +71,8 @@ class SecureSshPasswordStore(
         val encrypted = file.openRead().use { input ->
             DataInputStream(input).use { data ->
                 require(data.readInt() == MAGIC) { "Invalid saved SSH password header." }
-                require(data.readInt() == VERSION) { "Unsupported saved SSH password version." }
+                val version = data.readInt()
+                require(version in LEGACY_VERSION..VERSION) { "Unsupported saved SSH password version." }
                 val ivLength = data.readInt()
                 require(ivLength in 12..32) { "Invalid saved SSH password IV." }
                 val iv = ByteArray(ivLength).also(data::readFully)
@@ -78,17 +80,32 @@ class SecureSshPasswordStore(
                 require(ciphertextLength in 16..MAX_ENCRYPTED_BYTES) { "Invalid saved SSH password size." }
                 val ciphertext = ByteArray(ciphertextLength).also(data::readFully)
                 require(data.read() == -1) { "Trailing saved SSH password data." }
-                EncryptedPassword(iv, ciphertext)
+                EncryptedPassword(version, iv, ciphertext)
             }
         }
-        return Cipher.getInstance(TRANSFORMATION).run {
-            init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(TAG_BITS, encrypted.iv))
-            updateAAD(associatedData(scope))
+        val cleartext = decrypt(
+            encrypted = encrypted,
+            associatedData = if (encrypted.version == LEGACY_VERSION) {
+                legacyAssociatedData(scope)
+            } else {
+                canonicalAssociatedData(scope)
+            },
+        )
+        if (encrypted.version == LEGACY_VERSION) {
+            // Keep a readable v1 file if a best-effort migration cannot be committed atomically.
+            runCatching { save(scope, cleartext) }
+        }
+        return cleartext
+    }
+
+    private fun decrypt(encrypted: EncryptedPassword, associatedData: ByteArray): ByteArray =
+        Cipher.getInstance(TRANSFORMATION).run {
+            init(Cipher.DECRYPT_MODE, getExistingKeyForRead(), GCMParameterSpec(TAG_BITS, encrypted.iv))
+            updateAAD(associatedData)
             doFinal(encrypted.ciphertext).also { cleartext ->
                 require(cleartext.size in 1..MAX_PASSWORD_BYTES) { "Invalid decrypted SSH password size." }
             }
         }
-    }
 
     @Synchronized
     fun delete(profileId: Long) {
@@ -96,13 +113,37 @@ class SecureSshPasswordStore(
         AtomicFile(fileFor(profileId)).delete()
     }
 
+    @Synchronized
+    fun clearAllAfterRecoveryConfirmation() {
+        directory.deleteRecursively()
+        KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }.run {
+            if (containsAlias(keyAlias)) deleteEntry(keyAlias)
+        }
+    }
+
     private fun fileFor(profileId: Long) = directory.resolve("$profileId.password")
 
-    private fun associatedData(scope: SshPasswordScope): ByteArray = ByteArrayOutputStream().also { output ->
+    private fun canonicalAssociatedData(scope: SshPasswordScope): ByteArray = associatedData(
+        format = ASSOCIATED_DATA_FORMAT,
+        scope = scope,
+        host = scope.host.lowercase(Locale.ROOT),
+    )
+
+    private fun legacyAssociatedData(scope: SshPasswordScope): ByteArray = associatedData(
+        format = LEGACY_ASSOCIATED_DATA_FORMAT,
+        scope = scope,
+        host = scope.host,
+    )
+
+    private fun associatedData(
+        format: String,
+        scope: SshPasswordScope,
+        host: String,
+    ): ByteArray = ByteArrayOutputStream().also { output ->
         DataOutputStream(output).use { data ->
-            data.writeUTF(ASSOCIATED_DATA_FORMAT)
+            data.writeUTF(format)
             data.writeLong(scope.profileId)
-            data.writeUTF(scope.host)
+            data.writeUTF(host)
             data.writeInt(scope.port)
             data.writeUTF(scope.username)
         }
@@ -120,9 +161,19 @@ class SecureSshPasswordStore(
         ) { "Invalid saved username." }
     }
 
-    private fun getOrCreateKey(): SecretKey {
+    private fun getExistingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
+        if (!keyStore.containsAlias(keyAlias)) return null
+        return keyStore.getKey(keyAlias, null) as? SecretKey
+            ?: throw StoredCredentialKeyUnavailableException(StoredCredentialKind.SSH_PASSWORD)
+    }
+
+    private fun getExistingKeyForRead(): SecretKey =
+        getExistingKey()
+            ?: throw StoredCredentialKeyUnavailableException(StoredCredentialKind.SSH_PASSWORD)
+
+    private fun getOrCreateKeyForWrite(): SecretKey {
+        getExistingKey()?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER).run {
             init(
                 KeyGenParameterSpec.Builder(
@@ -138,7 +189,11 @@ class SecureSshPasswordStore(
         }
     }
 
-    private data class EncryptedPassword(val iv: ByteArray, val ciphertext: ByteArray)
+    private data class EncryptedPassword(
+        val version: Int,
+        val iv: ByteArray,
+        val ciphertext: ByteArray,
+    )
 
     companion object {
         const val MAX_PASSWORD_BYTES = 4 * 1024
@@ -149,7 +204,9 @@ class SecureSshPasswordStore(
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val TAG_BITS = 128
         private const val MAGIC = 0x54535057
-        private const val VERSION = 1
-        private const val ASSOCIATED_DATA_FORMAT = "terminal-spike-ssh-password-v1"
+        private const val LEGACY_VERSION = 1
+        private const val VERSION = 2
+        private const val LEGACY_ASSOCIATED_DATA_FORMAT = "terminal-spike-ssh-password-v1"
+        private const val ASSOCIATED_DATA_FORMAT = "terminal-spike-ssh-password-v2"
     }
 }

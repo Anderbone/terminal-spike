@@ -1,0 +1,146 @@
+From: Terminal Spike contributors
+Date: 2026-08-09
+Subject: [PATCH] Android client port: avoid printable-key copies and clear key storage
+
+The Android extension receives the ephemeral client key from a one-shot pipe.
+Keep the upstream string constructor for source compatibility, but make the
+client's const-char path decode from fixed mutable buffers, avoid the Session
+constructor's by-value copies, and clear redundant key storage after the OCB
+context is initialized.
+
+--- a/src/crypto/crypto.h
++++ b/src/crypto/crypto.h
+@@ -95,9 +95,12 @@
+   public:
+     Base64Key(); /* random key */
+     Base64Key(PRNG &prng);
++    Base64Key( const char *printable_key );
+     Base64Key( string printable_key );
++    ~Base64Key();
+     string printable_key( void ) const;
+-    unsigned char *data( void ) { return key; }
++    const unsigned char *data( void ) const { return key; }
++    void clear( void );
+   };
+ 
+   class Nonce {
+@@ -133,7 +136,6 @@
+   
+   class Session {
+   private:
+-    Base64Key key;
+     AlignedBuffer ctx_buf;
+     ae_ctx *ctx;
+     uint64_t blocks_encrypted;
+@@ -147,7 +149,7 @@
+     /* Overhead (not counting the nonce, which is handled by network transport) */
+     static const int ADDED_BYTES = 16 /* final OCB block */;
+ 
+-    Session( Base64Key s_key );
++    Session( const Base64Key &s_key );
+     ~Session();
+     
+     const string encrypt( const Message & plaintext );
+--- a/src/crypto/crypto.cc
++++ b/src/crypto/crypto.cc
+@@ -107,29 +107,65 @@
+   }
+ }
+ 
+-Base64Key::Base64Key( string printable_key )
++static void clear_bytes( void *memory, size_t length )
+ {
+-  if ( printable_key.length() != 22 ) {
++  volatile unsigned char *cursor = static_cast<volatile unsigned char *>( memory );
++  while ( length-- ) {
++    *cursor++ = 0;
++  }
++}
++
++Base64Key::Base64Key( const char *printable_key )
++{
++  if ( printable_key == NULL || strlen( printable_key ) != 22 ) {
++    clear();
+     throw CryptoException( "Key must be 22 letters long." );
+   }
+ 
+-  string base64 = printable_key + "==";
++  char base64[ 24 ];
++  memcpy( base64, printable_key, 22 );
++  base64[ 22 ] = '=';
++  base64[ 23 ] = '=';
+ 
+   size_t len = 16;
+-  if ( !base64_decode( base64.data(), 24, key, &len ) ) {
++  if ( !base64_decode( base64, sizeof base64, key, &len ) ) {
++    clear_bytes( base64, sizeof base64 );
++    clear();
+     throw CryptoException( "Key must be well-formed base64." );
+   }
+ 
+   if ( len != 16 ) {
++    clear_bytes( base64, sizeof base64 );
++    clear();
+     throw CryptoException( "Key must represent 16 octets." );
+   }
+ 
+   /* to catch changes after the first 128 bits */
+-  if ( printable_key != this->printable_key() ) {
++  char canonical[ 24 ];
++  base64_encode( key, 16, canonical, sizeof canonical );
++  bool canonical_match = memcmp( printable_key, canonical, 22 ) == 0;
++  clear_bytes( canonical, sizeof canonical );
++  clear_bytes( base64, sizeof base64 );
++  if ( !canonical_match ) {
++    clear();
+     throw CryptoException( "Base64 key was not encoded 128-bit key." );
+   }
+ }
+ 
++Base64Key::Base64Key( string printable_key )
++  : Base64Key( printable_key.c_str() )
++{}
++
++Base64Key::~Base64Key()
++{
++  clear();
++}
++
++void Base64Key::clear( void )
++{
++  clear_bytes( key, sizeof key );
++}
++
+ Base64Key::Base64Key()
+ {
+   PRNG().fill( key, sizeof( key ) );
+@@ -155,14 +191,14 @@
+   return string( base64 );
+ }
+ 
+-Session::Session( Base64Key s_key )
+-  : key( s_key ), ctx_buf( ae_ctx_sizeof() ),
++Session::Session( const Base64Key &s_key )
++  : ctx_buf( ae_ctx_sizeof() ),
+     ctx( (ae_ctx *)ctx_buf.data() ), blocks_encrypted( 0 ),
+     plaintext_buffer( RECEIVE_MTU ),
+     ciphertext_buffer( RECEIVE_MTU ),
+     nonce_buffer( Nonce::NONCE_LEN )
+ {
+-  if ( AE_SUCCESS != ae_init( ctx, key.data(), 16, 12, 16 ) ) {
++  if ( AE_SUCCESS != ae_init( ctx, s_key.data(), 16, 12, 16 ) ) {
+     throw CryptoException( "Could not initialize AES-OCB context." );
+   }
+ }
+--- a/src/network/network.cc
++++ b/src/network/network.cc
+@@ -371,6 +371,9 @@
+     RTTVAR( 500 ),
+     send_error()
+ {
++  /* Android modification (2026-08-09): the initialized OCB context is the
++     only long-lived client copy of the decoded ephemeral session key. */
++  key.clear();
+   setup();
+ 
+   /* associate socket with remote host and port */

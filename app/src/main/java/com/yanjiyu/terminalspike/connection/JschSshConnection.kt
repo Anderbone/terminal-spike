@@ -1,38 +1,39 @@
 package com.yanjiyu.terminalspike.connection
 
 import com.jcraft.jsch.ChannelShell
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
-import com.jcraft.jsch.Session
+import com.yanjiyu.terminalspike.core.security.credential.CredentialStoreException
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
+import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class JschSshConnection(
-    private val knownHostsFile: () -> File,
+    private val knownHostManager: KnownHostManager,
     private val config: SshConnectionConfig,
 ) : Connection {
-    private val knownHostStore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        KnownHostStores.forFile(knownHostsFile())
-    }
-    private val outgoing = ArrayBlockingQueue<ByteArray>(OUTGOING_QUEUE_CAPACITY)
+    /** Compatibility constructor for the legacy ViewModel while its owner completes cutover. */
+    constructor(
+        knownHostsFile: () -> File,
+        config: SshConnectionConfig,
+    ) : this(KnownHostManager(knownHostsFile), config)
+
     private val lock = Any()
+    private val authenticatedSessionFactory = JschAuthenticatedSessionFactory(knownHostManager)
 
     @Volatile
     private var running = false
 
-    @Volatile
-    private var closeRequested = false
-
-    @Volatile
-    private var hostKeyRepository: VerifyingHostKeyRepository? = null
-
-    private var session: Session? = null
+    private var activeAttempt: ConnectionAttempt? = null
+    private var authenticatedSession: AuthenticatedJschSession? = null
     private var shell: ChannelShell? = null
     private var output: OutputStream? = null
-    private var writerThread: Thread? = null
+    private var writer: BoundedSshWriter? = null
+    private var startupInputGate: StartupFirstInputGate? = null
 
     override suspend fun connect(
         columns: Int,
@@ -40,97 +41,165 @@ class JschSshConnection(
         onBytes: (ByteArray) -> Unit,
         onState: (ConnectionState) -> Unit,
     ) {
-        close()
-        closeRequested = false
-        onState(ConnectionState.Connecting)
-        val hostAlias = hostAlias(config.host, config.port)
-        val repository = VerifyingHostKeyRepository(
-            store = knownHostStore,
-            displayHost = hostAlias,
-            onPrompt = { prompt -> onState(ConnectionState.AwaitingApproval(prompt)) },
-        )
-        hostKeyRepository = repository
-        val jsch = JSch().apply { setHostKeyRepository(repository) }
-        val authentication = config.authentication
-        var loadedPassword: ByteArray? = null
+        closeCurrentAttempt(clearAuthentication = false)
+        val attempt = ConnectionAttempt(ConnectionStatePublisher(onState))
+        synchronized(lock) {
+            activeAttempt = attempt
+        }
+        var repository: VerifyingHostKeyRepository? = null
         try {
-            if (authentication is SshAuthentication.PrivateKey) {
-                val keyBytes = authentication.loadKey()
-                try {
-                    jsch.addIdentity(
-                        authentication.identityName,
-                        keyBytes,
-                        null,
-                        authentication.passphrase,
-                    )
-                } finally {
-                    keyBytes.fill(0)
-                }
-            }
-            val newSession = jsch.getSession(config.username, config.host, config.port)
-            synchronized(lock) { session = newSession }
-            newSession.hostKeyAlias = hostAlias
-            when (authentication) {
-                is SshAuthentication.Password -> newSession.setPassword(authentication.secret)
-                is SshAuthentication.StoredPassword -> {
-                    loadedPassword = authentication.loadSecret()
-                    newSession.setPassword(loadedPassword)
-                }
-                is SshAuthentication.PrivateKey -> Unit
-            }
-            newSession.setConfig("StrictHostKeyChecking", "yes")
-            newSession.setConfig(
-                "PreferredAuthentications",
-                when (authentication) {
-                    is SshAuthentication.Password -> "password,keyboard-interactive"
-                    is SshAuthentication.StoredPassword -> "password,keyboard-interactive"
-                    is SshAuthentication.PrivateKey -> "publickey"
+            attempt.states.publish(ConnectionState.Connecting)
+            val openedSession = authenticatedSessionFactory.connect(
+                config = config,
+                onPrompt = { prompt -> attempt.states.publish(ConnectionState.AwaitingApproval(prompt)) },
+                onKeyboardInteractiveChallenge = { challenge ->
+                    attempt.states.publish(ConnectionState.AwaitingApproval(challenge))
                 },
-            )
-            newSession.setServerAliveInterval(SERVER_ALIVE_INTERVAL_MS)
-            newSession.setServerAliveCountMax(SERVER_ALIVE_COUNT_MAX)
-            newSession.connect(CONNECT_TIMEOUT_MS)
+                onRepositoryReady = { verifyingRepository ->
+                    repository = verifyingRepository
+                    attempt.hostKeyRepository = verifyingRepository
+                },
+                registerBeforeConnect = { candidate ->
+                    synchronized(lock) {
+                        if (activeAttempt !== attempt || attempt.explicitCloseRequested) {
+                            false
+                        } else {
+                            authenticatedSession = candidate
+                            true
+                        }
+                    }
+                },
+            ) ?: return
+            val newSession = openedSession.session
+
+            if (!isActive(attempt)) return
 
             val newShell = newSession.openChannel("shell") as ChannelShell
-            newShell.setPty(true)
-            newShell.setPtyType(TERMINAL_TYPE)
-            newShell.setPtySize(columns.coerceAtLeast(1), rows.coerceAtLeast(1), 0, 0)
+            configureSshPty(
+                target = JschShellPtyTarget(newShell),
+                terminalType = config.terminalType,
+                columns = columns,
+                rows = rows,
+            )
             val input = newShell.inputStream
             val newOutput = newShell.outputStream
-            synchronized(lock) {
-                shell = newShell
-                output = newOutput
+            val channelRegistered = synchronized(lock) {
+                if (activeAttempt !== attempt || attempt.explicitCloseRequested) {
+                    false
+                } else {
+                    shell = newShell
+                    output = newOutput
+                    true
+                }
+            }
+            if (!channelRegistered) {
+                runCatching { newOutput.close() }
+                newShell.disconnect()
+                return
             }
             newShell.connect(CHANNEL_TIMEOUT_MS)
-            running = true
-            startWriter(newOutput)
-            onState(ConnectionState.Connected)
+            val newWriter = BoundedSshWriter(
+                capacity = OUTGOING_QUEUE_CAPACITY,
+                pollIntervalMillis = WRITER_POLL_MS,
+            )
+            val newStartupInputGate = StartupFirstInputGate(
+                capacity = OUTGOING_QUEUE_CAPACITY - STARTUP_RESERVED_WRITER_SLOTS,
+                downstreamOffer = newWriter::offer,
+            )
+            val connectionStillWanted = synchronized(lock) {
+                if (activeAttempt !== attempt || attempt.explicitCloseRequested) {
+                    false
+                } else {
+                    writer = newWriter
+                    startupInputGate = newStartupInputGate
+                    running = true
+                    newWriter.start(newOutput) {
+                        failConnection(attempt, transientTransportFailure(WRITER_FAILURE_MESSAGE))
+                    }
+                    true
+                }
+            }
+            if (!connectionStillWanted) return
+            val startupResult = attempt.publishConnectedAndDispatchStartup(
+                command = config.startupCommand,
+                sendOnce = newWriter::offer,
+            ) ?: return
+            if (startupResult == SshStartupDispatchResult.REJECTED) {
+                failConnection(attempt, ConnectionState.Failed(STARTUP_COMMAND_REJECTED_MESSAGE))
+                return
+            }
+            if (!newStartupInputGate.open()) {
+                failConnection(attempt, ConnectionState.Failed(QUEUE_REJECTED_MESSAGE))
+                return
+            }
 
             val buffer = ByteArray(READ_BUFFER_SIZE)
-            while (running && newShell.isConnected) {
+            while (isRunning(attempt) && newShell.isConnected) {
                 val count = input.read(buffer)
                 if (count < 0) break
-                if (count > 0) onBytes(buffer.copyOf(count))
+                if (count > 0) deliverConnectionBytes(onBytes, buffer.copyOf(count))
             }
-            if (running) onState(ConnectionState.Disconnected)
+            publishTerminalStateAfterTransportEnded(
+                attempt = attempt,
+                remoteExitStatus = newShell.exitStatus,
+            )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
-            if (!closeRequested) {
-                onState(ConnectionState.Failed(failureMessage(repository, error)))
+            val (explicitClose, remoteExitStatus) = synchronized(lock) {
+                if (activeAttempt === attempt) running = false
+                attempt.explicitCloseRequested to shell?.exitStatus
             }
+            attempt.states.publishTerminalAndCleanup(
+                terminalConnectionState(
+                    explicitCloseRequested = explicitClose,
+                    transportFailure = attempt.transportFailure,
+                    fallbackFailure = sshFailure(repository, error),
+                    remoteExitStatus = remoteExitStatus,
+                ),
+            ) { closeResources(attempt) }
         } finally {
-            when (authentication) {
-                is SshAuthentication.Password -> authentication.secret.fill(0)
-                is SshAuthentication.StoredPassword -> loadedPassword?.fill(0)
-                is SshAuthentication.PrivateKey -> authentication.passphrase?.fill(0)
+            config.clearAuthenticationSecrets()
+            closeResources(attempt)
+            synchronized(lock) {
+                if (activeAttempt === attempt) activeAttempt = null
             }
-            closeResources()
         }
     }
 
     override fun send(bytes: ByteArray) {
-        if (!running || bytes.isEmpty()) return
-        if (!outgoing.offer(bytes.copyOf())) {
-            close()
+        sendWithAcceptance(bytes)
+    }
+
+    override fun sendWithAcceptance(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        if (trySend(bytes)) return true
+        val attempt = synchronized(lock) {
+            activeAttempt?.takeIf { current ->
+                running && !current.explicitCloseRequested
+            }
+        } ?: return false
+        failConnection(attempt, ConnectionState.Failed(QUEUE_REJECTED_MESSAGE))
+        return false
+    }
+
+    override fun trySend(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        return synchronized(lock) {
+            val attempt = activeAttempt
+            val inputGate = startupInputGate
+            if (
+                !running ||
+                attempt == null ||
+                attempt.explicitCloseRequested ||
+                output == null ||
+                inputGate == null
+            ) {
+                false
+            } else {
+                // Backpressure rejects this write without tearing down an otherwise-live session.
+                inputGate.offer(bytes)
+            }
         }
     }
 
@@ -143,71 +212,480 @@ class JschSshConnection(
         )
     }
 
-    override fun answerPrompt(accept: Boolean) {
-        hostKeyRepository?.answerPrompt(accept)
+    override fun answerHostIdentityPrompt(
+        promptToken: Long,
+        decision: HostIdentityDecision,
+    ) {
+        synchronized(lock) { activeAttempt?.hostKeyRepository }
+            ?.answerPrompt(promptToken, decision)
+    }
+
+    override fun answerKeyboardInteractiveChallenge(
+        challengeToken: Long,
+        responses: List<CharArray>,
+    ) {
+        val session = synchronized(lock) { authenticatedSession }
+        if (session == null) {
+            responses.forEach { it.fill('\u0000') }
+        } else {
+            session.answerKeyboardInteractiveChallenge(challengeToken, responses)
+        }
+    }
+
+    override fun cancelKeyboardInteractiveChallenge(challengeToken: Long) {
+        synchronized(lock) { authenticatedSession }
+            ?.cancelKeyboardInteractiveChallenge(challengeToken)
+    }
+
+    override fun cancelPendingPrompts() {
+        synchronized(lock) { activeAttempt?.hostKeyRepository }?.retire()
+        synchronized(lock) { authenticatedSession }
+            ?.cancelPendingKeyboardInteractiveChallenge()
     }
 
     override fun close() {
-        closeRequested = true
-        running = false
-        hostKeyRepository?.cancelPrompt()
-        closeResources()
+        closeCurrentAttempt(clearAuthentication = true)
     }
 
-    private fun startWriter(stream: OutputStream) {
-        writerThread = thread(name = "ssh-terminal-writer", isDaemon = true) {
-            try {
-                while (running) {
-                    val bytes = outgoing.poll(WRITER_POLL_MS, TimeUnit.MILLISECONDS) ?: continue
-                    stream.write(bytes)
-                    stream.flush()
-                }
-            } catch (_: Exception) {
-                close()
-            }
+    private fun closeCurrentAttempt(clearAuthentication: Boolean) {
+        val attempt = synchronized(lock) {
+            running = false
+            activeAttempt?.also { it.explicitCloseRequested = true }
+        }
+        try {
+            attempt?.hostKeyRepository?.retire()
+            synchronized(lock) { authenticatedSession }
+                ?.cancelPendingKeyboardInteractiveChallenge()
+            attempt?.states?.publish(ConnectionState.Disconnected)
+        } finally {
+            closeResources(attempt)
+            if (clearAuthentication) config.clearAuthenticationSecrets()
         }
     }
 
-    private fun closeResources() {
-        running = false
-        outgoing.clear()
+    private fun isActive(attempt: ConnectionAttempt): Boolean = synchronized(lock) {
+        activeAttempt === attempt && !attempt.explicitCloseRequested
+    }
+
+    private fun isRunning(attempt: ConnectionAttempt): Boolean = synchronized(lock) {
+        activeAttempt === attempt && running && !attempt.explicitCloseRequested
+    }
+
+    private fun publishTerminalStateAfterTransportEnded(
+        attempt: ConnectionAttempt,
+        remoteExitStatus: Int,
+    ) {
+        val state = synchronized(lock) {
+            if (activeAttempt === attempt) running = false
+            terminalConnectionState(
+                explicitCloseRequested = attempt.explicitCloseRequested,
+                transportFailure = attempt.transportFailure,
+                fallbackFailure = null,
+                remoteExitStatus = remoteExitStatus,
+            )
+        }
+        attempt.states.publishTerminalAndCleanup(state) { closeResources(attempt) }
+    }
+
+    private fun failConnection(attempt: ConnectionAttempt, failure: ConnectionState.Failed) {
+        val shouldClose = synchronized(lock) {
+            if (activeAttempt !== attempt || attempt.explicitCloseRequested || !running) {
+                false
+            } else {
+                attempt.transportFailure = failure
+                running = false
+                true
+            }
+        }
+        if (!shouldClose) return
+        attempt.states.publishTerminalAndCleanup(failure) { closeResources(attempt) }
+    }
+
+    private fun closeResources(attempt: ConnectionAttempt?) {
         val resources = synchronized(lock) {
-            val current = Triple(output, shell, session)
+            if (attempt != null && activeAttempt !== attempt) return
+            running = false
+            val current = ConnectionResources(
+                writer = writer,
+                startupInputGate = startupInputGate,
+                output = output,
+                shell = shell,
+                authenticatedSession = authenticatedSession,
+            )
+            writer = null
+            startupInputGate = null
             output = null
             shell = null
-            session = null
+            authenticatedSession = null
             current
         }
-        runCatching { resources.first?.close() }
-        runCatching { resources.second?.disconnect() }
-        runCatching { resources.third?.disconnect() }
-        writerThread?.interrupt()
-        writerThread = null
+        resources.startupInputGate?.close()
+        resources.writer?.stop()
+        runCatching { resources.output?.close() }
+        runCatching { resources.shell?.disconnect() }
+        runCatching { resources.authenticatedSession?.close() }
     }
 
-    private fun failureMessage(repository: VerifyingHostKeyRepository, error: Exception): String =
-        when (repository.failure) {
-            HostKeyFailure.CHANGED -> "Host key changed. Connection blocked."
-            HostKeyFailure.REJECTED -> "Host key was not trusted."
-            HostKeyFailure.STORE_FAILED -> "Could not save the trusted host key."
-            null -> when (error) {
-                is JSchException -> error.message?.takeIf { it.isNotBlank() } ?: "SSH connection failed."
-                else -> "SSH connection failed."
-            }
-        }
-
-    private fun hostAlias(host: String, port: Int): String =
-        if (port == DEFAULT_SSH_PORT) host else "[$host]:$port"
-
     companion object {
-        private const val DEFAULT_SSH_PORT = 22
-        private const val CONNECT_TIMEOUT_MS = 15_000
         private const val CHANNEL_TIMEOUT_MS = 10_000
-        private const val SERVER_ALIVE_INTERVAL_MS = 30_000
-        private const val SERVER_ALIVE_COUNT_MAX = 3
         private const val READ_BUFFER_SIZE = 8 * 1024
         private const val OUTGOING_QUEUE_CAPACITY = 256
+        private const val STARTUP_RESERVED_WRITER_SLOTS = 1
         private const val WRITER_POLL_MS = 250L
-        private const val TERMINAL_TYPE = "xterm-256color"
+        private const val QUEUE_REJECTED_MESSAGE =
+            "SSH output queue is full. Connection closed to prevent input loss."
+        private const val STARTUP_COMMAND_REJECTED_MESSAGE =
+            "SSH startup input could not be queued. Connection closed to prevent ambiguous shell state."
+        private const val WRITER_FAILURE_MESSAGE = "SSH connection lost while sending data."
+    }
+}
+
+/** Maps transport diagnostics to display-safe categories without echoing endpoints or credentials. */
+internal fun safeJschFailure(rawMessage: String?): ConnectionState.Failed {
+    val normalized = rawMessage.orEmpty().lowercase()
+    return when {
+        "auth fail" in normalized || "auth cancel" in normalized || "authentication" in normalized ->
+            ConnectionState.Failed("SSH authentication failed.")
+        "timeout" in normalized || "timed out" in normalized ->
+            transientTransportFailure("SSH connection timed out.")
+        "unknownhost" in normalized || "unresolved" in normalized ->
+            transientTransportFailure("SSH host could not be resolved.")
+        "refused" in normalized -> transientTransportFailure("SSH connection was refused.")
+        "algorithm negotiation" in normalized || "no matching" in normalized ->
+            ConnectionState.Failed("No compatible SSH security algorithm was found.")
+        else -> ConnectionState.Failed("SSH connection failed.")
+    }
+}
+
+internal fun safeJschFailureMessage(rawMessage: String?): String = safeJschFailure(rawMessage).message
+
+internal fun sshFailure(
+    repository: VerifyingHostKeyRepository?,
+    error: Exception,
+): ConnectionState.Failed = when (repository?.failure) {
+    HostKeyFailure.CHANGED -> ConnectionState.Failed("Host key changed. Connection blocked.")
+    HostKeyFailure.REJECTED -> ConnectionState.Failed("Host key was not trusted.")
+    HostKeyFailure.STORE_FAILED -> ConnectionState.Failed("Could not save the trusted host key.")
+    null -> when (error) {
+        is CredentialStoreException -> ConnectionState.Failed(storedCredentialFailureMessage(error))
+        is JSchException -> safeJschFailure(error.message).let { safe ->
+            if (
+                safe.disposition == ConnectionFailureDisposition.TERMINAL &&
+                !isExplicitTerminalJschFailure(error.message) &&
+                error.hasIoCause()
+            ) {
+                transientTransportFailure("SSH connection lost.")
+            } else {
+                safe
+            }
+        }
+        is IOException -> transientTransportFailure("SSH connection lost.")
+        else -> ConnectionState.Failed("SSH connection failed.")
+    }
+}
+
+/** Compatibility projection for bootstrap boundaries that only carry a redacted message. */
+internal fun sshFailureMessage(
+    repository: VerifyingHostKeyRepository?,
+    error: Exception,
+): String = sshFailure(repository, error).message
+
+private fun Throwable.hasIoCause(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        if (current is IOException) return true
+        current = current.cause
+    }
+    return false
+}
+
+private fun isExplicitTerminalJschFailure(rawMessage: String?): Boolean {
+    val normalized = rawMessage.orEmpty().lowercase()
+    return "auth fail" in normalized ||
+        "auth cancel" in normalized ||
+        "authentication" in normalized ||
+        "algorithm negotiation" in normalized ||
+        "no matching" in normalized
+}
+
+private fun storedCredentialFailureMessage(error: CredentialStoreException): String = when (error) {
+    is CredentialStoreException.KeyUnavailable ->
+        "Saved credential encryption is unavailable. Re-enter or re-import it."
+    is CredentialStoreException.Missing,
+    is CredentialStoreException.Malformed,
+    is CredentialStoreException.Tampered,
+    -> "Saved credential is missing or damaged. Re-enter or re-import it."
+}
+
+internal class ConnectionAttempt(
+    val states: ConnectionStatePublisher,
+) {
+    private val startupDispatcher = OneShotSshStartupDispatcher()
+    private val startupLock = Any()
+    private var shellConnectedHandled = false
+
+    /** Publishes Connected before the attempt-owned one-shot can offer any startup input. */
+    fun publishConnectedAndDispatchStartup(
+        command: String?,
+        sendOnce: (ByteArray) -> Boolean,
+    ): SshStartupDispatchResult? {
+        val isFirstCallback = synchronized(startupLock) {
+            if (shellConnectedHandled) false else true.also { shellConnectedHandled = true }
+        }
+        if (!isFirstCallback) return SshStartupDispatchResult.ALREADY_DISPATCHED
+        if (!states.publish(ConnectionState.Connected)) return null
+        return startupDispatcher.dispatch(command, sendOnce)
+    }
+
+    @Volatile
+    var explicitCloseRequested: Boolean = false
+
+    @Volatile
+    var transportFailure: ConnectionState.Failed? = null
+
+    @Volatile
+    var hostKeyRepository: VerifyingHostKeyRepository? = null
+}
+
+private data class ConnectionResources(
+    val writer: BoundedSshWriter?,
+    val startupInputGate: StartupFirstInputGate?,
+    val output: OutputStream?,
+    val shell: ChannelShell?,
+    val authenticatedSession: AuthenticatedJschSession?,
+)
+
+private class JschShellPtyTarget(
+    private val shell: ChannelShell,
+) : SshPtyTarget {
+    override fun enablePty() = shell.setPty(true)
+
+    override fun setTerminalType(terminalType: String) = shell.setPtyType(terminalType)
+
+    override fun setDimensions(columns: Int, rows: Int) =
+        shell.setPtySize(columns, rows, 0, 0)
+}
+
+internal class ConnectionStatePublisher(
+    private val publishState: (ConnectionState) -> Unit,
+) {
+    private val lock = Any()
+    private var terminalStatePublished = false
+
+    fun publish(state: ConnectionState): Boolean = synchronized(lock) {
+        if (terminalStatePublished) return false
+        if (state is ConnectionState.Disconnected || state is ConnectionState.Failed) {
+            terminalStatePublished = true
+        }
+        try {
+            publishState(state)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw ConnectionCallbackException(error)
+        }
+        true
+    }
+
+    fun publishTerminalAndCleanup(
+        state: ConnectionState,
+        cleanup: () -> Unit,
+    ): Boolean = try {
+        require(state is ConnectionState.Disconnected || state is ConnectionState.Failed) {
+            "Only a terminal connection state may own terminal cleanup."
+        }
+        publish(state)
+    } finally {
+        cleanup()
+    }
+}
+
+internal class ConnectionCallbackException(cause: Exception) :
+    RuntimeException("Connection callback failed.", cause)
+
+internal fun deliverConnectionBytes(
+    onBytes: (ByteArray) -> Unit,
+    bytes: ByteArray,
+) {
+    try {
+        onBytes(bytes)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        throw ConnectionCallbackException(error)
+    }
+}
+
+internal fun terminalConnectionState(
+    explicitCloseRequested: Boolean,
+    transportFailure: ConnectionState.Failed?,
+    fallbackFailure: ConnectionState.Failed?,
+    remoteExitStatus: Int? = null,
+): ConnectionState = when {
+    explicitCloseRequested -> ConnectionState.Disconnected
+    transportFailure != null -> transportFailure
+    fallbackFailure?.disposition == ConnectionFailureDisposition.TERMINAL -> fallbackFailure
+    remoteExitStatus != null && remoteExitStatus >= 0 -> ConnectionState.Disconnected
+    fallbackFailure != null -> fallbackFailure
+    else -> transientTransportFailure("SSH connection lost.")
+}
+
+/**
+ * Owns bounded input accepted synchronously from Connected observers until startup input is first.
+ * Every staged batch is copied and wiped after the downstream writer copies it or rejects it.
+ */
+internal class StartupFirstInputGate(
+    private val capacity: Int,
+    private val downstreamOffer: (ByteArray) -> Boolean,
+) : AutoCloseable {
+    private val lock = Any()
+    private val staged = ArrayDeque<ByteArray>()
+    private var state = StartupInputState.PENDING_STARTUP
+
+    init {
+        require(capacity > 0) { "SSH startup staging capacity must be positive." }
+    }
+
+    fun offer(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        return synchronized(lock) {
+            when (state) {
+                StartupInputState.PENDING_STARTUP -> {
+                    if (staged.size >= capacity) {
+                        false
+                    } else {
+                        staged.addLast(bytes.copyOf())
+                        true
+                    }
+                }
+                StartupInputState.OPEN -> runCatching { downstreamOffer(bytes) }.getOrDefault(false)
+                StartupInputState.CLOSED -> false
+            }
+        }
+    }
+
+    /** Opens public input only after startup was accepted or proved absent. */
+    fun open(): Boolean = synchronized(lock) {
+        if (state != StartupInputState.PENDING_STARTUP) return@synchronized false
+        while (staged.isNotEmpty()) {
+            val owned = staged.removeFirst()
+            val accepted = try {
+                downstreamOffer(owned)
+            } catch (_: Exception) {
+                false
+            } finally {
+                owned.fill(0)
+            }
+            if (!accepted) {
+                state = StartupInputState.CLOSED
+                wipeStaged()
+                return@synchronized false
+            }
+        }
+        state = StartupInputState.OPEN
+        true
+    }
+
+    override fun close() {
+        synchronized(lock) {
+            state = StartupInputState.CLOSED
+            wipeStaged()
+        }
+    }
+
+    private fun wipeStaged() {
+        while (staged.isNotEmpty()) staged.removeFirst().fill(0)
+    }
+
+    private enum class StartupInputState {
+        PENDING_STARTUP,
+        OPEN,
+        CLOSED,
+    }
+}
+
+/** Bounded single-writer pump. Acceptance and stop are serialized so close cannot race an offer. */
+internal class BoundedSshWriter(
+    capacity: Int,
+    private val pollIntervalMillis: Long,
+) {
+    private val lock = Any()
+    private val queue: ArrayBlockingQueue<ByteArray>
+    private var accepting = false
+    private var writerThread: Thread? = null
+
+    init {
+        require(capacity > 0) { "SSH writer capacity must be positive." }
+        require(pollIntervalMillis > 0L) { "SSH writer poll interval must be positive." }
+        queue = ArrayBlockingQueue(capacity)
+    }
+
+    fun start(stream: OutputStream, onFailure: (Exception) -> Unit) {
+        synchronized(lock) {
+            check(!accepting && writerThread == null) { "SSH writer is already started." }
+            accepting = true
+            writerThread = thread(name = "ssh-terminal-writer", isDaemon = true) {
+                runWriter(stream, onFailure)
+            }
+        }
+    }
+
+    fun offer(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        val owned = bytes.copyOf()
+        val accepted = synchronized(lock) {
+            accepting && queue.offer(owned)
+        }
+        if (!accepted) owned.fill(0)
+        return accepted
+    }
+
+    fun stop() {
+        val threadToInterrupt = synchronized(lock) {
+            accepting = false
+            wipeQueuedBytes()
+            writerThread.also { writerThread = null }
+        }
+        threadToInterrupt?.interrupt()
+    }
+
+    private fun runWriter(stream: OutputStream, onFailure: (Exception) -> Unit) {
+        try {
+            while (isAccepting()) {
+                val bytes = queue.poll(pollIntervalMillis, TimeUnit.MILLISECONDS) ?: continue
+                try {
+                    stream.write(bytes)
+                    stream.flush()
+                } finally {
+                    bytes.fill(0)
+                }
+            }
+        } catch (_: InterruptedException) {
+            // stop() interrupts the poll; an explicit close is not a transport failure.
+        } catch (error: Exception) {
+            val reportFailure = synchronized(lock) {
+                if (!accepting) {
+                    false
+                } else {
+                    accepting = false
+                    wipeQueuedBytes()
+                    writerThread = null
+                    true
+                }
+            }
+            if (reportFailure) onFailure(error)
+        } finally {
+            synchronized(lock) {
+                accepting = false
+                wipeQueuedBytes()
+                if (writerThread === Thread.currentThread()) writerThread = null
+            }
+        }
+    }
+
+    private fun isAccepting(): Boolean = synchronized(lock) { accepting }
+
+    private fun wipeQueuedBytes() {
+        while (true) queue.poll()?.fill(0) ?: return
     }
 }

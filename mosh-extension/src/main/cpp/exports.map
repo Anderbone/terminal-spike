@@ -1,0 +1,6 @@
+MOSH_EXTENSION_1.0 {
+  global:
+    Java_com_yanjiyu_terminalspike_mosh_MoshNativeBridge_*;
+  local:
+    *;
+};

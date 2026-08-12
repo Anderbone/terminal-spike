@@ -8,3 +8,5 @@ build/
 captures/
 *.apk
 *.aab
+__pycache__/
+*.py[cod]

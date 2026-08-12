@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,14 +13,16 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -42,39 +45,69 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.yanjiyu.terminalspike.BuildConfig
+import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.connection.KnownHostSummary
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
+import com.yanjiyu.terminalspike.settings.SavedHostConnectionCompatibility
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.ui.settings.SettingsCategory
+import com.yanjiyu.terminalspike.ui.settings.SettingsDestination
 
 internal enum class ToolSection(val label: String) {
     PROFILES("Hosts"),
-    IDENTITIES("Security"),
-    KEYS("Keys"),
+    IDENTITIES("Keys"),
     SNIPPETS("Snippets"),
+    TERMINAL("Terminal"),
+    KEYS("Keyboard"),
+    SECURITY("Security"),
+    MOSH("Mosh"),
+    ABOUT("About"),
+    DEVELOPER("Developer"),
+}
+
+internal const val ExpandedToolSectionListTestTag = "expanded-tool-section-list"
+internal const val ExpandedToolDetailTestTag = "expanded-tool-detail"
+internal const val CompactToolTabsTestTag = "compact-tool-tabs"
+
+private sealed interface PendingToolDeletion {
+    data class Profile(val profile: SavedSshProfile) : PendingToolDeletion
+
+    data class Identity(val identity: SavedSshIdentity) : PendingToolDeletion
+
+    data class KnownHost(val knownHost: KnownHostSummary) : PendingToolDeletion
+
+    data class Snippet(val snippet: CommandSnippet) : PendingToolDeletion
 }
 
 @Composable
 internal fun LocalToolsScreen(
+    destination: AppDestination,
     profiles: List<SavedSshProfile>,
     identities: List<SavedSshIdentity>,
     knownHosts: List<KnownHostSummary>,
     snippets: List<CommandSnippet>,
     extraKeys: List<TerminalExtraKey>,
+    moshExtension: MoshExtensionUiState,
     onNavigateBack: () -> Unit,
     onOpenWorkspace: () -> Unit,
-    onOpenTerminal: () -> Unit,
+    onOpenConnections: () -> Unit,
+    onOpenSettings: () -> Unit,
     onUseProfile: (SavedSshProfile) -> Unit,
     onSaveProfile: (label: String, host: String, port: String, username: String, existingId: Long?) -> Unit,
     onDeleteProfile: (Long) -> Unit,
     onImportIdentity: () -> Unit,
+    onReimportIdentity: (String) -> Unit,
     onDeleteIdentity: (Long) -> Unit,
     onForgetKnownHost: (host: String, algorithm: String) -> Unit,
     onSaveSnippet: (label: String, command: String, appendEnter: Boolean, existingId: Long?) -> Unit,
@@ -85,117 +118,235 @@ internal fun LocalToolsScreen(
     onMoveKey: (TerminalExtraKey, Int) -> Unit,
     onResetKeys: () -> Unit,
     onSaveKeys: () -> Unit,
+    onRefreshMoshExtension: () -> Unit,
+    onOpenRendererLab: () -> Unit,
     initialSection: ToolSection = ToolSection.PROFILES,
+    terminalProfileId: String? = null,
+    keyboardProfileId: String? = null,
 ) {
-    var section by remember(initialSection) {
-        mutableStateOf(initialSection)
+    if (destination == AppDestination.SETTINGS) {
+        SettingsDestination(
+            initialCategory = initialSection.toSettingsCategory(),
+            knownHosts = knownHosts,
+            moshExtension = moshExtension,
+            onForgetKnownHost = onForgetKnownHost,
+            onRefreshMoshExtension = onRefreshMoshExtension,
+            onOpenRendererLab = onOpenRendererLab,
+            onNavigateBack = onNavigateBack,
+            onOpenWorkspace = onOpenWorkspace,
+            onOpenTerminal = onOpenConnections,
+            onOpenSettings = onOpenSettings,
+            terminalProfileId = terminalProfileId,
+            keyboardProfileId = keyboardProfileId,
+        )
+        return
+    }
+
+    val availableSections = when (destination) {
+        AppDestination.CONNECTIONS -> listOf(
+            ToolSection.PROFILES,
+            ToolSection.IDENTITIES,
+            ToolSection.SNIPPETS,
+        )
+        AppDestination.SETTINGS -> buildList {
+            add(ToolSection.MOSH)
+            add(ToolSection.TERMINAL)
+            add(ToolSection.KEYS)
+            add(ToolSection.SECURITY)
+            add(ToolSection.ABOUT)
+            if (BuildConfig.DEBUG) add(ToolSection.DEVELOPER)
+        }
+        AppDestination.WORKSPACE -> error("Workspace does not use LocalToolsScreen")
+    }
+    var section by remember(initialSection, destination) {
+        mutableStateOf(initialSection.takeIf { it in availableSections } ?: availableSections.first())
     }
     var addingProfile by remember { mutableStateOf(false) }
     var addingSnippet by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<SavedSshProfile?>(null) }
     var editingSnippet by remember { mutableStateOf<CommandSnippet?>(null) }
+    var pendingDeletion by remember { mutableStateOf<PendingToolDeletion?>(null) }
+
+    val sectionContent: @Composable () -> Unit = {
+        when (section) {
+            ToolSection.PROFILES -> ProfilesSection(
+                profiles = profiles,
+                onAdd = { addingProfile = true },
+                onUse = onUseProfile,
+                onEdit = {
+                    editingProfile = it
+                    addingProfile = true
+                },
+                onDelete = { id ->
+                    profiles.firstOrNull { it.id == id }?.let { profile ->
+                        pendingDeletion = PendingToolDeletion.Profile(profile)
+                    }
+                },
+            )
+            ToolSection.KEYS -> KeysSection(
+                selectedKeys = extraKeys,
+                onSetVisible = onSetKeyVisible,
+                onReplace = onReplaceKey,
+                onMove = onMoveKey,
+                onReset = onResetKeys,
+                onSave = onSaveKeys,
+            )
+            ToolSection.SNIPPETS -> SnippetsSection(
+                snippets = snippets,
+                onAdd = { addingSnippet = true },
+                onSend = onSendSnippet,
+                onEdit = {
+                    editingSnippet = it
+                    addingSnippet = true
+                },
+                onDelete = { id ->
+                    snippets.firstOrNull { it.id == id }?.let { snippet ->
+                        pendingDeletion = PendingToolDeletion.Snippet(snippet)
+                    }
+                },
+            )
+            ToolSection.IDENTITIES -> IdentitiesSection(
+                identities = identities,
+                onImport = onImportIdentity,
+                onReimport = onReimportIdentity,
+                onDelete = { id ->
+                    identities.firstOrNull { it.id == id }?.let { identity ->
+                        pendingDeletion = PendingToolDeletion.Identity(identity)
+                    }
+                },
+            )
+            ToolSection.SECURITY -> KnownHostsSection(
+                knownHosts = knownHosts,
+                onForgetKnownHost = { host, algorithm ->
+                    knownHosts.firstOrNull {
+                        it.host == host && it.algorithm == algorithm
+                    }?.let { knownHost ->
+                        pendingDeletion = PendingToolDeletion.KnownHost(knownHost)
+                    }
+                },
+            )
+            ToolSection.MOSH -> MoshExtensionSection(
+                state = moshExtension,
+                onRefresh = onRefreshMoshExtension,
+            )
+            ToolSection.TERMINAL -> error("Terminal settings use SettingsDestination")
+            ToolSection.ABOUT -> AboutSection()
+            ToolSection.DEVELOPER -> DeveloperSettingsSection(
+                onOpenRendererLab = onOpenRendererLab,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF171A2B)),
-        color = Color(0xFF171A2B),
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        AdaptivePrimaryNavigation(
+            selected = destination,
+            onWorkspace = onOpenWorkspace,
+            onConnections = onOpenConnections,
+            onSettings = onOpenSettings,
+            modifier = Modifier.fillMaxSize(),
+        ) { contentModifier, expanded ->
+            val destinationLabel = stringResource(destination.labelResId)
+            val backDescription = stringResource(
+                R.string.navigation_back_from,
+                destinationLabel,
+            )
+            val screenDescription = stringResource(
+                R.string.navigation_destination_screen,
+                destinationLabel,
+            )
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .statusBarsPadding(),
+                modifier = contentModifier
+                    .fillMaxWidth(),
             ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
                     onClick = onNavigateBack,
-                    modifier = Modifier.semantics { contentDescription = "Back from local tools" },
+                    modifier = Modifier.semantics {
+                        contentDescription = backDescription
+                    },
                 ) {
                     Text("‹", style = MaterialTheme.typography.headlineSmall)
                 }
                 Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(
-                        text = "Local tools",
+                        text = destinationLabel,
+                        modifier = Modifier.semantics {
+                            contentDescription = screenDescription
+                        },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Private, encrypted, and stored on this device",
+                        text = when (section) {
+                            ToolSection.ABOUT -> "Version, privacy, and open-source licences"
+                            ToolSection.DEVELOPER -> "Local diagnostics for debug builds"
+                            ToolSection.MOSH -> "Optional transport extension status"
+                            else -> "Private, encrypted, and stored on this device"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ToolSection.entries.forEach { item ->
-                    FilterChip(
-                        selected = section == item,
-                        onClick = { section = item },
-                        label = { Text(item.label) },
-                    )
-                }
-            }
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    when (section) {
-                    ToolSection.PROFILES -> ProfilesSection(
-                        profiles = profiles,
-                        onAdd = { addingProfile = true },
-                        onUse = onUseProfile,
-                        onEdit = {
-                            editingProfile = it
-                            addingProfile = true
-                        },
-                        onDelete = onDeleteProfile,
-                    )
-                    ToolSection.KEYS -> KeysSection(
-                        selectedKeys = extraKeys,
-                        onSetVisible = onSetKeyVisible,
-                        onReplace = onReplaceKey,
-                        onMove = onMoveKey,
-                        onReset = onResetKeys,
-                        onSave = onSaveKeys,
-                    )
-                    ToolSection.SNIPPETS -> SnippetsSection(
-                        snippets = snippets,
-                        onAdd = { addingSnippet = true },
-                        onSend = onSendSnippet,
-                        onEdit = {
-                            editingSnippet = it
-                            addingSnippet = true
-                        },
-                        onDelete = onDeleteSnippet,
-                    )
-                    ToolSection.IDENTITIES -> IdentitiesSection(
-                        identities = identities,
-                        knownHosts = knownHosts,
-                        onImport = onImportIdentity,
-                        onDelete = onDeleteIdentity,
-                        onForgetKnownHost = onForgetKnownHost,
-                    )
+                if (expanded) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        ExpandedToolSectionList(
+                            sections = availableSections,
+                            selected = section,
+                            onSelected = { section = it },
+                            modifier = Modifier
+                                .width(224.dp)
+                                .fillMaxHeight()
+                                .testTag(ExpandedToolSectionListTestTag),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .testTag(ExpandedToolDetailTestTag),
+                        ) {
+                            sectionContent()
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp, vertical = 8.dp)
+                            .testTag(CompactToolTabsTestTag),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        availableSections.forEach { item ->
+                            FilterChip(
+                                selected = section == item,
+                                onClick = { section = item },
+                                label = { Text(item.label) },
+                            )
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        sectionContent()
                     }
                 }
             }
-            WorkspaceBottomBar(
-                selected = AppDestination.TOOLS,
-                onWorkspace = onOpenWorkspace,
-                onTerminal = onOpenTerminal,
-                onTools = {},
-            )
         }
     }
 
@@ -227,15 +378,304 @@ internal fun LocalToolsScreen(
             },
         )
     }
+    pendingDeletion?.let { deletion ->
+        ToolDeletionConfirmationDialog(
+            deletion = deletion,
+            onDismiss = { pendingDeletion = null },
+            onConfirm = {
+                when (deletion) {
+                    is PendingToolDeletion.Profile -> onDeleteProfile(deletion.profile.id)
+                    is PendingToolDeletion.Identity -> onDeleteIdentity(deletion.identity.id)
+                    is PendingToolDeletion.KnownHost -> onForgetKnownHost(
+                        deletion.knownHost.host,
+                        deletion.knownHost.algorithm,
+                    )
+                    is PendingToolDeletion.Snippet -> onDeleteSnippet(deletion.snippet.id)
+                }
+                pendingDeletion = null
+            },
+        )
+    }
+}
+
+private fun ToolSection.toSettingsCategory(): SettingsCategory? = when (this) {
+    ToolSection.TERMINAL -> SettingsCategory.TERMINAL
+    ToolSection.KEYS -> SettingsCategory.KEYBOARD
+    ToolSection.SECURITY -> SettingsCategory.SECURITY
+    ToolSection.MOSH -> SettingsCategory.MOSH
+    ToolSection.ABOUT -> SettingsCategory.ABOUT
+    ToolSection.DEVELOPER -> SettingsCategory.DEVELOPER
+    ToolSection.PROFILES,
+    ToolSection.IDENTITIES,
+    ToolSection.SNIPPETS,
+    -> null
+}
+
+@Composable
+internal fun MoshExtensionSection(
+    state: MoshExtensionUiState,
+    onRefresh: () -> Unit,
+) {
+    var showInstallationHelp by remember(state.kind) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 12.dp)
+            .testTag(MoshExtensionSectionTestTag),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.mosh_extension_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = state.statusLabel.resolve(),
+            modifier = Modifier.testTag(MoshExtensionStatusTestTag),
+            style = MaterialTheme.typography.titleMedium,
+            color = when (state.kind) {
+                MoshExtensionUiKind.CHECKING -> MaterialTheme.colorScheme.onSurfaceVariant
+                MoshExtensionUiKind.AVAILABLE -> MaterialTheme.colorScheme.primary
+                MoshExtensionUiKind.ABSENT,
+                MoshExtensionUiKind.DISABLED,
+                MoshExtensionUiKind.INCOMPATIBLE,
+                -> MaterialTheme.colorScheme.tertiary
+                MoshExtensionUiKind.UNTRUSTED,
+                MoshExtensionUiKind.ERROR,
+                -> MaterialTheme.colorScheme.error
+            },
+        )
+        Text(
+            text = state.summary.resolve(),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        state.details.forEach { detail ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = detail.label.resolve(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = detail.value.resolve(),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.mosh_signature_verification),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = state.verificationMessage.resolve(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        state.actionLabel?.let { label ->
+            Button(
+                onClick = onRefresh,
+                modifier = Modifier.testTag(MoshExtensionRefreshTestTag),
+            ) {
+                Text(label.resolve())
+            }
+        }
+        state.installationHelpLabel?.let { label ->
+            TextButton(
+                onClick = { showInstallationHelp = true },
+                modifier = Modifier.testTag(MoshExtensionInstallationHelpTestTag),
+            ) {
+                Text(label.resolve())
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            text = stringResource(R.string.mosh_ssh_fallback),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = stringResource(R.string.mosh_ssh_fallback_detail),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = stringResource(R.string.mosh_free_software_source),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = stringResource(R.string.mosh_free_software_detail),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = stringResource(R.string.mosh_trademark_detail),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (showInstallationHelp) {
+        MoshInstallationHelpDialog(onDismiss = { showInstallationHelp = false })
+    }
+}
+
+@Composable
+private fun MoshInstallationHelpDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag(MoshExtensionInstallationHelpDialogTestTag),
+        title = { Text(stringResource(R.string.mosh_installation_help_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    stringResource(R.string.mosh_installation_help_matching_apk),
+                )
+                Text(
+                    stringResource(R.string.mosh_installation_help_debug),
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    stringResource(R.string.mosh_installation_help_distribution),
+                )
+                Text(
+                    stringResource(R.string.mosh_installation_help_retry),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag(MoshExtensionInstallationHelpCloseTestTag),
+            ) {
+                Text(stringResource(R.string.close))
+            }
+        },
+    )
+}
+
+internal const val MoshExtensionSectionTestTag = "mosh-extension-section"
+internal const val MoshExtensionStatusTestTag = "mosh-extension-status"
+internal const val MoshExtensionRefreshTestTag = "mosh-extension-refresh"
+internal const val MoshExtensionInstallationHelpTestTag = "mosh-extension-installation-help"
+internal const val MoshExtensionInstallationHelpDialogTestTag =
+    "mosh-extension-installation-help-dialog"
+internal const val MoshExtensionInstallationHelpCloseTestTag =
+    "mosh-extension-installation-help-close"
+
+@Composable
+private fun ExpandedToolSectionList(
+    sections: List<ToolSection>,
+    selected: ToolSection,
+    onSelected: (ToolSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        sections.forEach { item ->
+            Surface(
+                onClick = { onSelected(item) },
+                modifier = Modifier.fillMaxWidth(),
+                color = if (selected == item) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+                },
+                contentColor = if (selected == item) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Text(
+                    text = item.label,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = if (selected == item) FontWeight.SemiBold else FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolDeletionConfirmationDialog(
+    deletion: PendingToolDeletion,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val title: String
+    val message: String
+    val confirmLabel: String
+    when (deletion) {
+        is PendingToolDeletion.Profile -> {
+            title = "Delete ${deletion.profile.label}?"
+            message = if (deletion.profile.hasSavedPassword) {
+                "This removes the saved host and its device-encrypted password. Active sessions are not disconnected."
+            } else {
+                "This removes the saved host. Active sessions are not disconnected."
+            }
+            confirmLabel = "Delete host"
+        }
+        is PendingToolDeletion.Identity -> {
+            title = "Delete ${deletion.identity.label}?"
+            message = "This permanently removes the device-encrypted private key. Saved hosts that use it may no longer connect."
+            confirmLabel = "Delete key"
+        }
+        is PendingToolDeletion.KnownHost -> {
+            title = "Forget ${deletion.knownHost.host}?"
+            message = "The next connection must verify this host again. Only accept it if the new fingerprint is expected."
+            confirmLabel = "Forget host key"
+        }
+        is PendingToolDeletion.Snippet -> {
+            title = "Delete ${deletion.snippet.label}?"
+            message = "This permanently removes the saved command snippet."
+            confirmLabel = "Delete snippet"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
 private fun IdentitiesSection(
     identities: List<SavedSshIdentity>,
-    knownHosts: List<KnownHostSummary>,
     onImport: () -> Unit,
+    onReimport: (String) -> Unit,
     onDelete: (Long) -> Unit,
-    onForgetKnownHost: (host: String, algorithm: String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
@@ -257,13 +697,27 @@ private fun IdentitiesSection(
                     Text(identity.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         "${identity.keyType} · ${identity.fingerprint}" +
-                            if (identity.passphraseRequired) " · passphrase required" else "",
+                            if (!identity.isAvailable) {
+                                " · key unavailable · re-import required"
+                            } else if (identity.passphraseRequired) {
+                                " · passphrase required"
+                            } else {
+                                ""
+                            },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                if (!identity.isAvailable) {
+                    TextButton(
+                        onClick = { onReimport(requireNotNull(identity.recoveryToken)) },
+                        enabled = identity.recoveryToken != null,
+                    ) {
+                        Text("Re-import")
+                    }
                 }
                 IconButton(
                     onClick = { onDelete(identity.id) },
@@ -274,11 +728,26 @@ private fun IdentitiesSection(
             }
             HorizontalDivider(modifier = Modifier.padding(start = 20.dp))
         }
+    }
+}
+
+@Composable
+private fun KnownHostsSection(
+    knownHosts: List<KnownHostSummary>,
+    onForgetKnownHost: (host: String, algorithm: String) -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
             Text(
-                "Trusted host keys",
+                "Known hosts",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp),
+            )
+            Text(
+                "SSH host fingerprints are checked before authentication. Changed keys are blocked until you review them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }
         if (knownHosts.isEmpty()) item { EmptyLine("No SSH host keys trusted yet.") }
@@ -330,8 +799,23 @@ private fun ProfilesSection(
             ToolRow(
                 title = profile.label,
                 detail = "${profile.username}@${profile.host}:${profile.port}" +
-                    if (profile.hasSavedPassword) " · password saved" else "",
-                primaryAction = "Use",
+                    when {
+                        profile.hasSavedPassword -> " · password saved"
+                        profile.connectionCompatibility == SavedHostConnectionCompatibility.MOSH_UNAVAILABLE ->
+                            " · Mosh unavailable in this build"
+                        profile.connectionCompatibility ==
+                            SavedHostConnectionCompatibility.PRIVATE_KEY_REQUIRES_FULL_UI ->
+                            " · bound private-key login unavailable here"
+                        profile.connectionCompatibility ==
+                            SavedHostConnectionCompatibility.KEYBOARD_INTERACTIVE_UNAVAILABLE ->
+                            " · keyboard-interactive login unavailable here"
+                        profile.connectionCompatibility ==
+                            SavedHostConnectionCompatibility.PROFILE_OPTIONS_REQUIRE_FULL_UI ->
+                            " · saved connection options unavailable here"
+                        else -> ""
+                    },
+                primaryAction = if (profile.canConnectFromCompatibilityUi) "Use" else "Unavailable",
+                primaryEnabled = profile.canConnectFromCompatibilityUi,
                 onPrimary = { onUse(profile) },
                 onEdit = { onEdit(profile) },
                 onDelete = { onDelete(profile.id) },
@@ -366,7 +850,8 @@ private fun SnippetsSection(
             ToolRow(
                 title = snippet.label,
                 detail = snippet.command.replace('\n', ' ').take(80) + if (snippet.appendEnter) "  ↵" else "",
-                primaryAction = "Send",
+                primaryAction = if (snippet.sendsImmediately) "Send" else "Insert unavailable",
+                primaryEnabled = snippet.sendsImmediately,
                 onPrimary = { onSend(snippet.id) },
                 onEdit = { onEdit(snippet) },
                 onDelete = { onDelete(snippet.id) },
@@ -647,7 +1132,7 @@ private data class KeyPickerGroup(
 )
 
 @Composable
-private fun KeyDeckPreviewRow(
+internal fun KeyDeckPreviewRow(
     keys: List<TerminalExtraKey>,
     columnCount: Int,
     focusedKey: TerminalExtraKey?,
@@ -663,7 +1148,7 @@ private fun KeyDeckPreviewRow(
                 onClick = { onFocus(key) },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 42.dp)
+                    .heightIn(min = 48.dp)
                     .semantics { contentDescription = "Edit ${key.label} terminal key" },
                 shape = RoundedCornerShape(8.dp),
                 color = if (focused) {
@@ -774,6 +1259,7 @@ private fun ToolRow(
     title: String,
     detail: String,
     primaryAction: String,
+    primaryEnabled: Boolean = true,
     onPrimary: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -796,7 +1282,7 @@ private fun ToolRow(
             )
         }
         TextButton(onClick = onEdit) { Text("Edit") }
-        TextButton(onClick = onPrimary) { Text(primaryAction) }
+        TextButton(onClick = onPrimary, enabled = primaryEnabled) { Text(primaryAction) }
         IconButton(
             onClick = onDelete,
             modifier = Modifier.semantics { contentDescription = deleteDescription },
@@ -823,7 +1309,10 @@ private fun ProfileEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (profile == null) "Save SSH host" else "Edit SSH host") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text("Name") }, singleLine = true)
                 OutlinedTextField(host, { host = it.take(UserSettings.MAX_HOST_LENGTH) }, label = { Text("Host") }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -856,7 +1345,10 @@ private fun SnippetEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (snippet == null) "New command snippet" else "Edit command snippet") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text("Name") }, singleLine = true)
                 OutlinedTextField(
                     value = command,

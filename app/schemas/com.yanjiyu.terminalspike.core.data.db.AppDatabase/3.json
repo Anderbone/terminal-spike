@@ -1,0 +1,1419 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "4eaa6abe7a63fa7838c30fea930fed53",
+    "entities": [
+      {
+        "tableName": "terminal_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `theme_id` TEXT NOT NULL, `font_id` TEXT NOT NULL, `font_size_sp` REAL NOT NULL, `line_height_multiplier` REAL NOT NULL, `letter_spacing_em` REAL NOT NULL, `cursor_style_code` TEXT NOT NULL, `cursor_blink` INTEGER NOT NULL, `scrollback_lines` INTEGER NOT NULL, `visual_bell_enabled` INTEGER NOT NULL, `vibration_bell_enabled` INTEGER NOT NULL, `audible_bell_enabled` INTEGER NOT NULL, `touch_scroll_mode_code` TEXT NOT NULL, `two_finger_local_scroll_override` INTEGER NOT NULL, `jump_to_bottom_on_keyboard_input` INTEGER NOT NULL, `keep_viewport_position_on_output` INTEGER NOT NULL, `detect_plain_text_urls` INTEGER NOT NULL, `osc8_hyperlinks_enabled` INTEGER NOT NULL, `remote_clipboard_mode_code` TEXT NOT NULL, `term_type` TEXT NOT NULL, `retain_alternate_screen_history` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, `bold_rendering_enabled` INTEGER NOT NULL DEFAULT 1, `ligatures_enabled` INTEGER NOT NULL DEFAULT 0, `pinch_zoom_enabled` INTEGER NOT NULL DEFAULT 1, `copy_on_selection` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "themeId",
+            "columnName": "theme_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fontId",
+            "columnName": "font_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fontSizeSp",
+            "columnName": "font_size_sp",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineHeightMultiplier",
+            "columnName": "line_height_multiplier",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "letterSpacingEm",
+            "columnName": "letter_spacing_em",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursorStyleCode",
+            "columnName": "cursor_style_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursorBlink",
+            "columnName": "cursor_blink",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scrollbackLines",
+            "columnName": "scrollback_lines",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visualBellEnabled",
+            "columnName": "visual_bell_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vibrationBellEnabled",
+            "columnName": "vibration_bell_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audibleBellEnabled",
+            "columnName": "audible_bell_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "touchScrollModeCode",
+            "columnName": "touch_scroll_mode_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "twoFingerLocalScrollOverride",
+            "columnName": "two_finger_local_scroll_override",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "jumpToBottomOnKeyboardInput",
+            "columnName": "jump_to_bottom_on_keyboard_input",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepViewportPositionOnOutput",
+            "columnName": "keep_viewport_position_on_output",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectPlainTextUrls",
+            "columnName": "detect_plain_text_urls",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "osc8HyperlinksEnabled",
+            "columnName": "osc8_hyperlinks_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remoteClipboardModeCode",
+            "columnName": "remote_clipboard_mode_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "termType",
+            "columnName": "term_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retainAlternateScreenHistory",
+            "columnName": "retain_alternate_screen_history",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boldRenderingEnabled",
+            "columnName": "bold_rendering_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "ligaturesEnabled",
+            "columnName": "ligatures_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "pinchZoomEnabled",
+            "columnName": "pinch_zoom_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "copyOnSelection",
+            "columnName": "copy_on_selection",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_terminal_profiles_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_terminal_profiles_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "custom_terminal_themes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `foreground_argb` INTEGER NOT NULL, `background_argb` INTEGER NOT NULL, `cursor_argb` INTEGER NOT NULL, `selection_argb` INTEGER NOT NULL, `ansi_0_argb` INTEGER NOT NULL, `ansi_1_argb` INTEGER NOT NULL, `ansi_2_argb` INTEGER NOT NULL, `ansi_3_argb` INTEGER NOT NULL, `ansi_4_argb` INTEGER NOT NULL, `ansi_5_argb` INTEGER NOT NULL, `ansi_6_argb` INTEGER NOT NULL, `ansi_7_argb` INTEGER NOT NULL, `ansi_8_argb` INTEGER NOT NULL, `ansi_9_argb` INTEGER NOT NULL, `ansi_10_argb` INTEGER NOT NULL, `ansi_11_argb` INTEGER NOT NULL, `ansi_12_argb` INTEGER NOT NULL, `ansi_13_argb` INTEGER NOT NULL, `ansi_14_argb` INTEGER NOT NULL, `ansi_15_argb` INTEGER NOT NULL, `bold_uses_bright_colours` INTEGER NOT NULL DEFAULT 1, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "foregroundArgb",
+            "columnName": "foreground_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "backgroundArgb",
+            "columnName": "background_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursorArgb",
+            "columnName": "cursor_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectionArgb",
+            "columnName": "selection_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi0Argb",
+            "columnName": "ansi_0_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi1Argb",
+            "columnName": "ansi_1_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi2Argb",
+            "columnName": "ansi_2_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi3Argb",
+            "columnName": "ansi_3_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi4Argb",
+            "columnName": "ansi_4_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi5Argb",
+            "columnName": "ansi_5_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi6Argb",
+            "columnName": "ansi_6_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi7Argb",
+            "columnName": "ansi_7_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi8Argb",
+            "columnName": "ansi_8_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi9Argb",
+            "columnName": "ansi_9_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi10Argb",
+            "columnName": "ansi_10_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi11Argb",
+            "columnName": "ansi_11_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi12Argb",
+            "columnName": "ansi_12_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi13Argb",
+            "columnName": "ansi_13_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi14Argb",
+            "columnName": "ansi_14_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansi15Argb",
+            "columnName": "ansi_15_argb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boldUsesBrightColours",
+            "columnName": "bold_uses_bright_colours",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_custom_terminal_themes_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_custom_terminal_themes_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "keyboard_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `row_count` INTEGER NOT NULL, `modifier_policy_code` TEXT NOT NULL, `haptic_enabled` INTEGER NOT NULL, `key_repeat_enabled` INTEGER NOT NULL, `input_mode_code` TEXT NOT NULL, `tmux_prefix` TEXT NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rowCount",
+            "columnName": "row_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifierPolicyCode",
+            "columnName": "modifier_policy_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hapticEnabled",
+            "columnName": "haptic_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyRepeatEnabled",
+            "columnName": "key_repeat_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputModeCode",
+            "columnName": "input_mode_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tmuxPrefix",
+            "columnName": "tmux_prefix",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_keyboard_profiles_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_keyboard_profiles_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "keyboard_profile_keys",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `position` INTEGER NOT NULL, `action_code` TEXT NOT NULL, PRIMARY KEY(`profile_id`, `position`), FOREIGN KEY(`profile_id`) REFERENCES `keyboard_profiles`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionCode",
+            "columnName": "action_code",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "position"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_keyboard_profile_keys_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_keyboard_profile_keys_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          },
+          {
+            "name": "index_keyboard_profile_keys_profile_id_action_code",
+            "unique": true,
+            "columnNames": [
+              "profile_id",
+              "action_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_keyboard_profile_keys_profile_id_action_code` ON `${TABLE_NAME}` (`profile_id`, `action_code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "keyboard_profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "encrypted_secrets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind_code` TEXT NOT NULL, `envelope_version` INTEGER NOT NULL, `key_version` INTEGER NOT NULL, `nonce` BLOB, `ciphertext` BLOB, `state_code` TEXT NOT NULL, `failure_code` TEXT, `legacy_id` TEXT, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kindCode",
+            "columnName": "kind_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "envelopeVersion",
+            "columnName": "envelope_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyVersion",
+            "columnName": "key_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nonce",
+            "columnName": "nonce",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "ciphertext",
+            "columnName": "ciphertext",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "stateCode",
+            "columnName": "state_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "legacyId",
+            "columnName": "legacy_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_encrypted_secrets_state_code",
+            "unique": false,
+            "columnNames": [
+              "state_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_encrypted_secrets_state_code` ON `${TABLE_NAME}` (`state_code`)"
+          },
+          {
+            "name": "index_encrypted_secrets_legacy_id",
+            "unique": false,
+            "columnNames": [
+              "legacy_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_encrypted_secrets_legacy_id` ON `${TABLE_NAME}` (`legacy_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "ssh_key_identities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `algorithm_code` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `public_key` BLOB, `provenance_code` TEXT NOT NULL, `is_passphrase_protected` INTEGER NOT NULL, `comment` TEXT, `private_secret_id` TEXT NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`private_secret_id`) REFERENCES `encrypted_secrets`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithmCode",
+            "columnName": "algorithm_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "public_key",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "provenanceCode",
+            "columnName": "provenance_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPassphraseProtected",
+            "columnName": "is_passphrase_protected",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "comment",
+            "columnName": "comment",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateSecretId",
+            "columnName": "private_secret_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ssh_key_identities_private_secret_id",
+            "unique": true,
+            "columnNames": [
+              "private_secret_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ssh_key_identities_private_secret_id` ON `${TABLE_NAME}` (`private_secret_id`)"
+          },
+          {
+            "name": "index_ssh_key_identities_fingerprint",
+            "unique": false,
+            "columnNames": [
+              "fingerprint"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ssh_key_identities_fingerprint` ON `${TABLE_NAME}` (`fingerprint`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "encrypted_secrets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "private_secret_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ssh_credentials",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `kind_code` TEXT NOT NULL, `secret_id` TEXT, `key_identity_id` TEXT, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`secret_id`) REFERENCES `encrypted_secrets`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`key_identity_id`) REFERENCES `ssh_key_identities`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kindCode",
+            "columnName": "kind_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "secretId",
+            "columnName": "secret_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "keyIdentityId",
+            "columnName": "key_identity_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ssh_credentials_secret_id",
+            "unique": true,
+            "columnNames": [
+              "secret_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ssh_credentials_secret_id` ON `${TABLE_NAME}` (`secret_id`)"
+          },
+          {
+            "name": "index_ssh_credentials_key_identity_id",
+            "unique": false,
+            "columnNames": [
+              "key_identity_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ssh_credentials_key_identity_id` ON `${TABLE_NAME}` (`key_identity_id`)"
+          },
+          {
+            "name": "index_ssh_credentials_kind_code",
+            "unique": false,
+            "columnNames": [
+              "kind_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ssh_credentials_kind_code` ON `${TABLE_NAME}` (`kind_code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "encrypted_secrets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "secret_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "ssh_key_identities",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "key_identity_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "host_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `display_name` TEXT NOT NULL, `hostname` TEXT NOT NULL, `port` INTEGER NOT NULL, `username` TEXT NOT NULL, `protocol_code` TEXT NOT NULL, `credential_id` TEXT, `terminal_profile_id` TEXT, `keyboard_profile_id` TEXT, `is_favorite` INTEGER NOT NULL, `group_name` TEXT, `tag` TEXT, `startup_command` TEXT, `keepalive_interval_seconds` INTEGER, `reconnect_policy_code` TEXT, `mosh_port_start` INTEGER, `mosh_port_end` INTEGER, `mosh_server_command` TEXT, `mosh_locale` TEXT, `mosh_fallback_policy_code` TEXT NOT NULL DEFAULT 'never', `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`credential_id`) REFERENCES `ssh_credentials`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`terminal_profile_id`) REFERENCES `terminal_profiles`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`keyboard_profile_id`) REFERENCES `keyboard_profiles`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hostname",
+            "columnName": "hostname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "protocolCode",
+            "columnName": "protocol_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "credentialId",
+            "columnName": "credential_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "terminalProfileId",
+            "columnName": "terminal_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "keyboardProfileId",
+            "columnName": "keyboard_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "is_favorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupName",
+            "columnName": "group_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startupCommand",
+            "columnName": "startup_command",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "keepaliveIntervalSeconds",
+            "columnName": "keepalive_interval_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "reconnectPolicyCode",
+            "columnName": "reconnect_policy_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "moshPortStart",
+            "columnName": "mosh_port_start",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "moshPortEnd",
+            "columnName": "mosh_port_end",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "moshServerCommand",
+            "columnName": "mosh_server_command",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "moshLocale",
+            "columnName": "mosh_locale",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "moshFallbackPolicyCode",
+            "columnName": "mosh_fallback_policy_code",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'never'"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_host_profiles_credential_id",
+            "unique": false,
+            "columnNames": [
+              "credential_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_host_profiles_credential_id` ON `${TABLE_NAME}` (`credential_id`)"
+          },
+          {
+            "name": "index_host_profiles_terminal_profile_id",
+            "unique": false,
+            "columnNames": [
+              "terminal_profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_host_profiles_terminal_profile_id` ON `${TABLE_NAME}` (`terminal_profile_id`)"
+          },
+          {
+            "name": "index_host_profiles_keyboard_profile_id",
+            "unique": false,
+            "columnNames": [
+              "keyboard_profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_host_profiles_keyboard_profile_id` ON `${TABLE_NAME}` (`keyboard_profile_id`)"
+          },
+          {
+            "name": "index_host_profiles_is_favorite",
+            "unique": false,
+            "columnNames": [
+              "is_favorite"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_host_profiles_is_favorite` ON `${TABLE_NAME}` (`is_favorite`)"
+          },
+          {
+            "name": "index_host_profiles_group_name",
+            "unique": false,
+            "columnNames": [
+              "group_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_host_profiles_group_name` ON `${TABLE_NAME}` (`group_name`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ssh_credentials",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "credential_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "terminal_profiles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "terminal_profile_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "keyboard_profiles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "keyboard_profile_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "recent_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `host_profile_id` TEXT, `host_display_name` TEXT NOT NULL, `protocol_code` TEXT NOT NULL, `state_code` TEXT NOT NULL, `started_at_epoch_millis` INTEGER NOT NULL, `last_activity_at_epoch_millis` INTEGER NOT NULL, `ended_at_epoch_millis` INTEGER, `terminal_title` TEXT, `endpoint_identity_token` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`host_profile_id`) REFERENCES `host_profiles`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hostProfileId",
+            "columnName": "host_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hostDisplayName",
+            "columnName": "host_display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "protocolCode",
+            "columnName": "protocol_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stateCode",
+            "columnName": "state_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMillis",
+            "columnName": "started_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastActivityAtEpochMillis",
+            "columnName": "last_activity_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtEpochMillis",
+            "columnName": "ended_at_epoch_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "terminalTitle",
+            "columnName": "terminal_title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "endpointIdentityToken",
+            "columnName": "endpoint_identity_token",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_recent_sessions_host_profile_id",
+            "unique": false,
+            "columnNames": [
+              "host_profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recent_sessions_host_profile_id` ON `${TABLE_NAME}` (`host_profile_id`)"
+          },
+          {
+            "name": "index_recent_sessions_state_code",
+            "unique": false,
+            "columnNames": [
+              "state_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recent_sessions_state_code` ON `${TABLE_NAME}` (`state_code`)"
+          },
+          {
+            "name": "index_recent_sessions_last_activity_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "last_activity_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recent_sessions_last_activity_at_epoch_millis` ON `${TABLE_NAME}` (`last_activity_at_epoch_millis`)"
+          },
+          {
+            "name": "index_recent_sessions_endpoint_identity_token",
+            "unique": false,
+            "columnNames": [
+              "endpoint_identity_token"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recent_sessions_endpoint_identity_token` ON `${TABLE_NAME}` (`endpoint_identity_token`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "host_profiles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "host_profile_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "known_hosts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `host` TEXT NOT NULL, `port` INTEGER NOT NULL, `algorithm_code` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `public_key` BLOB NOT NULL, `first_seen_at_epoch_millis` INTEGER, `last_seen_at_epoch_millis` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "host",
+            "columnName": "host",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithmCode",
+            "columnName": "algorithm_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "public_key",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenAtEpochMillis",
+            "columnName": "first_seen_at_epoch_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastSeenAtEpochMillis",
+            "columnName": "last_seen_at_epoch_millis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_known_hosts_host_port_algorithm_code",
+            "unique": true,
+            "columnNames": [
+              "host",
+              "port",
+              "algorithm_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_known_hosts_host_port_algorithm_code` ON `${TABLE_NAME}` (`host`, `port`, `algorithm_code`)"
+          },
+          {
+            "name": "index_known_hosts_last_seen_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "last_seen_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_known_hosts_last_seen_at_epoch_millis` ON `${TABLE_NAME}` (`last_seen_at_epoch_millis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "snippets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `group_name` TEXT, `command` TEXT NOT NULL, `action_code` TEXT NOT NULL, `append_enter` INTEGER NOT NULL, `confirm_multiline` INTEGER NOT NULL, `is_favorite` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupName",
+            "columnName": "group_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "command",
+            "columnName": "command",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionCode",
+            "columnName": "action_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appendEnter",
+            "columnName": "append_enter",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmMultiline",
+            "columnName": "confirm_multiline",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "is_favorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_snippets_group_name",
+            "unique": false,
+            "columnNames": [
+              "group_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_snippets_group_name` ON `${TABLE_NAME}` (`group_name`)"
+          },
+          {
+            "name": "index_snippets_is_favorite",
+            "unique": false,
+            "columnNames": [
+              "is_favorite"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_snippets_is_favorite` ON `${TABLE_NAME}` (`is_favorite`)"
+          },
+          {
+            "name": "index_snippets_updated_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "updated_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_snippets_updated_at_epoch_millis` ON `${TABLE_NAME}` (`updated_at_epoch_millis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "legacy_migration_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source_code` TEXT NOT NULL, `source_digest_sha256` TEXT, `source_version` INTEGER, `state_code` TEXT NOT NULL, `error_code` TEXT, `warning_codes` TEXT NOT NULL, `last_attempt_at_epoch_millis` INTEGER NOT NULL, `completed_at_epoch_millis` INTEGER, PRIMARY KEY(`source_code`))",
+        "fields": [
+          {
+            "fieldPath": "sourceCode",
+            "columnName": "source_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDigestSha256",
+            "columnName": "source_digest_sha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceVersion",
+            "columnName": "source_version",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stateCode",
+            "columnName": "state_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "warningCodes",
+            "columnName": "warning_codes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAtEpochMillis",
+            "columnName": "last_attempt_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAtEpochMillis",
+            "columnName": "completed_at_epoch_millis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source_code"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_legacy_migration_state_state_code",
+            "unique": false,
+            "columnNames": [
+              "state_code"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_legacy_migration_state_state_code` ON `${TABLE_NAME}` (`state_code`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4eaa6abe7a63fa7838c30fea930fed53')"
+    ]
+  }
+}

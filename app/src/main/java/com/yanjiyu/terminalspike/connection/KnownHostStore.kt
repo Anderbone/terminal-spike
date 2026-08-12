@@ -14,6 +14,12 @@ internal data class KnownHost(
     val key: ByteArray,
 )
 
+internal enum class FirstHostKeyTrustResult {
+    STORED,
+    ALREADY_TRUSTED,
+    CHANGED,
+}
+
 internal class KnownHostStore(
     private val file: File,
 ) {
@@ -34,6 +40,87 @@ internal class KnownHostStore(
     fun trust(host: String, algorithm: String, key: ByteArray) {
         entries[host to algorithm] = KnownHost(host, algorithm, key.copyOf())
         persist()
+    }
+
+    @Synchronized
+    fun trustFirstKeyIfHostUnchanged(
+        host: String,
+        algorithm: String,
+        key: ByteArray,
+    ): FirstHostKeyTrustResult {
+        val knownForHost = entries.values.filter { entry -> entry.host == host }
+        if (knownForHost.any { entry -> entry.algorithm == algorithm && entry.key.contentEquals(key) }) {
+            return FirstHostKeyTrustResult.ALREADY_TRUSTED
+        }
+        if (knownForHost.isNotEmpty()) return FirstHostKeyTrustResult.CHANGED
+
+        val entryKey = host to algorithm
+        entries[entryKey] = KnownHost(host, algorithm, key.copyOf())
+        return try {
+            persist()
+            FirstHostKeyTrustResult.STORED
+        } catch (failure: Exception) {
+            entries.remove(entryKey)
+            throw failure
+        }
+    }
+
+    /** Legacy-file compatibility only; Room is the authoritative endpoint-wide implementation. */
+    @Synchronized
+    fun replaceEndpoint(host: String, algorithm: String, key: ByteArray): Int {
+        val previous = entries.mapValues { (_, entry) -> entry.copy(key = entry.key.copyOf()) }
+        val removed = entries.values.count { entry -> entry.host == host }
+        entries.entries.removeAll { (_, entry) -> entry.host == host }
+        entries[host to algorithm] = KnownHost(host, algorithm, key.copyOf())
+        return try {
+            persist()
+            removed
+        } catch (failure: Exception) {
+            entries.clear()
+            entries.putAll(previous)
+            throw failure
+        }
+    }
+
+    /** Legacy-file compare-and-replace equivalent of the authoritative Room transaction. */
+    @Synchronized
+    fun replaceEndpointIfUnchanged(
+        host: String,
+        expectedKeys: List<KnownHost>,
+        algorithm: String,
+        key: ByteArray,
+    ): Boolean {
+        require(expectedKeys.isNotEmpty()) {
+            "Changed-key replacement requires a non-empty expected trust snapshot."
+        }
+        require(expectedKeys.all { expected -> expected.host == host }) {
+            "Expected known-host keys must belong to the replacement endpoint."
+        }
+        val current = entries.values.filter { entry -> entry.host == host }
+        val unchanged = current.size == expectedKeys.size && current.all { trusted ->
+            expectedKeys.any { expected ->
+                expected.algorithm == trusted.algorithm && expected.key.contentEquals(trusted.key)
+            }
+        }
+        if (!unchanged) return false
+        replaceEndpoint(host, algorithm, key)
+        return true
+    }
+
+    @Synchronized
+    fun removeEndpoint(host: String): Int {
+        val previous = entries.mapValues { (_, entry) -> entry.copy(key = entry.key.copyOf()) }
+        val removed = entries.values.count { entry -> entry.host == host }
+        if (removed == 0) return 0
+        entries.entries.removeAll { (_, entry) -> entry.host == host }
+        return try {
+            persist()
+            removed
+        } catch (failure: Exception) {
+            entries.clear()
+            entries.putAll(previous)
+            throw failure
+        }
     }
 
     @Synchronized

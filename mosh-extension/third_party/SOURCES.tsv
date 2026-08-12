@@ -1,0 +1,4 @@
+name	version	canonical_source	sha256	licence
+Mosh	1.4.0	https://github.com/mobile-shell/mosh/releases/download/mosh-1.4.0/mosh-1.4.0.tar.gz	872e4b134e5df29c8933dff12350785054d2fd2839b5ae6b5587b14db1465ddd	GPL-3.0-or-later with upstream OpenSSL exception
+GNU Nettle	3.10.2	https://ftp.gnu.org/gnu/nettle/nettle-3.10.2.tar.gz	fe9ff51cb1f2abb5e65a6b8c10a92da0ab5ab6eaf26e7fc2b675c45f1fb519b5	LGPL-3.0-or-later OR GPL-2.0-or-later
+Protocol Buffers	21.12	https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protobuf-all-21.12.tar.gz	2c6a36c7b5a55accae063667ef3c55f2642e67476d96d355ff0acb13dbb47f09	BSD-3-Clause

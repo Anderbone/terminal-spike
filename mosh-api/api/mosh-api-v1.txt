@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Additive changes require a new protocol/model version and an updated compatibility review.
+com.yanjiyu.terminalspike.mosh.api.IMoshPlugin
+  int getApiVersion()
+  MoshCapabilities getCapabilities()
+  MoshSessionHandle startSession(in MoshSessionRequest request)
+  void resizeSession(String sessionId, int columns, int rows)
+  void updateNetworkHint(String sessionId, in MoshNetworkHint hint)
+  void stopSession(String sessionId, int reason)
+  void registerCallback(IMoshCallback callback)
+  void unregisterCallback(IMoshCallback callback)
+com.yanjiyu.terminalspike.mosh.api.IMoshCallback oneway
+  void onSessionEvent(in MoshSessionEvent event)
+parcelables
+  MoshCapabilities v1: modelVersion, minimumApiVersion, maximumApiVersion, capabilityFlags, maximumConcurrentSessions
+  MoshNetworkHint v1: modelVersion, connectivityGeneration, addressFamily, isMetered
+  MoshSessionEvent v1: modelVersion, sessionId, state, disconnectReason, errorCode, redactedDetail, connectivityGeneration
+  MoshSessionHandle v1 PFD: modelVersion, sessionId, terminalInputWrite, terminalOutputRead, initialState, negotiatedCapabilityFlags
+  MoshSessionRequest v1 PFD: modelVersion, sessionId, serverAddress, addressFamily, udpPort, moshKeyRead, initialColumns, initialRows, locale, optionFlags

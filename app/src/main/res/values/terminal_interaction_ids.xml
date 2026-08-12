@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="terminal_action_select_all" type="id" />
+    <item name="terminal_action_open_link" type="id" />
+    <item name="terminal_action_copy_link" type="id" />
+</resources>

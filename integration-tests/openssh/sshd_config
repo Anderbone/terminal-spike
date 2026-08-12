@@ -1,0 +1,23 @@
+Port 22
+ListenAddress 0.0.0.0
+AddressFamily any
+
+HostKey /fixtures/ssh_host_ecdsa_key
+PidFile /run/sshd.pid
+
+PermitRootLogin no
+PermitEmptyPasswords no
+PasswordAuthentication yes
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+AuthenticationMethods any
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers terminal
+
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+X11Forwarding no
+UseDNS no
+LogLevel VERBOSE
