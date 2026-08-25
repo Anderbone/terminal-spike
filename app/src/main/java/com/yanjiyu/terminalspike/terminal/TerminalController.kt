@@ -388,6 +388,20 @@ class TerminalController(
         )
     }
 
+    /** Small point-in-time preview for the tab switcher; never publishes terminal cells as UI state. */
+    fun previewLines(maxLines: Int = 10, maxColumns: Int = 120): List<String> =
+        synchronized(queueLock) {
+            val boundedLines = maxLines.coerceIn(1, 16)
+            val boundedColumns = maxColumns.coerceIn(16, 160)
+            val count = lineCount()
+            val first = (count - boundedLines).coerceAtLeast(0)
+            (first until count)
+                .mapNotNull { index -> lineAt(index)?.text }
+                .map { line -> line.take(boundedColumns).trimEnd() }
+                .dropWhile(String::isBlank)
+                .dropLastWhile(String::isBlank)
+        }
+
     override fun append(lines: List<TerminalLine>) {
         if (lines.isEmpty()) return
         synchronized(queueLock) {

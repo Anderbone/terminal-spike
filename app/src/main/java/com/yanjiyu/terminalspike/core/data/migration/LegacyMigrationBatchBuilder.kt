@@ -26,6 +26,7 @@ import com.yanjiyu.terminalspike.core.security.credential.EncryptedCredentialRec
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
+import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 
 /** Stable reasons retained when one legacy sidecar cannot be migrated to a usable envelope. */
@@ -141,20 +142,20 @@ internal object LegacyMigrationBatchBuilder {
             )
         }
 
-        val migratedKeyboardKeys = source.settings.extraKeys.upgradeShippedDefaultDeck()
+        val migratedKeyboardActions = source.settings.extraKeys.upgradeShippedDefaultDeck()
         return LegacyMigrationBatch(
             terminalProfiles = listOf(defaultTerminalProfile(migratedAtEpochMillis)),
             keyboardProfiles = listOf(
                 defaultKeyboardProfile(
                     timestamp = migratedAtEpochMillis,
-                    rowCount = if (migratedKeyboardKeys == TerminalExtraKey.DEFAULT_ORDER) 2 else 1,
+                    rowCount = if (migratedKeyboardActions == KeyboardAction.DEFAULT_ORDER) 2 else 1,
                 ),
             ),
-            keyboardKeys = migratedKeyboardKeys.mapIndexed { position, key ->
+            keyboardKeys = migratedKeyboardActions.mapIndexed { position, action ->
                 KeyboardProfileKeyEntity(
                     profileId = LegacyIds.defaultKeyboardProfile,
                     position = position,
-                    actionCode = key.toStableActionCode(),
+                    actionCode = action.wireCode,
                 )
             },
             secrets = passwordSecrets + privateKeySecrets,
@@ -283,11 +284,11 @@ internal object LegacyMigrationBatchBuilder {
                     rowCount = 2,
                 ),
             ),
-            keyboardKeys = UserSettings().extraKeys.mapIndexed { position, key ->
+            keyboardKeys = KeyboardAction.DEFAULT_ORDER.mapIndexed { position, action ->
                 KeyboardProfileKeyEntity(
                     profileId = LegacyIds.defaultKeyboardProfile,
                     position = position,
-                    actionCode = key.toStableActionCode(),
+                    actionCode = action.wireCode,
                 )
             },
             completion = sourceWithoutDataCompletion(
@@ -318,7 +319,7 @@ internal object LegacyMigrationBatchBuilder {
         id = LegacyIds.defaultTerminalProfile,
         name = "Default",
         themeId = "current",
-        fontId = "system_monospace",
+        fontId = TerminalRendererProfile.DEFAULT_FONT_ID,
         fontSizeSp = 14f,
         lineHeightMultiplier = 1f,
         letterSpacingEm = 0f,
@@ -361,15 +362,16 @@ internal object LegacyMigrationBatchBuilder {
      * Only exact action orders that shipped as defaults are promoted. A reordered, added, or
      * removed key is a user configuration and is preserved byte-for-byte in its original row.
      */
-    private fun List<TerminalExtraKey>.upgradeShippedDefaultDeck(): List<TerminalExtraKey> =
+    private fun List<TerminalExtraKey>.upgradeShippedDefaultDeck(): List<KeyboardAction> =
         if (
             this == TerminalExtraKey.LEGACY_DEFAULT_ORDER ||
             this == TerminalExtraKey.PAGED_DEFAULT_ORDER ||
+            this == TerminalExtraKey.PREVIOUS_DEFAULT_ORDER ||
             this == TerminalExtraKey.DEFAULT_ORDER
         ) {
-            TerminalExtraKey.DEFAULT_ORDER
+            KeyboardAction.DEFAULT_ORDER
         } else {
-            this
+            map { KeyboardAction.fromWireCode(it.toStableActionCode()) }
         }
 
     private fun SavedSshIdentity.toEntity(timestamp: Long) = SshKeyIdentityEntity(

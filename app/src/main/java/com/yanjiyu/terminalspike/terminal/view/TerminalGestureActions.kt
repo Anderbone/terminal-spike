@@ -6,10 +6,11 @@ internal class TerminalGestureActions(
     private val stopFling: () -> Unit,
     private val requestFocus: () -> Unit,
     private val scrollBy: (Float, Float, Float, Int) -> Unit,
-    private val fling: (Float) -> Unit,
+    private val fling: (Float, Float, Float) -> Unit,
     private val showKeyboard: () -> Unit,
     private val performClick: () -> Unit,
     private val handleTap: (Float, Float) -> Boolean,
+    private val handleLongPress: (Float, Float) -> Boolean,
     private val selectionHandleAt: (Float, Float) -> TerminalSelectionEndpoint?,
     private val startSelection: (Float, Float) -> Boolean,
     private val dragSelection: (TerminalSelectionEndpoint, Float, Float) -> Unit,
@@ -35,14 +36,15 @@ internal class TerminalGestureActions(
         }
     }
 
-    fun onFling(velocityY: Float) {
+    fun onFling(velocityY: Float, x: Float = 0f, y: Float = 0f) {
         tapEligible = false
-        if (selectionEndpoint == null) fling(velocityY)
+        if (selectionEndpoint == null) fling(velocityY, x, y)
     }
 
     fun onLongPress(x: Float, y: Float) {
         if (selectionEndpoint != null) return
         tapEligible = false
+        if (handleLongPress(x, y)) return
         if (startSelection(x, y)) selectionEndpoint = TerminalSelectionEndpoint.END
     }
 

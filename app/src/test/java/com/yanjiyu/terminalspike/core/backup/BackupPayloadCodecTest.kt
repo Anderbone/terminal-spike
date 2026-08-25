@@ -804,6 +804,7 @@ private fun globalSettings(): BackupGlobalSettings = BackupGlobalSettings(
     sensitiveClipboardClearSeconds = 60,
     osc52Policy = RemoteClipboardMode.DISABLED,
     multilinePasteConfirmationEnabled = false,
+    tmuxSessionSelectorDisabled = true,
     lastBackupMode = BackupMode.FULL,
 )
 

@@ -16,6 +16,7 @@ import android.text.Spanned
 import android.text.style.StyleSpan
 import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
@@ -75,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -133,6 +135,8 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
 import com.yanjiyu.terminalspike.ui.AboutSection
 import com.yanjiyu.terminalspike.ui.AdaptivePrimaryNavigation
+import com.yanjiyu.terminalspike.ui.AppGlyph
+import com.yanjiyu.terminalspike.ui.AppGlyphIcon
 import com.yanjiyu.terminalspike.ui.AppDestination
 import com.yanjiyu.terminalspike.ui.CompactToolTabsTestTag
 import com.yanjiyu.terminalspike.ui.DeveloperSettingsSection
@@ -141,6 +145,10 @@ import com.yanjiyu.terminalspike.ui.ExpandedToolSectionListTestTag
 import com.yanjiyu.terminalspike.ui.MoshExtensionSection
 import com.yanjiyu.terminalspike.ui.MoshExtensionUiState
 import com.yanjiyu.terminalspike.ui.resolve
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
+import com.yanjiyu.terminalspike.ui.theme.spacing
 import kotlin.math.roundToInt
 
 internal data class SettingsActions(
@@ -168,6 +176,7 @@ internal data class SettingsActions(
     val onTermValue: (String) -> Unit,
     val onAlternateHistory: (Boolean) -> Unit,
     val onMultilinePasteConfirmation: (Boolean) -> Unit,
+    val onVoiceInputLanguage: (VoiceInputLanguage) -> Unit = {},
     val onResetTerminal: () -> Unit,
     val onKeyboardPreset: (String) -> Unit,
     val onKeyboardActions: (List<KeyboardAction>) -> Unit,
@@ -182,6 +191,7 @@ internal data class SettingsActions(
     val onKeepaliveInterval: (Int) -> Unit = {},
     val onReconnectEnabled: (Boolean) -> Unit = {},
     val onReconnectMaxAttempts: (Int) -> Unit = {},
+    val onTmuxSessionSelectorEnabled: (Boolean) -> Unit = {},
     val onKeepCpuAwake: (Boolean) -> Unit = {},
     val onNotificationPrivacy: (Boolean) -> Unit = {},
     val onDisconnectNotifications: (Boolean) -> Unit = {},
@@ -208,6 +218,8 @@ internal fun SettingsDestination(
     onOpenWorkspace: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSshKeys: () -> Unit,
+    onOpenSnippets: () -> Unit,
     terminalProfileId: String? = null,
     keyboardProfileId: String? = null,
     settingsViewModel: SettingsViewModel = viewModel(),
@@ -297,6 +309,7 @@ internal fun SettingsDestination(
             onTermValue = settingsViewModel::updateTermValue,
             onAlternateHistory = settingsViewModel::updateAlternateHistory,
             onMultilinePasteConfirmation = settingsViewModel::setMultilinePasteConfirmation,
+            onVoiceInputLanguage = settingsViewModel::setVoiceInputLanguage,
             onResetTerminal = settingsViewModel::resetTerminalBehavior,
             onKeyboardPreset = settingsViewModel::applyKeyboardPreset,
             onKeyboardActions = settingsViewModel::updateKeyboardActions,
@@ -319,6 +332,7 @@ internal fun SettingsDestination(
             onKeepaliveInterval = settingsViewModel::setKeepaliveInterval,
             onReconnectEnabled = settingsViewModel::setReconnectEnabled,
             onReconnectMaxAttempts = settingsViewModel::setReconnectMaxAttempts,
+            onTmuxSessionSelectorEnabled = settingsViewModel::setTmuxSessionSelectorEnabled,
             onKeepCpuAwake = settingsViewModel::setKeepCpuAwake,
             onNotificationPrivacy = settingsViewModel::setNotificationPrivacy,
             onDisconnectNotifications = settingsViewModel::setDisconnectNotifications,
@@ -339,6 +353,8 @@ internal fun SettingsDestination(
         onOpenWorkspace = onOpenWorkspace,
         onOpenTerminal = onOpenTerminal,
         onOpenSettings = onOpenSettings,
+        onOpenSshKeys = onOpenSshKeys,
+        onOpenSnippets = onOpenSnippets,
         onDismissMessage = settingsViewModel::consumeMessage,
         backupState = backupState,
         backupActions = backupActions,
@@ -360,6 +376,8 @@ internal fun SettingsScreen(
     onOpenWorkspace: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSshKeys: () -> Unit = {},
+    onOpenSnippets: () -> Unit = {},
     onDismissMessage: () -> Unit,
     backupState: BackupWorkflowUiState = BackupWorkflowUiState(),
     backupActions: BackupSettingsActions = BackupSettingsActions.NONE,
@@ -368,31 +386,36 @@ internal fun SettingsScreen(
     var selectedCategory by rememberSaveable(initialCategory) { mutableStateOf(initialCategory) }
     var query by rememberSaveable { mutableStateOf("") }
     var pendingKnownHost by remember { mutableStateOf<KnownHostSummary?>(null) }
+    val screenDescription = stringResource(R.string.settings_screen_description)
     val categories = settingsCategoriesForSearch(query, includeDeveloper = BuildConfig.DEBUG)
     LaunchedEffect(categories) {
         if (selectedCategory != null && selectedCategory !in categories && categories.isNotEmpty()) {
             selectedCategory = categories.first()
         }
     }
+    BackHandler(enabled = selectedCategory != null) {
+        selectedCategory = null
+    }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    val selectCategory: (SettingsCategory) -> Unit = { category -> selectedCategory = category }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics { contentDescription = screenDescription },
+        color = MaterialTheme.colorScheme.background,
+    ) {
         AdaptivePrimaryNavigation(
             selected = AppDestination.SETTINGS,
             onWorkspace = onOpenWorkspace,
             onConnections = onOpenTerminal,
-            onSettings = onOpenSettings,
+            onSettings = {
+                selectedCategory = null
+                onOpenSettings()
+            },
             modifier = Modifier.fillMaxSize(),
         ) { contentModifier, expanded ->
             Column(modifier = contentModifier.fillMaxSize()) {
-                SettingsTopBar(
-                    category = selectedCategory,
-                    state = state,
-                    expanded = expanded,
-                    onBack = {
-                        if (!expanded && selectedCategory != null) selectedCategory = null else onNavigateBack()
-                    },
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 if (expanded) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         SettingsCategoryList(
@@ -401,7 +424,7 @@ internal fun SettingsScreen(
                             selected = selectedCategory ?: SettingsCategory.APPEARANCE,
                             query = query,
                             onQueryChange = { query = it },
-                            onSelected = { selectedCategory = it },
+                            onSelected = selectCategory,
                             modifier = Modifier
                                 .width(276.dp)
                                 .fillMaxHeight()
@@ -422,6 +445,8 @@ internal fun SettingsScreen(
                             onForgetKnownHost = { pendingKnownHost = it },
                             onRefreshMoshExtension = onRefreshMoshExtension,
                             onOpenRendererLab = onOpenRendererLab,
+                            onOpenSshKeys = onOpenSshKeys,
+                            onOpenSnippets = onOpenSnippets,
                             backupState = backupState,
                             backupActions = backupActions,
                             savedCredentialClearState = savedCredentialClearState,
@@ -438,7 +463,7 @@ internal fun SettingsScreen(
                         selected = null,
                         query = query,
                         onQueryChange = { query = it },
-                        onSelected = { selectedCategory = it },
+                        onSelected = selectCategory,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
@@ -451,6 +476,8 @@ internal fun SettingsScreen(
                         onForgetKnownHost = { pendingKnownHost = it },
                         onRefreshMoshExtension = onRefreshMoshExtension,
                         onOpenRendererLab = onOpenRendererLab,
+                        onOpenSshKeys = onOpenSshKeys,
+                        onOpenSnippets = onOpenSnippets,
                         backupState = backupState,
                         backupActions = backupActions,
                         savedCredentialClearState = savedCredentialClearState,
@@ -490,45 +517,6 @@ internal fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsTopBar(
-    category: SettingsCategory?,
-    state: SettingsUiState,
-    expanded: Boolean,
-    onBack: () -> Unit,
-) {
-    val backDescription = stringResource(R.string.settings_back_description)
-    val screenDescription = stringResource(R.string.settings_screen_description)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.semantics { contentDescription = backDescription },
-        ) { Text("‹", style = MaterialTheme.typography.headlineSmall) }
-        Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
-            Text(
-                text = if (!expanded && category != null) stringResource(category.titleRes) else stringResource(R.string.settings_title),
-                modifier = Modifier.semantics { contentDescription = screenDescription },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = if (!expanded && category != null) {
-                    settingsCategorySummary(category, state).resolve()
-                } else {
-                    stringResource(R.string.settings_subtitle)
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
 private fun SettingsCategoryList(
     categories: List<SettingsCategory>,
     state: SettingsUiState,
@@ -544,16 +532,35 @@ private fun SettingsCategoryList(
         modifier = modifier.semantics {
             contentDescription = listDescription
         },
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(
+            horizontal = MaterialTheme.spacing.medium,
+            vertical = MaterialTheme.spacing.medium,
+        ),
     ) {
         item {
+            Text(
+                text = stringResource(R.string.navigation_settings),
+                modifier = Modifier
+                    .padding(
+                        start = MaterialTheme.spacing.extraSmall,
+                        bottom = MaterialTheme.spacing.medium,
+                    )
+                    .testTag(SettingsCategoryTitleTestTag)
+                    .semantics { heading() },
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
             OutlinedTextField(
                 value = query,
                 onValueChange = { onQueryChange(it.take(80)) },
                 modifier = Modifier.fillMaxWidth().testTag(SettingsSearchTestTag),
-                label = { Text(stringResource(R.string.settings_search_label)) },
                 placeholder = { Text(stringResource(R.string.settings_search_hint)) },
-                leadingIcon = { Text("⌕", style = MaterialTheme.typography.titleMedium) },
+                leadingIcon = {
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.SEARCH,
+                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                    )
+                },
                 trailingIcon = if (query.isNotEmpty()) {
                     {
                         IconButton(
@@ -561,14 +568,19 @@ private fun SettingsCategoryList(
                             modifier = Modifier.semantics {
                                 contentDescription = clearDescription
                             },
-                        ) { Text("×") }
+                        ) {
+                            ConnectionsGlyphIcon(
+                                glyph = ConnectionsGlyph.CLOSE,
+                                modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                            )
+                        }
                     }
                 } else {
                     null
                 },
                 singleLine = true,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(MaterialTheme.spacing.small))
         }
         if (categories.isEmpty()) {
             item {
@@ -615,10 +627,11 @@ private fun SettingsCategoryRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = category.mark,
-                modifier = Modifier.width(34.dp),
-                style = MaterialTheme.typography.titleMedium,
+            AppGlyphIcon(
+                glyph = category.glyph,
+                modifier = Modifier
+                    .padding(end = MaterialTheme.spacing.medium)
+                    .size(MaterialTheme.iconMetrics.standard),
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -635,30 +648,44 @@ private fun SettingsCategoryRow(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text("›", style = MaterialTheme.typography.titleLarge)
+            ConnectionsGlyphIcon(
+                glyph = ConnectionsGlyph.BACK,
+                modifier = Modifier
+                    .padding(start = MaterialTheme.spacing.small)
+                    .graphicsLayer(rotationZ = 180f)
+                    .size(MaterialTheme.iconMetrics.compact),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }
 
-private val SettingsCategory.mark: String
+private val SettingsCategory.glyph: AppGlyph
     get() = when (this) {
-        SettingsCategory.APPEARANCE -> "Aa"
-        SettingsCategory.TERMINAL -> ">_"
-        SettingsCategory.KEYBOARD -> "⌨"
-        SettingsCategory.SESSIONS_BACKGROUND -> "◉"
-        SettingsCategory.NOTIFICATIONS -> "●"
-        SettingsCategory.BACKUP_RESTORE -> "↕"
-        SettingsCategory.SECURITY -> "◇"
-        SettingsCategory.MOSH -> "M"
-        SettingsCategory.ABOUT -> "i"
-        SettingsCategory.DEVELOPER -> "{}"
+        SettingsCategory.APPEARANCE -> AppGlyph.APPEARANCE
+        SettingsCategory.TERMINAL -> AppGlyph.TERMINAL
+        SettingsCategory.KEYBOARD -> AppGlyph.KEYBOARD
+        SettingsCategory.SSH_KEYS -> AppGlyph.KEYCHAIN
+        SettingsCategory.SNIPPETS -> AppGlyph.SNIPPETS
+        SettingsCategory.SESSIONS_BACKGROUND -> AppGlyph.WORKSPACE
+        SettingsCategory.NOTIFICATIONS -> AppGlyph.NOTIFICATIONS
+        SettingsCategory.BACKUP_RESTORE -> AppGlyph.BACKUP
+        SettingsCategory.SECURITY -> AppGlyph.SHIELD
+        SettingsCategory.MOSH -> AppGlyph.SIGNAL
+        SettingsCategory.ABOUT -> AppGlyph.INFO
+        SettingsCategory.DEVELOPER -> AppGlyph.LAB
     }
 
 internal const val SettingsSearchTestTag = "settings-search"
+internal const val SettingsCategoryTitleTestTag = "settings-category-title"
 internal const val SettingsCategoryListContentDescription = "Settings categories"
 
 @Composable
@@ -671,6 +698,8 @@ private fun SettingsDetail(
     onForgetKnownHost: (KnownHostSummary) -> Unit,
     onRefreshMoshExtension: () -> Unit,
     onOpenRendererLab: () -> Unit,
+    onOpenSshKeys: () -> Unit,
+    onOpenSnippets: () -> Unit,
     backupState: BackupWorkflowUiState,
     backupActions: BackupSettingsActions,
     savedCredentialClearState: SavedCredentialClearUiState,
@@ -681,6 +710,18 @@ private fun SettingsDetail(
             SettingsCategory.APPEARANCE -> AppearanceSettings(state, actions)
             SettingsCategory.TERMINAL -> TerminalSettings(state, actions)
             SettingsCategory.KEYBOARD -> KeyboardSettings(state, actions)
+            SettingsCategory.SSH_KEYS -> DataManagementSettings(
+                category = SettingsCategory.SSH_KEYS,
+                detail = R.string.settings_ssh_keys_management_detail,
+                action = R.string.settings_ssh_keys_management_action,
+                onOpen = onOpenSshKeys,
+            )
+            SettingsCategory.SNIPPETS -> DataManagementSettings(
+                category = SettingsCategory.SNIPPETS,
+                detail = R.string.settings_snippets_management_detail,
+                action = R.string.settings_snippets_management_action,
+                onOpen = onOpenSnippets,
+            )
             SettingsCategory.SESSIONS_BACKGROUND -> SessionsBackgroundSettings(state, actions)
             SettingsCategory.NOTIFICATIONS -> NotificationSettings(state, actions)
             SettingsCategory.BACKUP_RESTORE -> BackupRestoreSettingsContent(backupState, backupActions)
@@ -717,6 +758,34 @@ private fun SettingsDetail(
 }
 
 @Composable
+private fun DataManagementSettings(
+    category: SettingsCategory,
+    @StringRes detail: Int,
+    @StringRes action: Int,
+    onOpen: () -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item { DetailHeading(category.titleRes, category.summaryRes) }
+        item {
+            Text(
+                text = stringResource(detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item {
+            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(action))
+            }
+        }
+    }
+}
+
+@Composable
 private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions) {
     val profile = state.terminalProfile
     val selectedCustomTheme = state.customTerminalThemes.firstOrNull { it.id == profile?.themeId }
@@ -743,36 +812,6 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                         selected = state.preferences.appearanceMode == mode,
                         onClick = { actions.onAppearanceMode(mode) },
                         label = { Text(stringResource(mode.labelRes)) },
-                    )
-                }
-            }
-        }
-        item {
-            SettingSwitchRow(
-                title = stringResource(R.string.settings_dynamic_colour),
-                summary = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    stringResource(R.string.settings_dynamic_colour_summary)
-                } else {
-                    stringResource(R.string.settings_dynamic_colour_unavailable)
-                },
-                checked = state.preferences.dynamicColorEnabled,
-                enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
-                onCheckedChange = actions.onDynamicColor,
-            )
-        }
-        item {
-            Text(
-                text = stringResource(R.string.settings_accent_heading),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            HorizontalChoices {
-                AccentPreset.entries.forEach { preset ->
-                    FilterChip(
-                        selected = state.preferences.accentPreset == preset,
-                        enabled = !state.preferences.dynamicColorEnabled,
-                        onClick = { actions.onAccent(preset) },
-                        label = { Text(stringResource(preset.labelRes)) },
                     )
                 }
             }
@@ -1074,7 +1113,7 @@ private fun TerminalProfilePreview(
         importedFont?.file?.let(TerminalTypefaceRegistry::register)
         TerminalTypefaceRegistry.resolve(
             context = context,
-            fontId = profile?.fontId ?: TerminalRendererProfile.SYSTEM_MONOSPACE_FONT_ID,
+            fontId = profile?.fontId ?: TerminalRendererProfile.DEFAULT_FONT_ID,
             customFontPath = importedFont?.file?.absolutePath,
         )
     }
@@ -1163,16 +1202,7 @@ private const val NEW_CUSTOM_THEME_TARGET = "new_custom_theme"
 @Composable
 private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
     val profile = state.terminalProfile
-    var customScrollback by remember(profile?.scrollbackLines) {
-        mutableStateOf(profile?.scrollbackLines?.toString() ?: SettingsViewModel.DEFAULT_SCROLLBACK_LINES.toString())
-    }
-    var termDraft by remember(profile?.termValue) {
-        mutableStateOf(profile?.termValue ?: TerminalProfile.DEFAULT_TERM_VALUE)
-    }
     var resetRequested by remember { mutableStateOf(false) }
-    val scrollbackValue = customScrollback.toIntOrNull()
-    val validScrollback = scrollbackValue != null && scrollbackValue in 0..200_000
-    val validTerm = termDraft.length in 1..64 && termDraft.all { it.isLetterOrDigit() || it in "._+-" }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag(TerminalSettingsTestTag),
@@ -1183,114 +1213,12 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
         if (profile == null) {
             item { LoadingOrUnavailable(state.profilesLoading) }
         } else {
-            item { SectionLabel(R.string.settings_scrollback_heading) }
-            item {
-                HorizontalChoices {
-                    SettingsViewModel.scrollbackPresets.forEach { lines ->
-                        FilterChip(
-                            selected = profile.scrollbackLines == lines,
-                            onClick = {
-                                customScrollback = lines.toString()
-                                actions.onScrollback(lines)
-                            },
-                            label = { Text(formatLineCount(lines)) },
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = customScrollback,
-                        onValueChange = { customScrollback = it.filter(Char::isDigit).take(6) },
-                        modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.settings_custom_lines)) },
-                        supportingText = {
-                            Text(
-                                if (validScrollback) {
-                                    stringResource(R.string.settings_scrollback_range)
-                                } else {
-                                    stringResource(R.string.settings_scrollback_invalid)
-                                },
-                            )
-                        },
-                        isError = !validScrollback,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        singleLine = true,
-                    )
-                    Button(
-                        onClick = { actions.onScrollback(requireNotNull(scrollbackValue)) },
-                        enabled = validScrollback && scrollbackValue != profile.scrollbackLines,
-                    ) { Text(stringResource(R.string.apply)) }
-                }
-            }
-            item { SectionDivider() }
-            item { SectionLabel(R.string.settings_cursor_heading) }
-            item {
-                HorizontalChoices {
-                    CursorStyle.entries.forEach { style ->
-                        FilterChip(
-                            selected = profile.cursorStyle == style,
-                            onClick = { actions.onCursorStyle(style) },
-                            label = { Text(cursorStyleLabel(style)) },
-                        )
-                    }
-                }
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_cursor_blink),
-                    summary = stringResource(R.string.settings_cursor_blink_summary),
-                    checked = profile.cursorBlinkEnabled,
-                    onCheckedChange = actions.onCursorBlink,
-                )
-            }
-            item { SectionDivider() }
-            item { SectionLabel(R.string.settings_bell_heading) }
-            item {
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_visual_bell),
-                    summary = stringResource(R.string.settings_visual_bell_summary),
-                    checked = profile.bell.visualBellEnabled,
-                    onCheckedChange = { enabled ->
-                        actions.onBell { bell -> bell.copy(visualBellEnabled = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_vibration_bell),
-                    summary = stringResource(R.string.settings_vibration_bell_summary),
-                    checked = profile.bell.vibrationBellEnabled,
-                    onCheckedChange = { enabled ->
-                        actions.onBell { bell -> bell.copy(vibrationBellEnabled = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_audible_bell),
-                    summary = stringResource(R.string.settings_audible_bell_summary),
-                    checked = profile.bell.audibleBellEnabled,
-                    onCheckedChange = { enabled ->
-                        actions.onBell { bell -> bell.copy(audibleBellEnabled = enabled) }
-                    },
-                )
-            }
-            item { SectionDivider() }
             item { SectionLabel(R.string.settings_links_clipboard_heading) }
             item {
-                SettingSwitchRow(
+                ReadOnlySettingRow(
                     title = stringResource(R.string.settings_url_detection),
                     summary = stringResource(R.string.settings_url_detection_summary),
-                    checked = profile.links.detectPlainTextUrls,
-                    onCheckedChange = { enabled ->
-                        actions.onLinks { links -> links.copy(detectPlainTextUrls = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_osc8_links),
-                    summary = stringResource(R.string.settings_osc8_links_summary),
-                    checked = profile.links.osc8HyperlinksEnabled,
-                    onCheckedChange = { enabled ->
-                        actions.onLinks { links -> links.copy(osc8HyperlinksEnabled = enabled) }
-                    },
+                    value = stringResource(R.string.settings_negotiated_automatically),
                 )
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_terminal_copy_on_selection),
@@ -1327,96 +1255,6 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
                     checked = state.preferences.multilinePasteConfirmationEnabled,
                     onCheckedChange = actions.onMultilinePasteConfirmation,
                 )
-                ReadOnlySettingRow(
-                    title = stringResource(R.string.settings_bracketed_paste),
-                    summary = stringResource(R.string.settings_bracketed_paste_summary),
-                    value = stringResource(R.string.settings_negotiated_automatically),
-                )
-            }
-            item { SectionDivider() }
-            item { SectionLabel(R.string.settings_scrolling_heading) }
-            item {
-                Text(
-                    text = stringResource(R.string.settings_touch_mode),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    text = stringResource(R.string.settings_touch_mode_summary),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                HorizontalChoices {
-                    TouchScrollMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = profile.scroll.touchMode == mode,
-                            onClick = {
-                                actions.onScrollBehavior { scroll -> scroll.copy(touchMode = mode) }
-                            },
-                            label = { Text(touchModeLabel(mode)) },
-                        )
-                    }
-                }
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_two_finger_override),
-                    summary = stringResource(R.string.settings_two_finger_override_summary),
-                    checked = profile.scroll.twoFingerLocalScrollOverride,
-                    onCheckedChange = { enabled ->
-                        actions.onScrollBehavior { scroll -> scroll.copy(twoFingerLocalScrollOverride = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_jump_on_input),
-                    summary = stringResource(R.string.settings_jump_on_input_summary),
-                    checked = profile.scroll.jumpToBottomOnKeyboardInput,
-                    onCheckedChange = { enabled ->
-                        actions.onScrollBehavior { scroll -> scroll.copy(jumpToBottomOnKeyboardInput = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_keep_viewport),
-                    summary = stringResource(R.string.settings_keep_viewport_summary),
-                    checked = profile.scroll.keepViewportPositionOnOutput,
-                    onCheckedChange = { enabled ->
-                        actions.onScrollBehavior { scroll -> scroll.copy(keepViewportPositionOnOutput = enabled) }
-                    },
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_alternate_history),
-                    summary = stringResource(R.string.settings_alternate_history_summary),
-                    checked = profile.preserveAlternateScreenHistory,
-                    onCheckedChange = actions.onAlternateHistory,
-                )
-            }
-            item { SectionDivider() }
-            item { SectionLabel(R.string.settings_term_heading) }
-            item {
-                OutlinedTextField(
-                    value = termDraft,
-                    onValueChange = { termDraft = it.take(64) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("TERM") },
-                    isError = !validTerm,
-                    supportingText = {
-                        Text(
-                            if (validTerm) stringResource(R.string.settings_term_summary)
-                            else stringResource(R.string.settings_term_invalid),
-                        )
-                    },
-                    trailingIcon = {
-                        TextButton(
-                            onClick = { actions.onTermValue(termDraft) },
-                            enabled = validTerm && termDraft != profile.termValue,
-                        ) { Text(stringResource(R.string.apply)) }
-                    },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                )
-                Text(
-                    text = stringResource(R.string.settings_tmux_term_guidance),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
             }
             item {
                 TextButton(onClick = { resetRequested = true }) {
@@ -1439,29 +1277,10 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
     }
 }
 
-private fun formatLineCount(lines: Int): String = when {
-    lines >= 1_000 -> "${lines / 1_000}k"
-    else -> lines.toString()
-}
-
-@Composable
-private fun cursorStyleLabel(style: CursorStyle): String = when (style) {
-    CursorStyle.BLOCK -> stringResource(R.string.settings_cursor_block)
-    CursorStyle.UNDERLINE -> stringResource(R.string.settings_cursor_underline)
-    CursorStyle.BEAM -> stringResource(R.string.settings_cursor_beam)
-}
-
 @Composable
 private fun remoteClipboardLabel(mode: RemoteClipboardMode): String = when (mode) {
     RemoteClipboardMode.DISABLED -> stringResource(R.string.settings_disabled)
     RemoteClipboardMode.ASK -> stringResource(R.string.settings_ask)
-}
-
-@Composable
-private fun touchModeLabel(mode: TouchScrollMode): String = when (mode) {
-    TouchScrollMode.AUTO -> stringResource(R.string.settings_touch_auto)
-    TouchScrollMode.LOCAL_SCROLLBACK -> stringResource(R.string.settings_touch_local)
-    TouchScrollMode.REMOTE_MOUSE -> stringResource(R.string.settings_touch_remote)
 }
 
 internal const val TerminalSettingsTestTag = "terminal-settings"
@@ -1472,10 +1291,6 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
     var editKeys by remember { mutableStateOf(false) }
     var replacementIndex by remember(profile?.id) { mutableStateOf<Int?>(null) }
     var resetRequested by remember { mutableStateOf(false) }
-    var tmuxPrefixDraft by remember(profile?.tmuxPrefix) {
-        mutableStateOf(profile?.tmuxPrefix ?: KeyboardProfile.DEFAULT_TMUX_PREFIX)
-    }
-    val validTmuxPrefix = isValidTmuxPrefix(tmuxPrefixDraft)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag(KeyboardSettingsTestTag),
@@ -1560,108 +1375,29 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
-                Text(stringResource(R.string.settings_modifier_behaviour), style = MaterialTheme.typography.bodyLarge)
-                HorizontalChoices {
-                    ModifierBehavior.entries.forEach { behavior ->
-                        FilterChip(
-                            selected = profile.modifierBehavior == behavior,
-                            onClick = { actions.onModifierBehavior(behavior) },
-                            label = {
-                                Text(
-                                    if (behavior == ModifierBehavior.ONE_SHOT) {
-                                        stringResource(R.string.settings_modifier_one_shot)
-                                    } else {
-                                        stringResource(R.string.settings_modifier_lockable)
-                                    },
-                                )
-                            },
-                        )
-                    }
-                }
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_keyboard_haptics),
-                    summary = stringResource(R.string.settings_keyboard_haptics_summary),
-                    checked = profile.hapticFeedbackEnabled,
-                    onCheckedChange = actions.onKeyboardHaptics,
-                )
-                SettingSwitchRow(
-                    title = stringResource(R.string.settings_keyboard_repeat),
-                    summary = stringResource(R.string.settings_keyboard_repeat_summary),
-                    checked = profile.keyRepeatEnabled,
-                    onCheckedChange = actions.onKeyRepeat,
-                )
-            }
             item { SectionDivider() }
-            item { SectionLabel(R.string.settings_input_mode_heading) }
+            item { SectionLabel(R.string.settings_voice_input_heading) }
             item {
+                Text(
+                    text = stringResource(R.string.settings_voice_input_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
                 HorizontalChoices {
-                    TerminalInputMode.entries.forEach { mode ->
+                    VoiceInputLanguage.entries.forEach { language ->
                         FilterChip(
-                            selected = profile.inputMode == mode,
-                            onClick = { actions.onInputMode(mode) },
-                            label = {
-                                Text(
-                                    if (mode == TerminalInputMode.RAW) {
-                                        stringResource(R.string.settings_input_raw)
-                                    } else {
-                                        stringResource(R.string.settings_input_text)
-                                    },
-                                )
-                            },
+                            selected = state.preferences.voiceInputLanguage == language,
+                            onClick = { actions.onVoiceInputLanguage(language) },
+                            label = { Text(stringResource(language.labelRes)) },
                         )
                     }
                 }
                 Text(
-                    text = if (profile.inputMode == TerminalInputMode.RAW) {
-                        stringResource(R.string.settings_input_raw_summary)
-                    } else {
-                        stringResource(R.string.settings_input_text_summary)
-                    },
+                    text = stringResource(R.string.settings_voice_input_privacy),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            item {
-                OutlinedTextField(
-                    value = tmuxPrefixDraft,
-                    onValueChange = { tmuxPrefixDraft = it.take(16) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.settings_tmux_prefix)) },
-                    supportingText = {
-                        Text(
-                            if (validTmuxPrefix) stringResource(R.string.settings_tmux_prefix_summary)
-                            else stringResource(R.string.settings_tmux_prefix_invalid),
-                        )
-                    },
-                    isError = !validTmuxPrefix,
-                    trailingIcon = {
-                        TextButton(
-                            onClick = { actions.onTmuxPrefix(tmuxPrefixDraft) },
-                            enabled = validTmuxPrefix && tmuxPrefixDraft != profile.tmuxPrefix,
-                        ) { Text(stringResource(R.string.apply)) }
-                    },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                )
-            }
-            item {
-                SectionLabel(R.string.settings_tmux_help_heading)
-                Text(
-                    text = stringResource(R.string.settings_tmux_help_summary),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-                TmuxHelpSnippetRow(
-                    label = stringResource(R.string.settings_tmux_mouse_label),
-                    command = TMUX_MOUSE_SNIPPET,
-                    onCopy = actions.onCopyTmuxHelp,
-                )
-                TmuxHelpSnippetRow(
-                    label = stringResource(R.string.settings_tmux_history_label),
-                    command = TMUX_HISTORY_SNIPPET,
-                    onCopy = actions.onCopyTmuxHelp,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
             item {
@@ -1675,6 +1411,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
     if (editKeys && profile != null) {
         KeyboardActionsDialog(
             initialActions = profile.orderedActions,
+            rowCount = profile.layout.rowCount,
             onDismiss = { editKeys = false },
             onSave = {
                 editKeys = false
@@ -1708,36 +1445,6 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
         )
     }
 }
-
-@Composable
-private fun TmuxHelpSnippetRow(
-    label: String,
-    command: String,
-    onCopy: (String) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(
-                text = command,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        TextButton(onClick = { onCopy(command) }) {
-            Text(stringResource(R.string.settings_tmux_copy))
-        }
-    }
-}
-
-private const val TMUX_MOUSE_SNIPPET = "set -g mouse on"
-private const val TMUX_HISTORY_SNIPPET = "set -g history-limit 100000"
 
 internal const val KeyboardPreviewKeyTestTagPrefix = "keyboard-preview-key-"
 
@@ -1804,6 +1511,7 @@ private fun KeyboardKeyReplacementDialog(
     current: KeyboardAction,
     onDismiss: () -> Unit,
     onSelect: (KeyboardAction) -> Unit,
+    onRemove: (() -> Unit)? = null,
 ) {
     var search by remember(current) { mutableStateOf("") }
     val choices = runtimeSupportedKeyboardActions.filter { action ->
@@ -1901,12 +1609,18 @@ private fun KeyboardKeyReplacementDialog(
         },
         confirmButton = {},
         dismissButton = {
+            if (onRemove != null) {
+                TextButton(onClick = onRemove) { Text(stringResource(R.string.remove)) }
+            }
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
 
 internal const val KeyboardReplacementGridTestTag = "keyboard-replacement-grid"
+internal const val KeyboardEditorDeckTestTag = "keyboard-editor-deck"
+internal const val KeyboardEditorRowTestTagPrefix = "keyboard-editor-row-"
+internal const val KeyboardEditorKeyTestTagPrefix = "keyboard-editor-key-"
 
 internal fun replaceKeyboardActionAt(
     actions: List<KeyboardAction>,
@@ -1926,11 +1640,13 @@ internal fun replaceKeyboardActionAt(
 @Composable
 private fun KeyboardActionsDialog(
     initialActions: List<KeyboardAction>,
+    rowCount: Int,
     onDismiss: () -> Unit,
     onSave: (List<KeyboardAction>) -> Unit,
 ) {
     var actions by remember(initialActions) { mutableStateOf(initialActions) }
     var search by remember { mutableStateOf("") }
+    var replacementIndex by remember { mutableStateOf<Int?>(null) }
     val available = runtimeSupportedKeyboardActions.filter { action ->
         action !in actions && keyboardActionSearchText(action).contains(search.trim(), ignoreCase = true)
     }
@@ -1944,23 +1660,19 @@ private fun KeyboardActionsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp),
-                ) {
-                    items(actions, key = KeyboardAction::wireCode) { action ->
-                        val index = actions.indexOf(action)
-                        KeyboardActionEditorRow(
-                            action = action,
-                            index = index,
-                            actionCount = actions.size,
-                            onMove = { move ->
-                                actions = actions.moveStableAction(action.wireCode, move)
-                            },
-                            onRemove = { actions = actions - action },
-                        )
-                        HorizontalDivider()
-                    }
-                }
+                Text(
+                    text = stringResource(R.string.settings_keyboard_replace_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                KeyboardActionEditorDeck(
+                    actions = actions,
+                    rowCount = rowCount,
+                    onReplace = { replacementIndex = it },
+                    onMove = { action, move ->
+                        actions = actions.moveStableAction(action.wireCode, move)
+                    },
+                )
                 OutlinedTextField(
                     value = search,
                     onValueChange = { search = it.take(40) },
@@ -1992,24 +1704,97 @@ private fun KeyboardActionsDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
+
+    replacementIndex?.let { index ->
+        actions.getOrNull(index)?.let { current ->
+            KeyboardKeyReplacementDialog(
+                current = current,
+                onDismiss = { replacementIndex = null },
+                onSelect = { replacement ->
+                    actions = replaceKeyboardActionAt(actions, index, replacement)
+                    replacementIndex = null
+                },
+                onRemove = if (actions.size > 1) {
+                    {
+                        actions = actions - current
+                        replacementIndex = null
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+    }
 }
 
 @Composable
-private fun KeyboardActionEditorRow(
+private fun KeyboardActionEditorDeck(
+    actions: List<KeyboardAction>,
+    rowCount: Int,
+    onReplace: (Int) -> Unit,
+    onMove: (KeyboardAction, KeyboardActionMove) -> Unit,
+) {
+    val visibleRowCount = rowCount.coerceAtLeast(1)
+    val columns = ((actions.size + visibleRowCount - 1) / visibleRowCount).coerceAtLeast(1)
+    val scrollState = rememberScrollState()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(KeyboardEditorDeckTestTag),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            actions.chunked(columns).forEachIndexed { rowIndex, rowActions ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(scrollState)
+                        .testTag("$KeyboardEditorRowTestTagPrefix$rowIndex"),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    rowActions.forEachIndexed { columnIndex, action ->
+                        val index = rowIndex * columns + columnIndex
+                        KeyboardActionEditorKey(
+                            action = action,
+                            index = index,
+                            actionCount = actions.size,
+                            onReplace = { onReplace(index) },
+                            onMove = { move -> onMove(action, move) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyboardActionEditorKey(
     action: KeyboardAction,
     index: Int,
     actionCount: Int,
+    onReplace: () -> Unit,
     onMove: (KeyboardActionMove) -> Unit,
-    onRemove: () -> Unit,
 ) {
     val label = keyboardActionLabel(action)
     val moveBeforeLabel = stringResource(R.string.settings_keyboard_move_before)
     val moveAfterLabel = stringResource(R.string.settings_keyboard_move_after)
-    val dragDescription = stringResource(R.string.settings_keyboard_drag_description, label)
-    Row(
+    val replaceDescription = stringResource(
+        R.string.settings_keyboard_replace_description,
+        label,
+        index + 1,
+    )
+    Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .width(64.dp)
+            .heightIn(min = 52.dp)
+            .testTag("$KeyboardEditorKeyTestTagPrefix$index")
+            .clickable(role = Role.Button, onClick = onReplace)
             .pointerInput(action.wireCode, index, actionCount) {
                 var accumulatedDrag = 0f
                 detectDragGesturesAfterLongPress(
@@ -2018,8 +1803,8 @@ private fun KeyboardActionEditorRow(
                     onDragEnd = { accumulatedDrag = 0f },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        accumulatedDrag += dragAmount.y
-                        val threshold = size.height.coerceAtLeast(1) * 0.55f
+                        accumulatedDrag += dragAmount.x
+                        val threshold = size.width.coerceAtLeast(1) * 0.55f
                         when {
                             accumulatedDrag <= -threshold && index > 0 -> {
                                 onMove(KeyboardActionMove.BEFORE)
@@ -2034,45 +1819,39 @@ private fun KeyboardActionEditorRow(
                 )
             }
             .semantics {
-                contentDescription = dragDescription
+                contentDescription = replaceDescription
                 customActions = buildList {
                     if (index > 0) {
-                        add(
-                            CustomAccessibilityAction(moveBeforeLabel) {
-                                onMove(KeyboardActionMove.BEFORE)
-                                true
-                            },
-                        )
+                        add(CustomAccessibilityAction(moveBeforeLabel) {
+                            onMove(KeyboardActionMove.BEFORE)
+                            true
+                        })
                     }
                     if (index < actionCount - 1) {
-                        add(
-                            CustomAccessibilityAction(moveAfterLabel) {
-                                onMove(KeyboardActionMove.AFTER)
-                                true
-                            },
-                        )
+                        add(CustomAccessibilityAction(moveAfterLabel) {
+                            onMove(KeyboardActionMove.AFTER)
+                            true
+                        })
                     }
                 }
             },
-        verticalAlignment = Alignment.CenterVertically,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(8.dp),
     ) {
-        Text(
-            text = "${index + 1}. $label",
-            modifier = Modifier.weight(1f),
-            fontFamily = FontFamily.Monospace,
-        )
-        TextButton(
-            enabled = index > 0,
-            onClick = { onMove(KeyboardActionMove.BEFORE) },
-        ) { Text("↑") }
-        TextButton(
-            enabled = index < actionCount - 1,
-            onClick = { onMove(KeyboardActionMove.AFTER) },
-        ) { Text("↓") }
-        TextButton(
-            enabled = actionCount > 1,
-            onClick = onRemove,
-        ) { Text(stringResource(R.string.remove)) }
+        Box(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -2124,7 +1903,9 @@ private fun keyboardActionLabel(action: KeyboardAction): String = when (action) 
     KeyboardAction.CTRL_Z -> "^Z"
     KeyboardAction.TMUX_PREFIX -> stringResource(R.string.settings_keyboard_action_tmux)
     KeyboardAction.PASTE -> stringResource(R.string.settings_keyboard_action_paste)
+    KeyboardAction.SELECT_IMAGES -> stringResource(R.string.settings_keyboard_action_select_images)
     KeyboardAction.SNIPPETS -> stringResource(R.string.settings_keyboard_action_snippets)
+    KeyboardAction.TMUX_SESSIONS -> stringResource(R.string.settings_keyboard_action_tmux_sessions)
     KeyboardAction.HIDE_KEYBOARD -> stringResource(R.string.settings_keyboard_action_hide)
     KeyboardAction.KEYBOARD_SETTINGS -> stringResource(R.string.settings_keyboard_action_keys)
     KeyboardAction.COLON -> ":"
@@ -2180,6 +1961,14 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
     ) {
         item { DetailHeading(R.string.settings_category_sessions_background, R.string.settings_sessions_intro) }
         item { SectionLabel(R.string.settings_connection_reliability_heading) }
+        item {
+            SettingSwitchRow(
+                title = stringResource(R.string.settings_tmux_session_selector),
+                summary = stringResource(R.string.settings_tmux_session_selector_summary),
+                checked = state.preferences.tmuxSessionSelectorEnabled,
+                onCheckedChange = actions.onTmuxSessionSelectorEnabled,
+            )
+        }
         item {
             Text(
                 text = stringResource(R.string.settings_keepalive_interval),

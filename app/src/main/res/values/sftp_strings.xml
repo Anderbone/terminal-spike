@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sftp_open_folder">Open folder</string>
+    <string name="sftp_download_file">Download file</string>
+    <string name="sftp_select_item">Select item</string>
+    <string name="sftp_one_selected">1 selected</string>
+    <string name="sftp_selection_done">Done</string>
+</resources>

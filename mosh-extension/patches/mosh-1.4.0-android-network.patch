@@ -1,0 +1,27 @@
+From: Terminal Spike contributors
+Date: 2026-08-12
+Subject: [PATCH] Android client port: use Android UDP socket defaults
+
+Android routes application UDP through framework-managed networks and VPNs. The
+upstream Linux-specific path-MTU and ECN socket configuration can make sendto()
+fail with EPERM on those routes, including a Tailscale VPN. Preserve upstream
+behaviour elsewhere, but use Android's platform defaults for these socket options.
+
+--- a/src/network/network.cc
++++ b/src/network/network.cc
+@@ -129,6 +129,7 @@ Connection::Socket::Socket( int family )
+     throw NetworkException( "socket", errno );
+   }
+ 
++#ifndef __ANDROID__
+   /* Disable path MTU discovery */
+ #ifdef HAVE_IP_MTU_DISCOVER
+   int flag = IP_PMTUDISC_DONT;
+@@ -153,6 +154,7 @@ Connection::Socket::Socket( int family )
+     perror( "setsockopt( IP_RECVTOS )" );
+   }
+ #endif
++#endif
+ }
+ 
+ void Connection::setup( void )

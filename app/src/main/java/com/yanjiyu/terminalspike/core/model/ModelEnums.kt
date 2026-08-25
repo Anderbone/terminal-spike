@@ -197,7 +197,9 @@ enum class KeyboardAction(override val wireCode: String) : WireCoded {
     CTRL_Z("ctrl_z"),
     TMUX_PREFIX("tmux_prefix"),
     PASTE("paste"),
+    SELECT_IMAGES("select_images"),
     SNIPPETS("snippets"),
+    TMUX_SESSIONS("tmux_sessions"),
     HIDE_KEYBOARD("hide_keyboard"),
     KEYBOARD_SETTINGS("keyboard_settings"),
     COLON("colon"),
@@ -228,6 +230,30 @@ enum class KeyboardAction(override val wireCode: String) : WireCoded {
     ;
 
     companion object {
+        /** Default two-row phone deck, ordered row-major with ten actions per row. */
+        val DEFAULT_ORDER: List<KeyboardAction> = listOf(
+            ESCAPE,
+            SLASH,
+            AT_SIGN,
+            DOLLAR,
+            SELECT_IMAGES,
+            HOME,
+            ARROW_UP,
+            END,
+            PAGE_UP,
+            BACKSPACE,
+            TAB,
+            CONTROL,
+            TMUX_SESSIONS,
+            CTRL_C,
+            CTRL_W,
+            ARROW_LEFT,
+            ARROW_DOWN,
+            ARROW_RIGHT,
+            ENTER,
+            HIDE_KEYBOARD,
+        )
+
         fun fromWireCode(wireCode: String): KeyboardAction = decodeWireCode(wireCode, entries)
     }
 }

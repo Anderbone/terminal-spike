@@ -375,6 +375,7 @@ private object BackupPayloadEncoder {
             string(28, settings.osc52Policy.wireCode)
             bool(29, settings.multilinePasteConfirmationEnabled)
             settings.lastBackupMode?.let { u8(30, it.wireValue) }
+            if (settings.tmuxSessionSelectorDisabled) bool(31, true)
         }
 
     private fun recordPlan(id: String, fields: PayloadRecordPlanBuilder.() -> Unit): PayloadRecordPlan =

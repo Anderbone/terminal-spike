@@ -45,6 +45,10 @@ class TerminalInputFocusRequester internal constructor() {
         terminalView?.requestTerminalInputFocus()
     }
 
+    fun toggleSoftwareKeyboard() {
+        terminalView?.toggleSoftwareKeyboard()
+    }
+
     fun setDirectInputEnabled(enabled: Boolean) {
         directInputEnabled = enabled
         terminalView?.setDirectInputEnabled(enabled)
@@ -72,14 +76,17 @@ fun rememberTerminalInputFocusRequester(): TerminalInputFocusRequester =
 fun TerminalViewBridge(
     controller: TerminalController,
     inputFocusRequester: TerminalInputFocusRequester,
+    onPreImeBack: () -> Unit,
     modifier: Modifier = Modifier,
     linkActionCallback: TerminalLinkActionCallback? = null,
     clipboardActionCallback: TerminalClipboardActionCallback? = null,
+    imageContentCallback: TerminalImageContentCallback? = null,
 ) {
     val rendererDescription = stringResource(R.string.terminal_renderer_description)
     val context = LocalContext.current
     val currentLinkActionCallback = rememberUpdatedState(linkActionCallback)
     val currentClipboardActionCallback = rememberUpdatedState(clipboardActionCallback)
+    val currentImageContentCallback = rememberUpdatedState(imageContentCallback)
     val dispatchLinkAction = remember(context) {
         TerminalLinkActionCallback { request ->
             currentLinkActionCallback.value?.onLinkAction(request)
@@ -100,6 +107,11 @@ fun TerminalViewBridge(
                 ?: (defaultClipboardWriter.write(request) != null)
         }
     }
+    val dispatchImageContent = remember(context) {
+        TerminalImageContentCallback { request ->
+            currentImageContentCallback.value?.onImageContent(request) ?: false
+        }
+    }
     val attachedView = remember { arrayOfNulls<FastTerminalView>(1) }
     DisposableEffect(inputFocusRequester) {
         onDispose {
@@ -113,6 +125,8 @@ fun TerminalViewBridge(
                 attachController(controller)
                 setLinkActionCallback(dispatchLinkAction)
                 setClipboardActionCallback(dispatchClipboardAction)
+                setImageContentCallback(dispatchImageContent)
+                setPreImeBackCallback(onPreImeBack)
                 attachedView[0] = this
                 inputFocusRequester.attach(this)
             }
@@ -121,6 +135,8 @@ fun TerminalViewBridge(
             view.attachController(controller)
             view.setLinkActionCallback(dispatchLinkAction)
             view.setClipboardActionCallback(dispatchClipboardAction)
+            view.setImageContentCallback(dispatchImageContent)
+            view.setPreImeBackCallback(onPreImeBack)
             attachedView[0] = view
             inputFocusRequester.attach(view)
         },

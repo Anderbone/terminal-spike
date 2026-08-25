@@ -12,6 +12,12 @@ Generated output is already batched off the main thread. A bounded queue prevent
 
 Drag and fling update a floating-point pixel offset in `TerminalViewport`; row calculation happens only for drawing. Touch-down immediately stops a fling. Bounds are clamped, so overscroll cannot expose invalid content. If the viewport is at bottom, appends follow. Any upward pixel movement disables follow until the exact bottom is reached or Jump to bottom is used.
 
+When a remote full-screen app such as tmux owns xterm mouse tracking, the same native
+`OverScroller` continues a released flick and converts its frame-to-frame pixel delta into bounded
+wheel reports. It does not allocate Compose state or queue an unbounded burst: reports remain
+thresholded by terminal line height and capped per display frame. The remote application still
+redraws in terminal rows, so this provides touch inertia rather than claiming sub-cell tmux output.
+
 ## Platform graphics data
 
 Reset counters before each fixed scenario:

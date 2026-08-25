@@ -18,12 +18,22 @@ import org.junit.Test
 
 class SettingsModelsTest {
     @Test
+    fun voiceInputLanguageUsesStableBcp47TagsAndSafeFallback() {
+        assertEquals(VoiceInputLanguage.ENGLISH_UK, VoiceInputLanguage.fromLanguageTag("en-GB"))
+        assertEquals(VoiceInputLanguage.CANTONESE, VoiceInputLanguage.fromLanguageTag("zh-HK"))
+        assertEquals(VoiceInputLanguage.DEVICE_DEFAULT, VoiceInputLanguage.fromLanguageTag("unknown"))
+        assertEquals(VoiceInputLanguage.entries.size, VoiceInputLanguage.entries.map { it.languageTag }.distinct().size)
+    }
+
+    @Test
     fun settingsIndexContainsEveryRequiredProductionCategory() {
         assertEquals(
             listOf(
                 SettingsCategory.APPEARANCE,
                 SettingsCategory.TERMINAL,
                 SettingsCategory.KEYBOARD,
+                SettingsCategory.SSH_KEYS,
+                SettingsCategory.SNIPPETS,
                 SettingsCategory.SESSIONS_BACKGROUND,
                 SettingsCategory.NOTIFICATIONS,
                 SettingsCategory.BACKUP_RESTORE,
@@ -40,28 +50,87 @@ class SettingsModelsTest {
     fun settingsSearchUsesAllTermsAndKeepsDeveloperDebugOnly() {
         assertEquals(
             listOf(SettingsCategory.KEYBOARD),
-            settingsCategoriesForSearch("tmux keys", includeDeveloper = false),
+            settingsCategoriesForSearch("keyboard keys", includeDeveloper = false),
         )
         assertEquals(
             listOf(SettingsCategory.BACKUP_RESTORE),
-            settingsCategoriesForSearch("encrypted restore", includeDeveloper = false),
+            settingsCategoriesForSearch("backup restore", includeDeveloper = false),
         )
         assertTrue(settingsCategoriesForSearch("developer", includeDeveloper = false).isEmpty())
         assertEquals(
             listOf(SettingsCategory.DEVELOPER),
             settingsCategoriesForSearch("renderer diagnostics", includeDeveloper = true),
         )
+        assertFalse(SettingsCategory.SECURITY in settingsCategoriesForSearch("", includeDeveloper = true))
+        assertTrue(SettingsCategory.SSH_KEYS in settingsCategoriesForSearch("", includeDeveloper = true))
+        assertTrue(SettingsCategory.SNIPPETS in settingsCategoriesForSearch("", includeDeveloper = true))
     }
 
     @Test
-    fun generalKeyboardPresetIsExactlyNineKeysPerRow() {
+    fun generalKeyboardPresetIsExactlyTenKeysPerRow() {
         val preset = KeyboardPresets.general
-        assertEquals(18, preset.actions.size)
+        assertEquals(
+            listOf(
+                KeyboardAction.ESCAPE,
+                KeyboardAction.SLASH,
+                KeyboardAction.AT_SIGN,
+                KeyboardAction.DOLLAR,
+                KeyboardAction.SELECT_IMAGES,
+                KeyboardAction.HOME,
+                KeyboardAction.ARROW_UP,
+                KeyboardAction.END,
+                KeyboardAction.PAGE_UP,
+                KeyboardAction.BACKSPACE,
+                KeyboardAction.TAB,
+                KeyboardAction.CONTROL,
+                KeyboardAction.TMUX_SESSIONS,
+                KeyboardAction.CTRL_C,
+                KeyboardAction.CTRL_W,
+                KeyboardAction.ARROW_LEFT,
+                KeyboardAction.ARROW_DOWN,
+                KeyboardAction.ARROW_RIGHT,
+                KeyboardAction.ENTER,
+                KeyboardAction.HIDE_KEYBOARD,
+            ),
+            preset.actions,
+        )
+        assertEquals(20, preset.actions.size)
         assertEquals(2, preset.layout.rowCount)
-        assertEquals(9, preset.actions.size / preset.layout.rowCount)
+        assertEquals(10, preset.actions.size / preset.layout.rowCount)
         assertEquals(preset.actions.size, preset.actions.distinct().size)
         assertTrue(KeyboardAction.CTRL_C in preset.actions)
         assertTrue(KeyboardAction.CTRL_W in preset.actions)
+        assertEquals(
+            preset.actions.indexOf(KeyboardAction.HOME) - 1,
+            preset.actions.indexOf(KeyboardAction.SELECT_IMAGES),
+        )
+        val runtime = KeyboardProfile(
+            id = "f23f85fd-3122-5f8b-b28a-d0320f402866",
+            name = "Default runtime",
+            orderedActions = preset.actions,
+            layout = preset.layout,
+            modifierBehavior = preset.modifierBehavior,
+            hapticFeedbackEnabled = preset.hapticFeedbackEnabled,
+            keyRepeatEnabled = preset.keyRepeatEnabled,
+            inputMode = preset.inputMode,
+            tmuxPrefix = preset.tmuxPrefix,
+            createdAtEpochMillis = 1L,
+            updatedAtEpochMillis = 1L,
+        ).toRuntimeAccessoryActionsOrNull()
+        assertEquals(
+            TerminalLocalAccessoryAction.SELECT_IMAGES,
+            (runtime?.get(4) as TerminalAccessoryAction.Local).action,
+        )
+        assertEquals(
+            TerminalLocalAccessoryAction.TMUX_SESSIONS,
+            (runtime[12] as TerminalAccessoryAction.Local).action,
+        )
+    }
+
+    @Test
+    fun tmuxPresetRemainsIndependentFromTheGeneralDeck() {
+        assertTrue(KeyboardAction.TMUX_PREFIX in KeyboardPresets.tmuxCodex.actions)
+        assertFalse(KeyboardPresets.tmuxCodex.actions == KeyboardPresets.general.actions)
     }
 
     @Test
@@ -81,7 +150,7 @@ class SettingsModelsTest {
                 updatedAtEpochMillis = 1L,
             )
 
-            assertEquals(preset.actions.size, profile.toRuntimeExtraKeysOrNull()?.size)
+            assertEquals(preset.actions.size, profile.toRuntimeAccessoryActionsOrNull()?.size)
         }
     }
 
@@ -165,6 +234,129 @@ class SettingsModelsTest {
     }
 
     @Test
+    fun previousUntouchedTwoRowGeneralPresetUpgradesToTheReferenceDeck() {
+        val previousGeneral = listOf(
+            KeyboardAction.ESCAPE,
+            KeyboardAction.CONTROL,
+            KeyboardAction.ALT,
+            KeyboardAction.TAB,
+            KeyboardAction.CTRL_C,
+            KeyboardAction.CTRL_W,
+            KeyboardAction.CTRL_D,
+            KeyboardAction.CTRL_L,
+            KeyboardAction.CTRL_R,
+            KeyboardAction.CTRL_U,
+            KeyboardAction.CTRL_A,
+            KeyboardAction.CTRL_E,
+            KeyboardAction.HOME,
+            KeyboardAction.END,
+            KeyboardAction.ARROW_UP,
+            KeyboardAction.ARROW_DOWN,
+            KeyboardAction.ARROW_LEFT,
+            KeyboardAction.ARROW_RIGHT,
+        )
+        val profile = shippedOneRowProfile().copy(
+            orderedActions = previousGeneral,
+            layout = KeyboardLayout.TWO_ROWS,
+            updatedAtEpochMillis = 5L,
+        )
+
+        val plan = planKeyboardDeckMigration(
+            completedRevision = CURRENT_KEYBOARD_DECK_REVISION - 1,
+            canonicalProfile = profile,
+            nowEpochMillis = 6L,
+        )
+
+        assertTrue(plan.shouldRecordCompletion)
+        assertEquals(KeyboardAction.DEFAULT_ORDER, plan.upgradedProfile?.orderedActions)
+        assertEquals(KeyboardLayout.TWO_ROWS, plan.upgradedProfile?.layout)
+        assertEquals(6L, plan.upgradedProfile?.updatedAtEpochMillis)
+    }
+
+    @Test
+    fun previousEighteenKeyReferenceDeckUpgradesToTenKeysPerRow() {
+        val previousReferenceDeck = listOf(
+            KeyboardAction.ESCAPE,
+            KeyboardAction.SLASH,
+            KeyboardAction.AT_SIGN,
+            KeyboardAction.DOLLAR,
+            KeyboardAction.HOME,
+            KeyboardAction.ARROW_UP,
+            KeyboardAction.END,
+            KeyboardAction.PAGE_UP,
+            KeyboardAction.PASTE,
+            KeyboardAction.TAB,
+            KeyboardAction.CONTROL,
+            KeyboardAction.CTRL_C,
+            KeyboardAction.CTRL_W,
+            KeyboardAction.ARROW_LEFT,
+            KeyboardAction.ARROW_DOWN,
+            KeyboardAction.ARROW_RIGHT,
+            KeyboardAction.ENTER,
+            KeyboardAction.HIDE_KEYBOARD,
+        )
+        val profile = shippedOneRowProfile().copy(
+            orderedActions = previousReferenceDeck,
+            layout = KeyboardLayout.TWO_ROWS,
+            updatedAtEpochMillis = 5L,
+        )
+
+        val plan = planKeyboardDeckMigration(
+            completedRevision = CURRENT_KEYBOARD_DECK_REVISION - 1,
+            canonicalProfile = profile,
+            nowEpochMillis = 6L,
+        )
+
+        assertTrue(plan.shouldRecordCompletion)
+        assertEquals(KeyboardAction.DEFAULT_ORDER, plan.upgradedProfile?.orderedActions)
+    }
+
+    @Test
+    fun previousTwentyKeyReferenceDeckReplacesPasteWithImageSelectionBeforeHome() {
+        val previousReferenceDeck = listOf(
+            KeyboardAction.ESCAPE,
+            KeyboardAction.SLASH,
+            KeyboardAction.AT_SIGN,
+            KeyboardAction.DOLLAR,
+            KeyboardAction.HOME,
+            KeyboardAction.ARROW_UP,
+            KeyboardAction.END,
+            KeyboardAction.PAGE_UP,
+            KeyboardAction.PASTE,
+            KeyboardAction.BACKSPACE,
+            KeyboardAction.TAB,
+            KeyboardAction.CONTROL,
+            KeyboardAction.ALT,
+            KeyboardAction.CTRL_C,
+            KeyboardAction.CTRL_W,
+            KeyboardAction.ARROW_LEFT,
+            KeyboardAction.ARROW_DOWN,
+            KeyboardAction.ARROW_RIGHT,
+            KeyboardAction.ENTER,
+            KeyboardAction.HIDE_KEYBOARD,
+        )
+        val profile = shippedOneRowProfile().copy(
+            orderedActions = previousReferenceDeck,
+            layout = KeyboardLayout.TWO_ROWS,
+            updatedAtEpochMillis = 5L,
+        )
+
+        val plan = planKeyboardDeckMigration(
+            completedRevision = CURRENT_KEYBOARD_DECK_REVISION - 1,
+            canonicalProfile = profile,
+            nowEpochMillis = 6L,
+        )
+
+        assertTrue(plan.shouldRecordCompletion)
+        assertEquals(KeyboardAction.DEFAULT_ORDER, plan.upgradedProfile?.orderedActions)
+        assertEquals(
+            plan.upgradedProfile?.orderedActions?.indexOf(KeyboardAction.HOME)?.minus(1),
+            plan.upgradedProfile?.orderedActions?.indexOf(KeyboardAction.SELECT_IMAGES),
+        )
+        assertFalse(KeyboardAction.PASTE in plan.upgradedProfile?.orderedActions.orEmpty())
+    }
+
+    @Test
     fun everyPersistedCustomizationDisqualifiesAutomaticKeyboardRepair() {
         val profile = shippedOneRowProfile()
         val customizedProfiles = listOf(
@@ -244,6 +436,7 @@ class SettingsModelsTest {
         assertEquals(60, preferences.keepaliveIntervalSeconds)
         assertTrue(preferences.reconnectEnabled)
         assertEquals(7, preferences.reconnectMaxAttempts)
+        assertTrue(preferences.tmuxSessionSelectorEnabled)
         assertTrue(preferences.keepCpuAwake)
         assertFalse(preferences.notificationPrivacyEnabled)
         assertTrue(preferences.disconnectNotificationsEnabled)
@@ -254,6 +447,18 @@ class SettingsModelsTest {
         assertTrue(preferences.screenshotBlockingEnabled)
         assertEquals(60, preferences.sensitiveClipboardClearSeconds)
         assertFalse(preferences.multilinePasteConfirmationEnabled)
+    }
+
+    @Test
+    fun tmuxSelectorUsesAnEnabledByDefaultWireSetting() {
+        assertTrue(AppSettingsSerializer.defaultValue.toPreferences().tmuxSessionSelectorEnabled)
+        assertFalse(
+            AppSettingsSerializer.defaultValue.toBuilder()
+                .setTmuxSessionSelectorDisabled(true)
+                .build()
+                .toPreferences()
+                .tmuxSessionSelectorEnabled,
+        )
     }
 
     private fun shippedOneRowProfile(): KeyboardProfile {

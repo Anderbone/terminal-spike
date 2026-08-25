@@ -72,13 +72,17 @@ import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
 import com.yanjiyu.terminalspike.ui.theme.spacing
 import com.yanjiyu.terminalspike.ui.theme.statusColors
 import kotlinx.coroutines.delay
 
 internal enum class AppDestination(@StringRes val labelResId: Int) {
-    WORKSPACE(R.string.navigation_workspace),
+    WORKSPACE(R.string.navigation_connections),
     CONNECTIONS(R.string.navigation_connections),
+    TERMINAL(R.string.navigation_terminal),
     SETTINGS(R.string.navigation_settings),
 }
 
@@ -89,7 +93,8 @@ internal enum class AppRoute {
     TERMINAL_DETAIL,
 }
 
-private enum class WorkspaceGlyph {
+internal enum class AppGlyph {
+    APPEARANCE,
     WORKSPACE,
     HOSTS,
     KEYCHAIN,
@@ -99,6 +104,10 @@ private enum class WorkspaceGlyph {
     LAB,
     TERMINAL,
     TOOLS,
+    NOTIFICATIONS,
+    BACKUP,
+    INFO,
+    SIGNAL,
 }
 
 private val ExpandedNavigationMinimumWidth = 600.dp
@@ -149,8 +158,6 @@ internal fun LocalWorkspaceScreen(
             WorkspaceHeader(
                 title = stringResource(R.string.app_name),
                 settingsReady = settingsReady,
-                onOpenConnections = onOpenConnections,
-                onOpenSettings = onOpenSettings,
             )
 
             AnimatedVisibility(
@@ -204,14 +211,8 @@ internal fun LocalWorkspaceScreen(
 private fun WorkspaceHeader(
     title: String,
     settingsReady: Boolean,
-    onOpenConnections: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     val screenDescription = stringResource(R.string.workspace_screen_description)
-    val destinationsDescription = stringResource(R.string.workspace_destinations)
-    val connectionsMenuDescription = stringResource(R.string.workspace_open_connections_menu)
-    val settingsMenuDescription = stringResource(R.string.workspace_open_settings_menu)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,41 +258,6 @@ private fun WorkspaceHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
             )
-            Box {
-                TextButton(
-                    onClick = { menuExpanded = true },
-                    modifier = Modifier.semantics {
-                        contentDescription = destinationsDescription
-                    },
-                ) {
-                    Text("⋮", style = MaterialTheme.typography.titleLarge)
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.navigation_connections)) },
-                        modifier = Modifier.semantics {
-                            contentDescription = connectionsMenuDescription
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenConnections()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.navigation_settings)) },
-                        modifier = Modifier.semantics {
-                            contentDescription = settingsMenuDescription
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenSettings()
-                        },
-                    )
-                }
-            }
         }
     }
 }
@@ -403,7 +369,10 @@ private fun WorkspaceActiveSessionCard(
                                 contentDescription = actionsDescription
                             },
                         ) {
-                            Text("⋮", style = MaterialTheme.typography.titleLarge)
+                            ConnectionsGlyphIcon(
+                                glyph = ConnectionsGlyph.MORE,
+                                modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                            )
                         }
                         DropdownMenu(
                             expanded = menuExpanded,
@@ -885,24 +854,23 @@ internal fun WorkspaceBottomBar(
         windowInsets = windowInsets,
     ) {
         WorkspaceNavigationItem(
-            label = stringResource(R.string.navigation_workspace),
-            glyph = WorkspaceGlyph.WORKSPACE,
-            selected = selected == AppDestination.WORKSPACE,
-            description = stringResource(R.string.navigation_open_workspace),
+            label = stringResource(R.string.navigation_connections),
+            glyph = AppGlyph.HOSTS,
+            selected = selected == AppDestination.WORKSPACE ||
+                selected == AppDestination.CONNECTIONS,
+            description = stringResource(R.string.navigation_open_connections),
             onClick = onWorkspace,
         )
         WorkspaceNavigationItem(
             label = stringResource(R.string.navigation_terminal),
-            glyph = WorkspaceGlyph.TERMINAL,
-            // Terminal owns a dedicated immersive route. A visible navigation bar therefore
-            // belongs to Workspace, Settings, or a secondary catalog and must not claim Terminal.
-            selected = false,
+            glyph = AppGlyph.TERMINAL,
+            selected = selected == AppDestination.TERMINAL,
             description = stringResource(R.string.navigation_open_terminal),
             onClick = onConnections,
         )
         WorkspaceNavigationItem(
             label = stringResource(R.string.navigation_settings),
-            glyph = WorkspaceGlyph.TOOLS,
+            glyph = AppGlyph.TOOLS,
             selected = selected == AppDestination.SETTINGS,
             description = stringResource(R.string.navigation_open_settings),
             onClick = onSettings,
@@ -913,7 +881,7 @@ internal fun WorkspaceBottomBar(
 @Composable
 private fun RowScope.WorkspaceNavigationItem(
     label: String,
-    glyph: WorkspaceGlyph,
+    glyph: AppGlyph,
     selected: Boolean,
     description: String,
     onClick: () -> Unit,
@@ -923,7 +891,7 @@ private fun RowScope.WorkspaceNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            WorkspaceIcon(
+            AppGlyphIcon(
                 glyph = glyph,
                 modifier = Modifier.size(24.dp),
             )
@@ -954,22 +922,23 @@ private fun WorkspaceNavigationRail(
         windowInsets = windowInsets,
     ) {
         WorkspaceRailNavigationItem(
-            label = stringResource(R.string.navigation_workspace),
-            glyph = WorkspaceGlyph.WORKSPACE,
-            selected = selected == AppDestination.WORKSPACE,
-            description = stringResource(R.string.navigation_open_workspace),
+            label = stringResource(R.string.navigation_connections),
+            glyph = AppGlyph.HOSTS,
+            selected = selected == AppDestination.WORKSPACE ||
+                selected == AppDestination.CONNECTIONS,
+            description = stringResource(R.string.navigation_open_connections),
             onClick = onWorkspace,
         )
         WorkspaceRailNavigationItem(
             label = stringResource(R.string.navigation_terminal),
-            glyph = WorkspaceGlyph.TERMINAL,
-            selected = false,
+            glyph = AppGlyph.TERMINAL,
+            selected = selected == AppDestination.TERMINAL,
             description = stringResource(R.string.navigation_open_terminal),
             onClick = onConnections,
         )
         WorkspaceRailNavigationItem(
             label = stringResource(R.string.navigation_settings),
-            glyph = WorkspaceGlyph.TOOLS,
+            glyph = AppGlyph.TOOLS,
             selected = selected == AppDestination.SETTINGS,
             description = stringResource(R.string.navigation_open_settings),
             onClick = onSettings,
@@ -980,7 +949,7 @@ private fun WorkspaceNavigationRail(
 @Composable
 private fun ColumnScope.WorkspaceRailNavigationItem(
     label: String,
-    glyph: WorkspaceGlyph,
+    glyph: AppGlyph,
     selected: Boolean,
     description: String,
     onClick: () -> Unit,
@@ -990,7 +959,7 @@ private fun ColumnScope.WorkspaceRailNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            WorkspaceIcon(
+            AppGlyphIcon(
                 glyph = glyph,
                 modifier = Modifier.size(24.dp),
             )
@@ -1008,8 +977,8 @@ private fun ColumnScope.WorkspaceRailNavigationItem(
 }
 
 @Composable
-private fun WorkspaceIcon(
-    glyph: WorkspaceGlyph,
+internal fun AppGlyphIcon(
+    glyph: AppGlyph,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
 ) {
@@ -1021,7 +990,25 @@ private fun WorkspaceIcon(
         val stroke = Stroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
         when (glyph) {
-            WorkspaceGlyph.WORKSPACE -> {
+            AppGlyph.APPEARANCE -> {
+                val center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f)
+                drawCircle(resolvedColor, w * 0.2f, center, style = stroke)
+                listOf(
+                    (0.5f to 0.06f) to (0.5f to 0.2f),
+                    (0.5f to 0.8f) to (0.5f to 0.94f),
+                    (0.06f to 0.5f) to (0.2f to 0.5f),
+                    (0.8f to 0.5f) to (0.94f to 0.5f),
+                    (0.18f to 0.18f) to (0.28f to 0.28f),
+                    (0.72f to 0.72f) to (0.82f to 0.82f),
+                    (0.82f to 0.18f) to (0.72f to 0.28f),
+                    (0.28f to 0.72f) to (0.18f to 0.82f),
+                ).forEach { (start, end) ->
+                    val startOffset = androidx.compose.ui.geometry.Offset(w * start.first, h * start.second)
+                    val endOffset = androidx.compose.ui.geometry.Offset(w * end.first, h * end.second)
+                    drawLine(resolvedColor, startOffset, endOffset, strokeWidth * 0.75f, StrokeCap.Round)
+                }
+            }
+            AppGlyph.WORKSPACE -> {
                 drawRoundRect(
                     color = resolvedColor,
                     topLeft = androidx.compose.ui.geometry.Offset(w * 0.13f, h * 0.18f),
@@ -1033,7 +1020,7 @@ private fun WorkspaceIcon(
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.56f, h * 0.42f), androidx.compose.ui.geometry.Offset(w * 0.72f, h * 0.42f), strokeWidth, StrokeCap.Round)
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.56f, h * 0.58f), androidx.compose.ui.geometry.Offset(w * 0.68f, h * 0.58f), strokeWidth, StrokeCap.Round)
             }
-            WorkspaceGlyph.HOSTS -> {
+            AppGlyph.HOSTS -> {
                 listOf(0.18f, 0.56f).forEach { y ->
                     drawRoundRect(
                         resolvedColor,
@@ -1046,7 +1033,7 @@ private fun WorkspaceIcon(
                     drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.39f, h * (y + 0.135f)), androidx.compose.ui.geometry.Offset(w * 0.78f, h * (y + 0.135f)), strokeWidth * 0.7f, StrokeCap.Round)
                 }
             }
-            WorkspaceGlyph.KEYCHAIN -> {
+            AppGlyph.KEYCHAIN -> {
                 drawCircle(resolvedColor, w * 0.19f, androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.34f), style = stroke)
                 val path = Path().apply {
                     moveTo(w * 0.47f, h * 0.47f)
@@ -1058,7 +1045,7 @@ private fun WorkspaceIcon(
                 }
                 drawPath(path, resolvedColor, style = stroke)
             }
-            WorkspaceGlyph.SNIPPETS -> {
+            AppGlyph.SNIPPETS -> {
                 val left = Path().apply {
                     moveTo(w * 0.38f, h * 0.12f)
                     cubicTo(w * 0.20f, h * 0.12f, w * 0.28f, h * 0.40f, w * 0.12f, h * 0.5f)
@@ -1072,7 +1059,7 @@ private fun WorkspaceIcon(
                 drawPath(left, resolvedColor, style = stroke)
                 drawPath(right, resolvedColor, style = stroke)
             }
-            WorkspaceGlyph.SHIELD -> {
+            AppGlyph.SHIELD -> {
                 val path = Path().apply {
                     moveTo(w * 0.5f, h * 0.08f)
                     lineTo(w * 0.84f, h * 0.23f)
@@ -1086,7 +1073,7 @@ private fun WorkspaceIcon(
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.51f), androidx.compose.ui.geometry.Offset(w * 0.46f, h * 0.64f), strokeWidth, StrokeCap.Round)
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.46f, h * 0.64f), androidx.compose.ui.geometry.Offset(w * 0.7f, h * 0.38f), strokeWidth, StrokeCap.Round)
             }
-            WorkspaceGlyph.KEYBOARD -> {
+            AppGlyph.KEYBOARD -> {
                 drawRoundRect(
                     resolvedColor,
                     androidx.compose.ui.geometry.Offset(w * 0.07f, h * 0.2f),
@@ -1102,12 +1089,12 @@ private fun WorkspaceIcon(
                     )
                 }
             }
-            WorkspaceGlyph.LAB -> {
+            AppGlyph.LAB -> {
                 drawArc(resolvedColor, 205f, 130f, false, style = stroke)
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.65f), androidx.compose.ui.geometry.Offset(w * 0.72f, h * 0.35f), strokeWidth, StrokeCap.Round)
                 drawCircle(resolvedColor, strokeWidth * 0.65f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.65f))
             }
-            WorkspaceGlyph.TERMINAL -> {
+            AppGlyph.TERMINAL -> {
                 drawRoundRect(
                     resolvedColor,
                     androidx.compose.ui.geometry.Offset(w * 0.08f, h * 0.16f),
@@ -1119,12 +1106,64 @@ private fun WorkspaceIcon(
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.4f, h * 0.5f), androidx.compose.ui.geometry.Offset(w * 0.27f, h * 0.6f), strokeWidth, StrokeCap.Round)
                 drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.62f), androidx.compose.ui.geometry.Offset(w * 0.7f, h * 0.62f), strokeWidth, StrokeCap.Round)
             }
-            WorkspaceGlyph.TOOLS -> {
+            AppGlyph.TOOLS -> {
                 listOf(0.27f, 0.5f, 0.73f).forEachIndexed { index, y ->
                     drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.14f, h * y), androidx.compose.ui.geometry.Offset(w * 0.86f, h * y), strokeWidth, StrokeCap.Round)
                     val x = listOf(0.35f, 0.67f, 0.45f)[index]
                     drawCircle(resolvedColor, w * 0.08f, androidx.compose.ui.geometry.Offset(w * x, h * y), style = stroke)
                 }
+            }
+            AppGlyph.NOTIFICATIONS -> {
+                drawArc(
+                    color = resolvedColor,
+                    startAngle = 198f,
+                    sweepAngle = 144f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.2f, h * 0.16f),
+                    size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.62f),
+                    style = stroke,
+                )
+                drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.72f), androidx.compose.ui.geometry.Offset(w * 0.82f, h * 0.72f), strokeWidth, StrokeCap.Round)
+                drawArc(
+                    color = resolvedColor,
+                    startAngle = 0f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.4f, h * 0.68f),
+                    size = androidx.compose.ui.geometry.Size(w * 0.2f, h * 0.2f),
+                    style = stroke,
+                )
+            }
+            AppGlyph.BACKUP -> {
+                drawRoundRect(
+                    resolvedColor,
+                    androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.18f),
+                    androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.68f),
+                    androidx.compose.ui.geometry.CornerRadius(w * 0.08f),
+                    style = stroke,
+                )
+                drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.24f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.62f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.48f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.64f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.66f, h * 0.48f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.64f), strokeWidth, StrokeCap.Round)
+            }
+            AppGlyph.INFO -> {
+                drawCircle(resolvedColor, w * 0.4f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f), style = stroke)
+                drawCircle(resolvedColor, strokeWidth * 0.55f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.3f))
+                drawLine(resolvedColor, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.46f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.72f), strokeWidth, StrokeCap.Round)
+            }
+            AppGlyph.SIGNAL -> {
+                listOf(0.22f, 0.42f, 0.62f).forEachIndexed { index, inset ->
+                    drawArc(
+                        color = resolvedColor,
+                        startAngle = 220f,
+                        sweepAngle = 100f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(w * inset / 2f, h * inset / 2f),
+                        size = androidx.compose.ui.geometry.Size(w * (1f - inset), h * (1f - inset)),
+                        style = stroke,
+                    )
+                }
+                drawCircle(resolvedColor, strokeWidth * 0.7f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.78f))
             }
         }
     }

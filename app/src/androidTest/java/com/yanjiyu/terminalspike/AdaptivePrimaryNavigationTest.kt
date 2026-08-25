@@ -57,7 +57,7 @@ class AdaptivePrimaryNavigationTest {
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertDoesNotExist()
         assertExactlyThreeDestinations(CompactPrimaryNavigationTestTag)
-        composeRule.onNodeWithContentDescription("Open local workspace").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Open connections").assertIsSelected()
         composeRule.onNodeWithContentDescription("Open terminal").performClick()
         composeRule.runOnIdle { assertTrue(openedTerminal) }
     }
@@ -85,12 +85,12 @@ class AdaptivePrimaryNavigationTest {
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertDoesNotExist()
         assertExactlyThreeDestinations(ExpandedPrimaryNavigationTestTag)
         composeRule.onNodeWithContentDescription("Open settings").assertIsSelected()
-        composeRule.onNodeWithContentDescription("Open local workspace").performClick()
+        composeRule.onNodeWithContentDescription("Open connections").performClick()
         composeRule.runOnIdle { assertTrue(openedWorkspace) }
     }
 
     @Test
-    fun secondaryConnectionsCatalogDoesNotClaimTheTerminalDestination() {
+    fun connectionsDestinationClaimsTheFirstPrimaryDestination() {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 1f)) {
                 MaterialTheme {
@@ -107,7 +107,31 @@ class AdaptivePrimaryNavigationTest {
             }
         }
 
+        composeRule.onNodeWithContentDescription("Open connections").assertIsSelected()
         composeRule.onNodeWithContentDescription("Open terminal").assertIsNotSelected()
+    }
+
+    @Test
+    fun terminalDestinationClaimsTheSecondPrimaryDestination() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 1f)) {
+                MaterialTheme {
+                    AdaptivePrimaryNavigation(
+                        selected = AppDestination.TERMINAL,
+                        onWorkspace = {},
+                        onConnections = {},
+                        onSettings = {},
+                        modifier = Modifier.requiredSize(width = 599.dp, height = 700.dp),
+                    ) { contentModifier, _ ->
+                        Box(contentModifier)
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Open connections").assertIsNotSelected()
+        composeRule.onNodeWithContentDescription("Open terminal").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Open settings").assertIsNotSelected()
     }
 
     @Test
@@ -136,7 +160,7 @@ class AdaptivePrimaryNavigationTest {
         assertNear(17f, content.left)
         assertNear(23f, content.top)
         assertNear(369f, content.right)
-        val workspaceItem = composeRule.onNodeWithContentDescription("Open local workspace")
+        val workspaceItem = composeRule.onNodeWithContentDescription("Open connections")
             .fetchSemanticsNode().boundsInRoot
         assertTrue(workspaceItem.left >= 17f)
         assertTrue(workspaceItem.right <= 369f)
@@ -169,7 +193,7 @@ class AdaptivePrimaryNavigationTest {
         assertNear(23f, content.top)
         assertNear(669f, content.right)
         assertNear(763f, content.bottom)
-        val workspaceItem = composeRule.onNodeWithContentDescription("Open local workspace")
+        val workspaceItem = composeRule.onNodeWithContentDescription("Open connections")
             .fetchSemanticsNode().boundsInRoot
         assertTrue(workspaceItem.left >= 17f)
         assertTrue(workspaceItem.top >= 23f)
@@ -180,10 +204,10 @@ class AdaptivePrimaryNavigationTest {
         val navigationItem = hasAnyAncestor(hasTestTag(navigationTag))
             .and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected))
         composeRule.onAllNodes(navigationItem, useUnmergedTree = true).assertCountEquals(3)
-        composeRule.onNodeWithContentDescription("Open local workspace").assertExists()
+        composeRule.onNodeWithContentDescription("Open connections").assertExists()
         composeRule.onNodeWithContentDescription("Open terminal").assertExists()
         composeRule.onNodeWithContentDescription("Open settings").assertExists()
-        composeRule.onNodeWithContentDescription("Open connections").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Open local workspace").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Open local tools").assertDoesNotExist()
     }
 

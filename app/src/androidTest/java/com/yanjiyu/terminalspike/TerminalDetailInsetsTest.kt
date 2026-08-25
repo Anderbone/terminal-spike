@@ -27,7 +27,7 @@ class TerminalDetailInsetsTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun terminalChromeAndControlsStayInsideGestureAndCutoutInsets() {
+    fun immersiveTerminalConsumesTheUnusedStatusBarInset() {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 1f)) {
                 MaterialTheme {
@@ -50,7 +50,7 @@ class TerminalDetailInsetsTest {
             .fetchSemanticsNode()
             .boundsInRoot
         assertNear(17f, bounds.left)
-        assertNear(23f, bounds.top)
+        assertNear(0f, bounds.top)
         assertNear(369f, bounds.right)
         assertNear(763f, bounds.bottom)
     }
@@ -74,7 +74,7 @@ class TerminalDetailInsetsTest {
             .fetchSemanticsNode()
             .boundsInRoot
         assertNear(0f, bounds.left)
-        assertNear(23f, bounds.top)
+        assertNear(0f, bounds.top)
         assertNear(400f, bounds.right)
         assertNear(763f, bounds.bottom)
     }

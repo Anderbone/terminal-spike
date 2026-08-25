@@ -107,12 +107,26 @@ class ConnectionsManagementTest {
         )
 
         assertNull(result.value)
-        assertNotNull(result.errors.displayName)
+        assertNull(result.errors.displayName)
         assertNotNull(result.errors.hostname)
         assertNotNull(result.errors.port)
         assertNotNull(result.errors.username)
         assertNotNull(result.errors.authentication)
         assertNotNull(result.errors.keepalive)
+    }
+
+    @Test
+    fun blankOptionalConnectionNameFallsBackToHostname() {
+        val result = validateHostEditor(
+            HostEditorDraft(
+                hostname = "server.example",
+                username = "alice",
+            ),
+            availableKeyIds = emptySet(),
+        )
+
+        assertTrue(result.errors.isEmpty)
+        assertEquals("server.example", requireNotNull(result.value).displayName)
     }
 
     @Test

@@ -79,7 +79,7 @@ class FastTerminalSelectionInteractionTest {
     }
 
     @Test
-    fun tappingOsc8LinkOnlyOffersActionsAndNeverOpensItDirectly() {
+    fun tappingSafeOsc8LinkOpensItDirectly() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val controller = TerminalController().apply {
@@ -103,11 +103,41 @@ class FastTerminalSelectionInteractionTest {
 
                 tapFirstCell(view)
 
-                assertTrue(requests.isEmpty())
+                assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+            }
+        }
+    }
+
+    @Test
+    fun longPressingSafeLinkShowsOpenActionAndDispatchesToBrowserCallback() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val controller = TerminalController().apply {
+                    buffer.append(
+                        TerminalLine.styled(
+                            listOf(
+                                TerminalRun(
+                                    text = "https://example.test/docs",
+                                    hyperlink = TerminalHyperlink("https://example.test/docs"),
+                                    startColumn = 0,
+                                    columnWidth = 100,
+                                ),
+                            ),
+                        ),
+                    )
+                }
+                val requests = mutableListOf<TerminalLinkActionRequest>()
+                val view = attachTerminalView(activity, controller).apply {
+                    setLinkActionCallback { request -> requests += request }
+                }
+
+                assertTrue(view.performLongClick())
+                assertNull(view.selectedTextForTesting())
                 val info = AccessibilityNodeInfo.obtain()
+                assertTrue(view.performAccessibilityAction(R.id.terminal_action_open_link, null))
                 view.onInitializeAccessibilityNodeInfo(info)
                 assertTrue(info.actionList.any { it.id == R.id.terminal_action_open_link })
-                assertTrue(view.performAccessibilityAction(R.id.terminal_action_open_link, null))
+                assertTrue(info.actionList.any { it.id == R.id.terminal_action_copy_link })
                 assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
                 info.recycle()
             }

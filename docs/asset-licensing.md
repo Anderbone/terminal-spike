@@ -7,6 +7,17 @@ dependencies: docs/polish-implementation-plan.md
 
 # Terminal palette and font licensing
 
+## Launcher branding
+
+- The main app and Mosh extension launcher marks are project-owned Android vector artwork created
+  for this repository. They use a shared terminal-window, prompt, and cursor language; the extension
+  adds its own `MOSH` badge so the two installed apps are distinguishable.
+- The supplied terminal-icon gallery was used only as a broad style reference. No logo, path data,
+  source asset, or application artwork was copied from it or from another terminal application.
+- The shipped artwork is implemented as density-independent legacy/adaptive vectors with Android
+  13 monochrome layers. It introduces no dependency, bundled third-party asset, attribution, or
+  notice obligation.
+
 ## Decisions
 
 - Named presets are project-authored terminal mappings. The names and colour specifications retain

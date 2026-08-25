@@ -138,7 +138,7 @@ class BackupArchiveCodec(
                 if (failure == null) {
                     failure = BackupArchiveException.PayloadProducer(producerError)
                 } else if (producerError !== failure) {
-                    failure?.addSuppressed(BackupArchiveException.PayloadProducer(producerError))
+                    failure.addSuppressed(BackupArchiveException.PayloadProducer(producerError))
                 }
             }
         }

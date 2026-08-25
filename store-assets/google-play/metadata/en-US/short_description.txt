@@ -1,0 +1,1 @@
+Native, local-first SSH terminal with SFTP, tabs, snippets and custom keys

@@ -41,6 +41,12 @@ message AppSettings {
   // Device-local marker. Portable backup deliberately omits this permission-education state.
   bool notification_permission_education_consumed = 24;
 
+  // Stored as the negative so existing and fresh proto3 payloads both default to enabled.
+  bool tmux_session_selector_disabled = 25;
+
+  // Device-local BCP-47 tag used by Android speech recognition. Empty follows device language.
+  string voice_input_language_tag = 26;
+
   enum ThemeMode {
     THEME_MODE_UNSPECIFIED = 0;
     THEME_MODE_SYSTEM = 1;

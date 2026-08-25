@@ -4,12 +4,14 @@
     <string name="terminal_predictive_back_preview">Predictive back preview to %1$s</string>
     <string name="terminal_predictive_back_destination">Back to %1$s</string>
     <string name="terminal_no_session_open">No terminal session is open.</string>
+    <string name="terminal_no_session_detail">Choose a saved connection to start a secure terminal session.</string>
     <string name="terminal_clipboard_ssh_public_key">SSH public key</string>
     <string name="terminal_clipboard_command_snippet">Command snippet</string>
     <string name="terminal_accessory_multiline_paste_message">This sends the clipboard text to the selected terminal without adding Enter.</string>
     <string name="terminal_snippet_multiline_title">Send multiline snippet?</string>
     <string name="terminal_snippet_multiline_message">%1$s contains multiple lines. Review the saved command before sending all lines to the active terminal.</string>
     <string name="terminal_snippet_send_all_lines">Send all lines</string>
+    <string name="terminal_snippet_picker_detail">Choose a snippet for %1$s.</string>
     <string name="terminal_notification_permission_title">Show background session notifications?</string>
     <string name="terminal_notification_permission_message">Your terminal is already connecting. Notification access makes the ongoing background session visible; denying it will not stop the connection.</string>
     <string name="terminal_notification_permission_continue">Continue</string>
@@ -22,6 +24,18 @@
     <string name="terminal_transcript_export_failed">Transcript could not be exported.</string>
     <string name="terminal_transcript_unavailable">Transcript is no longer available.</string>
     <string name="terminal_document_picker_failed">Document picker could not be opened.</string>
+    <string name="terminal_voice_input">Voice input</string>
+    <string name="terminal_voice_state_on">On — listening</string>
+    <string name="terminal_voice_state_off">Off</string>
+    <string name="terminal_voice_listening">● Listening… Tap stop when finished.</string>
+    <string name="terminal_voice_listening_with_words">● Listening… %1$s</string>
+    <string name="terminal_voice_processing">Finishing voice input…</string>
+    <string name="terminal_voice_unavailable">Voice input is unavailable on this device.</string>
+    <string name="terminal_voice_permission_denied">Microphone permission is needed for voice input.</string>
+    <string name="terminal_voice_no_match">No speech was recognised. Try again.</string>
+    <string name="terminal_voice_busy">Android voice input is busy. Try again.</string>
+    <string name="terminal_voice_offline_unavailable">Offline voice recognition is unavailable for this language.</string>
+    <string name="terminal_voice_failed">Voice input stopped unexpectedly. Try again.</string>
 
     <string name="notice_mosh_fixed_term">Mosh uses its fixed %1$s terminal type; the selected SSH TERM was not sent.</string>
     <string name="notice_mosh_startup_ssh_only">Saved startup input applies only to SSH and was not sent to Mosh.</string>
@@ -44,7 +58,6 @@
     <string name="notice_buffer_invalid_unicode">Buffered input contains invalid Unicode.</string>
     <string name="notice_buffer_unsupported_control">Buffered input contains an unsupported control character.</string>
     <string name="notice_terminal_session_unavailable">That terminal session is no longer available.</string>
-    <string name="notice_terminal_changed_review_input">The active terminal changed. Review the input before sending.</string>
     <string name="notice_connect_before_buffered_input">Connect that SSH session before sending buffered input.</string>
     <string name="notice_private_key_unavailable_reimport">Saved private key is unavailable. Re-import the same key to recover it.</string>
     <string name="notice_password_unavailable_reenter">Saved password is unavailable. Re-enter it or forget the saved copy.</string>
@@ -79,9 +92,6 @@
     <string name="notice_key_generated">Generated %1$s.</string>
     <string name="notice_key_generate_failed">Could not generate that SSH key.</string>
     <string name="notice_terminal_not_connected">That terminal is no longer connected.</string>
-    <string name="notice_snippet_too_large">That snippet does not fit in the %1$d-character input buffer.</string>
-    <string name="notice_text_draft_other_terminal">The current text draft belongs to another terminal. Send or clear it first.</string>
-    <string name="notice_snippet_inserted">Inserted %1$s. Review it before sending.</string>
     <string name="notice_snippet_sent">Sent %1$s.</string>
     <string name="notice_terminal_input_queue_busy">The terminal input queue is busy.</string>
     <string name="notice_keyboard_profile_unavailable">The selected keyboard profile is unavailable in this runtime.</string>
@@ -138,7 +148,6 @@
     <string name="notice_snippet_unsupported_control">Snippet contains unsupported control characters.</string>
     <string name="notice_connect_before_snippet">Connect an SSH session before sending a snippet.</string>
     <string name="notice_terminal_changed_review_snippet">The active terminal changed. Review the snippet before sending.</string>
-    <string name="notice_snippet_insert_unavailable">This snippet is set to insert without sending. Nothing was sent because insertion is not available here yet.</string>
     <string name="notice_snippet_queue_failed">Could not queue that snippet. Nothing was sent.</string>
     <string name="notice_terminal_unavailable_draft_kept">That terminal session is no longer available. The draft was kept.</string>
     <string name="notice_buffer_queue_failed">Could not queue buffered input. The draft was kept.</string>
@@ -170,14 +179,18 @@
     <string name="terminal_key_control_l">Control L</string>
     <string name="terminal_key_control_u">Control U</string>
     <string name="terminal_key_control_k">Control K</string>
-    <string name="terminal_key_hide_keyboard">Hide software keyboard</string>
+    <string name="terminal_key_hide_keyboard">Show or hide software keyboard</string>
     <string name="terminal_key_tmux_prefix_label">tmux</string>
     <string name="terminal_key_tmux_prefix_description">Send configured tmux prefix</string>
     <string name="terminal_key_paste_label">PASTE</string>
+    <string name="terminal_key_select_images_label">IMG</string>
     <string name="terminal_key_snippets_label">SNIPS</string>
+    <string name="terminal_key_tmux_sessions_label">▣</string>
+    <string name="terminal_key_tmux_sessions_description">Show active tmux sessions</string>
     <string name="terminal_key_settings_label">KEYS</string>
-    <string name="terminal_key_hide_label">HIDE</string>
+    <string name="terminal_key_hide_label">KB</string>
     <string name="terminal_key_paste_description">Paste from clipboard</string>
+    <string name="terminal_key_select_images_description">Select images</string>
     <string name="terminal_key_snippets_description">Open snippets</string>
     <string name="terminal_key_settings_description">Open keyboard settings</string>
     <string name="terminal_key_control_shift_tab_unsupported">Control+Shift+Tab has no configured terminal sequence.</string>
@@ -187,6 +200,7 @@
     <string name="settings_keyboard_action_escape">Esc</string>
     <string name="settings_keyboard_action_control">Ctrl</string>
     <string name="settings_keyboard_action_alt">Alt</string>
+    <string name="settings_keyboard_action_tmux_sessions">tmux sessions</string>
     <string name="settings_keyboard_action_tab">Tab</string>
     <string name="settings_keyboard_action_shift">Shift</string>
     <string name="settings_keyboard_action_home">Home</string>
@@ -199,8 +213,9 @@
     <string name="settings_keyboard_action_enter">Enter</string>
     <string name="settings_keyboard_action_tmux">tmux</string>
     <string name="settings_keyboard_action_paste">Paste</string>
+    <string name="settings_keyboard_action_select_images">Select images</string>
     <string name="settings_keyboard_action_snippets">Snips</string>
-    <string name="settings_keyboard_action_hide">Hide</string>
+    <string name="settings_keyboard_action_hide">Keyboard</string>
     <string name="settings_keyboard_action_keys">Keys</string>
     <string name="settings_keyboard_action_space">Space</string>
 </resources>

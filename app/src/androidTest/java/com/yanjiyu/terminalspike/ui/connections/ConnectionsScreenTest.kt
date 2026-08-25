@@ -12,8 +12,12 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -22,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
@@ -51,6 +56,42 @@ class ConnectionsScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun hostCatalogHeaderKeepsScreenIdentityBesideItsPrimaryAction() {
+        render(state = populatedState())
+
+        composeRule.onNode(
+            hasText("Connections") and hasAnyAncestor(hasTestTag(ConnectionsHeaderTestTag)),
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText("Hosts, keys, and snippets", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
+    }
+
+    @Test
+    fun newHostKeepsOnlyEssentialsVisibleAndSavesPasswordByDefault() {
+        render(
+            state = editorState(),
+            callbacks = callbacks(onSaveHost = { Result.success(Unit) }),
+        )
+
+        composeRule.onNodeWithContentDescription("Add host").performClick()
+
+        composeRule.onNodeWithTag(HostEditorHostnameTestTag).assertExists()
+        composeRule.onNodeWithTag(HostEditorUsernameTestTag).assertExists()
+        composeRule.onNodeWithTag(HostEditorPortTestTag).assertTextContains("22")
+        composeRule.onNodeWithTag(HostEditorSecretTestTag).assertExists()
+        composeRule.onNodeWithTag(HostEditorSavePasswordTestTag).assertIsOn()
+        composeRule.onNodeWithTag(HostEditorNameTestTag).assertExists()
+        composeRule.onNodeWithText("Protocol").assertExists()
+        composeRule.onNodeWithText("Profiles").assertDoesNotExist()
+        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).assertDoesNotExist()
+
+        composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
+
+        composeRule.onNodeWithText("Profiles").assertExists()
+        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).assertExists()
+    }
+
+    @Test
     fun compactHostCatalogShowsPolishedMetadataAndDispatchesConnect() {
         var connectedId: String? = null
         render(
@@ -73,6 +114,19 @@ class ConnectionsScreenTest {
     }
 
     @Test
+    fun terminalPrimaryDestinationDispatchesCallback() {
+        var openedTerminal = false
+        render(
+            state = populatedState(),
+            onOpenTerminal = { openedTerminal = true },
+        )
+
+        composeRule.onNodeWithContentDescription("Open terminal").performClick()
+
+        composeRule.runOnIdle { assertTrue(openedTerminal) }
+    }
+
+    @Test
     fun hostDeleteFromOverflowRequiresConfirmation() {
         var deletedId: String? = null
         render(
@@ -87,6 +141,28 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithText("Delete host").performClick()
 
         composeRule.runOnIdle { assertEquals(HOST_ID, deletedId) }
+    }
+
+    @Test
+    fun editHostDialogDeletesTheHostAfterConfirmation() {
+        var deletedId: String? = null
+        render(
+            state = editorState(),
+            callbacks = callbacks(
+                onDeleteHost = { deletedId = it },
+                onSaveHost = { Result.success(Unit) },
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
+        composeRule.onNodeWithText("Edit").performClick()
+        composeRule.onNodeWithTag(HostEditorDeleteTestTag).performClick()
+        composeRule.onNodeWithText("Delete Production?").assertIsDisplayed()
+        composeRule.runOnIdle { assertNull(deletedId) }
+        composeRule.onNodeWithTag(HostEditorConfirmDeleteTestTag).performClick()
+
+        composeRule.runOnIdle { assertEquals(HOST_ID, deletedId) }
+        composeRule.onNodeWithTag(HostEditorDialogTestTag).assertDoesNotExist()
     }
 
     @Test
@@ -122,7 +198,7 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
         composeRule.onNodeWithText("Edit").performClick()
         composeRule.onNodeWithTag(HostEditorNameTestTag).performTextInput(" changed")
-        composeRule.onNodeWithText("View Mosh extension status").performClick()
+        composeRule.onNodeWithText("View Mosh extension status").performScrollTo().performClick()
 
         composeRule.onNodeWithText("Discard host changes?").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, statusOpenCount) }
@@ -197,6 +273,7 @@ class ConnectionsScreenTest {
                     state = state,
                     callbacks = callbacks,
                     onOpenWorkspace = {},
+                    onOpenTerminal = {},
                     onOpenSettings = {},
                     modifier = Modifier.requiredSize(599.dp, 900.dp),
                     nowEpochMillis = 200_000L,
@@ -243,7 +320,8 @@ class ConnectionsScreenTest {
 
         composeRule.onNodeWithContentDescription("Add host").performClick()
         composeRule.onNodeWithTag(HostEditorUsernameTestTag).performTextInput("keep-user")
-        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performClick()
+        composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
+        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performScrollTo().performClick()
         composeRule.onNodeWithTag(NearbySshDiscoveryDialogTestTag).assertIsDisplayed()
         composeRule.onNodeWithText("Office server").performClick()
 
@@ -253,7 +331,7 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithTag(HostEditorUsernameTestTag).assertTextContains("keep-user")
         composeRule.onNodeWithText(
             "Filled in Office server. Username and authentication were not changed.",
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
         composeRule.runOnIdle { assertEquals("office", discovery.selectedCandidateId) }
     }
 
@@ -276,8 +354,10 @@ class ConnectionsScreenTest {
         )
 
         composeRule.onNodeWithContentDescription("Add host").performClick()
-        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performClick()
+        composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
+        composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performScrollTo().performClick()
         composeRule.onAllNodesWithText("Nearby SSH detection timed out", substring = true)[0]
+            .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithText("Close").performClick()
         composeRule.onNodeWithText("Cancel").performClick()
@@ -362,6 +442,7 @@ class ConnectionsScreenTest {
                         },
                     ),
                     onOpenWorkspace = {},
+                    onOpenTerminal = {},
                     onOpenSettings = {},
                     modifier = Modifier.requiredSize(599.dp, 900.dp),
                     nowEpochMillis = 200_000L,
@@ -398,6 +479,7 @@ class ConnectionsScreenTest {
                     state = renderedState.value,
                     callbacks = callbacks(onRetry = { retries += 1 }),
                     onOpenWorkspace = {},
+                    onOpenTerminal = {},
                     onOpenSettings = {},
                     modifier = Modifier.requiredSize(599.dp, 900.dp),
                     nowEpochMillis = 200_000L,
@@ -515,6 +597,7 @@ class ConnectionsScreenTest {
                             state = populatedState(),
                             callbacks = callbacks(),
                             onOpenWorkspace = {},
+                            onOpenTerminal = {},
                             onOpenSettings = {},
                             modifier = Modifier.requiredSize(599.dp, 900.dp),
                             nowEpochMillis = 200_000L,
@@ -534,6 +617,7 @@ class ConnectionsScreenTest {
     private fun render(
         state: ConnectionsUiState,
         callbacks: ConnectionsCallbacks = callbacks(),
+        onOpenTerminal: () -> Unit = {},
         width: Dp = 599.dp,
         height: Dp = 900.dp,
         fontScale: Float = 1f,
@@ -552,6 +636,7 @@ class ConnectionsScreenTest {
                             state = state,
                             callbacks = callbacks,
                             onOpenWorkspace = {},
+                            onOpenTerminal = onOpenTerminal,
                             onOpenSettings = {},
                             modifier = Modifier.requiredSize(width, height),
                             nowEpochMillis = 200_000L,

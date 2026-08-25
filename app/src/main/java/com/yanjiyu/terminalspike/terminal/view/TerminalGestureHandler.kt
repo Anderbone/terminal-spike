@@ -33,7 +33,7 @@ internal class TerminalGestureHandler(
         velocityX: Float,
         velocityY: Float,
     ): Boolean {
-        actions.onFling(velocityY)
+        actions.onFling(velocityY, currentEvent.x, currentEvent.y)
         return true
     }
 }

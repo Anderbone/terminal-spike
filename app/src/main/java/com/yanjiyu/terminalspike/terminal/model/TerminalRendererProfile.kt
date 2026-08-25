@@ -6,7 +6,7 @@ import com.yanjiyu.terminalspike.core.model.TouchScrollMode
 /** Immutable settings snapshot consumed by the native renderer without Compose cell state. */
 data class TerminalRendererProfile(
     val theme: TerminalTheme = TerminalThemes.current,
-    val fontId: String = SYSTEM_MONOSPACE_FONT_ID,
+    val fontId: String = DEFAULT_FONT_ID,
     /** Absolute path is accepted only after the private custom-font store resolves the stable ID. */
     val customFontPath: String? = null,
     val fontSizeSp: Float = 14f,
@@ -40,6 +40,7 @@ data class TerminalRendererProfile(
         const val JETBRAINS_MONO_FONT_ID = "jetbrains_mono"
         const val IBM_PLEX_MONO_FONT_ID = "ibm_plex_mono"
         const val CASCADIA_MONO_FONT_ID = "cascadia_mono"
+        const val DEFAULT_FONT_ID = JETBRAINS_MONO_FONT_ID
 
         val BUNDLED_FONT_IDS: Set<String> = setOf(
             SYSTEM_MONOSPACE_FONT_ID,

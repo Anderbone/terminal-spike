@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -57,6 +58,38 @@ class SettingsScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun clearingSettingsSearchRestoresTheFullCategoryHierarchy() {
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(412.dp, 900.dp)) {
+                    SettingsScreen(
+                        state = completeState(),
+                        initialCategory = null,
+                        knownHosts = emptyList(),
+                        moshExtension = MoshExtensionStatus.Absent.toUiState(),
+                        actions = noOpActions(),
+                        onForgetKnownHost = { _, _ -> },
+                        onRefreshMoshExtension = {},
+                        onOpenRendererLab = {},
+                        onNavigateBack = {},
+                        onOpenWorkspace = {},
+                        onOpenTerminal = {},
+                        onOpenSettings = {},
+                        onDismissMessage = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(SettingsCategoryTitleTestTag).assertTextEquals("Settings")
+        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("keyboard keys")
+        composeRule.onNodeWithText("Appearance").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Clear settings search").performClick()
+        composeRule.onNodeWithText("Appearance").assertIsDisplayed()
+        composeRule.onNodeWithText("Keyboard").assertIsDisplayed()
+    }
+
+    @Test
     fun searchableHierarchyOpensKeyboardProfileWithVisibleChordKeys() {
         composeRule.setContent {
             MaterialTheme {
@@ -80,7 +113,7 @@ class SettingsScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("tmux keys")
+        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("keyboard keys")
         composeRule.onNodeWithText("Appearance").assertDoesNotExist()
         composeRule.onNodeWithText("Keyboard").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag(KeyboardPreviewTestTag).assertIsDisplayed()
@@ -120,10 +153,10 @@ class SettingsScreenTest {
 
         composeRule.onNodeWithText("Dark").performScrollTo().performClick()
         assertEquals(AppearanceMode.DARK, selectedMode)
-        composeRule.onNodeWithText("‹").performClick()
+        composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithText("Keyboard").performScrollTo().performClick()
-        composeRule.onNodeWithText("tmux/Codex").performScrollTo().performClick()
-        assertEquals("tmux_codex", selectedPreset)
+        composeRule.onNodeWithText("Vim").performScrollTo().performClick()
+        assertEquals("vim", selectedPreset)
     }
 
     @Test
@@ -168,6 +201,54 @@ class SettingsScreenTest {
             assertEquals(KeyboardPresets.general.actions.size, updated.size)
             assertEquals(KeyboardAction.F1, updated[0])
             assertEquals(KeyboardPresets.general.actions.drop(1), updated.drop(1))
+        }
+    }
+
+    @Test
+    fun accessoryKeyEditorShowsConfiguredRowsAndDefersReplacementUntilSave() {
+        var savedActions: List<KeyboardAction>? = null
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(412.dp, 900.dp)) {
+                    SettingsScreen(
+                        state = completeState(),
+                        initialCategory = SettingsCategory.KEYBOARD,
+                        knownHosts = emptyList(),
+                        moshExtension = MoshExtensionStatus.Absent.toUiState(),
+                        actions = noOpActions().copy(onKeyboardActions = { savedActions = it }),
+                        onForgetKnownHost = { _, _ -> },
+                        onRefreshMoshExtension = {},
+                        onOpenRendererLab = {},
+                        onNavigateBack = {},
+                        onOpenWorkspace = {},
+                        onOpenTerminal = {},
+                        onOpenSettings = {},
+                        onDismissMessage = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(KeyboardSettingsTestTag)
+            .performScrollToNode(hasText("Edit accessory keys"))
+        composeRule.onNodeWithText("Edit accessory keys").performClick()
+
+        composeRule.onNodeWithTag(KeyboardEditorDeckTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag("$KeyboardEditorRowTestTagPrefix${0}").assertIsDisplayed()
+        composeRule.onNodeWithTag("$KeyboardEditorRowTestTagPrefix${1}").assertIsDisplayed()
+        composeRule.onNodeWithTag("$KeyboardEditorKeyTestTagPrefix${0}")
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        composeRule.onNodeWithText("Replace Esc").assertIsDisplayed()
+        composeRule.onNodeWithText("Find a key").performTextInput("F1")
+        composeRule.onNodeWithContentDescription("Replace with F1").performClick()
+
+        composeRule.runOnIdle { assertEquals(null, savedActions) }
+        composeRule.onNodeWithText("Save").performClick()
+        composeRule.runOnIdle {
+            val saved = requireNotNull(savedActions)
+            assertEquals(KeyboardAction.F1, saved[0])
+            assertEquals(KeyboardPresets.general.actions.size, saved.size)
         }
     }
 
@@ -339,88 +420,57 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun exportDialogValidatesSameLengthEditsAndWipesBothEditorsAfterTransfer() {
-        var exportedMode: BackupMode? = null
-        var exportedCustomFonts = false
-        var exportedPassphrase: String? = null
-        val backupActions = BackupSettingsActions.NONE.copy(
-            onSubmitExport = { mode, includeCustomFonts, passphrase ->
-                exportedMode = mode
-                exportedCustomFonts = includeCustomFonts
-                exportedPassphrase = passphrase.concatToString()
-                passphrase.fill('\u0000')
-            },
-        )
-
+    fun exportSetupDoesNotShowModeOrPassphrasePrompts() {
         composeRule.setContent {
             MaterialTheme {
                 BackupWorkflowDialogs(
                     state = BackupWorkflowUiState(step = BackupWorkflowStep.EXPORT_SETUP),
-                    actions = backupActions,
+                    actions = BackupSettingsActions.NONE,
                 )
             }
         }
-        composeRule.onNodeWithText("Choose location").assertIsNotEnabled()
-        composeRule.onNodeWithText("Include imported font files").performClick()
-        onView(withTagValue(equalTo(BackupPassphraseTestTag)))
-            .perform(replaceText("password"))
-        onView(withTagValue(equalTo(BackupPassphraseConfirmationTestTag)))
-            .perform(replaceText("password"))
-        composeRule.onNodeWithText("Choose location").assertIsEnabled()
-
-        onView(withTagValue(equalTo(BackupPassphraseConfirmationTestTag)))
-            .perform(replaceText("passw0rd"))
-        composeRule.onNodeWithText("Choose location").assertIsNotEnabled()
-        composeRule.onNodeWithText("Passphrases do not match.").assertIsDisplayed()
-
-        onView(withTagValue(equalTo(BackupPassphraseConfirmationTestTag)))
-            .perform(replaceText("password"))
-        composeRule.onNodeWithText("Choose location").assertIsEnabled()
-        composeRule.onNodeWithText("Choose location").performClick()
-
-        assertEquals(BackupMode.STANDARD, exportedMode)
-        assertTrue(exportedCustomFonts)
-        assertEquals("password", exportedPassphrase)
-        onView(withTagValue(equalTo(BackupPassphraseTestTag))).check(matches(withText("")))
-        onView(withTagValue(equalTo(BackupPassphraseConfirmationTestTag)))
-            .check(matches(withText("")))
-        composeRule.onNodeWithText("Choose location").assertIsNotEnabled()
+        composeRule.onNodeWithTag(BackupPassphraseTestTag).assertDoesNotExist()
+        composeRule.onNodeWithText("Standard backup").assertDoesNotExist()
+        composeRule.onNodeWithText("Full encrypted backup").assertDoesNotExist()
     }
 
     @Test
-    fun restoreDialogTransfersAMutablePassphraseAndWipesItsEditor() {
-        var restoredPassphrase: String? = null
-        val backupActions = BackupSettingsActions.NONE.copy(
-            onSubmitRestorePassphrase = { passphrase ->
-                restoredPassphrase = passphrase.concatToString()
-                passphrase.fill('\u0000')
-            },
-        )
-
+    fun restoreDoesNotShowAPassphrasePrompt() {
         composeRule.setContent {
             MaterialTheme {
                 BackupWorkflowDialogs(
                     state = BackupWorkflowUiState(step = BackupWorkflowStep.PASSPHRASE_REQUIRED),
-                    actions = backupActions,
+                    actions = BackupSettingsActions.NONE,
                 )
             }
         }
-
-        composeRule.onNodeWithText("Unlock").assertIsNotEnabled()
-        onView(withTagValue(equalTo(BackupPassphraseTestTag)))
-            .perform(replaceText("restore secret"))
-        composeRule.onNodeWithText("Unlock").assertIsEnabled().performClick()
-
-        assertEquals("restore secret", restoredPassphrase)
-        onView(withTagValue(equalTo(BackupPassphraseTestTag))).check(matches(withText("")))
-        composeRule.onNodeWithText("Unlock").assertIsNotEnabled()
+        composeRule.onNodeWithTag(BackupPassphraseTestTag).assertDoesNotExist()
+        composeRule.onNodeWithText("Unlock").assertDoesNotExist()
     }
 
     @Test
     fun backupPreviewAndResultExposePortableCustomThemeCounts() {
         var state by mutableStateOf(
             BackupWorkflowUiState(
-                step = BackupWorkflowStep.AUTHENTICATED_PREVIEW,
+                step = BackupWorkflowStep.COMPLETED,
+                completionKind = BackupCompletionKind.EXPORT,
+                exportResult = BackupExportUiResult(
+                    mode = BackupMode.FULL,
+                    bytesWritten = 1024,
+                    content = BackupContentSummary(
+                        hosts = 0,
+                        credentials = 0,
+                        sshKeys = 0,
+                        knownHosts = 0,
+                        snippets = 0,
+                        terminalProfiles = 1,
+                        terminalThemes = 2,
+                        keyboardProfiles = 3,
+                        portableCredentialSecrets = 2,
+                        portablePrivateKeys = 2,
+                        customFonts = 4,
+                    ),
+                ),
                 archive = BackupArchiveUiSummary(
                     header = BackupHeaderUiSummary(
                         mode = BackupMode.STANDARD,
@@ -483,18 +533,18 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun clearSavedCredentialsRequiresExactStrongConfirmationAndShowsSeparateCounts() {
-        var submitted: String? = null
-        val actions = noOpActions().copy(onConfirmClearSavedCredentials = { submitted = it })
+    fun dataManagersUseSettingsDetailsWhileAdvancedSecurityStaysHidden() {
+        var sshKeysOpened = false
+        var snippetsOpened = false
         composeRule.setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
                         state = completeState(),
-                        initialCategory = SettingsCategory.SECURITY,
+                        initialCategory = null,
                         knownHosts = emptyList(),
                         moshExtension = MoshExtensionStatus.Absent.toUiState(),
-                        actions = actions,
+                        actions = noOpActions(),
                         onForgetKnownHost = { _, _ -> },
                         onRefreshMoshExtension = {},
                         onOpenRendererLab = {},
@@ -502,22 +552,23 @@ class SettingsScreenTest {
                         onOpenWorkspace = {},
                         onOpenTerminal = {},
                         onOpenSettings = {},
+                        onOpenSshKeys = { sshKeysOpened = true },
+                        onOpenSnippets = { snippetsOpened = true },
                         onDismissMessage = {},
-                        savedCredentialClearState = SavedCredentialClearUiState.Confirming(
-                            credentialCount = 3,
-                            keyIdentityCount = 2,
-                        ),
                     )
                 }
             }
         }
 
-        composeRule.onNodeWithText("Saved credentials: 3 · Key identities: 2").assertIsDisplayed()
-        composeRule.onNodeWithText("Clear permanently").assertIsNotEnabled()
-        composeRule.onNodeWithTag(SavedCredentialClearConfirmationTestTag)
-            .performTextInput(CLEAR_SAVED_CREDENTIALS_CONFIRMATION)
-        composeRule.onNodeWithText("Clear permanently").assertIsEnabled().performClick()
-        assertEquals(CLEAR_SAVED_CREDENTIALS_CONFIRMATION, submitted)
+        composeRule.onNodeWithText("Security & privacy").assertDoesNotExist()
+        composeRule.onNodeWithText("SSH keys").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Manage SSH keys").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertTrue(sshKeysOpened) }
+
+        composeRule.onNodeWithContentDescription("Open settings").performClick()
+        composeRule.onNodeWithText("Snippets").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Manage snippets").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertTrue(snippetsOpened) }
     }
 }
 

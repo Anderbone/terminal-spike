@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -37,6 +39,9 @@ import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.ui.SessionTabUi
 import com.yanjiyu.terminalspike.ui.SshConnectionSeed
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
 
 internal const val TerminalSessionActionsTestTag = "terminal-session-actions"
 internal const val TerminalSessionDetailsTestTag = "terminal-session-details"
@@ -231,7 +236,14 @@ private fun SessionActionRow(@StringRes labelRes: Int, onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .semantics { role = Role.Button },
-        trailingContent = { Text("›") },
+        trailingContent = {
+            ConnectionsGlyphIcon(
+                glyph = ConnectionsGlyph.BACK,
+                modifier = Modifier
+                    .size(MaterialTheme.iconMetrics.compact)
+                    .graphicsLayer(rotationZ = 180f),
+            )
+        },
     )
 }
 

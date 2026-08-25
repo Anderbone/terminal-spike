@@ -141,26 +141,50 @@ enum class TerminalExtraKey(
             HIDE_KEYBOARD,
         )
 
-        /** The complete shipped live deck: exactly two phone rows of nine direct actions. */
-        val DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
+        /** The previous 18-key live deck, retained to upgrade untouched defaults. */
+        internal val PREVIOUS_DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
             ESC,
-            CTRL,
-            ALT,
+            SLASH,
+            AT,
+            DOLLAR,
+            HOME,
+            UP,
+            END,
+            PAGE_UP,
+            CTRL_B,
             TAB,
+            CTRL,
             CTRL_C,
             CTRL_W,
-            CTRL_D,
-            CTRL_L,
-            CTRL_R,
-            CTRL_U,
-            CTRL_A,
-            CTRL_E,
-            HOME,
-            END,
-            UP,
-            DOWN,
             LEFT,
+            DOWN,
             RIGHT,
+            ENTER,
+            HIDE_KEYBOARD,
+        )
+
+        /** The complete shipped live deck: exactly two phone rows of ten direct actions. */
+        val DEFAULT_ORDER: List<TerminalExtraKey> = listOf(
+            ESC,
+            SLASH,
+            AT,
+            DOLLAR,
+            HOME,
+            UP,
+            END,
+            PAGE_UP,
+            CTRL_B,
+            BACKSPACE,
+            TAB,
+            CTRL,
+            ALT,
+            CTRL_C,
+            CTRL_W,
+            LEFT,
+            DOWN,
+            RIGHT,
+            ENTER,
+            HIDE_KEYBOARD,
         )
     }
 }

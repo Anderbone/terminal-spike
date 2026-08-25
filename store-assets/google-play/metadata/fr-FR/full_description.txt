@@ -1,0 +1,24 @@
+Connectez-vous à vos serveurs depuis un terminal Android rapide et natif, conçu pour un usage quotidien.
+
+Terminal Spike conserve les connexions et les réglages sur votre appareil. Il n'intègre ni compte, ni publicité, ni analyse d'utilisation, ni synchronisation dans le cloud.
+
+Travaillez avec plusieurs sessions
+• Ouvrez des sessions SSH authentifiées par mot de passe ou par clé
+• Gardez plusieurs terminaux dans des onglets indépendants
+• Reconnectez-vous aux hôtes enregistrés et choisissez éventuellement une session tmux
+• Vérifiez strictement les clés d'hôte et recevez un avertissement clair si la clé d'un serveur change
+
+Des outils pour le travail à distance
+• Parcourez, importez, téléchargez, renommez et supprimez des fichiers distants avec SFTP
+• Enregistrez les extraits de commandes que vous utilisez souvent
+• Personnalisez la barre de touches supplémentaires avec Ctrl, Échap, les flèches et vos propres raccourcis
+• Recherchez du texte dans la sortie du terminal et copiez la sélection
+• Collez des commandes multilignes après confirmation
+• Envoyez une image du presse-papiers à un hôte SSH connecté pour l'utiliser depuis un outil distant
+
+Adaptez-le à vos besoins
+• Choisissez les couleurs, les polices, la taille du texte, le style du curseur et le comportement du clavier
+• Sauvegardez et restaurez les données de l'application dans une archive locale chiffrée
+• Protégez les secrets enregistrés localement avec les fonctions de sécurité d'Android
+
+Terminal Spike est un client SSH. Vous devez disposer d'un accès à un serveur SSH et d'identifiants valides. Les données réseau sont échangées uniquement avec les hôtes que vous choisissez. Certaines fonctions facultatives peuvent dépendre des logiciels installés sur le serveur distant.

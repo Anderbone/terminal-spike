@@ -303,6 +303,115 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun underlineResetsWithSgr24AndSgr0WithoutAffectingPlainOutput() {
+        val sgr24 = VtTerminalEngine(columns = 24, rows = 2).accept(
+            "\u001B[4mUNDERLINE\u001B[24m NORMAL\n".bytes(),
+        )
+        val sgr0 = VtTerminalEngine(columns = 24, rows = 2).accept(
+            "\u001B[4mUNDERLINE\u001B[0m NORMAL\n".bytes(),
+        )
+        val plain = VtTerminalEngine(columns = 24, rows = 2).accept("NORMAL\n".bytes())
+
+        listOf(sgr24, sgr0).forEach { update ->
+            assertEquals(listOf("UNDERLINE", " NORMAL"), update.screen[0].runs.map { it.text })
+            assertTrue(update.screen[0].runs[0].style.underline)
+            assertFalse(update.screen[0].runs[1].style.underline)
+        }
+        assertEquals("NORMAL", plain.screen[0].text)
+        assertTrue(plain.screen[0].runs.none { it.style.underline })
+    }
+
+    @Test
+    fun explicitUnderlinedSpacesRemainUnderlinedAfterTheStyleReset() {
+        val update = VtTerminalEngine(columns = 24, rows = 2).accept(
+            "\u001B[4mUNDERLINE  \u001B[24mNORMAL".bytes(),
+        )
+
+        assertEquals(listOf("UNDERLINE  ", "NORMAL"), update.screen[0].runs.map { it.text })
+        assertTrue(update.screen[0].runs[0].style.underline)
+        assertFalse(update.screen[0].runs[1].style.underline)
+    }
+
+    @Test
+    fun eraseToEndOfLineKeepsBackgroundButDropsTextDecorations() {
+        listOf("\u001B[K", "\u001B[0K").forEach { erase ->
+            val update = VtTerminalEngine(columns = 20, rows = 2).accept(
+                "\u001B[44;4;9mUNDERLINE$erase".bytes(),
+            )
+            val content = update.screen[0].runs.single { it.text == "UNDERLINE" }
+            val erased = update.screen[0].runs.single { it.text.all { character -> character == ' ' } }
+
+            assertTrue(content.style.underline)
+            assertTrue(content.style.strikethrough)
+            assertEquals(9, erased.startColumn)
+            assertEquals(11, erased.columnWidth)
+            assertEquals(TerminalColour.Indexed(4), erased.style.background)
+            assertFalse(erased.style.underline)
+            assertFalse(erased.style.strikethrough)
+        }
+
+        val continued = VtTerminalEngine(columns = 8, rows = 2).accept(
+            "\u001B[4mA\u001B[KB".bytes(),
+        )
+        assertEquals("AB", continued.screen[0].text)
+        assertTrue(continued.screen[0].runs.single().style.underline)
+    }
+
+    @Test
+    fun eraseLineModesAndEraseCharactersDoNotCopyUnderlineIntoErasedCells() {
+        val eraseBeginning = VtTerminalEngine(columns = 10, rows = 2).accept(
+            "12345\u001B[4m67890\u001B[5G\u001B[1K".bytes(),
+        )
+        val eraseWhole = VtTerminalEngine(columns = 10, rows = 2).accept(
+            "\u001B[45;4mtext\u001B[2K".bytes(),
+        )
+        val eraseCharacters = VtTerminalEngine(columns = 6, rows = 2).accept(
+            "\u001B[46;4mABC\u001B[1G\u001B[2X".bytes(),
+        )
+
+        assertEquals("     67890", eraseBeginning.screen[0].text)
+        assertFalse(eraseBeginning.screen[0].runs.first().style.underline)
+        assertTrue(eraseBeginning.screen[0].runs.last().style.underline)
+        assertEquals(" ".repeat(10), eraseWhole.screen[0].text)
+        assertEquals(TerminalColour.Indexed(5), eraseWhole.screen[0].runs.single().style.background)
+        assertFalse(eraseWhole.screen[0].runs.single().style.underline)
+        assertEquals("  C", eraseCharacters.screen[0].text)
+        assertFalse(eraseCharacters.screen[0].runs.first().style.underline)
+        assertEquals(TerminalColour.Indexed(6), eraseCharacters.screen[0].runs.first().style.background)
+        assertTrue(eraseCharacters.screen[0].runs.last().style.underline)
+    }
+
+    @Test
+    fun colouredFrameworkPromptCarriageReturnAndEraseDoNotCreateTrailingUnderlineRun() {
+        val update = VtTerminalEngine(columns = 40, rows = 3).accept(
+            ("old prompt\r" +
+                "\u001B]133;A\u0007" +
+                "\u001B[1;34m~\u001B[0m " +
+                "\u001B[32mjiyu@thinkpad-amd\u001B[0m" +
+                "\u001B[4m\u001B[K\u001B[0m\r\n" +
+                "\u001B[33m>\u001B[0m").bytes(),
+        )
+
+        assertEquals("~ jiyu@thinkpad-amd", update.screen[0].text)
+        assertTrue(update.screen[0].runs.none { it.style.underline })
+        assertEquals(">", update.screen[1].text)
+        assertTrue(update.screen[1].runs.none { it.style.underline })
+    }
+
+    @Test
+    fun scrollingWhileUnderlineIsActiveDoesNotDecorateTheNewBlankRow() {
+        val update = VtTerminalEngine(columns = 8, rows = 2).accept(
+            "\u001B[44;4mone\r\ntwo\r\n".bytes(),
+        )
+
+        assertEquals("two", update.screen[0].text)
+        assertTrue(update.screen[0].runs.single().style.underline)
+        assertEquals(" ".repeat(8), update.screen[1].text)
+        assertEquals(TerminalColour.Indexed(4), update.screen[1].runs.single().style.background)
+        assertFalse(update.screen[1].runs.single().style.underline)
+    }
+
+    @Test
     fun dimConcealAndStrikethroughHaveIndependentResetsAndExactCellGeometry() {
         val engine = VtTerminalEngine(columns = 20, rows = 2)
 

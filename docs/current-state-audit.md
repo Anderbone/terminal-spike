@@ -92,7 +92,7 @@ This proves the Phase 1 repository/device baseline only. It does not prove the i
 
 ### Live sessions
 
-- Up to four SSH sessions have isolated `JschSshConnection`, `VtTerminalEngine`, `TerminalController`, bounded buffer, and coroutine job.
+- SSH sessions have isolated `JschSshConnection`, `VtTerminalEngine`, `TerminalController`, bounded buffer, and coroutine job, without an app-imposed tab-count limit.
 - Every live socket/runtime is stored in `TerminalSpikeViewModel.sshSessions` and closed in `onCleared`.
 - Sessions survive navigation and Activity recreation only while the same ViewModel/process survives.
 - There is no `Service`, foreground-service manifest entry/type/permission, notification channel/action, connectivity observer, reconnect coordinator, or background health screen.

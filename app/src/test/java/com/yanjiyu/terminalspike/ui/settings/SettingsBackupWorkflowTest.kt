@@ -21,7 +21,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsBackupWorkflowTest {
     @Test
-    fun createDocumentExportUsesExactContractAndAlwaysWipesOwnedPassphrase() = runTest {
+    fun createDocumentExportUsesOneCompletePassphraseFreeContract() = runTest {
         val gateway = FakeGateway()
         val workflow = SettingsBackupWorkflow(
             gateway = gateway,
@@ -30,14 +30,7 @@ class SettingsBackupWorkflowTest {
             clock = { CREATED_AT },
         )
         val request = async { workflow.documentRequests.first() }
-        val passphrase = "standard-passphrase".toCharArray()
-
         workflow.beginExport()
-        workflow.requestExportDocument(
-            BackupMode.STANDARD,
-            includeCustomFonts = true,
-            passphrase = passphrase,
-        )
 
         assertEquals(
             BackupDocumentRequest.Create(BackupDocumentContract.suggestedFileName(CREATED_AT)),
@@ -47,12 +40,11 @@ class SettingsBackupWorkflowTest {
         advanceUntilIdle()
 
         assertEquals(
-            listOf("export:standard:content://fake/backup:$CREATED_AT"),
+            listOf("export:full:content://fake/backup:$CREATED_AT"),
             gateway.events,
         )
-        assertEquals("standard-passphrase", gateway.exportPassphrase)
+        assertFalse(gateway.exportPassphrase.isNullOrEmpty())
         assertTrue(gateway.exportIncludedCustomFonts)
-        assertTrue(passphrase.all { it == '\u0000' })
         assertEquals(BackupWorkflowStep.COMPLETED, workflow.state.value.step)
         assertEquals(BackupCompletionKind.EXPORT, workflow.state.value.completionKind)
         assertEquals(4096L, workflow.state.value.exportResult?.bytesWritten)
@@ -60,7 +52,7 @@ class SettingsBackupWorkflowTest {
     }
 
     @Test
-    fun authenticatedRestorePreviewsStrategyThenConsumesEveryHandleOnce() = runTest {
+    fun restoreAutomaticallyUnlocksAndPreparesCompleteReplacement() = runTest {
         val gateway = FakeGateway()
         val workflow = SettingsBackupWorkflow(
             gateway,
@@ -73,22 +65,8 @@ class SettingsBackupWorkflowTest {
         assertEquals(BackupDocumentRequest.Open, request.await())
         workflow.onRestoreDocumentResult(DOCUMENT)
         advanceUntilIdle()
-        assertEquals(BackupWorkflowStep.PASSPHRASE_REQUIRED, workflow.state.value.step)
-        assertEquals(BackupMode.FULL, workflow.state.value.header?.mode)
-
-        val passphrase = "full restore passphrase".toCharArray()
-        workflow.unlockSelectedBackup(passphrase)
-        advanceUntilIdle()
-        assertTrue(passphrase.all { it == '\u0000' })
-        assertEquals(BackupWorkflowStep.AUTHENTICATED_PREVIEW, workflow.state.value.step)
-        assertEquals(2, workflow.state.value.archive?.content?.hosts)
-        assertEquals(2, workflow.state.value.archive?.content?.terminalThemes)
-
-        workflow.selectImportStrategy(BackupImportStrategy.KEEP_BOTH)
-        workflow.prepareImportPreview()
-        advanceUntilIdle()
         assertEquals(BackupWorkflowStep.IMPORT_REVIEW, workflow.state.value.step)
-        assertEquals(BackupImportStrategy.KEEP_BOTH, workflow.state.value.plan?.strategy)
+        assertEquals(BackupImportStrategy.REPLACE_CORRESPONDING, workflow.state.value.plan?.strategy)
         assertTrue(gateway.unlocked.closed)
 
         workflow.applyPreparedImport()
@@ -98,7 +76,7 @@ class SettingsBackupWorkflowTest {
             listOf(
                 "inspect:content://fake/backup",
                 "unlock:content://fake/backup",
-                "prepare:keep_both",
+                "prepare:replace_corresponding",
                 "apply",
             ),
             gateway.events,
@@ -112,7 +90,7 @@ class SettingsBackupWorkflowTest {
     }
 
     @Test
-    fun wrongPassphraseIsNonOracularRetryableAndWipedWithoutPlanning() = runTest {
+    fun unreadableBackupFailsWithoutPromptingOrPlanning() = runTest {
         val gateway = FakeGateway().apply { unlockFailure = BackupEnvelopeException.UnlockFailed() }
         val workflow = SettingsBackupWorkflow(
             gateway,
@@ -124,39 +102,27 @@ class SettingsBackupWorkflowTest {
         request.await()
         workflow.onRestoreDocumentResult(DOCUMENT)
         advanceUntilIdle()
-        val passphrase = "incorrect passphrase".toCharArray()
-
-        workflow.unlockSelectedBackup(passphrase)
-        advanceUntilIdle()
-
-        assertTrue(passphrase.all { it == '\u0000' })
-        assertEquals(BackupWorkflowStep.PASSPHRASE_REQUIRED, workflow.state.value.step)
+        assertEquals(BackupWorkflowStep.FAILED, workflow.state.value.step)
         assertEquals(BackupWorkflowError.UNLOCK_FAILED, workflow.state.value.error)
         assertFalse(gateway.events.any { it.startsWith("prepare:") })
         workflow.close()
     }
 
     @Test
-    fun pickerCancellationAndWorkflowCloseWipeStagedExportPassphrases() = runTest {
+    fun pickerCancellationAndWorkflowCloseResetAutomaticExports() = runTest {
         val gateway = FakeGateway()
         val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
         val firstRequest = async { workflow.documentRequests.first() }
-        val first = "first-passphrase".toCharArray()
         workflow.beginExport()
-        workflow.requestExportDocument(BackupMode.STANDARD, first)
         firstRequest.await()
 
         workflow.onExportDocumentResult(null)
-        assertTrue(first.all { it == '\u0000' })
         assertEquals(BackupWorkflowStep.READY, workflow.state.value.step)
 
         val secondRequest = async { workflow.documentRequests.first() }
-        val second = "second-passphrase".toCharArray()
         workflow.beginExport()
-        workflow.requestExportDocument(BackupMode.STANDARD, second)
         secondRequest.await()
         workflow.close()
-        assertTrue(second.all { it == '\u0000' })
     }
 
     @Test

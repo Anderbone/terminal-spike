@@ -5,12 +5,15 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputContentInfo
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.nio.charset.StandardCharsets
 
-class TerminalInputConnection(
+internal class TerminalInputConnection(
     targetView: View,
     private val sink: TerminalInputSink,
+    private val imageContentCallback: TerminalImageContentCallback? = null,
 ) : BaseInputConnection(targetView, false) {
     private val composition = TerminalImeCompositionState()
 
@@ -27,6 +30,39 @@ class TerminalInputConnection(
     override fun finishComposingText(): Boolean {
         composition.finish().sendIfNotEmpty()
         return true
+    }
+
+    override fun commitContent(
+        inputContentInfo: InputContentInfo,
+        flags: Int,
+        opts: android.os.Bundle?,
+    ): Boolean {
+        val callback = imageContentCallback ?: return super.commitContent(inputContentInfo, flags, opts)
+        val description = inputContentInfo.description
+        val mimeType = (0 until description.mimeTypeCount)
+            .map(description::getMimeType)
+            .firstOrNull { pastedImageExtension(it) != null }
+            ?: return super.commitContent(inputContentInfo, flags, opts)
+        val ownsPermission = flags and InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION != 0
+        if (ownsPermission && runCatching { inputContentInfo.requestPermission() }.isFailure) return false
+        var permissionReleased = false
+        val releasePermission = {
+            if (!permissionReleased) {
+                permissionReleased = true
+                if (ownsPermission) runCatching { inputContentInfo.releasePermission() }
+            }
+        }
+        val accepted = runCatching {
+            callback.onImageContent(
+                TerminalImageContentRequest(
+                    uri = inputContentInfo.contentUri,
+                    mimeType = mimeType,
+                    releasePermission = releasePermission,
+                ),
+            )
+        }.getOrDefault(false)
+        if (!accepted) releasePermission()
+        return accepted
     }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
@@ -89,8 +125,8 @@ class TerminalInputConnection(
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-                EditorInfo.IME_FLAG_NO_FULLSCREEN or
-                EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                EditorInfo.IME_FLAG_NO_FULLSCREEN
+            outAttrs.contentMimeTypes = arrayOf("image/png", "image/jpeg", "image/webp", "image/gif")
         }
     }
 }

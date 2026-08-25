@@ -27,7 +27,7 @@ The local/debug architecture in ADR-003 is implemented rather than simulated:
 
 - `mosh-api` is a version-1 Apache-2.0 Android library containing the bounded AIDL control plane, parcelables, capabilities, errors, and PFD ownership contract. Its AAR contains no upstream Mosh or native object.
 - The main app has exact-package/component discovery, signature-permission and signer-lineage checks, API/capability negotiation, Binder death/rebind handling, strict JSch SSH bootstrap, a one-response parser, one-shot key transfer, and a `Connection` adapter that feeds the existing terminal engine through PFD streams.
-- `mosh-extension` is a distinct GPL application. Its broker allocates one of four separate private worker processes per session; each worker owns one genuine pinned Mosh 1.4.0 native client, terminal input/output pipes, resize state, and cleanup.
+- `mosh-extension` is a distinct GPL application. Its broker allocates one of ten separate private worker processes per session; each worker owns one genuine pinned Mosh 1.4.0 native client, terminal input/output pipes, resize state, and cleanup.
 - The reproducible native build produces `arm64-v8a` and `x86_64` libraries from the checked-in verified Mosh, GNU Nettle, and Protocol Buffers source archives. Debug and unsigned release APKs, local native symbols, packaged notices, and a standalone Corresponding Source archive can be produced independently.
 - Settings presents live Checking, Absent, Disabled, Untrusted, Incompatible, Available, and Error states, including the installed version, negotiated API, capabilities, maximum sessions, and refresh/retry. SSH remains selectable and usable as an explicit fallback; Mosh is never silently relabelled as SSH.
 
@@ -138,7 +138,7 @@ The stock CLI is process-global: STDIN/STDOUT, environment, termios, signals, pr
 Implemented concurrency decision:
 
 - Upstream's process-global assumptions are not claimed to be re-entrant.
-- The extension exposes four private worker-service processes and assigns at most one native client to each process. This matches the application's four-session cap and prevents one session's timestamp, locale, signal, or terminal globals from colliding with another.
+- The extension exposes ten private worker-service processes and assigns at most one native client to each process. This transport-specific capacity remains independent of the application's uncapped tab model and prevents one Mosh session's timestamp, locale, signal, or terminal globals from colliding with another.
 
 The extension builds client-only code for `arm64-v8a` and `x86_64`, pins/checksums every native dependency and NDK/tool version, emits Android 16 KiB-aligned libraries, hides native symbols except JNI entry points, strips release binaries, retains local symbol artifacts, and stops when FDs close or Binder requests cancellation.
 
@@ -175,7 +175,7 @@ Implemented host/build evidence covers:
 - the main dependency/AAR/APK boundary, versioned parcel bounds, exact discovery/trust decisions, and bounded redacted status presentation;
 - strict password/private-key SSH bootstrap parsing and cleanup, one-shot key/PFD ownership, terminal backpressure, resize coalescing, cancellation, Binder death, and rebinding paths;
 - application-process session ownership, foreground-service start/loss policy, and Android connectivity-generation dispatch to live Mosh sessions;
-- a four-worker process-isolation equivalent for concurrent sessions;
+- a ten-worker process-isolation equivalent for concurrent sessions;
 - pinned dual-ABI native builds, source checksums, 16 KiB LOAD alignment, restricted symbols/dependencies, packaged notices, local symbols, and the standalone Corresponding Source archive.
 
 The acceptance gates still open are:

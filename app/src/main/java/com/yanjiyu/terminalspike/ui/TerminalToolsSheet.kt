@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.contentDescription
@@ -63,6 +65,9 @@ import com.yanjiyu.terminalspike.settings.UserSettings
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategory
 import com.yanjiyu.terminalspike.ui.settings.SettingsDestination
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
 
 internal enum class ToolSection(val label: String) {
     PROFILES("Hosts"),
@@ -103,6 +108,8 @@ internal fun LocalToolsScreen(
     onOpenWorkspace: () -> Unit,
     onOpenConnections: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSshKeys: () -> Unit = {},
+    onOpenSnippets: () -> Unit = {},
     onUseProfile: (SavedSshProfile) -> Unit,
     onSaveProfile: (label: String, host: String, port: String, username: String, existingId: Long?) -> Unit,
     onDeleteProfile: (Long) -> Unit,
@@ -136,6 +143,8 @@ internal fun LocalToolsScreen(
             onOpenWorkspace = onOpenWorkspace,
             onOpenTerminal = onOpenConnections,
             onOpenSettings = onOpenSettings,
+            onOpenSshKeys = onOpenSshKeys,
+            onOpenSnippets = onOpenSnippets,
             terminalProfileId = terminalProfileId,
             keyboardProfileId = keyboardProfileId,
         )
@@ -156,6 +165,7 @@ internal fun LocalToolsScreen(
             add(ToolSection.ABOUT)
             if (BuildConfig.DEBUG) add(ToolSection.DEVELOPER)
         }
+        AppDestination.TERMINAL -> error("Terminal does not use LocalToolsScreen")
         AppDestination.WORKSPACE -> error("Workspace does not use LocalToolsScreen")
     }
     var section by remember(initialSection, destination) {
@@ -275,7 +285,10 @@ internal fun LocalToolsScreen(
                         contentDescription = backDescription
                     },
                 ) {
-                    Text("‹", style = MaterialTheme.typography.headlineSmall)
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.BACK,
+                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                    )
                 }
                 Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(
@@ -401,14 +414,13 @@ internal fun LocalToolsScreen(
 private fun ToolSection.toSettingsCategory(): SettingsCategory? = when (this) {
     ToolSection.TERMINAL -> SettingsCategory.TERMINAL
     ToolSection.KEYS -> SettingsCategory.KEYBOARD
+    ToolSection.IDENTITIES -> SettingsCategory.SSH_KEYS
+    ToolSection.SNIPPETS -> SettingsCategory.SNIPPETS
     ToolSection.SECURITY -> SettingsCategory.SECURITY
     ToolSection.MOSH -> SettingsCategory.MOSH
     ToolSection.ABOUT -> SettingsCategory.ABOUT
     ToolSection.DEVELOPER -> SettingsCategory.DEVELOPER
-    ToolSection.PROFILES,
-    ToolSection.IDENTITIES,
-    ToolSection.SNIPPETS,
-    -> null
+    ToolSection.PROFILES -> null
 }
 
 @Composable
@@ -724,7 +736,12 @@ private fun IdentitiesSection(
                     modifier = Modifier.semantics {
                         contentDescription = "Delete ${identity.label} private key"
                     },
-                ) { Text("×") }
+                ) {
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.CLOSE,
+                        modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
+                    )
+                }
             }
             HorizontalDivider(modifier = Modifier.padding(start = 20.dp))
         }
@@ -1061,12 +1078,28 @@ private fun KeysSection(
                         TextButton(
                             enabled = selectedIndex > 0,
                             onClick = { onMove(key, -1) },
-                        ) { Text("← Move left") }
+                        ) {
+                            ConnectionsGlyphIcon(
+                                glyph = ConnectionsGlyph.BACK,
+                                modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Move left")
+                        }
                         TextButton(onClick = { onSetVisible(key, false) }) { Text("Remove") }
                         TextButton(
                             enabled = selectedIndex in 0 until selectedKeys.lastIndex,
                             onClick = { onMove(key, 1) },
-                        ) { Text("Move right →") }
+                        ) {
+                            Text("Move right")
+                            Spacer(Modifier.width(4.dp))
+                            ConnectionsGlyphIcon(
+                                glyph = ConnectionsGlyph.BACK,
+                                modifier = Modifier
+                                    .size(MaterialTheme.iconMetrics.compact)
+                                    .graphicsLayer { rotationZ = 180f },
+                            )
+                        }
                     }
                 }
             }
@@ -1286,7 +1319,12 @@ private fun ToolRow(
         IconButton(
             onClick = onDelete,
             modifier = Modifier.semantics { contentDescription = deleteDescription },
-        ) { Text("×") }
+        ) {
+            ConnectionsGlyphIcon(
+                glyph = ConnectionsGlyph.CLOSE,
+                modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
+            )
+        }
     }
     HorizontalDivider(modifier = Modifier.padding(start = 20.dp))
 }

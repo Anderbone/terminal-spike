@@ -92,6 +92,8 @@ internal fun ConnectionsHeader(
     catalogReady: Boolean,
     onNavigateBack: (() -> Unit)?,
     callbacks: ConnectionsCallbacks,
+    showTitle: Boolean = true,
+    showSearch: Boolean = true,
 ) {
     var hostControlsExpanded by rememberSaveable { mutableStateOf(hostSort != HostSort.NAME || hostFilters.isActive) }
     val hasHostControls = selectedTab == ConnectionsTab.HOSTS
@@ -130,39 +132,50 @@ internal fun ConnectionsHeader(
             ),
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            onNavigateBack?.let { navigateBack ->
-                IconButton(
-                    onClick = navigateBack,
-                    modifier = Modifier.semantics { contentDescription = backDescription },
-                ) {
-                    ConnectionsGlyphIcon(ConnectionsGlyph.BACK, Modifier.size(MaterialTheme.iconMetrics.standard))
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = if (onNavigateBack == null) MaterialTheme.spacing.extraSmall else 0.dp),
+        if (showTitle) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.connections_title),
-                    modifier = Modifier.semantics {
-                        heading()
-                        contentDescription = screenDescription
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = stringResource(R.string.connections_subtitle),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                onNavigateBack?.let { navigateBack ->
+                    IconButton(
+                        onClick = navigateBack,
+                        modifier = Modifier.semantics { contentDescription = backDescription },
+                    ) {
+                        ConnectionsGlyphIcon(
+                            ConnectionsGlyph.BACK,
+                            Modifier.size(MaterialTheme.iconMetrics.standard),
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(
+                            start = if (onNavigateBack == null) {
+                                MaterialTheme.spacing.extraSmall
+                            } else {
+                                0.dp
+                            },
+                        ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.connections_title),
+                        modifier = Modifier.semantics {
+                            heading()
+                            contentDescription = screenDescription
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = stringResource(R.string.connections_subtitle),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                ConnectionsAddButton(actions = addActions)
             }
-            ConnectionsAddButton(actions = addActions)
         }
 
         Row(
@@ -170,43 +183,48 @@ internal fun ConnectionsHeader(
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = callbacks.onSearchQueryChanged,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics {
-                        contentDescription = searchDescription
+            if (!showTitle) {
+                ConnectionsAddButton(actions = addActions)
+            }
+            if (showSearch) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = callbacks.onSearchQueryChanged,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics {
+                            contentDescription = searchDescription
+                        },
+                    enabled = catalogReady,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    placeholder = { Text(searchDescription) },
+                    leadingIcon = {
+                        ConnectionsGlyphIcon(
+                            glyph = ConnectionsGlyph.SEARCH,
+                            modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                        )
                     },
-                enabled = catalogReady,
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                placeholder = { Text(searchDescription) },
-                leadingIcon = {
-                    ConnectionsGlyphIcon(
-                        glyph = ConnectionsGlyph.SEARCH,
-                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                    )
-                },
-                trailingIcon = if (searchQuery.isNotEmpty()) {
-                    {
-                        IconButton(
-                            onClick = { callbacks.onSearchQueryChanged("") },
-                            modifier = Modifier.semantics {
-                                contentDescription = clearSearchDescription
-                            },
-                        ) {
-                            ConnectionsGlyphIcon(
-                                glyph = ConnectionsGlyph.CLOSE,
-                                modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                            )
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(
+                                onClick = { callbacks.onSearchQueryChanged("") },
+                                modifier = Modifier.semantics {
+                                    contentDescription = clearSearchDescription
+                                },
+                            ) {
+                                ConnectionsGlyphIcon(
+                                    glyph = ConnectionsGlyph.CLOSE,
+                                    modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                                )
+                            }
                         }
-                    }
-                } else {
-                    null
-                },
-            )
-            if (hasHostControls) {
+                    } else {
+                        null
+                    },
+                )
+            }
+            if (showSearch && hasHostControls) {
                 val filterContainer by animateColorAsState(
                     targetValue = if (hostControlsExpanded || hostFilters.isActive || hostSort != HostSort.NAME) {
                         MaterialTheme.colorScheme.secondaryContainer
@@ -243,7 +261,7 @@ internal fun ConnectionsHeader(
         }
 
         AnimatedVisibility(
-            visible = hasHostControls && hostControlsExpanded,
+            visible = showSearch && hasHostControls && hostControlsExpanded,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 3 }),
         ) {
@@ -516,6 +534,7 @@ internal fun ConnectionsReadyContent(
     onSelectKey: (String) -> Unit,
     onSelectSnippet: (String) -> Unit,
     onConnectHost: ((String) -> Unit)?,
+    onOpenSftp: ((String) -> Unit)?,
     onEditHost: ((String) -> Unit)?,
     onDeleteHost: ((HostRowUi) -> Unit)?,
     onCopyPublicKey: ((String) -> Unit)?,
@@ -546,6 +565,7 @@ internal fun ConnectionsReadyContent(
                             nowEpochMillis = nowEpochMillis,
                             onSelect = onSelectHost,
                             onConnect = onConnectHost,
+                            onOpenSftp = onOpenSftp,
                             onEdit = onEditHost,
                             onDelete = onDeleteHost,
                             onEmptyAction = onEmptyAction,
@@ -557,6 +577,7 @@ internal fun ConnectionsReadyContent(
                             host = selection,
                             nowEpochMillis = nowEpochMillis,
                             onConnect = onConnectHost,
+                            onOpenSftp = onOpenSftp,
                             onEdit = onEditHost,
                             onDelete = onDeleteHost,
                         )
@@ -676,6 +697,7 @@ private fun HostCatalogList(
     nowEpochMillis: Long,
     onSelect: (String) -> Unit,
     onConnect: ((String) -> Unit)?,
+    onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
     onEmptyAction: (() -> Unit)?,
@@ -716,6 +738,7 @@ private fun HostCatalogList(
                 activationDescription = activationDescription,
                 onShowDetails = if (listDetail) ({ onSelect(host.id) }) else null,
                 onConnect = onConnect,
+                onOpenSftp = onOpenSftp,
                 onEdit = onEdit,
                 onDelete = onDelete,
             )
@@ -870,6 +893,7 @@ private fun HostCatalogRow(
     activationDescription: String,
     onShowDetails: (() -> Unit)?,
     onConnect: ((String) -> Unit)?,
+    onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
 ) {
@@ -986,7 +1010,7 @@ private fun HostCatalogRow(
                     )
                 }
             }
-            HostOverflowMenu(host, onConnect, onEdit, onDelete)
+            HostOverflowMenu(host, onConnect, onOpenSftp, onEdit, onDelete)
         }
     }
 }
@@ -1232,11 +1256,15 @@ private fun HostActiveStatusLabel(host: HostRowUi) {
 private fun HostOverflowMenu(
     host: HostRowUi,
     onConnect: ((String) -> Unit)?,
+    onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
 ) {
     val actions = listOfNotNull(
         onConnect?.let { CatalogMenuAction(R.string.connections_action_connect) { it(host.id) } },
+        onOpenSftp?.let {
+            CatalogMenuAction(R.string.connections_action_open_files) { it(host.id) }
+        },
         onEdit?.let { CatalogMenuAction(R.string.connections_action_edit) { it(host.id) } },
         onDelete?.let {
             CatalogMenuAction(R.string.connections_action_delete, destructive = true) { it(host) }
@@ -1353,6 +1381,7 @@ private fun HostDetailPane(
     host: HostRowUi?,
     nowEpochMillis: Long,
     onConnect: ((String) -> Unit)?,
+    onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
 ) {
@@ -1385,6 +1414,11 @@ private fun HostDetailPane(
             onConnect?.let { connect ->
                 Button(onClick = { connect(host.id) }) {
                     Text(stringResource(R.string.connections_action_connect))
+                }
+            }
+            onOpenSftp?.let { openFiles ->
+                OutlinedButton(onClick = { openFiles(host.id) }) {
+                    Text(stringResource(R.string.connections_action_open_files))
                 }
             }
             onEdit?.let { edit ->

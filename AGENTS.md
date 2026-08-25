@@ -9,7 +9,8 @@
 - Record every new direct dependency, its purpose, source, licence, and notice obligations in `docs/DEPENDENCIES.md` and `THIRD_PARTY_NOTICES.md` as applicable.
 - Preserve the terminal buffer, viewport, batching, workload, smoke, and future performance tests.
 - Run unit tests, lint, and a build before declaring work complete.
-- After code changes pass unit tests, lint, and the build, install and launch the latest debug APK on every currently connected, authorized Android debugging phone, including USB and Wi-Fi targets. Resolve each target from `adb devices -l`, use its exact serial, verify `MainActivity` is foregrounded on each updated phone, and report any offline, unauthorized, or failed target. If no debugging phone is connected, report that installation was skipped.
+- Device tests may run on a currently connected, authorized local USB Android phone. Never run tests on the Wi-Fi-connected foldable phone.
+- Do not install incremental builds on the Wi-Fi-connected foldable phone. Once the whole requested feature is finished, or when the user explicitly asks, install and launch the latest debug APK on that phone without running tests on it. Resolve the target from `adb devices -l`, use its exact serial, verify `MainActivity` is foregrounded, and report if it is offline, unauthorized, unavailable, or the install or launch fails.
 - Do not broaden scope without an explicit task.
 - Do not copy source from Termius, LobiShell, ConnectBot, Termux, or other terminal applications.
 - Keep SDK paths, signing material, secrets, build outputs, APKs, and machine-specific IDE files out of Git.

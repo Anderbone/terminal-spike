@@ -16,6 +16,7 @@ internal enum class AppSettingsViolation(val fieldCode: String) {
     SENSITIVE_CLIPBOARD_CLEAR_DELAY("sensitive_clipboard_clear_seconds"),
     OSC52_POLICY("osc52_policy"),
     LAST_BACKUP_MODE("last_backup_mode"),
+    VOICE_INPUT_LANGUAGE("voice_input_language_tag"),
 }
 
 /**
@@ -86,6 +87,9 @@ internal object AppSettingsValidator {
             if (settings.lastBackupMode.isNotEmpty() && settings.lastBackupMode !in supportedBackupModes) {
                 add(AppSettingsViolation.LAST_BACKUP_MODE)
             }
+            if (settings.voiceInputLanguageTag !in SUPPORTED_VOICE_INPUT_LANGUAGE_TAGS) {
+                add(AppSettingsViolation.VOICE_INPUT_LANGUAGE)
+            }
         }
         if (violations.isNotEmpty()) throw InvalidAppSettingsException(violations)
         return settings
@@ -117,5 +121,18 @@ internal object AppSettingsValidator {
     private val SUPPORTED_OSC52_POLICIES = setOf(
         AppSettings.Osc52Policy.OSC52_POLICY_DISABLED,
         AppSettings.Osc52Policy.OSC52_POLICY_ASK,
+    )
+
+    private val SUPPORTED_VOICE_INPUT_LANGUAGE_TAGS = setOf(
+        "",
+        "en-GB",
+        "en-US",
+        "zh-CN",
+        "zh-HK",
+        "ja-JP",
+        "ko-KR",
+        "fr-FR",
+        "de-DE",
+        "es-ES",
     )
 }

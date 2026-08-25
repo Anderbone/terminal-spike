@@ -57,20 +57,21 @@ class ExtraKeysBarShortcutTest {
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed().performClick()
         composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Control modifier").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Alt modifier").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key PGUP").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Show or hide software keyboard").assertIsDisplayed()
 
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.CTRL_C, activated) }
-        assertFirstPageIsNineByTwo()
+        assertFirstPageIsTenByTwo()
     }
 
     @Test
     fun customDeckKeepsAdditionalKeysAndCustomizeActionOnASecondPage() {
         val customKeys = TerminalExtraKey.DEFAULT_ORDER + listOf(
-            TerminalExtraKey.PAGE_UP,
-            TerminalExtraKey.CTRL_B,
-            TerminalExtraKey.SLASH,
-            TerminalExtraKey.AT,
-            TerminalExtraKey.HIDE_KEYBOARD,
+            TerminalExtraKey.F1,
+            TerminalExtraKey.F2,
+            TerminalExtraKey.F3,
+            TerminalExtraKey.F4,
+            TerminalExtraKey.F5,
         )
         composeRule.setContent {
             MaterialTheme {
@@ -82,14 +83,13 @@ class ExtraKeysBarShortcutTest {
 
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
 
-        composeRule.onNodeWithContentDescription("Terminal key PGUP").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Control B").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key F1").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key F5").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Customize terminal keys").assertIsDisplayed()
     }
 
     @Test
-    fun phoneWidthDeckHasExactlyNineUnclippedKeysInEachFirstPageRow() {
+    fun phoneWidthDeckHasExactlyTenUnclippedKeysInEachFirstPageRow() {
         composeRule.setContent {
             MaterialTheme {
                 Box(Modifier.width(360.dp)) {
@@ -98,11 +98,11 @@ class ExtraKeysBarShortcutTest {
             }
         }
 
-        assertFirstPageIsNineByTwo()
+        assertFirstPageIsTenByTwo()
     }
 
-    private fun assertFirstPageIsNineByTwo() {
-        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.take(18).map { key ->
+    private fun assertFirstPageIsTenByTwo() {
+        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.take(20).map { key ->
             composeRule.onNodeWithContentDescription(
                 key.accessibilityDescription.resolve(
                     InstrumentationRegistry.getInstrumentation().targetContext.resources,
@@ -118,7 +118,7 @@ class ExtraKeysBarShortcutTest {
             .boundsInRoot
         val rows = firstPageBounds.groupBy { bounds -> bounds.top.toInt() }
 
-        assertEquals(listOf(9, 9), rows.values.map { it.size }.sorted())
+        assertEquals(listOf(10, 10), rows.values.map { it.size }.sorted())
         assertTrue(
             firstPageBounds.all { bounds ->
                 bounds.left >= deckBounds.left && bounds.right <= deckBounds.right

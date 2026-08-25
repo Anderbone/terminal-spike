@@ -2,7 +2,6 @@ package com.yanjiyu.terminalspike.terminal.view
 
 import android.app.Activity
 import android.content.ClipData
-import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
@@ -31,15 +30,17 @@ fun interface TerminalClipboardActionCallback {
     fun onCopyRequested(request: TerminalClipboardRequest): Boolean
 }
 
-/** Opaque ownership proof used to guard an optional delayed clear. */
+/** App-assigned ownership proof used to guard an optional delayed clear. */
 class TerminalClipboardToken internal constructor(internal val value: String)
 
 /**
  * The only default Android clipboard write seam for terminal output.
  *
- * Every clip is marked sensitive where the platform supports it and carries an app-private token.
- * [clearIfCurrent] compares that token, so an older scheduled clear cannot erase a newer clip even
- * when the newer text is identical.
+ * Every clip is ordinary visible plain text. An app-private ownership token is deliberately kept
+ * separate from Android's sensitive-content flag, so clipboard previews remain visible while
+ * [clearIfCurrent] can distinguish repeated identical copies. The write path does not read the
+ * clipboard back: newer Android versions may restrict that read while the floating selection
+ * toolbar temporarily owns window focus.
  */
 class TerminalClipboardWriter(
     context: Context,
@@ -51,7 +52,7 @@ class TerminalClipboardWriter(
     private val remoteClipboardLabel = context.applicationContext
         .getString(R.string.terminal_clipboard_remote_label)
 
-    /** Explicit-Allow OSC 52 path; it shares the same sensitive clipboard marking as selections. */
+    /** Explicit-Allow OSC 52 path; it shares the same plain-text clipboard path as selections. */
     fun writeRemoteClipboard(text: String): TerminalClipboardToken? = write(
         TerminalClipboardRequest(
             label = remoteClipboardLabel,
@@ -67,9 +68,6 @@ class TerminalClipboardWriter(
         val clip = ClipData.newPlainText(request.label, request.text)
         clip.description.extras = PersistableBundle().apply {
             putString(CLIP_TOKEN_EXTRA, token.value)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
         }
         manager.setPrimaryClip(clip)
         clearScheduler?.schedule(this, token)
@@ -96,8 +94,8 @@ class TerminalClipboardWriter(
         return true
     }
 
-    companion object {
-        private const val CLIP_TOKEN_EXTRA =
+    private companion object {
+        const val CLIP_TOKEN_EXTRA =
             "com.yanjiyu.terminalspike.extra.TERMINAL_CLIP_TOKEN"
     }
 }

@@ -92,6 +92,20 @@ class TerminalAccessoryActionTest {
     }
 
     @Test
+    fun repeatedControlChordsResolveToFreshBytesAfterDispatchWipesTheFirstValue() {
+        val expected = mapOf(
+            TerminalExtraKey.CTRL_C to byteArrayOf(0x03),
+            TerminalExtraKey.CTRL_W to byteArrayOf(0x17),
+        )
+
+        expected.forEach { (key, bytes) ->
+            key.toAccessoryAction().resolvedBytes().fill(0)
+
+            assertArrayEquals(bytes, key.toAccessoryAction().resolvedBytes())
+        }
+    }
+
+    @Test
     fun configuredTmuxChordEncodesWithoutBorrowingLiveModifiers() {
         assertArrayEquals(
             byteArrayOf(0x02),

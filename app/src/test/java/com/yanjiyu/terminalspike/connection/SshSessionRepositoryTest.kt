@@ -7,6 +7,7 @@ import com.yanjiyu.terminalspike.core.model.RemoteClipboardMode
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
+import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -25,6 +26,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -32,6 +34,70 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
+    @Test
+    fun pastedImageUsesTheExactLiveSshTransportUploadChannel() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val connection = UploadingFakeConnection()
+        val repository = repository(scope = ownerScope, connectionFactory = { connection })
+        try {
+            val started = repository.startUserInitiatedSession("Remote shell", config())
+                as StartSshSessionResult.Started
+            runCurrent()
+
+            val result = repository.uploadPastedImage(
+                sessionId = started.sessionId,
+                fileName = "00000000-0000-0000-0000-000000000001.png",
+                source = ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+            )
+
+            assertEquals("/home/user/.cache/terminal-spike/pasted-images/image.png", result.getOrThrow())
+            assertEquals("00000000-0000-0000-0000-000000000001.png", connection.uploadedName)
+            assertArrayEquals(byteArrayOf(1, 2, 3), connection.uploadedBytes)
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun pastedImageUsesTheAuthenticatedSideChannelOfALiveMoshTransport() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val connection = UploadingFakeConnection()
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connection },
+            terminalFactory = SshSessionTerminalFactory { FakeTerminal() },
+        )
+        try {
+            val started = repository.startUserInitiatedSession(
+                RemoteSessionStartRequest(
+                    title = "Mosh shell",
+                    workspaceName = "Mosh shell",
+                    connection = RemoteSessionConnectionRequest.Mosh(
+                        MoshBootstrapRequest(ssh = config()),
+                    ),
+                ),
+            ) as StartSshSessionResult.Started
+            runCurrent()
+
+            val result = repository.uploadPastedImage(
+                sessionId = started.sessionId,
+                fileName = "00000000-0000-0000-0000-000000000002.png",
+                source = ByteArrayInputStream(byteArrayOf(4, 5, 6)),
+            )
+
+            assertEquals("/home/user/.cache/terminal-spike/pasted-images/image.png", result.getOrThrow())
+            assertEquals("00000000-0000-0000-0000-000000000002.png", connection.uploadedName)
+            assertArrayEquals(byteArrayOf(4, 5, 6), connection.uploadedBytes)
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
     @Test
     fun liveSessionBelongsToApplicationOwnerNotAUiClient() = runTest {
         val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
@@ -156,6 +222,26 @@ class SshSessionRepositoryTest {
             assertEquals(2, createdConnections.size)
             assertEquals(2, repository.sessions.value.size)
             assertTrue(duplicate.sessionId != original.sessionId)
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun fifthRemoteSessionStartsWithoutAnApplicationLimit() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val repository = repository(scope = ownerScope, connectionFactory = { FakeConnection() })
+        try {
+            repeat(5) { index ->
+                assertTrue(
+                    repository.startUserInitiatedSession("Remote shell ${index + 1}", config()) is
+                        StartSshSessionResult.Started,
+                )
+            }
+            runCurrent()
+
+            assertEquals(5, repository.sessions.value.size)
         } finally {
             repository.disconnectAll()
             ownerScope.cancel()
@@ -1586,6 +1672,17 @@ class SshSessionRepositoryTest {
 
         override fun updateNetworkHint(snapshot: NetworkAvailabilitySnapshot) {
             hints += snapshot
+        }
+    }
+
+    private class UploadingFakeConnection : FakeConnection(), RemoteImageUploadConnection {
+        var uploadedName: String? = null
+        var uploadedBytes: ByteArray? = null
+
+        override fun uploadPastedImage(fileName: String, source: java.io.InputStream): String {
+            uploadedName = fileName
+            uploadedBytes = source.readBytes()
+            return "/home/user/.cache/terminal-spike/pasted-images/image.png"
         }
     }
 

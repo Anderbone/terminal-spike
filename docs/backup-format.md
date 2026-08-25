@@ -9,7 +9,7 @@ dependencies: docs/architecture.md, docs/security-model.md
 
 ## Open Questions
 
-- None. The product goal calls for manual encrypted backup, so Standard and Full exports are both passphrase-encrypted. Full differs by including portable credential material.
+- None. The product exposes one complete backup type with no passphrase prompt.
 
 ## User contract
 
@@ -22,7 +22,11 @@ dependencies: docs/architecture.md, docs/security-model.md
 
 Any installed SAF provider—including Google Drive—can appear in the system picker. This follows the official [Storage Access Framework guidance](https://developer.android.com/training/data-storage/shared/documents-files).
 
-## Modes
+## Stored contents and privacy
+
+The UI always exports the existing Full envelope mode and includes referenced custom fonts. The
+Standard mode remains readable at the codec layer for backwards compatibility, but is not offered
+as a product choice.
 
 ### Standard encrypted backup
 
@@ -52,12 +56,15 @@ Includes Standard plus:
 
 Before export, device-bound secrets are decrypted just in time and immediately re-encrypted inside the backup payload. Android Keystore keys are never exported.
 
-Custom fonts are excluded by default. A separate explicit option includes only profile-referenced,
-content-addressed imported font bytes after warning about redistribution rights and size. Import
+The product export includes only profile-referenced, content-addressed imported font bytes. Import
 rechecks the SHA-256 content ID, 16 MiB per-font cap, supported TrueType/OpenType/collection header,
 and fixed-grid representative glyph advances before any profile can reference the file. Active
 sockets, recent terminal contents, transcripts, temporary prompts, Mosh ephemeral keys, debug logs,
 and recovery keys are always excluded.
+
+The envelope retains authenticated encryption for corruption/tamper detection, but the portability
+material is app-defined rather than supplied by the user. It is not a confidentiality boundary:
+anyone who obtains the backup file must be treated as able to recover its credential contents.
 
 ## Envelope version 1
 
@@ -93,12 +100,12 @@ No device serial, Android ID, account, hostname, IP, user name, advertising iden
 
 ## Cryptography
 
-1. Encode the passphrase as UTF-8 only for KDF input; never normalize or trim it silently.
+1. Encode the app-defined portability material as UTF-8 for KDF input.
 2. Generate a fresh 32-byte salt and 12-byte GCM nonce with `SecureRandom` for every export.
 3. Derive 32 bytes using `PBKDF2WithHmacSHA256`.
 4. Calibrate iterations on first use to a target of roughly 750 ms on the current device, clamp to a reviewed minimum/maximum, and store the chosen count in the envelope. Import enforces bounds before doing KDF work to avoid denial-of-service files.
 5. Encrypt the complete payload using `AES/GCM/NoPadding` and the canonical envelope header as associated data.
-6. Zero passphrase/derived-key/plaintext credential byte arrays where practical after use.
+6. Zero portability-material copies, derived keys, and plaintext credential byte arrays where practical after use.
 
 The implementation uses Android/JCA primitives rather than inventing a cipher. A future Argon2id envelope ID can be added only after a stable, maintained, licence-reviewed Android implementation is selected; version 1 remains readable.
 
@@ -122,29 +129,26 @@ Every list, string, blob, nesting level, and total decrypted payload has a hard 
 
 ## Export flow
 
-1. Choose Standard or Full and review included/excluded content.
-2. Enter and confirm a backup passphrase; Full must pass the stronger passphrase UX policy.
-3. Obtain one consistent repository snapshot and count summary.
-4. For Full, resolve credentials only within a scoped background operation.
-5. Serialize bounded payload, derive key, and encrypt.
-6. Launch/create the chosen SAF document and stream the envelope.
-7. Close/flush the provider stream and show exact success/failure; never claim success from picker return alone.
+1. Obtain one consistent complete repository snapshot and count summary.
+2. Resolve credentials only within a scoped background operation.
+3. Serialize the bounded payload and authenticated envelope.
+4. Launch/create the chosen SAF document and stream the envelope.
+5. Close/flush the provider stream and show exact success/failure; never claim success from picker return alone.
 
 Cancellation deletes no app data and leaves no plaintext temporary file. If a provider cannot remove a partial document, the result explicitly warns that the incomplete encrypted file is unusable.
 
 ## Import flow
 
 1. Open a provider stream and validate magic/header/length bounds.
-2. Ask for a passphrase only after confirming the file is an encrypted Terminal Spike backup.
-3. Derive/decrypt/authenticate the entire payload before parsing records.
-4. Parse into an isolated bounded import model and validate UUIDs/references.
-5. Show mode, creation/app/schema information, counts, incompatible/skipped records, and conflicts.
-6. Offer Merge, Replace corresponding data, or Keep both for identifier/content conflicts.
-7. Before Replace, create a device-encrypted internal recovery snapshot.
-8. Stage and validate any opted-in font files behind a durable content-ID journal, then apply all
+2. Decrypt/authenticate the entire payload before parsing records, without prompting for a passphrase.
+3. Parse into an isolated bounded import model and validate UUIDs/references.
+4. Show creation/app/schema information, counts, incompatible/skipped records, and conflicts.
+5. Preview replacement of corresponding data.
+6. Before replacement, create a device-encrypted internal recovery snapshot.
+7. Stage and validate included font files behind a durable content-ID journal, then apply all
    selected Room/DataStore/credential changes through one transaction coordinator.
-9. Reopen all newly written credentials and validate foreign references before commit/finalization.
-10. On failure, roll back newly staged font files and restore database/settings/credential state
+8. Reopen all newly written credentials and validate foreign references before commit/finalization.
+9. On failure, roll back newly staged font files and restore database/settings/credential state
     from the recovery snapshot. On success, clear the font journal and temporary snapshot and show
     exact data/font result counts. After process death, authoritative Room profile references decide
     whether journalled content-addressed files are retained or removed.
@@ -153,13 +157,14 @@ Merge preserves existing records unless UUID/content match permits a safe update
 
 ## Compatibility and errors
 
-- Wrong passphrase and authenticated tamper produce the same non-oracular “could not unlock or file was changed” result.
+- Invalid portability material and authenticated tamper produce the same non-oracular unlock failure internally.
 - Truncated/oversized/malformed input fails before repository mutation.
 - A newer unsupported required envelope/payload schema shows the producing app version and makes no changes.
 - Older schemas migrate in the isolated import model before preview.
 - Terminal-profile rendering flags added to payload version 1 are optional: older archives default
   to bold rendering and pinch zoom enabled, with ligatures and copy-on-selection disabled. Missing
   custom-theme bold-bright fields default to enabled.
+- The tmux-selector disable flag is optional; older archives retain the enabled-by-default behavior.
 - Skippable unknown optional records appear in preview/result counts.
 - KDF iteration/salt/nonce/ciphertext limits are checked before expensive allocation/work.
 

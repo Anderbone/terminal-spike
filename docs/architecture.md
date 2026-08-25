@@ -48,7 +48,7 @@ The optional transport now follows these concrete boundaries:
 2. The existing strict JSch path resolves the authenticated TCP peer, verifies the host key, authenticates with a password or imported private key, and runs one safely quoted `mosh-server` bootstrap command.
 3. A bounded parser accepts exactly one official `MOSH CONNECT` response. The main app gives the extension a numeric address, UDP port, dimensions, locale, reviewed flags, and a one-shot key PFD; it never sends the SSH credential or known-host state.
 4. `MoshConnection` adapts the extension to the same `Connection`/terminal-controller boundary as SSH. Binder carries bounded control/state only; terminal input and output use PFD streams with bounded writer backpressure and coalesced resize.
-5. The separate extension broker assigns each session to one of four private worker processes. Each worker owns one pinned upstream Mosh 1.4.0 transport/terminal engine compiled for `arm64-v8a` or `x86_64`, avoiding unsupported cross-session sharing of upstream process globals.
+5. The separate extension broker assigns each session to one of ten private worker processes. Each worker owns one pinned upstream Mosh 1.4.0 transport/terminal engine compiled for `arm64-v8a` or `x86_64`, avoiding unsupported cross-session sharing of upstream process globals.
 6. Settings observes the real extension client and shows exact package/trust/API/capability state. When Mosh is unavailable, saved profiles remain intact and SSH stays available as an explicit manual fallback.
 
 This slice is implemented and buildable. The latest recorded controlled-server runs completed password-authenticated SSH bootstrap and real UDP terminal input/output on both authorized Android 16 phones. The application-owned session repository now publishes bounded Android connectivity generations to live Mosh sessions. Private-key device bootstrap, simultaneous live sessions, resize, failure injection, extension-absence SSH, and observed network-transition/roaming acceptance remain open. The host model still cannot represent link-local IPv6 zone identifiers; the native Mosh protocol retains its authenticated UDP roaming and port-hopping behavior.
@@ -93,13 +93,13 @@ Notification denial never causes a hidden session. The app explains the platform
 
 Phones expose exactly three primary destinations:
 
-1. Workspace
+1. Connections
 2. Terminal
 3. Settings
 
-Connections is a secondary catalogue reached from Workspace or terminal context rather than a fourth bottom destination. Back first lets the IME hide when appropriate; leaving terminal detail keeps every session active; disconnect is explicit. Predictive back animates toward the owning surface without binding transport lifetime to the transition.
+Connections is the first bottom destination and owns saved hosts, keys, and snippets. Terminal is the second destination and owns active sessions. Back first lets the IME hide when appropriate; leaving terminal detail keeps every session active; disconnect is explicit. Predictive back animates toward the owning surface without binding transport lifetime to the transition.
 
-Compact width uses Material `NavigationBar`. Expanded width uses `NavigationRail`; the secondary Connections catalogue can show list/detail. Terminal detail consumes all additional width rather than retaining a phone-width column. Every shell handles status/navigation/IME/cut-out insets edge to edge.
+Compact width uses Material `NavigationBar`. Expanded width uses `NavigationRail`; Connections can show list/detail. Terminal detail consumes all additional width rather than retaining a phone-width column. Every shell handles status/navigation/IME/cut-out insets edge to edge.
 
 ## UI state and dependency assembly
 

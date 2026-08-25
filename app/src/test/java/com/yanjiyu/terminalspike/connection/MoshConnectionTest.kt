@@ -149,6 +149,15 @@ class MoshConnectionTest {
         assertTrue(bootstrap.lastReturnedKey!!.all { it == 0.toByte() })
         assertTrue(password.all { it == 0.toByte() })
 
+        assertEquals(
+            "/home/alice/.cache/terminal-spike/pasted-images/image.png",
+            connection.uploadPastedImage(
+                "00000000-0000-0000-0000-000000000001.png",
+                byteArrayOf(7, 8, 9).inputStream(),
+            ),
+        )
+        assertArrayEquals(byteArrayOf(7, 8, 9), bootstrap.uploadedBytes)
+
         assertTrue(connection.trySend(byteArrayOf(1, 2, 3)))
         assertTrue(transport.input.received.await(2, TimeUnit.SECONDS))
         assertArrayEquals(byteArrayOf(1, 2, 3), transport.input.bytes())
@@ -168,6 +177,7 @@ class MoshConnectionTest {
         assertFalse(worker.isAlive)
         assertEquals(1, extension.stopCalls.size)
         assertTrue(transport.closed)
+        assertEquals(1, bootstrap.sideChannelCloseCalls)
         assertEquals(1, states.count { it is ConnectionState.Disconnected })
         assertEquals(0, states.count { it is ConnectionState.Failed })
     }
@@ -548,6 +558,8 @@ private class FakeConnectionBootstrap(
     val promptPublished = CountDownLatch(1)
     private val approval = CountDownLatch(1)
     var lastReturnedKey: ByteArray? = null
+    var uploadedBytes: ByteArray? = null
+    var sideChannelCloseCalls = 0
 
     override suspend fun bootstrap(
         request: MoshBootstrapRequest,
@@ -593,6 +605,26 @@ private class FakeConnectionBootstrap(
             addressBytes = byteArrayOf(192.toByte(), 0, 2, 10),
             udpPort = 60_001,
             sessionKey = key,
+            sshSideChannel = object : MoshSshExecSession {
+                override val numericAddress = java.net.InetAddress.getByAddress(
+                    byteArrayOf(192.toByte(), 0, 2, 10),
+                )
+
+                override fun openExec(command: String): MoshExecChannel =
+                    error("No further bootstrap command expected.")
+
+                override fun uploadPastedImage(
+                    fileName: String,
+                    source: InputStream,
+                ): String {
+                    uploadedBytes = source.readBytes()
+                    return "/home/alice/.cache/terminal-spike/pasted-images/image.png"
+                }
+
+                override fun close() {
+                    sideChannelCloseCalls += 1
+                }
+            },
         )
     }
 

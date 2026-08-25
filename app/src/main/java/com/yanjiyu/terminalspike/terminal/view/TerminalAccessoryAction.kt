@@ -62,7 +62,9 @@ private fun AccessoryModifierState.afterAcceptedByteDispatch(): AccessoryModifie
 
 enum class TerminalLocalAccessoryAction {
     PASTE,
+    SELECT_IMAGES,
     SNIPPETS,
+    TMUX_SESSIONS,
     KEYBOARD_SETTINGS,
     HIDE_KEYBOARD,
 }
@@ -137,14 +139,22 @@ sealed interface TerminalAccessoryAction {
         override val label: UiText
             get() = when (action) {
                 TerminalLocalAccessoryAction.PASTE -> uiText(R.string.terminal_key_paste_label)
+                TerminalLocalAccessoryAction.SELECT_IMAGES ->
+                    uiText(R.string.terminal_key_select_images_label)
                 TerminalLocalAccessoryAction.SNIPPETS -> uiText(R.string.terminal_key_snippets_label)
+                TerminalLocalAccessoryAction.TMUX_SESSIONS ->
+                    uiText(R.string.terminal_key_tmux_sessions_label)
                 TerminalLocalAccessoryAction.KEYBOARD_SETTINGS -> uiText(R.string.terminal_key_settings_label)
                 TerminalLocalAccessoryAction.HIDE_KEYBOARD -> uiText(R.string.terminal_key_hide_label)
             }
         override val accessibilityDescription: UiText
             get() = when (action) {
                 TerminalLocalAccessoryAction.PASTE -> uiText(R.string.terminal_key_paste_description)
+                TerminalLocalAccessoryAction.SELECT_IMAGES ->
+                    uiText(R.string.terminal_key_select_images_description)
                 TerminalLocalAccessoryAction.SNIPPETS -> uiText(R.string.terminal_key_snippets_description)
+                TerminalLocalAccessoryAction.TMUX_SESSIONS ->
+                    uiText(R.string.terminal_key_tmux_sessions_description)
                 TerminalLocalAccessoryAction.KEYBOARD_SETTINGS -> uiText(R.string.terminal_key_settings_description)
                 TerminalLocalAccessoryAction.HIDE_KEYBOARD -> uiText(R.string.terminal_key_hide_keyboard)
             }
@@ -238,9 +248,8 @@ private fun TerminalExtraKey.resolveBytes(
     } else {
         shifted
     }
-    return TerminalAccessoryDispatch.Bytes(
-        if (alt) TerminalKeySequences.ESCAPE + controlled else controlled,
-    )
+    val outgoing = if (alt) TerminalKeySequences.ESCAPE + controlled else controlled.copyOf()
+    return TerminalAccessoryDispatch.Bytes(outgoing)
 }
 
 private fun modifiedNavigationBytes(

@@ -9,13 +9,21 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.view.View
 import android.view.Window
+import android.window.BackEvent
+import android.window.OnBackAnimationCallback
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -24,9 +32,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
@@ -35,7 +43,9 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,7 +62,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -62,11 +71,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -79,10 +88,14 @@ import com.yanjiyu.terminalspike.BuildConfig
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import com.yanjiyu.terminalspike.connection.ConnectionState
+import com.yanjiyu.terminalspike.connection.TmuxAvailability
+import com.yanjiyu.terminalspike.connection.TmuxSessionCatalog
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardActionCallback
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
+import com.yanjiyu.terminalspike.terminal.view.TerminalImageContentCallback
+import com.yanjiyu.terminalspike.terminal.view.TerminalImagePasteSource
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
@@ -92,14 +105,22 @@ import com.yanjiyu.terminalspike.terminal.view.rememberTerminalInputFocusRequest
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsCallbacks
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsLoadState
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsScreen
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsTab
 import com.yanjiyu.terminalspike.ui.connections.HostAuthenticationPromptDialog
 import com.yanjiyu.terminalspike.ui.connections.HostConnectRequest
+import com.yanjiyu.terminalspike.ui.connections.SavedConnectionPickerDialog
+import com.yanjiyu.terminalspike.ui.connections.requiresConnectionPrompt
 import com.yanjiyu.terminalspike.ui.terminal.TERMINAL_TRANSCRIPT_FILE_NAME
 import com.yanjiyu.terminalspike.ui.terminal.TERMINAL_TRANSCRIPT_MIME_TYPE
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSessionActions
 import com.yanjiyu.terminalspike.ui.terminal.TerminalBellEffect
 import com.yanjiyu.terminalspike.ui.terminal.TerminalFindDialog
+import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerDialog
 import com.yanjiyu.terminalspike.ui.terminal.writeTerminalTranscriptDocument
+import com.yanjiyu.terminalspike.ui.sftp.SftpScreen
+import com.yanjiyu.terminalspike.ui.sftp.SftpUiState
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
+import com.yanjiyu.terminalspike.ui.theme.spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -109,9 +130,62 @@ internal enum class TerminalOwner(
     val destination: AppRoute,
     @StringRes val labelRes: Int,
 ) {
-    WORKSPACE(AppRoute.WORKSPACE, R.string.navigation_workspace),
+    WORKSPACE(AppRoute.WORKSPACE, R.string.navigation_connections),
     CONNECTIONS(AppRoute.CONNECTIONS, R.string.connections_title),
     SETTINGS(AppRoute.SETTINGS, R.string.navigation_settings),
+}
+
+internal const val TerminalEmptyStateTestTag = "terminal-empty-state"
+private const val MAX_SELECTED_TERMINAL_IMAGES = 20
+
+@Composable
+internal fun TerminalEmptyState(
+    canOpenConnection: Boolean,
+    onOpenConnection: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .widthIn(max = 360.dp)
+            .padding(MaterialTheme.spacing.extraLarge)
+            .testTag(TerminalEmptyStateTestTag),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+    ) {
+        Surface(
+            modifier = Modifier.size(80.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.primary,
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                AppGlyphIcon(
+                    glyph = AppGlyph.TERMINAL,
+                    modifier = Modifier.size(MaterialTheme.iconMetrics.prominent),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.terminal_no_session_open),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = stringResource(R.string.terminal_no_session_detail),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+        Button(
+            onClick = onOpenConnection,
+            enabled = canOpenConnection,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Text(stringResource(R.string.terminal_saved_connection_picker_title))
+        }
+    }
 }
 
 internal fun terminalOwnerForEntry(
@@ -227,7 +301,7 @@ internal const val PredictiveBackDestinationPreviewTestTag = "predictive-back-de
 
 @StringRes
 private fun AppRoute.shellLabelRes(): Int = when (this) {
-    AppRoute.WORKSPACE -> R.string.navigation_workspace
+    AppRoute.WORKSPACE -> R.string.navigation_connections
     AppRoute.CONNECTIONS -> R.string.connections_title
     AppRoute.SETTINGS -> R.string.navigation_settings
     AppRoute.TERMINAL_DETAIL -> R.string.navigation_terminal
@@ -311,17 +385,163 @@ internal fun ShellPredictiveBackHandler(
 }
 
 @Composable
+private fun TerminalPriorityBackHandler(
+    currentRoute: AppRoute,
+    terminalOwner: TerminalOwner,
+    catalogReturnDestination: AppRoute,
+    settingsReturnDestination: AppRoute,
+    focusMode: Boolean,
+    onPreviewChanged: (ShellBackPreview?) -> Unit,
+    onExitFocusMode: () -> Unit,
+    onNavigate: (AppRoute) -> Unit,
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    TerminalPriorityBackHandlerApi33(
+        currentRoute = currentRoute,
+        terminalOwner = terminalOwner,
+        catalogReturnDestination = catalogReturnDestination,
+        settingsReturnDestination = settingsReturnDestination,
+        focusMode = focusMode,
+        onPreviewChanged = onPreviewChanged,
+        onExitFocusMode = onExitFocusMode,
+        onNavigate = onNavigate,
+    )
+}
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun TerminalPriorityBackHandlerApi33(
+    currentRoute: AppRoute,
+    terminalOwner: TerminalOwner,
+    catalogReturnDestination: AppRoute,
+    settingsReturnDestination: AppRoute,
+    focusMode: Boolean,
+    onPreviewChanged: (ShellBackPreview?) -> Unit,
+    onExitFocusMode: () -> Unit,
+    onNavigate: (AppRoute) -> Unit,
+) {
+    val view = LocalView.current
+    val currentOnPreviewChanged by rememberUpdatedState(onPreviewChanged)
+    val currentOnExitFocusMode by rememberUpdatedState(onExitFocusMode)
+    val currentOnNavigate by rememberUpdatedState(onNavigate)
+
+    DisposableEffect(
+        view,
+        currentRoute,
+        terminalOwner,
+        catalogReturnDestination,
+        settingsReturnDestination,
+        focusMode,
+    ) {
+        if (currentRoute != AppRoute.TERMINAL_DETAIL) return@DisposableEffect onDispose {}
+        val dispatcher = view.findOnBackInvokedDispatcher()
+            ?: return@DisposableEffect onDispose {}
+        val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            terminalBackAnimationCallbackApi34(
+                terminalOwner = terminalOwner,
+                catalogReturnDestination = catalogReturnDestination,
+                settingsReturnDestination = settingsReturnDestination,
+                focusMode = focusMode,
+                onPreviewChanged = { currentOnPreviewChanged(it) },
+                onExitFocusMode = { currentOnExitFocusMode() },
+                onNavigate = { currentOnNavigate(it) },
+            )
+        } else {
+            OnBackInvokedCallback {
+                if (focusMode) {
+                    currentOnExitFocusMode()
+                } else {
+                    shellBackDestination(
+                        current = AppRoute.TERMINAL_DETAIL,
+                        terminalOwner = terminalOwner,
+                        catalogReturnDestination = catalogReturnDestination,
+                        settingsReturnDestination = settingsReturnDestination,
+                    )?.let { currentOnNavigate(it) }
+                }
+            }
+        }
+        dispatcher.registerOnBackInvokedCallback(
+            OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+            callback,
+        )
+        onDispose {
+            dispatcher.unregisterOnBackInvokedCallback(callback)
+            currentOnPreviewChanged(null)
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+private fun terminalBackAnimationCallbackApi34(
+    terminalOwner: TerminalOwner,
+    catalogReturnDestination: AppRoute,
+    settingsReturnDestination: AppRoute,
+    focusMode: Boolean,
+    onPreviewChanged: (ShellBackPreview?) -> Unit,
+    onExitFocusMode: () -> Unit,
+    onNavigate: (AppRoute) -> Unit,
+): OnBackAnimationCallback = object : OnBackAnimationCallback {
+    private var gesture: ShellBackGesture? = null
+
+    override fun onBackStarted(backEvent: BackEvent) {
+        if (!focusMode) {
+            gesture = startShellBackGesture(
+                current = AppRoute.TERMINAL_DETAIL,
+                terminalOwner = terminalOwner,
+                catalogReturnDestination = catalogReturnDestination,
+                settingsReturnDestination = settingsReturnDestination,
+            )
+        }
+    }
+
+    override fun onBackProgressed(backEvent: BackEvent) {
+        val startedGesture = gesture ?: return
+        gesture = progressShellBackGesture(
+            gesture = startedGesture,
+            rawProgress = backEvent.progress,
+            edge = if (backEvent.swipeEdge == BackEvent.EDGE_RIGHT) {
+                ShellBackSwipeEdge.RIGHT
+            } else {
+                ShellBackSwipeEdge.LEFT
+            },
+        ).also { onPreviewChanged(it.preview) }
+    }
+
+    override fun onBackCancelled() {
+        gesture = null
+        onPreviewChanged(null)
+    }
+
+    override fun onBackInvoked() {
+        if (focusMode) {
+            onExitFocusMode()
+        } else {
+            val target = gesture?.let { finishShellBackGesture(it, completed = true).destination }
+                ?: shellBackDestination(
+                    current = AppRoute.TERMINAL_DETAIL,
+                    terminalOwner = terminalOwner,
+                    catalogReturnDestination = catalogReturnDestination,
+                    settingsReturnDestination = settingsReturnDestination,
+                )
+            target?.let(onNavigate)
+        }
+        gesture = null
+        onPreviewChanged(null)
+    }
+}
+
+@Composable
 internal fun TerminalDetailInsetContainer(
     modifier: Modifier = Modifier,
-    safeContentInsets: WindowInsets = WindowInsets.safeDrawing
-        .only(WindowInsetsSides.Vertical)
-        .union(WindowInsets.displayCutout),
+    safeContentInsets: WindowInsets = WindowInsets.safeDrawing,
     content: @Composable () -> Unit,
 ) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .windowInsetsPadding(safeContentInsets)
+            .windowInsetsPadding(
+                safeContentInsets.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
+            )
             .imePadding(),
     ) {
         content()
@@ -341,7 +561,8 @@ private class AndroidTerminalSystemBarsController(
             if (enabled) {
                 systemBarsBehavior =
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                hide(WindowInsetsCompat.Type.systemBars())
+                hide(WindowInsetsCompat.Type.statusBars())
+                show(WindowInsetsCompat.Type.navigationBars())
             } else {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
                 show(WindowInsetsCompat.Type.systemBars())
@@ -369,6 +590,10 @@ private fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/** Primary destinations share one visual footer, so swapping their content must not animate it. */
+internal fun keepsPrimaryNavigationStable(initial: AppRoute, target: AppRoute): Boolean =
+    initial != AppRoute.TERMINAL_DETAIL && target != AppRoute.TERMINAL_DETAIL
+
 @Composable
 fun TerminalSpikeScreen(
     viewModel: TerminalSpikeViewModel,
@@ -376,6 +601,7 @@ fun TerminalSpikeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val connectionsState by viewModel.connectionsUiState.collectAsStateWithLifecycle()
+    val sftpState by viewModel.sftp.state.collectAsStateWithLifecycle()
     val activeController = viewModel.controllerFor(state.activeSessionId)
     val performance by activeController.performance.collectAsStateWithLifecycle()
     val terminalBuildKeepsScreenOn by viewModel.terminalBuildFeature.keepScreenOn.collectAsStateWithLifecycle()
@@ -398,7 +624,6 @@ fun TerminalSpikeScreen(
             AndroidTerminalSystemBarsController(window, rootView)
         }
     }
-    val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val terminalInputFocusRequester = rememberTerminalInputFocusRequester()
     val snackbarHostState = remember { SnackbarHostState() }
     val screenScope = rememberCoroutineScope()
@@ -408,9 +633,12 @@ fun TerminalSpikeScreen(
     val documentPickerFailedMessage = stringResource(R.string.terminal_document_picker_failed)
     val sshPublicKeyClipboardLabel = stringResource(R.string.terminal_clipboard_ssh_public_key)
     val commandSnippetClipboardLabel = stringResource(R.string.terminal_clipboard_command_snippet)
-    var toolsSection by remember { mutableStateOf(ToolSection.PROFILES) }
+    val tmuxSwitchFailedMessage = stringResource(R.string.tmux_session_switcher_switch_failed)
+    var toolsSection by rememberSaveable { mutableStateOf(ToolSection.PROFILES) }
     var connectDialogRequest by remember { mutableStateOf<SshConnectDialogRequest?>(null) }
     var pendingWorkspaceAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedConnectionPickerVisible by rememberSaveable { mutableStateOf(false) }
+    var pendingTerminalAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
     var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
     var terminalOwner by rememberSaveable { mutableStateOf(TerminalOwner.WORKSPACE) }
     var catalogReturnDestination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
@@ -426,12 +654,35 @@ fun TerminalSpikeScreen(
     var dismissedMoshFallbackSessionId by remember { mutableStateOf<Long?>(null) }
     var focusSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
     var findSessionId by remember { mutableStateOf<Long?>(null) }
-    val collapsedAccessorySessions = remember { mutableStateMapOf<Long, Boolean>() }
+    var snippetPickerTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var restoreTerminalFocusAfterSnippetPicker by remember { mutableStateOf(false) }
     var pendingAccessoryPaste by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var imagePickerTargetSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var tmuxSwitcherTargetId by remember { mutableStateOf<Long?>(null) }
+    var tmuxSwitcherCatalog by remember { mutableStateOf<TmuxSessionCatalog?>(null) }
+    var tmuxDeleteTargetId by remember { mutableStateOf<String?>(null) }
     val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val recoveryToken = reimportIdentityToken
         reimportIdentityToken = null
         if (uri != null) viewModel.importSshIdentity(uri, recoveryToken)
+    }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_SELECTED_TERMINAL_IMAGES),
+    ) { uris ->
+        val targetSessionId = imagePickerTargetSessionId
+        imagePickerTargetSessionId = null
+        if (targetSessionId != null && uris.isNotEmpty()) {
+            val resolver = rootView.context.contentResolver
+            val images = uris.mapNotNull { uri ->
+                resolver.getType(uri)?.let { mimeType ->
+                    TerminalImagePasteSource(
+                        mimeType = mimeType,
+                        open = { resolver.openInputStream(uri) },
+                    )
+                }
+            }
+            if (images.isNotEmpty()) viewModel.pasteImages(targetSessionId, images)
+        }
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -489,6 +740,14 @@ fun TerminalSpikeScreen(
         destination = AppRoute.CONNECTIONS
     }
 
+    fun showSettingsCatalog(tab: ConnectionsTab) {
+        viewModel.selectConnectionsTab(tab)
+        catalogReturnDestination = AppRoute.SETTINGS
+        catalogTargetSessionId = state.activeSessionId
+        catalogEditHostId = null
+        destination = AppRoute.CONNECTIONS
+    }
+
     fun copyCatalogText(label: String, value: String?) {
         value ?: return
         clipboardManager?.setPrimaryClip(ClipData.newPlainText(label, value))
@@ -496,6 +755,28 @@ fun TerminalSpikeScreen(
 
     fun pasteClipboardInto(sessionId: Long) {
         if (!rootView.hasWindowFocus()) return
+        val images = runCatching {
+            val clip = clipboardManager?.primaryClip ?: return@runCatching null
+            if (clip.itemCount == 0) return@runCatching null
+            val describedMimeType = (0 until clip.description.mimeTypeCount)
+                .map(clip.description::getMimeType)
+                .firstOrNull { it.startsWith("image/", ignoreCase = true) }
+            val resolver = rootView.context.contentResolver
+            (0 until clip.itemCount).mapNotNull { index ->
+                val uri = clip.getItemAt(index).uri ?: return@mapNotNull null
+                val mimeType = resolver.getType(uri) ?: describedMimeType
+                mimeType?.let {
+                    TerminalImagePasteSource(
+                        mimeType = it,
+                        open = { resolver.openInputStream(uri) },
+                    )
+                }
+            }.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        if (images != null) {
+            viewModel.pasteImages(sessionId, images)
+            return
+        }
         val text = runCatching {
             val clip = clipboardManager?.primaryClip ?: return@runCatching null
             if (clip.itemCount == 0) return@runCatching null
@@ -508,6 +789,28 @@ fun TerminalSpikeScreen(
             pendingAccessoryPaste = sessionId to text
         } else {
             viewModel.sendBufferedInput(sessionId, text)
+        }
+    }
+
+    fun openTmuxSessionSwitcher(sessionId: Long) {
+        if (state.sessions.firstOrNull { it.id == sessionId }?.connectionState !is ConnectionState.Connected) {
+            return
+        }
+        tmuxSwitcherTargetId = sessionId
+        tmuxSwitcherCatalog = null
+        screenScope.launch {
+            val result = viewModel.queryActiveTmuxSessions(sessionId)
+            if (tmuxSwitcherTargetId != sessionId) return@launch
+            tmuxSwitcherCatalog = result
+            if (result.availability == TmuxAvailability.AVAILABLE && result.sessions.isNotEmpty()) {
+                val withPreviews = viewModel.queryActiveTmuxSessionPreviews(sessionId)
+                if (
+                    tmuxSwitcherTargetId == sessionId &&
+                    withPreviews.availability == TmuxAvailability.AVAILABLE
+                ) {
+                    tmuxSwitcherCatalog = withPreviews
+                }
+            }
         }
     }
 
@@ -535,10 +838,14 @@ fun TerminalSpikeScreen(
             ToolSection.PROFILES,
             ToolSection.IDENTITIES,
             -> showConnectionsCatalog(targetSessionId = sessionId ?: state.activeSessionId)
-            ToolSection.SNIPPETS -> showConnectionsCatalog(
-                source = if (sessionId != null) AppRoute.TERMINAL_DETAIL else destination,
-                targetSessionId = sessionId ?: state.activeSessionId,
-            )
+            ToolSection.SNIPPETS -> if (sessionId != null) {
+                if (state.sessions.any { it.id == sessionId }) {
+                    viewModel.selectSession(sessionId)
+                    snippetPickerTargetId = sessionId
+                }
+            } else {
+                showConnectionsCatalog(targetSessionId = state.activeSessionId)
+            }
             ToolSection.TERMINAL,
             ToolSection.KEYS,
             ToolSection.SECURITY,
@@ -598,6 +905,7 @@ fun TerminalSpikeScreen(
         source: AppRoute = destination,
         rendererLab: Boolean = false,
     ) {
+        if (!rendererLab) viewModel.selectLastActiveRemoteSessionForTerminalEntry()
         rendererLabVisible = rendererLab
         terminalOwner = terminalOwnerForEntry(source, terminalOwner)
         destination = AppRoute.TERMINAL_DETAIL
@@ -680,9 +988,19 @@ fun TerminalSpikeScreen(
         onDispose { rootView.keepScreenOn = false }
     }
 
-    // Android gives the IME first refusal on system Back. The target is frozen when the gesture
-    // starts; cancellation clears only the preview, while a completed flow commits the route.
+    // The terminal uses overlay priority so an active IME cannot consume the first system Back.
+    // The AndroidX handlers remain the compatibility and programmatic-dispatch path.
     BackHandler(enabled = focusMode) { focusSessionId = null }
+    TerminalPriorityBackHandler(
+        currentRoute = destination,
+        terminalOwner = terminalOwner,
+        catalogReturnDestination = catalogReturnDestination,
+        settingsReturnDestination = settingsReturnDestination,
+        focusMode = focusMode,
+        onPreviewChanged = { backPreview = it },
+        onExitFocusMode = { focusSessionId = null },
+        onNavigate = { destination = it },
+    )
     ShellPredictiveBackHandler(
         currentRoute = destination,
         terminalOwner = terminalOwner,
@@ -693,7 +1011,7 @@ fun TerminalSpikeScreen(
         onNavigate = { destination = it },
     )
     TerminalSystemBarsEffect(
-        immersive = destination == AppRoute.TERMINAL_DETAIL,
+        immersive = destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible,
         controller = systemBarsController,
     )
     TerminalBellEffect(
@@ -704,6 +1022,29 @@ fun TerminalSpikeScreen(
             terminalSurfaceVisible,
         terminalView = terminalInputFocusRequester,
     )
+    LaunchedEffect(
+        snippetPickerTargetId,
+        state.pendingSnippetSendId,
+        restoreTerminalFocusAfterSnippetPicker,
+        destination,
+    ) {
+        if (
+            restoreTerminalFocusAfterSnippetPicker &&
+            snippetPickerTargetId == null &&
+            state.pendingSnippetSendId == null &&
+            destination == AppRoute.TERMINAL_DETAIL
+        ) {
+            terminalInputFocusRequester.requestFocus()
+            restoreTerminalFocusAfterSnippetPicker = false
+        }
+    }
+    LaunchedEffect(snippetPickerTargetId, state.sessions) {
+        val targetId = snippetPickerTargetId ?: return@LaunchedEffect
+        if (state.sessions.none { it.id == targetId }) {
+            snippetPickerTargetId = null
+            restoreTerminalFocusAfterSnippetPicker = true
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedContent(
@@ -717,44 +1058,111 @@ fun TerminalSpikeScreen(
                     scaleY = preview?.scale ?: 1f
                 },
             transitionSpec = {
-                (fadeIn() + slideInHorizontally(initialOffsetX = { it / 10 })).togetherWith(
-                    fadeOut() + slideOutHorizontally(targetOffsetX = { -it / 10 }),
-                )
+                if (keepsPrimaryNavigationStable(initialState, targetState)) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    (fadeIn() + slideInHorizontally(initialOffsetX = { it / 10 })).togetherWith(
+                        fadeOut() + slideOutHorizontally(targetOffsetX = { -it / 10 }),
+                    )
+                }
             },
             label = "primary-workspace",
         ) { target ->
             when (target) {
-                AppRoute.WORKSPACE -> LocalWorkspaceScreen(
-                    workspace = state.workspace,
-                    settingsReady = state.settingsReady,
-                    onReopenSession = { sessionId ->
-                        viewModel.selectSession(sessionId)
-                        showTerminal(AppRoute.WORKSPACE)
+                AppRoute.WORKSPACE,
+                AppRoute.CONNECTIONS,
+                -> ConnectionsScreen(
+                    state = connectionsState,
+                    initialHostEditorId = catalogEditHostId.takeIf {
+                        target == AppRoute.CONNECTIONS
                     },
-                    onReconnectSession = { sessionId ->
-                        showSessionConnection(sessionId, SshConnectPurpose.RECONNECT)
-                    },
-                    onDisconnectSession = viewModel::disconnectSsh,
-                    onDuplicateSession = ::duplicateTerminalSession,
-                    onConnectPinnedHost = ::launchWorkspaceProfile,
-                    onEditPinnedHost = { profileId ->
-                        viewModel.profileById(profileId)?.persistentId?.let { persistentId ->
-                            showConnectionsCatalog(
-                                source = AppRoute.WORKSPACE,
-                                targetSessionId = null,
-                                editHostId = persistentId,
+                    callbacks = ConnectionsCallbacks(
+                        onTabSelected = viewModel::selectConnectionsTab,
+                        onSearchQueryChanged = viewModel::setConnectionsSearchQuery,
+                        onHostSortSelected = viewModel::setConnectionsHostSort,
+                        onFavouritesOnlyChanged = viewModel::setConnectionsFavouritesOnly,
+                        onHostGroupSelected = viewModel::setConnectionsHostGroup,
+                        onClearHostFilters = viewModel::clearConnectionsHostFilters,
+                        onRetry = viewModel::retryConnectionsCatalog,
+                        onImportKey = { launchIdentityImport() },
+                        onCopyPublicKey = { id ->
+                            copyCatalogText(
+                                sshPublicKeyClipboardLabel,
+                                viewModel.connectionsPublicKey(id),
                             )
-                        }
+                        },
+                        onDeleteHost = viewModel::deleteConnectionsHost,
+                        onOpenSftp = viewModel::openSftp,
+                        onDeleteKey = viewModel::deleteConnectionsKey,
+                        onInsertSnippet = catalogTargetSessionId?.let { targetId ->
+                            { id ->
+                                if (viewModel.insertConnectionsSnippet(id, targetId)) {
+                                    showTerminal(target)
+                                }
+                            }
+                        },
+                        onRunSnippet = catalogTargetSessionId?.let { targetId ->
+                            { id ->
+                                if (viewModel.runConnectionsSnippet(id, targetId)) {
+                                    showTerminal(target)
+                                }
+                            }
+                        },
+                        onCopySnippet = { id ->
+                            copyCatalogText(
+                                commandSnippetClipboardLabel,
+                                viewModel.connectionsSnippetCommand(id),
+                            )
+                        },
+                        onDeleteSnippet = viewModel::deleteConnectionsSnippet,
+                        onSaveHost = viewModel::saveConnectionsHost,
+                        onResolveHostEditorDraft = viewModel::resolveConnectionsHostEditorDraft,
+                        onRetainHostEditorDraft = viewModel::retainConnectionsHostEditorDraft,
+                        onClearHostEditorDraft = viewModel::clearConnectionsHostEditorDraft,
+                        onTestHost = viewModel::startConnectionsHostTest,
+                        onAnswerTestHostIdentity = viewModel::answerConnectionsHostIdentity,
+                        onAnswerTestKeyboardInteractive =
+                            viewModel::answerConnectionsKeyboardInteractive,
+                        onCancelTestKeyboardInteractive =
+                            viewModel::cancelConnectionsKeyboardInteractive,
+                        onCancelHostTest = viewModel::cancelConnectionsHostTest,
+                        onConnectCatalogHost = { request ->
+                            if (viewModel.connectConnectionsHost(request)) {
+                                showTerminal(target)
+                            }
+                        },
+                        onSaveSnippetModel = viewModel::saveConnectionsSnippet,
+                        onGenerateKeyRequest = viewModel::generateConnectionsKey,
+                        onRenameKeyMetadata = viewModel::renameConnectionsKey,
+                        onOpenMoshStatus = {
+                            showSettings(
+                                section = ToolSection.MOSH,
+                                returnDestination = target,
+                            )
+                        },
+                    ),
+                    onOpenWorkspace = { destination = AppRoute.WORKSPACE },
+                    onOpenTerminal = { showTerminal(target) },
+                    onOpenSettings = { showSettingsCategories(target) },
+                    onNavigateBack = if (target == AppRoute.CONNECTIONS) {
+                        { destination = catalogReturnDestination }
+                    } else {
+                        null
                     },
-                    onReconnectRecent = { recentSessionId ->
-                        viewModel.profileForRecentSession(recentSessionId)?.let { profile ->
-                            launchWorkspaceProfile(profile.id)
-                        }
+                    moshAvailable = state.moshExtension.kind == MoshExtensionUiKind.AVAILABLE,
+                    displayedTab = if (target == AppRoute.WORKSPACE) {
+                        ConnectionsTab.HOSTS
+                    } else {
+                        connectionsState.selectedTab
                     },
-                    onQuickConnect = { showNewConnection() },
-                    onOpenTerminal = { showTerminal(AppRoute.WORKSPACE) },
-                    onOpenConnections = { showConnectionsCatalog(AppRoute.WORKSPACE) },
-                    onOpenSettings = { showSettingsCategories(AppRoute.WORKSPACE) },
+                    primaryDestination = if (
+                        target == AppRoute.CONNECTIONS &&
+                        catalogReturnDestination == AppRoute.SETTINGS
+                    ) {
+                        AppDestination.SETTINGS
+                    } else {
+                        AppDestination.CONNECTIONS
+                    },
                 )
 
                 AppRoute.TERMINAL_DETAIL -> TerminalDetailInsetContainer {
@@ -775,15 +1183,18 @@ fun TerminalSpikeScreen(
                                 onCloseSession = viewModel::closeSession,
                                 onDisconnect = viewModel::disconnectSsh,
                                 onSessionActions = { sessionActionsTargetId = it },
+                                previewLinesForSession = viewModel::terminalSwitcherPreviewLines,
                                 onHostIdentityAnswer = viewModel::answerHostIdentityPrompt,
                                 onNavigateBack = ::navigateBack,
                                 backDestinationLabel = stringResource(terminalOwner.labelRes),
-                                onNewSession = { showNewConnection() },
+                                onNewSession = { savedConnectionPickerVisible = true },
                                 onOpenConnections = { showTools(ToolSection.PROFILES) },
                                 onKeyboardInteractiveAnswer =
                                     viewModel::answerKeyboardInteractiveChallenge,
                                 onKeyboardInteractiveCancel =
                                     viewModel::cancelKeyboardInteractiveChallenge,
+                                onTmuxSessionAnswer = viewModel::answerTmuxSessionPrompt,
+                                onTmuxSessionDelete = viewModel::deleteTmuxSession,
                                 showLocalTerminalSession = BuildConfig.DEBUG && rendererLabVisible,
                             )
                         }
@@ -804,26 +1215,34 @@ fun TerminalSpikeScreen(
                                 TerminalViewBridge(
                                     controller = activeController,
                                     inputFocusRequester = terminalInputFocusRequester,
+                                    onPreImeBack = {
+                                        if (focusMode) {
+                                            focusSessionId = null
+                                        } else {
+                                            navigateBack()
+                                        }
+                                    },
                                     clipboardActionCallback = terminalClipboardAction,
+                                    imageContentCallback = TerminalImageContentCallback { request ->
+                                        val accepted = viewModel.pasteImage(
+                                            sessionId = state.activeSessionId,
+                                            mimeType = request.mimeType,
+                                            open = {
+                                                rootView.context.contentResolver
+                                                    .openInputStream(request.uri)
+                                            },
+                                            onFinished = request.releasePermission,
+                                        )
+                                        if (!accepted) request.releasePermission()
+                                        accepted
+                                    },
                                 )
                             } else {
-                                Column(
-                                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.terminal_no_session_open),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Button(
-                                        onClick = { showNewConnection() },
-                                        enabled = state.canAddSshSession,
-                                        modifier = Modifier.padding(top = 12.dp),
-                                    ) {
-                                        Text(stringResource(R.string.workspace_new_connection))
-                                    }
-                                }
+                                TerminalEmptyState(
+                                    canOpenConnection = state.canAddSshSession,
+                                    onOpenConnection = { savedConnectionPickerVisible = true },
+                                    modifier = Modifier.align(Alignment.Center),
+                                )
                             }
                             if (rendererLabVisible) {
                                 TerminalBuildCanvasSlot(
@@ -858,11 +1277,11 @@ fun TerminalSpikeScreen(
                                 ),
                                 layout = state.keyboardLayout,
                                 inputMode = state.terminalInputMode,
-                                collapsed = collapsedAccessorySessions[state.activeSessionId] == true,
                                 hapticFeedbackEnabled = state.keyboardHapticsEnabled,
                                 keyRepeatEnabled = state.keyRepeatEnabled,
                                 multilinePasteConfirmationEnabled =
                                     state.multilinePasteConfirmationEnabled,
+                                voiceInputLanguageTag = state.voiceInputLanguageTag,
                                 customizationEnabled = state.settingsReady,
                                 inputTargetId = state.activeSessionId,
                                 bufferedInputSendEnabled = state.canSendTerminalInput,
@@ -872,12 +1291,22 @@ fun TerminalSpikeScreen(
                                         when (action.action) {
                                             TerminalLocalAccessoryAction.PASTE ->
                                                 pasteClipboardInto(state.activeSessionId)
+                                            TerminalLocalAccessoryAction.SELECT_IMAGES -> {
+                                                imagePickerTargetSessionId = state.activeSessionId
+                                                imagePickerLauncher.launch(
+                                                    PickVisualMediaRequest(
+                                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                                    ),
+                                                )
+                                            }
                                             TerminalLocalAccessoryAction.SNIPPETS ->
                                                 showTools(ToolSection.SNIPPETS, state.activeSessionId)
+                                            TerminalLocalAccessoryAction.TMUX_SESSIONS ->
+                                                openTmuxSessionSwitcher(state.activeSessionId)
                                             TerminalLocalAccessoryAction.KEYBOARD_SETTINGS ->
                                                 showTools(ToolSection.KEYS, state.activeSessionId)
                                             TerminalLocalAccessoryAction.HIDE_KEYBOARD ->
-                                                softwareKeyboardController?.hide()
+                                                terminalInputFocusRequester.toggleSoftwareKeyboard()
                                         }
                                     } else {
                                         terminalInputFocusRequester.resetComposingInput()
@@ -890,80 +1319,21 @@ fun TerminalSpikeScreen(
                                     terminalInputFocusRequester.setDirectInputEnabled(!active)
                                 },
                                 onDirectInputMode = terminalInputFocusRequester::requestFocus,
-                                onCollapsedChange = { collapsed ->
-                                    collapsedAccessorySessions[state.activeSessionId] = collapsed
+                            )
+                        }
+                        if (!terminalSurfaceVisible) {
+                            WorkspaceBottomBar(
+                                selected = AppDestination.TERMINAL,
+                                onWorkspace = { destination = AppRoute.WORKSPACE },
+                                onConnections = {},
+                                onSettings = {
+                                    showSettingsCategories(AppRoute.TERMINAL_DETAIL)
                                 },
+                                windowInsets = WindowInsets(0, 0, 0, 0),
                             )
                         }
                     }
                 }
-
-                AppRoute.CONNECTIONS -> ConnectionsScreen(
-                    state = connectionsState,
-                    initialHostEditorId = catalogEditHostId,
-                    callbacks = ConnectionsCallbacks(
-                        onTabSelected = viewModel::selectConnectionsTab,
-                        onSearchQueryChanged = viewModel::setConnectionsSearchQuery,
-                        onHostSortSelected = viewModel::setConnectionsHostSort,
-                        onFavouritesOnlyChanged = viewModel::setConnectionsFavouritesOnly,
-                        onHostGroupSelected = viewModel::setConnectionsHostGroup,
-                        onClearHostFilters = viewModel::clearConnectionsHostFilters,
-                        onRetry = viewModel::retryConnectionsCatalog,
-                        onImportKey = { launchIdentityImport() },
-                        onCopyPublicKey = { id ->
-                            copyCatalogText(sshPublicKeyClipboardLabel, viewModel.connectionsPublicKey(id))
-                        },
-                        onDeleteHost = viewModel::deleteConnectionsHost,
-                        onDeleteKey = viewModel::deleteConnectionsKey,
-                        onInsertSnippet = { id ->
-                            catalogTargetSessionId?.let { targetId ->
-                                if (viewModel.insertConnectionsSnippet(id, targetId)) {
-                                    showTerminal(AppRoute.CONNECTIONS)
-                                }
-                            }
-                        },
-                        onRunSnippet = { id ->
-                            catalogTargetSessionId?.let { targetId ->
-                                if (viewModel.runConnectionsSnippet(id, targetId)) {
-                                    showTerminal(AppRoute.CONNECTIONS)
-                                }
-                            }
-                        },
-                        onCopySnippet = { id ->
-                            copyCatalogText(commandSnippetClipboardLabel, viewModel.connectionsSnippetCommand(id))
-                        },
-                        onDeleteSnippet = viewModel::deleteConnectionsSnippet,
-                        onSaveHost = viewModel::saveConnectionsHost,
-                        onResolveHostEditorDraft = viewModel::resolveConnectionsHostEditorDraft,
-                        onRetainHostEditorDraft = viewModel::retainConnectionsHostEditorDraft,
-                        onClearHostEditorDraft = viewModel::clearConnectionsHostEditorDraft,
-                        onTestHost = viewModel::startConnectionsHostTest,
-                        onAnswerTestHostIdentity = viewModel::answerConnectionsHostIdentity,
-                        onAnswerTestKeyboardInteractive =
-                            viewModel::answerConnectionsKeyboardInteractive,
-                        onCancelTestKeyboardInteractive =
-                            viewModel::cancelConnectionsKeyboardInteractive,
-                        onCancelHostTest = viewModel::cancelConnectionsHostTest,
-                        onConnectCatalogHost = { request ->
-                            if (viewModel.connectConnectionsHost(request)) {
-                                showTerminal(AppRoute.CONNECTIONS)
-                            }
-                        },
-                        onSaveSnippetModel = viewModel::saveConnectionsSnippet,
-                        onGenerateKeyRequest = viewModel::generateConnectionsKey,
-                        onRenameKeyMetadata = viewModel::renameConnectionsKey,
-                        onOpenMoshStatus = {
-                            showSettings(
-                                section = ToolSection.MOSH,
-                                returnDestination = AppRoute.CONNECTIONS,
-                            )
-                        },
-                    ),
-                    onOpenWorkspace = { destination = AppRoute.WORKSPACE },
-                    onOpenSettings = { showSettingsCategories(AppRoute.CONNECTIONS) },
-                    onNavigateBack = { destination = catalogReturnDestination },
-                    moshAvailable = state.moshExtension.kind == MoshExtensionUiKind.AVAILABLE,
-                )
 
                 AppRoute.SETTINGS -> LocalToolsScreen(
                     destination = AppDestination.SETTINGS,
@@ -975,10 +1345,11 @@ fun TerminalSpikeScreen(
                     moshExtension = state.moshExtension,
                     onNavigateBack = { destination = settingsReturnDestination },
                     onOpenWorkspace = { destination = AppRoute.WORKSPACE },
-                    // The second primary navigation item is the live terminal. The catalog remains
-                    // available from the terminal header and the Workspace overflow menu.
+                    // The second primary navigation item is the live terminal.
                     onOpenConnections = { showTerminal(target) },
                     onOpenSettings = { destination = AppRoute.SETTINGS },
+                    onOpenSshKeys = { showSettingsCatalog(ConnectionsTab.KEYS) },
+                    onOpenSnippets = { showSettingsCatalog(ConnectionsTab.SNIPPETS) },
                     onUseProfile = { profile ->
                         showNewConnection(profile.id)
                     },
@@ -1009,6 +1380,78 @@ fun TerminalSpikeScreen(
                     initialSection = toolsSection,
                     terminalProfileId = settingsTerminalProfileId,
                     keyboardProfileId = settingsKeyboardProfileId,
+                )
+            }
+        }
+
+        tmuxSwitcherTargetId?.let { targetId ->
+            val targetSession = state.sessions.firstOrNull { it.id == targetId }
+            if (targetSession == null) {
+                LaunchedEffect(targetId) {
+                    tmuxSwitcherTargetId = null
+                    tmuxSwitcherCatalog = null
+                }
+            } else {
+                ActiveTmuxSessionSwitcherDialog(
+                    catalog = tmuxSwitcherCatalog,
+                    onDismiss = {
+                        tmuxSwitcherTargetId = null
+                        tmuxSwitcherCatalog = null
+                        tmuxDeleteTargetId = null
+                    },
+                    onRefresh = { openTmuxSessionSwitcher(targetId) },
+                    onSelect = { tmuxSessionId ->
+                        screenScope.launch {
+                            if (viewModel.switchActiveTmuxSession(targetId, tmuxSessionId)) {
+                                tmuxSwitcherTargetId = null
+                                tmuxSwitcherCatalog = null
+                                terminalInputFocusRequester.requestFocus()
+                            } else {
+                                snackbarHostState.showSnackbar(tmuxSwitchFailedMessage)
+                            }
+                        }
+                    },
+                    onDelete = { tmuxDeleteTargetId = it },
+                )
+            }
+        }
+
+        tmuxDeleteTargetId?.let { tmuxSessionId ->
+            val selected = tmuxSwitcherCatalog?.sessions?.firstOrNull {
+                it.id == tmuxSessionId
+            }
+            if (selected != null) {
+                AlertDialog(
+                    onDismissRequest = { tmuxDeleteTargetId = null },
+                    title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
+                    text = {
+                        Text(stringResource(R.string.tmux_selector_delete_message, selected.name))
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val targetId = tmuxSwitcherTargetId
+                                tmuxDeleteTargetId = null
+                                if (targetId != null) {
+                                    tmuxSwitcherCatalog = null
+                                    screenScope.launch {
+                                        val result = viewModel.terminateActiveTmuxSession(
+                                            targetId,
+                                            tmuxSessionId,
+                                        )
+                                        if (tmuxSwitcherTargetId == targetId) {
+                                            tmuxSwitcherCatalog = result
+                                        }
+                                    }
+                                }
+                            },
+                        ) { Text(stringResource(R.string.tmux_selector_delete_confirm)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { tmuxDeleteTargetId = null }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
                 )
             }
         }
@@ -1060,6 +1503,26 @@ fun TerminalSpikeScreen(
                     }
                 },
             )
+        }
+
+        snippetPickerTargetId?.let { targetId ->
+            state.sessions.firstOrNull { it.id == targetId }?.let { target ->
+                TerminalSnippetPickerDialog(
+                    sessionTitle = target.title.ifBlank {
+                        stringResource(R.string.navigation_terminal)
+                    },
+                    snippets = state.snippets,
+                    onDismiss = {
+                        snippetPickerTargetId = null
+                        restoreTerminalFocusAfterSnippetPicker = true
+                    },
+                    onSelect = { snippetId ->
+                        snippetPickerTargetId = null
+                        restoreTerminalFocusAfterSnippetPicker = true
+                        viewModel.sendSnippet(snippetId, targetId)
+                    },
+                )
+            }
         }
 
         findSessionId?.let { targetId ->
@@ -1126,6 +1589,78 @@ fun TerminalSpikeScreen(
                 )
                 .padding(horizontal = 12.dp)
                 .padding(bottom = snackbarBottomPadding),
+        )
+
+        if (sftpState !is SftpUiState.Closed) {
+            SftpScreen(
+                controller = viewModel.sftp,
+                scope = screenScope,
+                onSubmitAuthentication = viewModel::submitSftpAuthentication,
+                onClose = viewModel.sftp::close,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
+    if (savedConnectionPickerVisible) {
+        SavedConnectionPickerDialog(
+            loadState = connectionsState.loadState,
+            onDismiss = { savedConnectionPickerVisible = false },
+            onOpenConnections = {
+                savedConnectionPickerVisible = false
+                viewModel.selectConnectionsTab(ConnectionsTab.HOSTS)
+                destination = AppRoute.WORKSPACE
+            },
+            onSelectHost = { host ->
+                savedConnectionPickerVisible = false
+                val catalog = (connectionsState.loadState as? ConnectionsLoadState.Ready)
+                    ?.editorCatalog
+                    ?: return@SavedConnectionPickerDialog
+                val hostId = host.draft.persistentId ?: return@SavedConnectionPickerDialog
+                if (
+                    host.requiresConnectionPrompt(
+                        catalog = catalog,
+                        moshAvailable = state.moshExtension.kind == MoshExtensionUiKind.AVAILABLE,
+                    )
+                ) {
+                    pendingTerminalAuthenticationHostId = hostId
+                } else {
+                    viewModel.connectConnectionsHost(HostConnectRequest(hostId))
+                }
+            },
+        )
+    }
+
+    val terminalConnectionCatalog =
+        (connectionsState.loadState as? ConnectionsLoadState.Ready)?.editorCatalog
+    val terminalAuthenticationHost = pendingTerminalAuthenticationHostId?.let { hostId ->
+        terminalConnectionCatalog?.hosts?.firstOrNull { it.draft.persistentId == hostId }
+    }
+    LaunchedEffect(pendingTerminalAuthenticationHostId, terminalConnectionCatalog) {
+        if (
+            pendingTerminalAuthenticationHostId != null &&
+            terminalConnectionCatalog != null &&
+            terminalAuthenticationHost == null
+        ) {
+            pendingTerminalAuthenticationHostId = null
+        }
+    }
+    if (terminalAuthenticationHost != null) {
+        val terminalAuthenticationKey = terminalAuthenticationHost.draft.keyIdentityId
+            ?.let { keyId ->
+                terminalConnectionCatalog?.keys?.firstOrNull { it.persistentId == keyId }
+            }
+        val connectTerminalHost: (HostConnectRequest) -> Unit = { request ->
+            viewModel.connectConnectionsHost(request)
+            pendingTerminalAuthenticationHostId = null
+        }
+        HostAuthenticationPromptDialog(
+            host = terminalAuthenticationHost,
+            key = terminalAuthenticationKey,
+            moshAvailable = state.moshExtension.kind == MoshExtensionUiKind.AVAILABLE,
+            onDismiss = { pendingTerminalAuthenticationHostId = null },
+            onConnect = connectTerminalHost,
+            onConnectWithSsh = connectTerminalHost,
         )
     }
 

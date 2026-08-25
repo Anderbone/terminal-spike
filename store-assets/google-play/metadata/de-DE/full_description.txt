@@ -1,0 +1,24 @@
+Verbinde dich über ein schnelles, natives Android-Terminal mit deinen Servern – ausgelegt für den täglichen Einsatz.
+
+Terminal Spike speichert Verbindungen und Einstellungen auf deinem Gerät. Es gibt keine Konten, Werbung, Analysen oder Cloud-Synchronisierung.
+
+Mit mehreren Sitzungen arbeiten
+• SSH-Sitzungen mit Passwort- oder Schlüsselauthentifizierung öffnen
+• Mehrere Terminals in getrennten Tabs verwenden
+• Verbindungen zu gespeicherten Hosts wiederherstellen und optional eine tmux-Sitzung auswählen
+• Hostschlüssel strikt prüfen und bei Änderungen am Serverschlüssel eine deutliche Warnung erhalten
+
+Werkzeuge für die Remote-Arbeit
+• Remote-Dateien per SFTP durchsuchen, hochladen, herunterladen, umbenennen und löschen
+• Häufig verwendete Befehle als Textbausteine speichern
+• Die Zusatztastenleiste mit Strg, Esc, Pfeiltasten und eigenen Kürzeln anpassen
+• Terminalausgaben durchsuchen und ausgewählten Text kopieren
+• Mehrzeilige Befehle mit Bestätigung einfügen
+• Ein Bild aus der Zwischenablage an einen verbundenen SSH-Host senden, um es in einem Remote-Werkzeug zu verwenden
+
+Nach deinen Wünschen
+• Farben, Schriftarten, Textgröße, Cursorstil und Tastaturverhalten auswählen
+• App-Daten in einem verschlüsselten lokalen Archiv sichern und wiederherstellen
+• Lokal gespeicherte Geheimnisse mit Android-Sicherheitsfunktionen schützen
+
+Terminal Spike ist ein SSH-Client. Du benötigst Zugriff auf einen SSH-Server und gültige Zugangsdaten. Netzwerkdaten werden nur mit den von dir ausgewählten Hosts ausgetauscht. Optionale Funktionen können von der auf dem Remote-Server installierten Software abhängen.

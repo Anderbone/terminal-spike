@@ -4,9 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeContent
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.SnippetTapAction
 import com.yanjiyu.terminalspike.core.model.Snippet
@@ -50,6 +56,7 @@ internal data class ConnectionsCallbacks(
     val onRetry: () -> Unit,
     val onAddHost: (() -> Unit)? = null,
     val onConnectHost: ((String) -> Unit)? = null,
+    val onOpenSftp: ((String) -> Unit)? = null,
     val onEditHost: ((String) -> Unit)? = null,
     val onDeleteHost: ((String) -> Unit)? = null,
     val onImportKey: (() -> Unit)? = null,
@@ -157,15 +164,21 @@ internal fun ConnectionsScreen(
     state: ConnectionsUiState,
     callbacks: ConnectionsCallbacks,
     onOpenWorkspace: () -> Unit,
+    onOpenTerminal: () -> Unit,
     onOpenSettings: () -> Unit,
     initialHostEditorId: String? = null,
     modifier: Modifier = Modifier,
     onNavigateBack: (() -> Unit)? = null,
-    safeContentInsets: WindowInsets = WindowInsets.safeContent,
+    safeContentInsets: WindowInsets = WindowInsets.safeDrawing
+        .only(WindowInsetsSides.Vertical)
+        .union(WindowInsets.displayCutout),
     nowEpochMillis: Long = System.currentTimeMillis(),
     moshAvailable: Boolean = false,
+    displayedTab: ConnectionsTab = state.selectedTab,
+    primaryDestination: AppDestination = AppDestination.CONNECTIONS,
 ) {
     val context = LocalContext.current
+    val screenDescription = stringResource(R.string.connections_screen_description)
     val defaultNearbySshDiscoveryFactory = remember(context) {
         androidNearbySshDiscoveryControllerFactory(context)
     }
@@ -180,6 +193,15 @@ internal fun ConnectionsScreen(
     val pendingEditor = pendingEditorToken?.let(::decodePendingConnectionsEditor)
     val readyEditorCatalog = (state.loadState as? ConnectionsLoadState.Ready)?.editorCatalog
     val editorCatalog = readyEditorCatalog ?: ConnectionsEditorCatalog()
+    val displayedState = if (displayedTab == ConnectionsTab.HOSTS) {
+        state.copy(
+            selectedTab = ConnectionsTab.HOSTS,
+            searchQuery = "",
+            hostFilters = HostFilters(),
+        )
+    } else {
+        state.copy(selectedTab = displayedTab)
+    }
 
     LaunchedEffect(initialHostEditorId) {
         if (initialHostEditorId != null) {
@@ -216,9 +238,9 @@ internal fun ConnectionsScreen(
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         AdaptivePrimaryNavigation(
-            selected = AppDestination.CONNECTIONS,
+            selected = primaryDestination,
             onWorkspace = onOpenWorkspace,
-            onConnections = {},
+            onConnections = onOpenTerminal,
             onSettings = onOpenSettings,
             modifier = Modifier.fillMaxSize(),
             safeContentInsets = safeContentInsets,
@@ -227,10 +249,11 @@ internal fun ConnectionsScreen(
                 modifier = contentModifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .testTag(ConnectionsScreenTestTag),
+                    .testTag(ConnectionsScreenTestTag)
+                    .semantics { contentDescription = screenDescription },
             ) {
                 ConnectionsHeader(
-                    selectedTab = state.selectedTab,
+                    selectedTab = displayedTab,
                     searchQuery = state.searchQuery,
                     hostSort = state.hostSort,
                     hostFilters = state.hostFilters,
@@ -248,15 +271,12 @@ internal fun ConnectionsScreen(
                             { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
                         } ?: callbacks.onAddSnippet,
                     ),
-                )
-                ConnectionsTabs(
-                    selectedTab = state.selectedTab,
-                    counts = state.loadState.catalogCounts,
-                    onTabSelected = callbacks.onTabSelected,
+                    showTitle = true,
+                    showSearch = displayedTab != ConnectionsTab.HOSTS,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    when (val presentation = state.presentation()) {
+                    when (val presentation = displayedState.presentation()) {
                         is ConnectionsPresentationUi.Loading -> ConnectionsLoadingState()
                         is ConnectionsPresentationUi.Error -> ConnectionsErrorState(
                             message = presentation.message,
@@ -282,10 +302,10 @@ internal fun ConnectionsScreen(
                                     }
                                     val requiresSecret = when (seed?.draft?.authenticationMethod) {
                                         HostAuthenticationMethod.PASSWORD ->
-                                            seed?.savedSecretAvailable != true
+                                            !seed.savedSecretAvailable
                                         HostAuthenticationMethod.KEYBOARD_INTERACTIVE -> false
                                         HostAuthenticationMethod.PRIVATE_KEY ->
-                                            key?.passphraseProtected == true && seed?.savedSecretAvailable != true
+                                            key?.passphraseProtected == true && !seed.savedSecretAvailable
                                         null -> true
                                     }
                                     val moshBlocked = seed?.draft?.protocol ==
@@ -298,6 +318,7 @@ internal fun ConnectionsScreen(
                                     }
                                 }
                             } ?: callbacks.onConnectHost,
+                            onOpenSftp = callbacks.onOpenSftp,
                             onEditHost = callbacks.onSaveHost?.let {
                                 { id -> pendingEditorToken = PendingConnectionsEditor.Host(id).saveToken() }
                             } ?: callbacks.onEditHost,
@@ -339,10 +360,8 @@ internal fun ConnectionsScreen(
                                     pendingDeletion = PendingCatalogDeletion.Snippet(snippet.id, snippet.name)
                                 }
                             },
-                            onEmptyAction = when (state.selectedTab) {
-                                ConnectionsTab.HOSTS -> callbacks.onSaveHost?.let {
-                                    { pendingEditorToken = PendingConnectionsEditor.Host(null).saveToken() }
-                                } ?: callbacks.onAddHost
+                            onEmptyAction = when (displayedTab) {
+                                ConnectionsTab.HOSTS -> null
                                 ConnectionsTab.KEYS -> callbacks.onImportKey
                                     ?: callbacks.onGenerateKeyRequest?.let {
                                         {
@@ -423,6 +442,11 @@ internal fun ConnectionsScreen(
                         onDismiss = {
                             callbacks.onClearHostEditorDraft?.invoke(token)
                             pendingEditorToken = null
+                        },
+                        onDelete = editor.persistentId?.let { persistentId ->
+                            callbacks.onDeleteHost?.let { deleteHost ->
+                                { deleteHost(persistentId) }
+                            }
                         },
                         onSave = { submission ->
                             callbacks.onSaveHost?.invoke(submission) ?: unavailableEditorOperation()

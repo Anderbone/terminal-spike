@@ -185,6 +185,7 @@ class RoomBackupSnapshotSourceTest {
             .setSensitiveClipboardClearSeconds(60)
             .setOsc52Policy(AppSettings.Osc52Policy.OSC52_POLICY_ASK)
             .setLastBackupMode("full")
+            .setTmuxSessionSelectorDisabled(true)
             .build()
             .toBackupGlobalSettings()
 
@@ -201,6 +202,7 @@ class RoomBackupSnapshotSourceTest {
         assertTrue(mapped.screenshotBlockingEnabled)
         assertEquals(60, mapped.sensitiveClipboardClearSeconds)
         assertEquals(BackupMode.FULL, mapped.lastBackupMode)
+        assertTrue(mapped.tmuxSessionSelectorDisabled)
     }
 
     @Test

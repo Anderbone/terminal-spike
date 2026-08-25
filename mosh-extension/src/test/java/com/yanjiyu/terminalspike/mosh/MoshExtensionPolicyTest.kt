@@ -35,9 +35,9 @@ class MoshExtensionPolicyTest {
     }
 
     @Test
-    fun workerSlotsAreBoundedAndReusable() {
-        val allocator = WorkerSlotAllocator(4)
-        assertEquals(listOf(0, 1, 2, 3), List(4) { allocator.acquire() })
+    fun allTenWorkerSlotsAreBoundedAndReusable() {
+        val allocator = WorkerSlotAllocator(MOSH_WORKER_COUNT)
+        assertEquals((0 until MOSH_WORKER_COUNT).toList(), List(MOSH_WORKER_COUNT) { allocator.acquire() })
         assertNull(allocator.acquire())
         allocator.release(1)
         assertEquals(1, allocator.acquire())

@@ -158,19 +158,6 @@ internal fun BackupRestoreSettingsContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        item { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
-        item {
-            BackupModeExplanation(
-                title = stringResource(R.string.settings_backup_standard),
-                summary = stringResource(R.string.settings_backup_standard_summary),
-                detail = stringResource(R.string.settings_backup_standard_encryption),
-            )
-            BackupModeExplanation(
-                title = stringResource(R.string.settings_backup_full),
-                summary = stringResource(R.string.settings_backup_full_summary),
-                detail = stringResource(R.string.settings_backup_full_warning),
-            )
-        }
         item {
             Text(
                 text = stringResource(R.string.settings_backup_picker_explanation),
@@ -187,9 +174,9 @@ internal fun BackupWorkflowDialogs(
     actions: BackupSettingsActions,
 ) {
     when (state.step) {
-        BackupWorkflowStep.EXPORT_SETUP -> ExportSetupDialog(state.error, actions)
-        BackupWorkflowStep.PASSPHRASE_REQUIRED -> RestorePassphraseDialog(state, actions)
-        BackupWorkflowStep.AUTHENTICATED_PREVIEW -> AuthenticatedPreviewDialog(state, actions)
+        BackupWorkflowStep.EXPORT_SETUP,
+        BackupWorkflowStep.PASSPHRASE_REQUIRED,
+        BackupWorkflowStep.AUTHENTICATED_PREVIEW -> Unit
         BackupWorkflowStep.IMPORT_REVIEW -> ImportReviewDialog(state, actions)
         BackupWorkflowStep.EXPORTING,
         BackupWorkflowStep.INSPECTING,

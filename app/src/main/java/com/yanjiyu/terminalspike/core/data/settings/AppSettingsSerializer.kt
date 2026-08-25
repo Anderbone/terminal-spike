@@ -7,7 +7,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 internal const val CURRENT_APP_SETTINGS_SCHEMA = 1
-internal const val CURRENT_KEYBOARD_DECK_REVISION = 1
+internal const val CURRENT_KEYBOARD_DECK_REVISION = 6
 
 internal object AppSettingsSerializer : Serializer<AppSettings> {
     override val defaultValue: AppSettings = AppSettings.newBuilder()
@@ -21,7 +21,7 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         .setNotificationPrivacyEnabled(true)
         .setAppLockMode(AppSettings.AppLockMode.APP_LOCK_MODE_OFF)
         .setOsc52Policy(AppSettings.Osc52Policy.OSC52_POLICY_DISABLED)
-        .setMultilinePasteConfirmationEnabled(true)
+        .setMultilinePasteConfirmationEnabled(false)
         .setLastBackupMode("standard")
         .setKeyboardDeckRevision(CURRENT_KEYBOARD_DECK_REVISION)
         .build()

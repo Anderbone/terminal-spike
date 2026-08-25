@@ -48,6 +48,51 @@ class SshSessionRuntimeLifecycleTest {
     }
 
     @Test
+    fun restoredRemoteSelectionWinsOverTheDefaultLocalTerminal() {
+        val projected = TerminalSpikeUiState().withRemoteSessionSnapshots(
+            remoteSessions = listOf(
+                snapshot(11L, "One", ConnectionState.Connected),
+                snapshot(12L, "Two", ConnectionState.Connected),
+            ),
+            preferredSessionId = 11L,
+        )
+
+        assertEquals(11L, projected.activeSessionId)
+        assertEquals("One", projected.activeSession.title)
+        assertFalse(projected.activeSession.isLocalTerminal)
+    }
+
+    @Test
+    fun terminalEntryUsesRememberedRemoteTabInsteadOfTheBlankLocalTab() {
+        val state = TerminalSpikeUiState().withRemoteSessionSnapshots(
+            remoteSessions = listOf(
+                snapshot(11L, "One", ConnectionState.Connected),
+                snapshot(12L, "Two", ConnectionState.Connected),
+            ),
+        ).copy(activeSessionId = LOCAL_TERMINAL_SESSION_ID)
+
+        assertEquals(11L, state.preferredTerminalEntrySessionId(lastActiveRemoteSessionId = 11L))
+    }
+
+    @Test
+    fun terminalEntryUsesMostRecentAvailableRemoteWhenRememberedTabIsGone() {
+        val state = TerminalSpikeUiState().withRemoteSessionSnapshots(
+            remoteSessions = listOf(
+                snapshot(11L, "One", ConnectionState.Connected),
+                snapshot(12L, "Two", ConnectionState.Connected),
+            ),
+        ).copy(activeSessionId = LOCAL_TERMINAL_SESSION_ID)
+
+        assertEquals(12L, state.preferredTerminalEntrySessionId(lastActiveRemoteSessionId = 99L))
+        assertEquals(
+            null,
+            TerminalSpikeUiState().preferredTerminalEntrySessionId(
+                lastActiveRemoteSessionId = 11L,
+            ),
+        )
+    }
+
+    @Test
     fun removingActiveRepositorySessionFallsBackToLastRemainingRemoteThenLocal() {
         val state = TerminalSpikeUiState().withRemoteSessionSnapshots(
             listOf(

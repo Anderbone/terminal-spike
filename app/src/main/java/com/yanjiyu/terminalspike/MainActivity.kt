@@ -15,9 +15,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
@@ -115,8 +117,8 @@ class MainActivity : ComponentActivity() {
             val themeSettings = settings ?: AppSettingsSerializer.defaultValue
             TerminalSpikeTheme(
                 themeMode = themeSettings.themeMode.toAppThemeMode(),
-                dynamicColorEnabled = themeSettings.dynamicColorEnabled,
-                accentPreset = themeSettings.accentPreset,
+                dynamicColorEnabled = false,
+                accentPreset = "mint",
             ) {
                 val mainRoot = selectMainRoot(
                     settingsLoaded = settings != null,
@@ -152,7 +154,10 @@ class MainActivity : ComponentActivity() {
                         onResetConfirmed = localAppDataResetter::requestReset,
                     )
 
-                    MainRoot.CONTENT -> TerminalSpikeScreen(viewModel = viewModel)
+                    MainRoot.CONTENT -> Unit
+                }
+                MainContentStateHost(visible = mainRoot == MainRoot.CONTENT) {
+                    TerminalSpikeScreen(viewModel = viewModel)
                 }
                 if (
                     shouldShowDisconnectAllConfirmation(
@@ -320,7 +325,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 internal fun DisconnectAllSessionsConfirmation(
     activeSessionCount: Int,
     onConfirm: () -> Unit,
@@ -351,11 +356,24 @@ internal fun DisconnectAllSessionsConfirmation(
     )
 }
 
+@Composable
+internal fun MainContentStateHost(
+    visible: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val stateHolder = rememberSaveableStateHolder()
+    if (visible) {
+        stateHolder.SaveableStateProvider(MAIN_CONTENT_STATE_KEY, content)
+    }
+}
+
 internal enum class MainRoot {
     APP_LOCK,
     STARTUP_RECOVERY,
     CONTENT,
 }
+
+private const val MAIN_CONTENT_STATE_KEY = "main-content"
 
 internal fun selectMainRoot(
     settingsLoaded: Boolean,

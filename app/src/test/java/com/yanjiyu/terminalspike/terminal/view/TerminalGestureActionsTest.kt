@@ -66,7 +66,7 @@ class TerminalGestureActionsTest {
         var keyboardCalls = 0
         var clickCalls = 0
         val actions = actions(
-            fling = { flingVelocity = it },
+            fling = { velocity, _, _ -> flingVelocity = velocity },
             showKeyboard = { keyboardCalls += 1 },
             performClick = { clickCalls += 1 },
         )
@@ -162,10 +162,29 @@ class TerminalGestureActionsTest {
     }
 
     @Test
+    fun longPressOnLinkShowsLinkActionsWithoutStartingTextSelection() {
+        val events = mutableListOf<String>()
+        val actions = actions(
+            handleLongPress = { x, y ->
+                events += "link:$x:$y"
+                true
+            },
+            startSelection = { _, _ -> events += "selection"; true },
+            finishSelectionDrag = { events += "finish:$it" },
+        )
+
+        actions.onTouchDown(10f, 20f)
+        actions.onLongPress(10f, 20f)
+        actions.onTouchUp()
+
+        assertEquals(listOf("link:10.0:20.0"), events)
+    }
+
+    @Test
     fun draggingExistingHandleDoesNotStartSelectionOrFling() {
         val events = mutableListOf<String>()
         val actions = actions(
-            fling = { events += "fling" },
+            fling = { _, _, _ -> events += "fling" },
             selectionHandleAt = { _, _ -> TerminalSelectionEndpoint.START },
             startSelection = { _, _ -> events += "start"; true },
             dragSelection = { endpoint, _, _ -> events += "drag:$endpoint" },
@@ -217,10 +236,11 @@ class TerminalGestureActionsTest {
         stopFling: () -> Unit = {},
         requestFocus: () -> Unit = {},
         scrollBy: (Float, Float, Float, Int) -> Unit = { _, _, _, _ -> },
-        fling: (Float) -> Unit = {},
+        fling: (Float, Float, Float) -> Unit = { _, _, _ -> },
         showKeyboard: () -> Unit = {},
         performClick: () -> Unit = {},
         handleTap: (Float, Float) -> Boolean = { _, _ -> false },
+        handleLongPress: (Float, Float) -> Boolean = { _, _ -> false },
         selectionHandleAt: (Float, Float) -> TerminalSelectionEndpoint? = { _, _ -> null },
         startSelection: (Float, Float) -> Boolean = { _, _ -> false },
         dragSelection: (TerminalSelectionEndpoint, Float, Float) -> Unit = { _, _, _ -> },
@@ -233,6 +253,7 @@ class TerminalGestureActionsTest {
         showKeyboard = showKeyboard,
         performClick = performClick,
         handleTap = handleTap,
+        handleLongPress = handleLongPress,
         selectionHandleAt = selectionHandleAt,
         startSelection = startSelection,
         dragSelection = dragSelection,

@@ -1,0 +1,1 @@
+Terminal SSH nativo y local con SFTP, pestañas, fragmentos y teclas propias

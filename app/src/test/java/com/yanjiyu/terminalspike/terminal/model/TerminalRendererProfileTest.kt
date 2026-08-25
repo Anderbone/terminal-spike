@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.terminal.model
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,6 +10,11 @@ class TerminalRendererProfileTest {
     fun terminalSafeFontBehaviourDefaultsAreExplicit() {
         val profile = TerminalRendererProfile()
 
+        assertEquals(TerminalRendererProfile.JETBRAINS_MONO_FONT_ID, profile.fontId)
+        assertEquals(
+            TerminalRendererProfile.JETBRAINS_MONO_FONT_ID,
+            TerminalRendererProfile.DEFAULT_FONT_ID,
+        )
         assertTrue(profile.boldRenderingEnabled)
         assertFalse(profile.ligaturesEnabled)
         assertTrue(profile.pinchZoomEnabled)

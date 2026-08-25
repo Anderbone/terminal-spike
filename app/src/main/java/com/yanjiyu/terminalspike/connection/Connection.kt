@@ -5,6 +5,7 @@ import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.core.model.requireIdentifier
 import com.yanjiyu.terminalspike.core.model.requireOptionalCommand
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
+import java.io.InputStream
 
 interface Connection : TerminalInputSink {
     /** Returns false when the bounded transport queue cannot accept the complete input batch. */
@@ -33,10 +34,33 @@ interface Connection : TerminalInputSink {
     /** Cancels only the identified interactive challenge; stale dialog actions are ignored. */
     fun cancelKeyboardInteractiveChallenge(challengeToken: Long)
 
+    /** Resolves only the identified tmux chooser; null opens the ordinary remote shell. */
+    fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) = Unit
+
+    /** Requests deletion from the exact live chooser; completion is reflected by a new prompt. */
+    fun deleteTmuxSession(promptToken: Long, sessionId: String) = Unit
+
+    /** Queries tmux through the authenticated side channel without touching terminal output. */
+    fun queryTmuxSessionCatalog(includePreviews: Boolean = false): TmuxSessionCatalog =
+        TmuxSessionCatalog()
+
+    /** Terminates one validated tmux session and returns the refreshed bounded catalogue. */
+    fun terminateTmuxSession(sessionId: String): TmuxSessionCatalog =
+        TmuxSessionCatalog(deleteFailed = true)
+
+    /** Switches an attached tmux client or attaches the interactive shell to the chosen session. */
+    fun switchTmuxSession(sessionId: String): Boolean = false
+
     /** Cancels every currently owned prompt when this transport is retired or closed. */
     fun cancelPendingPrompts()
 
     fun close()
+}
+
+/** Optional SFTP side channel provided by a live SSH transport. */
+internal fun interface RemoteImageUploadConnection {
+    /** Uploads one generated image name and returns its absolute path on the remote host. */
+    fun uploadPastedImage(fileName: String, source: InputStream): String
 }
 
 class SshConnectionConfig(
@@ -50,6 +74,8 @@ class SshConnectionConfig(
     val terminalType: String = TerminalProfile.DEFAULT_TERM_VALUE,
     /** Optional user-authored input dispatched once after each fresh interactive shell connects. */
     val startupCommand: String? = null,
+    /** Shows the authenticated tmux session chooser before opening an SSH shell. */
+    val tmuxSessionSelectorEnabled: Boolean = false,
 ) {
     init {
         require(

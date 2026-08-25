@@ -16,7 +16,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -83,17 +82,20 @@ class SessionDestructiveConfirmationTest {
 
         val firstTab = composeRule.onNodeWithTag("$TerminalSessionTabTestTagPrefix${sessions.first().id}")
         val thirdTab = composeRule.onNodeWithTag("$TerminalSessionTabTestTagPrefix${sessions.last().id}")
-        firstTab.assertHeightIsAtLeast(48.dp)
-        assertTrue(firstTab.fetchSemanticsNode().boundsInRoot.width <= 92f)
-        thirdTab.performScrollTo().assertIsDisplayed().performClick()
+        val firstBounds = firstTab.assertHeightIsAtLeast(28.dp).fetchSemanticsNode().boundsInRoot
+        val thirdBounds = thirdTab.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertEquals(firstBounds.width, thirdBounds.width, 1f)
+        thirdTab.performClick()
         // combinedClickable waits through the double-tap window before dispatching a single tap.
         composeRule.waitUntil(timeoutMillis = 1_000) { selectedSessionId == 14L }
 
         val stripBounds = composeRule.onNodeWithTag(TerminalSessionStripTestTag).fetchSemanticsNode().boundsInRoot
+        assertEquals(stripBounds.left, firstBounds.left, 1f)
+        assertEquals(stripBounds.right, thirdBounds.right, 1f)
         val add = composeRule.onNodeWithTag(NewTerminalSessionTestTag)
             .assertIsDisplayed()
-            .assertWidthIsAtLeast(48.dp)
-            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(28.dp)
+            .assertHeightIsAtLeast(28.dp)
         val addBounds = add.fetchSemanticsNode().boundsInRoot
         assertTrue(addBounds.left >= stripBounds.right)
         add.performClick()

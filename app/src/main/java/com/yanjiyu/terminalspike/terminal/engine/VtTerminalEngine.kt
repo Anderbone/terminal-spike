@@ -1075,8 +1075,9 @@ class VtTerminalEngine(
         fun eraseRange(row: Int, start: Int, endExclusive: Int, style: TerminalStyle) {
             val boundedStart = start.coerceIn(0, columns)
             val boundedEnd = endExclusive.coerceIn(boundedStart, columns)
+            val erasedStyle = style.forErasedCell()
             for (column in boundedStart until boundedEnd) {
-                cells[row][column] = Cell(" ", style, null, false)
+                cells[row][column] = Cell(" ", erasedStyle, null, false)
             }
             if (boundedStart == 0 && boundedEnd == columns) softWrappedRows[row] = false
             normalizeWideCells(cells[row])
@@ -1309,8 +1310,10 @@ class VtTerminalEngine(
         }
 
         companion object {
-            private fun blankRow(columns: Int, style: TerminalStyle = TerminalStyle()): Array<Cell> =
-                Array(columns) { Cell(" ", style, null, false) }
+            private fun blankRow(columns: Int, style: TerminalStyle = TerminalStyle()): Array<Cell> {
+                val erasedStyle = style.forErasedCell()
+                return Array(columns) { Cell(" ", erasedStyle, null, false) }
+            }
 
             private fun normalizeWideCells(row: Array<Cell>) {
                 row.indices.forEach { column ->
@@ -1413,3 +1416,9 @@ class VtTerminalEngine(
         private val SECONDARY_DEVICE_ATTRIBUTES = "\u001B[>0;136;0c".toByteArray()
     }
 }
+
+/**
+ * Background-colour erase retains the selected background, but erased cells are not printable
+ * spaces and must not inherit text renditions such as underline or strike-through.
+ */
+private fun TerminalStyle.forErasedCell(): TerminalStyle = TerminalStyle(background = background)

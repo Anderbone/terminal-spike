@@ -52,6 +52,54 @@ import org.junit.Test
 
 class TerminalSpikeUiStateTest {
     @Test
+    fun primaryDestinationSwapsKeepTheSharedFooterStable() {
+        assertTrue(keepsPrimaryNavigationStable(AppRoute.WORKSPACE, AppRoute.SETTINGS))
+        assertTrue(keepsPrimaryNavigationStable(AppRoute.SETTINGS, AppRoute.CONNECTIONS))
+        assertFalse(keepsPrimaryNavigationStable(AppRoute.WORKSPACE, AppRoute.TERMINAL_DETAIL))
+        assertFalse(keepsPrimaryNavigationStable(AppRoute.TERMINAL_DETAIL, AppRoute.SETTINGS))
+    }
+
+    @Test
+    fun remoteTerminalTitleReplacesFixedTabLabelAndCompactsStockTmuxTitle() {
+        val session = SessionTabUi(
+            id = 9,
+            title = "mo",
+            connectionState = ConnectionState.Connected,
+            terminalTitle = "xxx2",
+        )
+
+        assertEquals("xxx2", session.displayedTerminalTabTitle())
+        assertEquals(
+            "xxx2",
+            session.copy(terminalTitle = "xxx2:0:bash - \"mo\"").displayedTerminalTabTitle(),
+        )
+        assertEquals(
+            "release shell",
+            session.copy(terminalTitle = "release shell").displayedTerminalTabTitle(),
+        )
+    }
+
+    @Test
+    fun terminalTabTitleFallsBackForAbsentTitlesAndNeverRenamesLocalTerminal() {
+        val session = SessionTabUi(
+            id = 9,
+            title = "mo",
+            connectionState = ConnectionState.Connected,
+        )
+
+        assertEquals("mo", session.displayedTerminalTabTitle())
+        assertEquals("mo", session.copy(terminalTitle = "   ").displayedTerminalTabTitle())
+        assertEquals(
+            "Bench",
+            session.copy(
+                title = "Bench",
+                isLocalTerminal = true,
+                terminalTitle = "ignored remote title",
+            ).displayedTerminalTabTitle(),
+        )
+    }
+
+    @Test
     fun freshSshFallbackIsOfferedOnlyForClassifiedOptInMoshFailures() {
         val failed = SessionTabUi(
             id = 9,
@@ -670,24 +718,27 @@ class TerminalSpikeUiStateTest {
     }
 
     @Test
-    fun insertSnippetNeverFallsThroughToCompatibilityNetworkSend() {
+    fun insertSnippetHonoursConfiguredAppendEnter() {
         val snippet = CommandSnippet(
             id = 8,
             label = "Draft",
             command = "printf one\nprintf two",
-            appendEnter = false,
+            appendEnter = true,
             confirmMultilineExecution = false,
             sendsImmediately = false,
         )
         var enqueueCalls = 0
+        var appendedEnter: Boolean? = null
 
-        val outcome = dispatchSnippet(snippet, confirmed = true) {
+        val outcome = dispatchSnippet(snippet, confirmed = true) { appendEnter ->
             enqueueCalls += 1
+            appendedEnter = appendEnter
             true
         }
 
-        assertEquals(SnippetDispatchOutcome.INSERT_UNAVAILABLE, outcome)
-        assertEquals(0, enqueueCalls)
+        assertEquals(SnippetDispatchOutcome.INSERTED, outcome)
+        assertEquals(1, enqueueCalls)
+        assertEquals(true, appendedEnter)
     }
 
     @Test
@@ -809,23 +860,27 @@ class TerminalSpikeUiStateTest {
             confirmMultilineExecution = true,
         )
         var enqueueCalls = 0
+        var appendedEnter: Boolean? = null
 
         assertEquals(
             SnippetDispatchOutcome.REQUIRES_CONFIRMATION,
-            dispatchSnippet(snippet, confirmed = false) {
+            dispatchSnippet(snippet, confirmed = false) { appendEnter ->
                 enqueueCalls += 1
+                appendedEnter = appendEnter
                 true
             },
         )
         assertEquals(0, enqueueCalls)
         assertEquals(
             SnippetDispatchOutcome.SENT,
-            dispatchSnippet(snippet, confirmed = true) {
+            dispatchSnippet(snippet, confirmed = true) { appendEnter ->
                 enqueueCalls += 1
+                appendedEnter = appendEnter
                 true
             },
         )
         assertEquals(1, enqueueCalls)
+        assertEquals(true, appendedEnter)
     }
 
     @Test
@@ -1238,7 +1293,7 @@ class TerminalSpikeUiStateTest {
             ),
         )
         assertEquals(
-            WorkspaceProfileLaunchDecision.SESSION_LIMIT_REACHED,
+            WorkspaceProfileLaunchDecision.START_WITH_SAVED_PASSWORD,
             full.workspaceProfileLaunchDecision(compatible.id),
         )
     }
@@ -1262,7 +1317,7 @@ class TerminalSpikeUiStateTest {
     }
 
     @Test
-    fun fourSshTabsEnforceTheBound() {
+    fun moreSshTabsCanBeAddedAfterFourAreOpen() {
         val state = TerminalSpikeUiState(
             sessions = listOf(
                 SessionTabUi(0, "Bench", ConnectionState.Disconnected, isLocalTerminal = true),
@@ -1273,11 +1328,11 @@ class TerminalSpikeUiStateTest {
             ),
         )
 
-        assertFalse(state.canAddSshSession)
+        assertTrue(state.canAddSshSession)
     }
 
     @Test
-    fun reconnectRemainsAvailableAtFourTabCapAndReplacesTheSameTab() {
+    fun reconnectAndDuplicateRemainAvailableAfterFourTabs() {
         val state = TerminalSpikeUiState(
             sessions = listOf(
                 SessionTabUi(0, "Bench", ConnectionState.Disconnected, isLocalTerminal = true),
@@ -1292,12 +1347,12 @@ class TerminalSpikeUiStateTest {
         val disconnectedWorkspaceSession = state.workspace.activeSessions.first { it.id == 4L }
         assertTrue(failedWorkspaceSession.canReconnect)
         assertTrue(disconnectedWorkspaceSession.canReconnect)
-        assertFalse(failedWorkspaceSession.canDuplicate)
-        assertFalse(disconnectedWorkspaceSession.canDuplicate)
+        assertTrue(failedWorkspaceSession.canDuplicate)
+        assertTrue(disconnectedWorkspaceSession.canDuplicate)
         assertTrue(state.canStartSshSession(replacementSessionId = 3L))
         assertTrue(state.canStartSshSession(replacementSessionId = 4L))
         assertFalse(state.canStartSshSession(replacementSessionId = 1L))
-        assertFalse(state.canStartSshSession(replacementSessionId = null))
+        assertTrue(state.canStartSshSession(replacementSessionId = null))
 
         val replacement = SessionTabUi(3, "three", ConnectionState.Connecting)
         val reconnected = state.withStartedSshSession(replacement, replacementSessionId = 3L)
@@ -1309,7 +1364,7 @@ class TerminalSpikeUiStateTest {
     }
 
     @Test
-    fun duplicateUsesANewTabAndRemainsCapacityLimitedForUnsavedSessions() {
+    fun duplicateUsesANewTabForUnsavedSessions() {
         val unsaved = SessionTabUi(
             id = 1,
             title = "ad-hoc",
@@ -1440,7 +1495,7 @@ class TerminalSpikeUiStateTest {
     }
 
     @Test
-    fun bufferedInputRejectsAStaleSessionTarget() {
+    fun bufferedInputAllowsAnyConnectedSessionTarget() {
         val state = TerminalSpikeUiState(
             sessions = listOf(
                 SessionTabUi(0, "Bench", ConnectionState.Disconnected, isLocalTerminal = true),
@@ -1450,7 +1505,7 @@ class TerminalSpikeUiStateTest {
             activeSessionId = 2,
         )
 
-        assertNotNull(state.bufferedInputValidationError(sessionId = 1, text = "pwd"))
+        assertNull(state.bufferedInputValidationError(sessionId = 1, text = "pwd"))
         assertNull(state.bufferedInputValidationError(sessionId = 2, text = "pwd"))
     }
 

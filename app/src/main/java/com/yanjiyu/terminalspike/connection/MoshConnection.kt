@@ -47,7 +47,7 @@ internal class MoshConnection(
     private val controlDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val writerCapacity: Int = DEFAULT_WRITER_CAPACITY,
     private val writerPollMillis: Long = DEFAULT_WRITER_POLL_MILLIS,
-) : Connection, MoshNetworkHintReceiver {
+) : Connection, MoshNetworkHintReceiver, RemoteImageUploadConnection {
     constructor(
         bootstrapExecutor: MoshBootstrapExecutor,
         extensionClient: MoshExtensionClient,
@@ -126,8 +126,7 @@ internal class MoshConnection(
             val startResult = try {
                 extension.startSession(startSpec, completedBootstrap.sessionKey)
             } finally {
-                completedBootstrap.close()
-                bootstrapResult = null
+                completedBootstrap.clearSessionKey()
             }
             val started = when (startResult) {
                 is MoshTransportStartResult.Success -> startResult.value
@@ -144,6 +143,7 @@ internal class MoshConnection(
                 } else {
                     attempt.transport = started
                     attempt.writer = writer
+                    attempt.sshSideChannel = completedBootstrap
                     attempt.running = true
                     writer.start(started.terminalInput) {
                         failTransport(attempt, "Mosh connection lost while sending data.")
@@ -155,6 +155,7 @@ internal class MoshConnection(
                 started.closeQuietly()
                 throw CancelledMoshConnectionException()
             }
+            bootstrapResult = null
             publishConnectedIfNeeded(attempt, started.initialState)
             scheduleResize(attempt)
 
@@ -243,6 +244,15 @@ internal class MoshConnection(
         }
     }
 
+    override fun uploadPastedImage(fileName: String, source: InputStream): String {
+        val sideChannel = synchronized(lock) {
+            activeAttempt?.takeIf { attempt ->
+                attempt.running && !attempt.explicitCloseRequested && !attempt.terminal
+            }?.sshSideChannel ?: error("The Mosh session is not connected.")
+        }
+        return sideChannel.uploadPastedImage(fileName, source)
+    }
+
     override fun resize(columns: Int, rows: Int) {
         val attempt = synchronized(lock) {
             val current = activeAttempt ?: return
@@ -310,6 +320,27 @@ internal class MoshConnection(
     override fun cancelKeyboardInteractiveChallenge(challengeToken: Long) {
         bootstrap.cancelKeyboardInteractiveChallenge(challengeToken)
     }
+
+    override fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) {
+        bootstrap.answerTmuxSessionPrompt(promptToken, sessionId)
+    }
+
+    override fun deleteTmuxSession(promptToken: Long, sessionId: String) {
+        bootstrap.deleteTmuxSession(promptToken, sessionId)
+    }
+
+    override fun queryTmuxSessionCatalog(includePreviews: Boolean): TmuxSessionCatalog = synchronized(lock) {
+        activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+    }?.queryTmuxSessionCatalog(includePreviews) ?: TmuxSessionCatalog()
+
+    override fun terminateTmuxSession(sessionId: String): TmuxSessionCatalog = synchronized(lock) {
+        activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+    }?.terminateTmuxSession(sessionId) ?: TmuxSessionCatalog(deleteFailed = true)
+
+    override fun switchTmuxSession(sessionId: String): Boolean =
+        synchronized(lock) {
+            activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+        }?.switchTmuxSession(sessionId, ::trySend) ?: false
 
     override fun cancelPendingPrompts() {
         bootstrap.cancelPendingPrompts()
@@ -435,14 +466,20 @@ internal class MoshConnection(
     private fun closeResources(attempt: ActiveMoshConnection?) {
         val resources = synchronized(lock) {
             if (attempt != null && activeAttempt !== attempt) return
-            val current = MoshConnectionResources(attempt?.writer, attempt?.transport)
+            val current = MoshConnectionResources(
+                writer = attempt?.writer,
+                transport = attempt?.transport,
+                sshSideChannel = attempt?.sshSideChannel,
+            )
             attempt?.writer = null
             attempt?.transport = null
+            attempt?.sshSideChannel = null
             attempt?.running = false
             current
         }
         resources.writer?.stop()
         resources.transport?.closeQuietly()
+        resources.sshSideChannel?.close()
     }
 
     private fun scheduleResize(attempt: ActiveMoshConnection) {
@@ -579,6 +616,10 @@ internal interface MoshConnectionBootstrap : AutoCloseable {
 
     fun cancelKeyboardInteractiveChallenge(challengeToken: Long) = Unit
 
+    fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) = Unit
+
+    fun deleteTmuxSession(promptToken: Long, sessionId: String) = Unit
+
     fun cancelPendingPrompts()
 }
 
@@ -602,6 +643,12 @@ private class ExecutorMoshConnectionBootstrap(
 
     override fun cancelKeyboardInteractiveChallenge(challengeToken: Long) =
         delegate.cancelKeyboardInteractiveChallenge(challengeToken)
+
+    override fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) =
+        delegate.answerTmuxSessionPrompt(promptToken, sessionId)
+
+    override fun deleteTmuxSession(promptToken: Long, sessionId: String) =
+        delegate.deleteTmuxSession(promptToken, sessionId)
 
     override fun cancelPendingPrompts() = delegate.cancelPendingPrompts()
 
@@ -836,6 +883,7 @@ private class ActiveMoshConnection(
     @Volatile var sessionId: UUID? = null
     @Volatile var transport: MoshTerminalTransport? = null
     @Volatile var writer: BoundedSshWriter? = null
+    @Volatile var sshSideChannel: MoshBootstrapResult? = null
     @Volatile var eventJob: Job? = null
     @Volatile var resizeJob: Job? = null
     @Volatile var networkHintJob: Job? = null
@@ -847,6 +895,7 @@ private data class TerminalSize(val columns: Int, val rows: Int)
 private data class MoshConnectionResources(
     val writer: BoundedSshWriter?,
     val transport: MoshTerminalTransport?,
+    val sshSideChannel: MoshBootstrapResult?,
 )
 
 private class SafeMoshConnectionException(

@@ -6,10 +6,9 @@ starting_baseline_commit: 765380e
 
 # Remaining validation and external release gates
 
-The planned product slices are present in the current source tree. The phone shell deliberately uses
-**Workspace**, **Terminal**, and **Settings** as its three primary destinations; the first-class
-Connections catalogue is reached from Workspace and terminal context. This later product decision
-supersedes the earlier Connections-as-primary navigation draft.
+The planned product slices are present in the current source tree. The phone shell uses
+**Connections**, **Terminal**, and **Settings** as its three primary destinations. Connections is
+the main catalogue, and Terminal owns active sessions.
 
 The current implementation includes:
 
@@ -26,13 +25,13 @@ The current implementation includes:
   live previews, and persisted terminal/keyboard profiles;
 - custom Canvas terminal rendering, selection/copy/link actions, OSC 8/52 policy, bounded history,
   swipe/Settings-selected Raw/Text input without persistent selector labels, standalone at-least-48
-  dp accessory targets while preserving the exact default 18-key 9 × 2 deck, editable presets,
+  dp accessory targets while preserving the exact default 20-key 10 × 2 deck, editable presets,
   local/remote/two-finger scrolling, and multi-session chrome with safe immediate duplication
   whenever authentication is reloadable;
 - foreground-service session ownership, privacy-aware notification actions, protocol keepalive,
   bounded connectivity-aware reconnect, background diagnostics, and optional wake policies;
-- versioned Standard and Full encrypted backup/restore through Android's document picker with
-  wipeable passphrase buffers, authenticated preview, conflict handling, transactional apply, and
+- one complete portable backup/restore through Android's document picker with no passphrase prompt,
+  authenticated validation, replacement preview, transactional apply, and
   recovery snapshots;
 - a project-owned versioned `mosh-api`, strict SSH `mosh-server` bootstrap, signature/API-verified
   PFD transport, Android network-hint publication, explicit Never/Ask/Automatic fresh-SSH fallback,
@@ -44,6 +43,13 @@ No GPL/AGPL code is included in the main APK or `mosh-api` AAR. GPL/native Mosh 
 the optional `com.yanjiyu.terminalspike.mosh` application and its separately inventoried artifact
 and Corresponding Source bundle. SFTP, cloud sync, accounts, analytics, advertising, and remote AI
 remain absent.
+
+The 2026-08-19 launcher/store-branding refresh completed a newer full current-source gate: 482
+Gradle tasks passed across unit tests, lint, debug/release builds, Android-test assembly, release
+APK/AAB integrity, native Mosh outputs, and benchmark assembly. Focused device contracts passed
+app 2/2 and extension 4/4 on exact authorized Wi-Fi target `SM-F976B`; final installs succeeded and
+`MainActivity` cold-launched in 716 ms as `topResumedActivity`. The remaining store, signing,
+manual, and legal actions are consolidated in [PUBLISHING.md](PUBLISHING.md).
 
 ## Current-source verification evidence
 

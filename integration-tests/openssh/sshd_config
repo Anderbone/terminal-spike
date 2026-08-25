@@ -21,3 +21,4 @@ PermitTunnel no
 X11Forwarding no
 UseDNS no
 LogLevel VERBOSE
+Subsystem sftp internal-sftp

@@ -30,6 +30,12 @@ internal enum class ConnectionsGlyph {
     LOCK,
     WARNING,
     INFO,
+    TABS,
+    WINDOWS,
+    IMAGE,
+    KEYBOARD,
+    MIC,
+    STOP,
 }
 
 @Composable
@@ -173,6 +179,104 @@ internal fun ConnectionsGlyphIcon(
                 drawCircle(resolvedColor, radius = width * 0.39f, center = point(0.5f, 0.5f), style = stroke)
                 drawCircle(resolvedColor, radius = strokeWidth * 0.55f, center = point(0.5f, 0.31f))
                 drawLine(resolvedColor, point(0.5f, 0.46f), point(0.5f, 0.72f), strokeWidth, StrokeCap.Round)
+            }
+            ConnectionsGlyph.TABS -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.1f, 0.2f),
+                    size = Size(width * 0.8f, height * 0.65f),
+                    cornerRadius = CornerRadius(width * 0.07f),
+                    style = stroke,
+                )
+                drawLine(resolvedColor, point(0.1f, 0.38f), point(0.9f, 0.38f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.34f, 0.2f), point(0.34f, 0.38f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.62f, 0.2f), point(0.62f, 0.38f), strokeWidth, StrokeCap.Round)
+            }
+            ConnectionsGlyph.WINDOWS -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.12f, 0.25f),
+                    size = Size(width * 0.58f, height * 0.58f),
+                    cornerRadius = CornerRadius(width * 0.07f),
+                    style = stroke,
+                )
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.3f, 0.1f),
+                    size = Size(width * 0.58f, height * 0.58f),
+                    cornerRadius = CornerRadius(width * 0.07f),
+                    style = stroke,
+                )
+            }
+            ConnectionsGlyph.IMAGE -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.1f, 0.16f),
+                    size = Size(width * 0.8f, height * 0.68f),
+                    cornerRadius = CornerRadius(width * 0.07f),
+                    style = stroke,
+                )
+                drawCircle(
+                    color = resolvedColor,
+                    radius = width * 0.085f,
+                    center = point(0.68f, 0.36f),
+                    style = stroke,
+                )
+                val landscape = Path().apply {
+                    moveTo(width * 0.18f, height * 0.72f)
+                    lineTo(width * 0.39f, height * 0.48f)
+                    lineTo(width * 0.54f, height * 0.62f)
+                    lineTo(width * 0.65f, height * 0.52f)
+                    lineTo(width * 0.82f, height * 0.72f)
+                }
+                drawPath(landscape, resolvedColor, style = stroke)
+            }
+            ConnectionsGlyph.KEYBOARD -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.08f, 0.2f),
+                    size = Size(width * 0.84f, height * 0.6f),
+                    cornerRadius = CornerRadius(width * 0.08f),
+                    style = stroke,
+                )
+                listOf(0.25f, 0.42f, 0.59f, 0.76f).forEach { x ->
+                    drawCircle(resolvedColor, radius = strokeWidth * 0.55f, center = point(x, 0.4f))
+                }
+                drawLine(
+                    resolvedColor,
+                    point(0.27f, 0.62f),
+                    point(0.73f, 0.62f),
+                    strokeWidth,
+                    StrokeCap.Round,
+                )
+            }
+            ConnectionsGlyph.MIC -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.34f, 0.08f),
+                    size = Size(width * 0.32f, height * 0.5f),
+                    cornerRadius = CornerRadius(width * 0.16f),
+                    style = stroke,
+                )
+                drawArc(
+                    color = resolvedColor,
+                    startAngle = 0f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = point(0.2f, 0.28f),
+                    size = Size(width * 0.6f, height * 0.45f),
+                    style = stroke,
+                )
+                drawLine(resolvedColor, point(0.5f, 0.72f), point(0.5f, 0.9f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.34f, 0.9f), point(0.66f, 0.9f), strokeWidth, StrokeCap.Round)
+            }
+            ConnectionsGlyph.STOP -> {
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.27f, 0.27f),
+                    size = Size(width * 0.46f, height * 0.46f),
+                    cornerRadius = CornerRadius(width * 0.07f),
+                )
             }
         }
     }

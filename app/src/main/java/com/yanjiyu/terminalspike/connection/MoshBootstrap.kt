@@ -50,17 +50,21 @@ internal enum class MoshAddressFamily {
 }
 
 /**
- * Successful one-shot bootstrap material. The caller must close this immediately after writing the
- * key to the extension pipe; close zeroes the exact mutable [sessionKey] array exposed here.
+ * Successful bootstrap material plus the already authenticated SSH image-upload side channel. The
+ * caller must [clearSessionKey] immediately after writing the key to the extension pipe, then
+ * [close] the side channel when the Mosh attempt ends.
  */
 internal class MoshBootstrapResult(
     val addressFamily: MoshAddressFamily,
     addressBytes: ByteArray,
     val udpPort: Int,
     sessionKey: ByteArray,
+    private val sshSideChannel: MoshSshExecSession? = null,
+    initialTmuxSessionId: String? = null,
 ) : AutoCloseable {
     val addressBytes: ByteArray = addressBytes.copyOf()
     val sessionKey: ByteArray = sessionKey
+    private var attachedTmuxSessionId: String? = initialTmuxSessionId
 
     init {
         try {
@@ -78,8 +82,43 @@ internal class MoshBootstrapResult(
         }
     }
 
-    override fun close() {
+    fun clearSessionKey() {
         sessionKey.fill(0)
+    }
+
+    fun uploadPastedImage(fileName: String, source: InputStream): String =
+        sshSideChannel?.uploadPastedImage(fileName, source)
+            ?: error("The Mosh SSH image-upload side channel is not connected.")
+
+    fun queryTmuxSessionCatalog(includePreviews: Boolean = false): TmuxSessionCatalog =
+        sshSideChannel?.let { sideChannel ->
+            queryTmuxSessionCatalog(sideChannel.tmuxCommandRunner(), includePreviews).copy(
+                activeSessionId = synchronized(this) { attachedTmuxSessionId },
+            )
+        } ?: TmuxSessionCatalog()
+
+    fun terminateTmuxSession(sessionId: String): TmuxSessionCatalog =
+        sshSideChannel?.let { sideChannel ->
+            terminateTmuxSession(sideChannel.tmuxCommandRunner(), sessionId)
+        } ?: TmuxSessionCatalog(deleteFailed = true)
+
+    fun switchTmuxSession(sessionId: String, sendInput: (ByteArray) -> Boolean): Boolean {
+        val sourceSessionId = synchronized(this) { attachedTmuxSessionId }
+        val switched = when (val result = sshSideChannel?.let { sideChannel ->
+            switchOrAttachTmuxSession(sideChannel.tmuxCommandRunner(), sessionId, sourceSessionId)
+        } ?: TmuxSessionSwitchResult.Failed) {
+            TmuxSessionSwitchResult.Switched -> true
+            is TmuxSessionSwitchResult.Attach ->
+                sendInput((result.command + '\r').encodeToByteArray())
+            TmuxSessionSwitchResult.Failed -> false
+        }
+        if (switched) synchronized(this) { attachedTmuxSessionId = sessionId }
+        return switched
+    }
+
+    override fun close() {
+        clearSessionKey()
+        sshSideChannel?.close()
     }
 
     private companion object {
@@ -87,6 +126,13 @@ internal class MoshBootstrapResult(
         const val IPV6_BYTES = 16
     }
 }
+
+private fun MoshSshExecSession.tmuxCommandRunner(): TmuxCommandRunner =
+    TmuxCommandRunner { command ->
+        readBoundedExecOutput(openExec(command), TMUX_MOSH_EXEC_LIMITS).use { output ->
+            TmuxExecOutput(output.stdout.copyOf(), output.exitStatus)
+        }
+    }
 
 internal enum class MoshBootstrapFailure {
     CANCELLED,
@@ -140,17 +186,6 @@ internal class MoshBootstrapExecutor(
         var parsed: ParsedMoshConnect? = null
         try {
             publishIfActive(operation, MoshBootstrapState.Authenticating, onState)
-            val command = try {
-                buildMoshServerCommand(request)
-            } catch (error: IllegalArgumentException) {
-                throw MoshBootstrapException(
-                    MoshBootstrapFailure.INVALID_CONFIGURATION,
-                    "Mosh server settings are invalid.",
-                    error,
-                )
-            }
-            ensureActive(operation)
-
             val session = sessionFactory.open(
                 config = request.ssh,
                 onPrompt = { prompt ->
@@ -165,17 +200,56 @@ internal class MoshBootstrapExecutor(
             execSession = session
             if (!registerResourceIfMissing(operation, session)) throw cancelledFailure()
             ensureActive(operation)
+            val tmuxChoice = if (request.ssh.tmuxSessionSelectorEnabled) {
+                val runner = TmuxCommandRunner { tmuxCommand ->
+                    readBoundedExecOutput(session.openExec(tmuxCommand), TMUX_MOSH_EXEC_LIMITS).use {
+                        TmuxExecOutput(it.stdout.copyOf(), it.exitStatus)
+                    }
+                }
+                TmuxSessionSelector(runner) { prompt ->
+                    publishIfActive(
+                        operation,
+                        MoshBootstrapState.AwaitingApproval(prompt),
+                        onState,
+                    )
+                }.also { selector -> operation.tmuxSelector = selector }
+                    .awaitChoice()
+                    .also { operation.tmuxSelector = null }
+            } else {
+                null
+            }
+            ensureActive(operation)
+            val command = try {
+                buildMoshServerCommand(
+                    request = request,
+                    tmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
+                    startNewTmuxSession = tmuxChoice is TmuxStartupChoice.NewSession,
+                    tmuxExecutable = tmuxChoice?.executable ?: DEFAULT_TMUX_EXECUTABLE,
+                )
+            } catch (error: IllegalArgumentException) {
+                throw MoshBootstrapException(
+                    MoshBootstrapFailure.INVALID_CONFIGURATION,
+                    "Mosh server settings are invalid.",
+                    error,
+                )
+            }
             publishIfActive(operation, MoshBootstrapState.StartingServer, onState)
 
             output = readBoundedExecOutput(session.openExec(command), limits)
             ensureActive(operation)
             parsed = parseMoshConnect(output.stdout)
-            val result = session.numericAddress.toBootstrapResult(parsed.port, parsed.key)
+            val result = session.numericAddress.toBootstrapResult(
+                port = parsed.port,
+                key = parsed.key,
+                sshSideChannel = session,
+                initialTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
+            )
             parsed = null // The result now owns the only project-owned key copy.
             if (!finishSuccess(operation)) {
                 result.close()
                 throw cancelledFailure()
             }
+            execSession = null // The result owns the authenticated side channel after success.
             return result
         } catch (error: CancellationException) {
             throw error
@@ -228,7 +302,16 @@ internal class MoshBootstrapExecutor(
             ?.cancelKeyboardInteractiveChallenge(challengeToken)
     }
 
+    fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) {
+        synchronized(lock) { activeOperation?.tmuxSelector }?.answer(promptToken, sessionId)
+    }
+
+    fun deleteTmuxSession(promptToken: Long, sessionId: String) {
+        synchronized(lock) { activeOperation?.tmuxSelector }?.delete(promptToken, sessionId)
+    }
+
     fun cancelPendingPrompts() {
+        synchronized(lock) { activeOperation?.tmuxSelector }?.cancel()
         synchronized(lock) { activeOperation?.hostKeyRepository }?.cancelPrompt()
         synchronized(lock) { activeOperation?.keyboardInteractive }
             ?.cancelPendingKeyboardInteractiveChallenge()
@@ -242,6 +325,7 @@ internal class MoshBootstrapExecutor(
             }
         } ?: return
         operation.hostKeyRepository?.cancelPrompt()
+        operation.tmuxSelector?.cancel()
         operation.keyboardInteractive?.cancelPendingKeyboardInteractiveChallenge()
         runCatching { operation.resource?.close() }
     }
@@ -254,6 +338,7 @@ internal class MoshBootstrapExecutor(
             }
         }
         previous?.hostKeyRepository?.cancelPrompt()
+        previous?.tmuxSelector?.cancel()
         previous?.keyboardInteractive?.cancelPendingKeyboardInteractiveChallenge()
         runCatching { previous?.resource?.close() }
     }
@@ -332,6 +417,7 @@ internal class MoshBootstrapExecutor(
             if (activeOperation === operation) activeOperation = null
         }
         operation.hostKeyRepository?.cancelPrompt()
+        operation.tmuxSelector?.cancel()
         operation.keyboardInteractive?.cancelPendingKeyboardInteractiveChallenge()
     }
 }
@@ -349,6 +435,9 @@ private class ActiveMoshBootstrap(
     var keyboardInteractive: KeyboardInteractivePromptController? = null
 
     @Volatile
+    var tmuxSelector: TmuxSessionSelector? = null
+
+    @Volatile
     var resource: AutoCloseable? = null
 }
 
@@ -362,10 +451,13 @@ internal interface MoshSshExecSessionFactory {
     ): MoshSshExecSession?
 }
 
-internal interface MoshSshExecSession : AutoCloseable {
+internal interface MoshSshExecSession : AutoCloseable, RemoteImageUploadConnection {
     val numericAddress: InetAddress
 
     fun openExec(command: String): MoshExecChannel
+
+    override fun uploadPastedImage(fileName: String, source: InputStream): String =
+        error("This Mosh SSH session does not provide image upload.")
 }
 
 internal class JschMoshSshExecSessionFactory(
@@ -449,6 +541,8 @@ private class JschMoshSshExecSession(
     private val authenticated: AuthenticatedJschSession,
     override val numericAddress: InetAddress,
 ) : MoshSshExecSession {
+    private val imageUploadLock = Any()
+
     override fun openExec(command: String): MoshExecChannel {
         val channel = authenticated.session.openChannel("exec") as ChannelExec
         channel.setPty(false)
@@ -457,8 +551,13 @@ private class JschMoshSshExecSession(
         return JschMoshExecChannel(channel)
     }
 
+    override fun uploadPastedImage(fileName: String, source: InputStream): String =
+        synchronized(imageUploadLock) {
+            uploadPastedImageViaSftp(authenticated.session, fileName, source)
+        }
+
     override fun close() {
-        authenticated.close()
+        synchronized(imageUploadLock) { authenticated.close() }
     }
 }
 
@@ -669,7 +768,23 @@ private class ExecOutputCollector(
     }
 }
 
-internal fun buildMoshServerCommand(request: MoshBootstrapRequest): String {
+internal fun buildMoshServerCommand(
+    request: MoshBootstrapRequest,
+    tmuxSessionId: String? = null,
+    startNewTmuxSession: Boolean = false,
+    tmuxExecutable: String = DEFAULT_TMUX_EXECUTABLE,
+): String {
+    require(tmuxSessionId == null || !startNewTmuxSession) {
+        "A Mosh session cannot both create and attach to tmux."
+    }
+    require(
+        tmuxExecutable == DEFAULT_TMUX_EXECUTABLE ||
+            (
+                tmuxExecutable.startsWith('/') &&
+                    tmuxExecutable.length <= MAX_TMUX_EXECUTABLE_PATH_CHARS &&
+                    tmuxExecutable.none(Char::isISOControl)
+                )
+    ) { "Invalid tmux executable path." }
     val server = request.serverCommand ?: DEFAULT_MOSH_SERVER_COMMAND
     validateMoshServerCommand(server)
     val arguments = buildList {
@@ -690,11 +805,28 @@ internal fun buildMoshServerCommand(request: MoshBootstrapRequest): String {
         }
         add("-l")
         add("LANG=${request.locale}")
+        if (tmuxSessionId != null || startNewTmuxSession) {
+            tmuxSessionId?.let {
+                require(it.isTmuxSessionId()) { "Invalid tmux session target." }
+            }
+            add("--")
+            add(tmuxExecutable)
+            if (startNewTmuxSession) {
+                add("new-session")
+            } else {
+                add("attach-session")
+                add("-t")
+                add(requireNotNull(tmuxSessionId))
+            }
+        }
     }
     return arguments.joinToString(" ", transform = ::quotePosixShellArgument).also { command ->
         require(command.length <= MAX_BUILT_MOSH_COMMAND_LENGTH) { "Built Mosh command is too long." }
     }
 }
+
+private const val DEFAULT_TMUX_EXECUTABLE = "tmux"
+private const val MAX_TMUX_EXECUTABLE_PATH_CHARS = 1_024
 
 internal fun quotePosixShellArgument(argument: String): String = buildString(argument.length + 2) {
     append('\'')
@@ -816,7 +948,12 @@ private fun isOfficialTrailingWhitespace(value: Byte): Boolean = when (value.toI
     else -> false
 }
 
-private fun InetAddress.toBootstrapResult(port: Int, key: ByteArray): MoshBootstrapResult {
+private fun InetAddress.toBootstrapResult(
+    port: Int,
+    key: ByteArray,
+    sshSideChannel: MoshSshExecSession,
+    initialTmuxSessionId: String?,
+): MoshBootstrapResult {
     val family = when (this) {
         is Inet4Address -> MoshAddressFamily.IPV4
         is Inet6Address -> MoshAddressFamily.IPV6
@@ -825,7 +962,14 @@ private fun InetAddress.toBootstrapResult(port: Int, key: ByteArray): MoshBootst
             "Mosh server address family is unsupported.",
         )
     }
-    return MoshBootstrapResult(family, address, port, key)
+    return MoshBootstrapResult(
+        family,
+        address,
+        port,
+        key,
+        sshSideChannel,
+        initialTmuxSessionId,
+    )
 }
 
 private fun outputLimitExceeded(): Nothing = throw MoshBootstrapException(
@@ -849,6 +993,13 @@ private val MOSH_CONNECT_PREFIX = "MOSH CONNECT ".encodeToByteArray()
 private val MOSH_LOCALE = Regex("[A-Za-z0-9_.@+-]+(?:UTF-?8)[A-Za-z0-9_.@+-]*", RegexOption.IGNORE_CASE)
 
 private const val DEFAULT_MOSH_SERVER_COMMAND = "mosh-server"
+private val TMUX_MOSH_EXEC_LIMITS = MoshExecLimits(
+    channelConnectTimeoutMillis = 5_000,
+    totalTimeoutMillis = 5_000,
+    maximumOutputBytes = 64 * 1024,
+    maximumLineBytes = 2 * 1024,
+    maximumLines = 256,
+)
 internal const val DEFAULT_MOSH_LOCALE = "en_US.UTF-8"
 private const val MAX_MOSH_LOCALE_LENGTH = 64
 private const val MAX_BUILT_MOSH_COMMAND_LENGTH = 1_024

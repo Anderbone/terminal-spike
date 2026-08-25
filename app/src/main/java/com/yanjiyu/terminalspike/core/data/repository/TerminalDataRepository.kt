@@ -1122,12 +1122,13 @@ private fun TerminalDataRecords.toLegacySettings(ids: EphemeralTerminalIdRegistr
 
 /**
  * Existing installs keep their custom deck exactly. Only either byte-for-byte action order that
- * previously shipped as a default is promoted to the current, directly usable 18-key deck.
+ * previously shipped as a default is promoted to the current, directly usable 20-key deck.
  */
 private fun List<TerminalExtraKey>.upgradeShippedDefaultDeck(): List<TerminalExtraKey> =
     if (
         this == TerminalExtraKey.LEGACY_DEFAULT_ORDER ||
-        this == TerminalExtraKey.PAGED_DEFAULT_ORDER
+        this == TerminalExtraKey.PAGED_DEFAULT_ORDER ||
+        this == TerminalExtraKey.PREVIOUS_DEFAULT_ORDER
     ) {
         TerminalExtraKey.DEFAULT_ORDER
     } else {
@@ -1314,7 +1315,9 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.SHIFT,
     KeyboardAction.TMUX_PREFIX,
     KeyboardAction.PASTE,
+    KeyboardAction.SELECT_IMAGES,
     KeyboardAction.SNIPPETS,
+    KeyboardAction.TMUX_SESSIONS,
     KeyboardAction.KEYBOARD_SETTINGS,
     -> null
 }

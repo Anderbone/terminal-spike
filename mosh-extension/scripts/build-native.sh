@@ -45,6 +45,8 @@ tar -xzf "$extension_dir/third_party/distfiles/nettle-3.10.2.tar.gz" -C "$source
 tar -xzf "$extension_dir/third_party/distfiles/protobuf-all-21.12.tar.gz" -C "$source_dir"
 patch --batch --fuzz=0 -d "$source_dir/mosh-1.4.0" -p1 \
     < "$extension_dir/patches/mosh-1.4.0-android-key-hygiene.patch"
+patch --batch --fuzz=0 -d "$source_dir/mosh-1.4.0" -p1 \
+    < "$extension_dir/patches/mosh-1.4.0-android-network.patch"
 
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
 if [[ "$jobs" -gt 8 ]]; then jobs=8; fi
@@ -119,7 +121,7 @@ build_abi() {
         -DPROTOBUF_LITE_LIBRARY="$protobuf_build/libprotobuf-lite.a"
     cmake --build "$native_build" --target mosh_extension --parallel "$jobs"
 
-    "$toolchain/bin/llvm-readelf" -h "$native_library" | grep -Fq "$expected_machine"
+    "$toolchain/bin/llvm-readelf" -h "$native_library" | grep -F "$expected_machine" >/dev/null
     while IFS= read -r alignment; do
         if (( alignment < 0x4000 )); then
             echo "$abi library is not aligned for 16 KiB Android pages." >&2

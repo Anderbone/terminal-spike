@@ -10,6 +10,7 @@ import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
+import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import java.security.MessageDigest
 import java.util.Base64
@@ -33,9 +34,13 @@ class LegacyMigrationBatchBuilderTest {
         )
 
         assertEquals(LegacyIds.defaultTerminalProfile, absentSettings.terminalProfiles.single().id)
+        assertEquals(
+            TerminalRendererProfile.JETBRAINS_MONO_FONT_ID,
+            absentSettings.terminalProfiles.single().fontId,
+        )
         assertEquals(LegacyIds.defaultKeyboardProfile, absentSettings.keyboardProfiles.single().id)
         assertEquals(2, absentSettings.keyboardProfiles.single().rowCount)
-        assertEquals(18, absentSettings.keyboardKeys.size)
+        assertEquals(20, absentSettings.keyboardKeys.size)
         assertEquals(LegacyMigrationBatchBuilder.STATE_ABSENT, absentSettings.completion.stateCode)
         assertNull(absentSettings.completion.sourceDigestSha256)
         assertNull(absentSettings.completion.sourceVersion)
@@ -272,6 +277,7 @@ class LegacyMigrationBatchBuilderTest {
         listOf(
             TerminalExtraKey.LEGACY_DEFAULT_ORDER,
             TerminalExtraKey.PAGED_DEFAULT_ORDER,
+            TerminalExtraKey.PREVIOUS_DEFAULT_ORDER,
             TerminalExtraKey.DEFAULT_ORDER,
         ).forEach { shippedOrder ->
             val shipped = build(
@@ -280,27 +286,25 @@ class LegacyMigrationBatchBuilderTest {
             )
 
             assertEquals(2, shipped.keyboardProfiles.single().rowCount)
-            assertEquals(18, shipped.keyboardKeys.size)
+            assertEquals(20, shipped.keyboardKeys.size)
             assertEquals(
                 TerminalExtraKey.DEFAULT_ORDER.size,
                 shipped.keyboardKeys.map { it.actionCode }.distinct().size,
             )
+            assertEquals("select_images", shipped.keyboardKeys[4].actionCode)
+            assertEquals("home", shipped.keyboardKeys[5].actionCode)
+            assertEquals("enter", shipped.keyboardKeys[18].actionCode)
         }
 
         val customized = build(
             version = 3,
             settings = UserSettings(extraKeys = TerminalExtraKey.DEFAULT_ORDER.reversed()),
         )
-        val currentDefaultCodes = build(
-            version = 3,
-            settings = UserSettings(extraKeys = TerminalExtraKey.DEFAULT_ORDER),
-        ).keyboardKeys.map { it.actionCode }
-
         assertEquals(1, customized.keyboardProfiles.single().rowCount)
-        assertEquals(
-            currentDefaultCodes.reversed(),
-            customized.keyboardKeys.map { it.actionCode },
-        )
+        assertEquals("hide_keyboard", customized.keyboardKeys.first().actionCode)
+        assertEquals("escape", customized.keyboardKeys.last().actionCode)
+        assertTrue(customized.keyboardKeys.any { it.actionCode == "ctrl_b" })
+        assertTrue(customized.keyboardKeys.none { it.actionCode == "tmux_prefix" })
     }
 
     @Test

@@ -4,12 +4,13 @@ import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalInputConnectionTest {
     @Test
-    fun directInputExplicitlyDisablesCorrectionAndPersonalizedLearning() {
+    fun directInputUsesVisiblePasswordVariationToReliablyDisableCorrection() {
         val editorInfo = EditorInfo()
 
         TerminalInputConnection.configureEditorInfo(editorInfo)
@@ -19,7 +20,11 @@ class TerminalInputConnectionTest {
             editorInfo.inputType and InputType.TYPE_MASK_VARIATION,
         )
         assertTrue(editorInfo.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0)
-        assertTrue(editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0)
+        assertFalse(editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0)
+        assertArrayEquals(
+            arrayOf("image/png", "image/jpeg", "image/webp", "image/gif"),
+            editorInfo.contentMimeTypes,
+        )
     }
 
     @Test

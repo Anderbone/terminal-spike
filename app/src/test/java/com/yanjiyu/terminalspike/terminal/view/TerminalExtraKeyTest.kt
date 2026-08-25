@@ -46,38 +46,32 @@ class TerminalExtraKeyTest {
     }
 
     @Test
-    fun defaultDeckIsExactlyEighteenDirectChordsModifiersAndNavigationKeys() {
-        val firstPageAtCompactPhoneWidth = TerminalExtraKey.DEFAULT_ORDER.take(12)
-
+    fun defaultDeckIsExactlyTwentyDirectChordsModifiersAndNavigationKeys() {
         assertEquals(
             listOf(
                 TerminalExtraKey.ESC,
+                TerminalExtraKey.SLASH,
+                TerminalExtraKey.AT,
+                TerminalExtraKey.DOLLAR,
+                TerminalExtraKey.HOME,
+                TerminalExtraKey.UP,
+                TerminalExtraKey.END,
+                TerminalExtraKey.PAGE_UP,
+                TerminalExtraKey.CTRL_B,
+                TerminalExtraKey.BACKSPACE,
+                TerminalExtraKey.TAB,
                 TerminalExtraKey.CTRL,
                 TerminalExtraKey.ALT,
-                TerminalExtraKey.TAB,
                 TerminalExtraKey.CTRL_C,
                 TerminalExtraKey.CTRL_W,
-                TerminalExtraKey.CTRL_D,
-                TerminalExtraKey.CTRL_L,
-                TerminalExtraKey.CTRL_R,
-                TerminalExtraKey.CTRL_U,
-                TerminalExtraKey.CTRL_A,
-                TerminalExtraKey.CTRL_E,
+                TerminalExtraKey.LEFT,
+                TerminalExtraKey.DOWN,
+                TerminalExtraKey.RIGHT,
+                TerminalExtraKey.ENTER,
+                TerminalExtraKey.HIDE_KEYBOARD,
             ),
-            firstPageAtCompactPhoneWidth,
+            TerminalExtraKey.DEFAULT_ORDER,
         )
-        assertEquals(18, TerminalExtraKey.DEFAULT_ORDER.size)
-        assertTrue(
-            TerminalExtraKey.DEFAULT_ORDER.containsAll(
-                listOf(
-                    TerminalExtraKey.HOME,
-                    TerminalExtraKey.END,
-                    TerminalExtraKey.UP,
-                    TerminalExtraKey.DOWN,
-                    TerminalExtraKey.LEFT,
-                    TerminalExtraKey.RIGHT,
-                ),
-            ),
-        )
+        assertEquals(20, TerminalExtraKey.DEFAULT_ORDER.size)
     }
 }

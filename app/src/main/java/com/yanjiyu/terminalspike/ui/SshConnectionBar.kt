@@ -14,10 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -44,7 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -55,16 +54,26 @@ import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.connection.HostIdentityDecision
 import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
 import com.yanjiyu.terminalspike.connection.KeyboardInteractiveChallenge
+import com.yanjiyu.terminalspike.connection.TMUX_NEW_SESSION_SELECTION
+import com.yanjiyu.terminalspike.connection.TmuxAvailability
+import com.yanjiyu.terminalspike.connection.TmuxSessionPrompt
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.UserSettings
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.theme.iconMetrics
+import com.yanjiyu.terminalspike.ui.theme.spacing
 
 internal const val TerminalSessionStripTestTag = "terminal-session-strip"
 internal const val TerminalSessionTabTestTagPrefix = "terminal-session-tab-"
 internal const val NewTerminalSessionTestTag = "new-terminal-session"
+internal const val TerminalChromeTitleTestTag = "terminal-chrome-title"
+internal const val TerminalChromeBackTestTag = "terminal-chrome-back"
 internal const val KeyboardInteractiveDialogTestTag = "keyboard-interactive-dialog"
 internal const val KeyboardInteractiveFieldTestTagPrefix = "keyboard-interactive-field-"
+internal const val TmuxSessionDialogTestTag = "tmux-session-dialog"
 
 @Composable
 fun SessionChrome(
@@ -78,6 +87,7 @@ fun SessionChrome(
     onCloseSession: (Long) -> Unit,
     onDisconnect: (Long) -> Unit,
     onSessionActions: ((Long) -> Unit)? = null,
+    previewLinesForSession: (Long) -> List<String> = { emptyList() },
     onHostIdentityAnswer: (
         sessionId: Long,
         promptToken: Long,
@@ -96,66 +106,170 @@ fun SessionChrome(
         sessionId: Long,
         challengeToken: Long,
     ) -> Unit = { _, _ -> },
+    onTmuxSessionAnswer: (
+        sessionId: Long,
+        promptToken: Long,
+        tmuxSessionId: String?,
+    ) -> Unit = { _, _, _ -> },
+    onTmuxSessionDelete: (
+        sessionId: Long,
+        promptToken: Long,
+        tmuxSessionId: String,
+    ) -> Unit = { _, _, _ -> },
     showLocalTerminalSession: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val newSessionDescription = stringResource(R.string.session_new_description)
+    val newSessionDescription = stringResource(R.string.session_add_saved_connection_description)
+    val backDescription = stringResource(
+        R.string.terminal_predictive_back_destination,
+        backDestinationLabel,
+    )
     require(sessions.any { it.id == activeSessionId }) { "The active terminal session must exist." }
     val visibleSessions = if (showLocalTerminalSession) sessions else sessions.filterNot(SessionTabUi::isLocalTerminal)
     var replacementConfirmationToken by remember { mutableStateOf<Long?>(null) }
+    var appSessionSwitcherVisible by remember { mutableStateOf(false) }
+    val visibleSessionIds = visibleSessions.map(SessionTabUi::id)
+    val appSessionPreviews = remember(appSessionSwitcherVisible, visibleSessionIds) {
+        if (appSessionSwitcherVisible) {
+            visibleSessionIds.associateWith(previewLinesForSession)
+        } else {
+            emptyMap()
+        }
+    }
+    val appSessionSwitcherDescription = stringResource(
+        R.string.app_session_switcher_button_description,
+    )
 
-    Row(
+    Surface(
         modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(start = 6.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState())
-                .testTag(TerminalSessionStripTestTag),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            visibleSessions.forEach { session ->
-                SessionTab(
-                    session = session,
-                    selected = session.id == activeSessionId,
-                    onSelect = { onSelectSession(session.id) },
-                    onDuplicate = if (!session.isLocalTerminal && canAddSession) {
-                        { onDuplicateSession(session.id) }
-                    } else {
-                        null
-                    },
-                    onClose = if (session.isLocalTerminal) {
-                        null
-                    } else {
-                        { onCloseSession(session.id) }
-                    },
-                    onActions = if (session.isLocalTerminal) null else onSessionActions?.let { actions ->
-                        { actions(session.id) }
-                    },
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MaterialTheme.spacing.extraSmall),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            ) {
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier
+                        .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                        .testTag(TerminalChromeBackTestTag),
+                ) {
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.BACK,
+                        modifier = Modifier
+                            .size(MaterialTheme.iconMetrics.standard)
+                            .semantics { contentDescription = backDescription },
+                    )
+                }
+                if (visibleSessions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.navigation_terminal),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(TerminalChromeTitleTestTag)
+                            .semantics { heading() },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(TerminalSessionStripTestTag),
+                    ) {
+                        visibleSessions.forEach { session ->
+                            SessionTab(
+                                session = session,
+                                selected = session.id == activeSessionId,
+                                modifier = Modifier.weight(1f),
+                                onSelect = { onSelectSession(session.id) },
+                                onDuplicate = if (!session.isLocalTerminal && canAddSession) {
+                                    { onDuplicateSession(session.id) }
+                                } else {
+                                    null
+                                },
+                                onClose = if (session.isLocalTerminal) {
+                                    null
+                                } else {
+                                    { onCloseSession(session.id) }
+                                },
+                                onActions = if (session.isLocalTerminal) {
+                                    null
+                                } else {
+                                    onSessionActions?.let { actions -> { actions(session.id) } }
+                                },
+                            )
+                        }
+                    }
+                }
+                if (visibleSessions.isNotEmpty()) {
+                    IconButton(
+                        onClick = { appSessionSwitcherVisible = true },
+                        modifier = Modifier
+                            .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                            .semantics {
+                                contentDescription = appSessionSwitcherDescription
+                            },
+                    ) {
+                        ConnectionsGlyphIcon(
+                            glyph = ConnectionsGlyph.TABS,
+                            modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onNewSession,
+                    enabled = canAddSession && settingsReady,
+                    modifier = Modifier
+                        .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                        .testTag(NewTerminalSessionTestTag)
+                        .semantics { contentDescription = newSessionDescription },
+                ) {
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.ADD,
+                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                    )
+                }
+            }
+            if (!notice.isNullOrBlank()) {
+                Text(
+                    text = notice,
+                    modifier = Modifier.padding(
+                        start = MaterialTheme.spacing.large,
+                        end = MaterialTheme.spacing.large,
+                        bottom = MaterialTheme.spacing.small,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        IconButton(
-            onClick = onNewSession,
-            enabled = canAddSession,
-            modifier = Modifier
-                .size(40.dp)
-                .testTag(NewTerminalSessionTestTag)
-                .semantics { contentDescription = newSessionDescription },
-        ) {
-            Text("+", style = MaterialTheme.typography.titleLarge)
-        }
+    }
+
+    if (appSessionSwitcherVisible) {
+        AppSessionSwitcherDialog(
+            sessions = visibleSessions,
+            previews = appSessionPreviews,
+            activeSessionId = activeSessionId,
+            canAddSession = canAddSession && settingsReady,
+            onDismiss = { appSessionSwitcherVisible = false },
+            onSelect = onSelectSession,
+            onClose = onCloseSession,
+            onNewSession = onNewSession,
+        )
     }
 
     val promptSession = sessions.firstOrNull { it.connectionState is ConnectionState.AwaitingApproval }
     val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
     val hostPrompt = pendingPrompt as? HostIdentityPrompt
     val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge
+    val tmuxPrompt = pendingPrompt as? TmuxSessionPrompt
     LaunchedEffect(hostPrompt?.promptToken) {
         if (replacementConfirmationToken != hostPrompt?.promptToken) {
             replacementConfirmationToken = null
@@ -188,6 +302,151 @@ fun SessionChrome(
                     promptSession.id,
                     keyboardInteractive.challengeToken,
                 )
+            },
+        )
+    }
+    if (promptSession != null && tmuxPrompt != null) {
+        TmuxSessionDialog(
+            prompt = tmuxPrompt,
+            onOpenShell = {
+                onTmuxSessionAnswer(promptSession.id, tmuxPrompt.promptToken, null)
+            },
+            onStartNew = {
+                onTmuxSessionAnswer(
+                    promptSession.id,
+                    tmuxPrompt.promptToken,
+                    TMUX_NEW_SESSION_SELECTION,
+                )
+            },
+            onAttach = { tmuxSessionId ->
+                onTmuxSessionAnswer(promptSession.id, tmuxPrompt.promptToken, tmuxSessionId)
+            },
+            onDelete = { tmuxSessionId ->
+                onTmuxSessionDelete(promptSession.id, tmuxPrompt.promptToken, tmuxSessionId)
+            },
+        )
+    }
+}
+
+@Composable
+private fun TmuxSessionDialog(
+    prompt: TmuxSessionPrompt,
+    onOpenShell: () -> Unit,
+    onStartNew: () -> Unit,
+    onAttach: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var deleteTarget by remember(prompt.promptToken, prompt.sessions) { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onOpenShell,
+        modifier = Modifier.testTag(TmuxSessionDialogTestTag),
+        title = { Text(stringResource(R.string.tmux_selector_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    stringResource(
+                        when {
+                            prompt.availability == TmuxAvailability.NOT_INSTALLED ->
+                                R.string.tmux_selector_not_installed
+                            prompt.availability == TmuxAvailability.CHECK_FAILED ->
+                                R.string.tmux_selector_check_failed
+                            prompt.sessions.isEmpty() -> R.string.tmux_selector_empty
+                            else -> R.string.tmux_selector_summary
+                        },
+                    ),
+                )
+                if (prompt.deleteFailed) {
+                    Text(
+                        stringResource(R.string.tmux_selector_delete_failed),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                prompt.sessions.forEach { session ->
+                    Surface(
+                        onClick = { onAttach(session.id) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .padding(start = 12.dp, end = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f).padding(vertical = 5.dp),
+                            ) {
+                                Text(
+                                    text = session.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.tmux_selector_session_metadata,
+                                        session.windowCount,
+                                        session.attachedClientCount,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = { deleteTarget = session.id }) {
+                                Text(stringResource(R.string.tmux_selector_delete))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (prompt.availability == TmuxAvailability.AVAILABLE) {
+                Button(onClick = onStartNew) {
+                    Text(stringResource(R.string.tmux_selector_start_new))
+                }
+            } else {
+                TextButton(onClick = onOpenShell) {
+                    Text(stringResource(R.string.tmux_selector_open_shell))
+                }
+            }
+        },
+        dismissButton = if (prompt.availability == TmuxAvailability.AVAILABLE) {
+            {
+                TextButton(onClick = onOpenShell) {
+                    Text(stringResource(R.string.tmux_selector_open_shell))
+                }
+            }
+        } else {
+            null
+        },
+    )
+    val selected = prompt.sessions.firstOrNull { it.id == deleteTarget }
+    if (selected != null) {
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
+            text = { Text(stringResource(R.string.tmux_selector_delete_message, selected.name)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deleteTarget = null
+                        onDelete(selected.id)
+                    },
+                ) { Text(stringResource(R.string.tmux_selector_delete_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
             },
         )
     }
@@ -401,39 +660,35 @@ private fun HostIdentityDetails(
 private fun SessionTab(
     session: SessionTabUi,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onSelect: () -> Unit,
     onDuplicate: (() -> Unit)?,
     onClose: (() -> Unit)?,
     onActions: (() -> Unit)?,
 ) {
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
-    LaunchedEffect(selected) {
-        if (selected) bringIntoViewRequester.bringIntoView()
-    }
+    val tabTitle = session.displayedTerminalTabTitle()
     val background by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
         label = "session-tab",
     )
     val stateDescription = session.connectionState.accessibilityLabel()
     val closeDescription = onClose?.let {
-        stringResource(R.string.session_close_tab_description, session.title)
+        stringResource(R.string.session_close_tab_description, tabTitle)
     }
     Surface(
-        modifier = Modifier
-            .width(108.dp)
-            .heightIn(min = 40.dp)
-            .bringIntoViewRequester(bringIntoViewRequester)
+        modifier = modifier
+            .heightIn(min = 28.dp)
             .testTag("$TerminalSessionTabTestTagPrefix${session.id}")
             .combinedClickable(
-                onClickLabel = "Open ${session.title} terminal",
+                onClickLabel = "Open $tabTitle terminal",
                 onClick = onSelect,
                 onDoubleClick = onDuplicate,
-                onLongClickLabel = onActions?.let { "Session actions for ${session.title}" },
+                onLongClickLabel = onActions?.let { "Session actions for $tabTitle" },
                 onLongClick = onActions,
             )
             .semantics {
                 contentDescription = buildString {
-                    append(session.title)
+                    append(tabTitle)
                     append(" terminal tab, ")
                     append(stateDescription)
                     if (selected) append(", selected")
@@ -449,7 +704,7 @@ private fun SessionTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = session.title,
+                text = tabTitle,
                 modifier = Modifier.weight(1f),
                 color = if (selected) {
                     MaterialTheme.colorScheme.onSurface
@@ -462,20 +717,39 @@ private fun SessionTab(
                 overflow = TextOverflow.Ellipsis,
             )
             if (onClose != null) {
-                IconButton(
-                    onClick = onClose,
+                Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .semantics {
+                        .size(24.dp)
+                        .clickable(onClick = onClose)
+                        .clearAndSetSemantics {
                             contentDescription = requireNotNull(closeDescription)
                         },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text("×", style = MaterialTheme.typography.titleMedium)
+                    ConnectionsGlyphIcon(
+                        glyph = ConnectionsGlyph.CLOSE,
+                        modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
+                    )
                 }
             }
         }
     }
 }
+
+/**
+ * Remote programs may publish a standard OSC 0/2 terminal title. tmux does this when its
+ * `set-titles` option is enabled, so prefer that live title over the fixed connection label.
+ * The stock tmux title is compacted to its leading session name; custom titles remain intact.
+ */
+internal fun SessionTabUi.displayedTerminalTabTitle(): String {
+    if (isLocalTerminal) return title
+    val liveTitle = terminalTitle?.trim()?.takeIf(String::isNotEmpty) ?: return title
+    return TMUX_DEFAULT_TITLE.matchEntire(liveTitle)?.groupValues?.get(1) ?: liveTitle
+}
+
+private val TMUX_DEFAULT_TITLE = Regex(
+    pattern = "^([^:]{1,64}):\\d+:[^\\r\\n]+ - \".*\"(?: .*)?$",
+)
 
 private fun ConnectionState.accessibilityLabel(): String = when (this) {
     ConnectionState.Disconnected -> "disconnected"
@@ -486,10 +760,10 @@ private fun ConnectionState.accessibilityLabel(): String = when (this) {
     } else {
         "reconnecting, attempt $attempt of $maxAttempts"
     }
-    is ConnectionState.AwaitingApproval -> if (prompt is KeyboardInteractiveChallenge) {
-        "awaiting interactive authentication"
-    } else {
-        "awaiting host approval"
+    is ConnectionState.AwaitingApproval -> when (prompt) {
+        is KeyboardInteractiveChallenge -> "awaiting interactive authentication"
+        is TmuxSessionPrompt -> "awaiting tmux session selection"
+        else -> "awaiting host approval"
     }
     is ConnectionState.Failed -> "connection failed"
 }

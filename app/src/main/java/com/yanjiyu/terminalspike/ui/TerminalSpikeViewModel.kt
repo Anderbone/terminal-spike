@@ -4,8 +4,6 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -31,6 +29,8 @@ import com.yanjiyu.terminalspike.connection.SshConnectionConfig
 import com.yanjiyu.terminalspike.connection.SshAuthentication
 import com.yanjiyu.terminalspike.connection.SshSessionSnapshot
 import com.yanjiyu.terminalspike.connection.StartSshSessionResult
+import com.yanjiyu.terminalspike.connection.TmuxSessionCatalog
+import com.yanjiyu.terminalspike.connection.isTmuxSessionId
 import com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus
 import com.yanjiyu.terminalspike.core.data.repository.TerminalDataCatalog
 import com.yanjiyu.terminalspike.core.data.repository.AuthoritativeDataState
@@ -44,6 +44,7 @@ import com.yanjiyu.terminalspike.core.data.settings.AppSettings
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.BellSettings
 import com.yanjiyu.terminalspike.core.model.HostProfile
+import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.core.model.KeyboardLayout
 import com.yanjiyu.terminalspike.core.model.KeyboardProfile
 import com.yanjiyu.terminalspike.core.model.ModelLimits
@@ -73,6 +74,7 @@ import com.yanjiyu.terminalspike.settings.SavedSshIdentity
 import com.yanjiyu.terminalspike.settings.SettingsLoadFailure
 import com.yanjiyu.terminalspike.settings.SettingsLoadResult
 import com.yanjiyu.terminalspike.settings.UserSettings
+import com.yanjiyu.terminalspike.connection.SftpClient
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.TerminalTranscriptSnapshot
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
@@ -83,9 +85,14 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryDispatch
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryModifier
 import com.yanjiyu.terminalspike.terminal.view.TerminalKeySequences
+import com.yanjiyu.terminalspike.terminal.view.PastedImageSizeLimitInputStream
+import com.yanjiyu.terminalspike.terminal.view.PastedImageTooLargeException
+import com.yanjiyu.terminalspike.terminal.view.TerminalImagePasteSource
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
 import com.yanjiyu.terminalspike.terminal.view.accessoryModifierState
+import com.yanjiyu.terminalspike.terminal.view.encodeTerminalChord
 import com.yanjiyu.terminalspike.terminal.view.resolve
+import com.yanjiyu.terminalspike.terminal.view.pastedImageExtension
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsLoadState
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsInteractionAction
@@ -109,7 +116,10 @@ import com.yanjiyu.terminalspike.ui.connections.PreparedHostConnectionTest
 import com.yanjiyu.terminalspike.ui.connections.buildConnectionsReadyState
 import com.yanjiyu.terminalspike.ui.settings.toRuntimeExtraKeysOrNull
 import com.yanjiyu.terminalspike.ui.settings.toRuntimeAccessoryActionsOrNull
+import com.yanjiyu.terminalspike.ui.settings.defaultRuntimeAccessoryActions
 import com.yanjiyu.terminalspike.ui.settings.isUntouchedShippedKeyboardDeck
+import com.yanjiyu.terminalspike.ui.sftp.SftpSecretKind
+import com.yanjiyu.terminalspike.ui.sftp.SftpSessionController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -492,7 +502,7 @@ data class TerminalSpikeUiState(
     val knownHosts: List<KnownHostSummary> = emptyList(),
     val extraKeys: List<TerminalExtraKey> = TerminalExtraKey.DEFAULT_ORDER,
     val accessoryActions: List<TerminalAccessoryAction> =
-        TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
+        defaultRuntimeAccessoryActions(),
     val keyboardRuntimeCompatible: Boolean = true,
     val runtimeProfilesReady: Boolean = false,
     val keyboardLayout: KeyboardLayout = KeyboardLayout.TWO_ROWS,
@@ -503,12 +513,14 @@ data class TerminalSpikeUiState(
     val keepScreenOnWhileTerminalVisible: Boolean = false,
     val notificationPermissionPromptVisible: Boolean = false,
     val remoteClipboardPrompt: RemoteClipboardPromptUi? = null,
-    val multilinePasteConfirmationEnabled: Boolean = true,
+    val multilinePasteConfirmationEnabled: Boolean = false,
+    val voiceInputLanguageTag: String = "",
     val settingsReady: Boolean = false,
     val settingsRecoveryFailure: SettingsLoadFailure? = null,
     val settingsRecoveryInProgress: Boolean = false,
     val pendingSnippetSendId: Long? = null,
     val pendingSnippetTargetSessionId: Long? = null,
+    val pendingSnippetSendsImmediately: Boolean? = null,
     val recentSessions: List<RecentSession> = emptyList(),
     val moshExtension: MoshExtensionUiState = MoshExtensionStatus.Checking.toUiState(),
 ) {
@@ -516,7 +528,7 @@ data class TerminalSpikeUiState(
         get() = sessions.firstOrNull { it.id == activeSessionId } ?: sessions.first()
     val sshMode: Boolean get() = !activeSession.isLocalTerminal
     val connectionState: ConnectionState get() = activeSession.connectionState
-    val canAddSshSession: Boolean get() = sessions.count { !it.isLocalTerminal } < 4
+    val canAddSshSession: Boolean get() = true
     val canSendTerminalInput: Boolean
         get() = activeSession.isLocalTerminal || activeSession.connectionState is ConnectionState.Connected
     internal val workspace: WorkspaceUiState
@@ -611,6 +623,20 @@ data class TerminalSpikeUiState(
                     },
             )
         }
+}
+
+internal fun TerminalSpikeUiState.preferredTerminalEntrySessionId(
+    lastActiveRemoteSessionId: Long?,
+): Long? {
+    val activeRemoteSession = sessions.firstOrNull {
+        it.id == activeSessionId && !it.isLocalTerminal
+    }
+    if (activeRemoteSession != null) return activeRemoteSession.id
+
+    val rememberedRemoteSession = sessions.firstOrNull {
+        it.id == lastActiveRemoteSessionId && !it.isLocalTerminal
+    }
+    return rememberedRemoteSession?.id ?: sessions.lastOrNull { !it.isLocalTerminal }?.id
 }
 
 internal fun SessionTabUi.toWorkspaceActiveSession(canAddSession: Boolean): WorkspaceActiveSessionUi {
@@ -708,7 +734,7 @@ internal fun TerminalDataCatalog.workspaceStoredAuthenticationDecision(
                     WorkspaceStoredAuthenticationDecision.UNAVAILABLE
                 !identity.isPassphraseProtected ->
                     WorkspaceStoredAuthenticationDecision.START_DIRECTLY
-                credential?.savedSecretAvailability == CatalogSecretAvailability.AVAILABLE ->
+                credential.savedSecretAvailability == CatalogSecretAvailability.AVAILABLE ->
                     WorkspaceStoredAuthenticationDecision.START_DIRECTLY
                 else -> WorkspaceStoredAuthenticationDecision.REQUEST_AUTHENTICATION
             }
@@ -1148,7 +1174,7 @@ private val WORKSPACE_WHITESPACE_PATTERN = Regex(" +")
 private const val WORKSPACE_SENSITIVE_VALUE_LIMIT = 512
 
 internal enum class SnippetDispatchOutcome {
-    INSERT_UNAVAILABLE,
+    INSERTED,
     REQUIRES_CONFIRMATION,
     SENT,
     REJECTED,
@@ -1169,9 +1195,8 @@ internal class LatestValuePublicationGate<T>(
 internal fun dispatchSnippet(
     snippet: CommandSnippet,
     confirmed: Boolean,
-    enqueue: () -> Boolean,
+    enqueue: (appendEnter: Boolean) -> Boolean,
 ): SnippetDispatchOutcome {
-    if (!snippet.sendsImmediately) return SnippetDispatchOutcome.INSERT_UNAVAILABLE
     if (
         snippet.confirmMultilineExecution &&
         snippet.command.requiresMultilineConfirmation() &&
@@ -1179,7 +1204,14 @@ internal fun dispatchSnippet(
     ) {
         return SnippetDispatchOutcome.REQUIRES_CONFIRMATION
     }
-    return if (enqueue()) SnippetDispatchOutcome.SENT else SnippetDispatchOutcome.REJECTED
+    if (!enqueue(snippet.appendEnter)) {
+        return SnippetDispatchOutcome.REJECTED
+    }
+    return if (snippet.sendsImmediately) {
+        SnippetDispatchOutcome.SENT
+    } else {
+        SnippetDispatchOutcome.INSERTED
+    }
 }
 
 internal fun TerminalSpikeUiState.afterNoticePresented(presentedNotice: UiText): TerminalSpikeUiState =
@@ -1225,7 +1257,6 @@ internal fun TerminalSpikeUiState.bufferedInputValidationError(sessionId: Long, 
         text.any { it.isISOControl() && it !in "\r\n\t" } ->
             uiText(R.string.notice_buffer_unsupported_control)
         targetSession == null -> uiText(R.string.notice_terminal_session_unavailable)
-        activeSessionId != sessionId -> uiText(R.string.notice_terminal_changed_review_input)
         !targetSession.isLocalTerminal && targetSession.connectionState !is ConnectionState.Connected ->
             uiText(R.string.notice_connect_before_buffered_input)
         else -> null
@@ -1458,8 +1489,8 @@ private fun TerminalProfile.toRendererProfile(
     jumpToBottomOnKeyboardInput = scroll.jumpToBottomOnKeyboardInput,
     keepViewportPositionOnOutput = scroll.keepViewportPositionOnOutput,
     preserveAlternateScreenHistory = preserveAlternateScreenHistory,
-    detectPlainTextUrls = links.detectPlainTextUrls,
-    osc8HyperlinksEnabled = links.osc8HyperlinksEnabled,
+    detectPlainTextUrls = true,
+    osc8HyperlinksEnabled = true,
     copyOnSelection = links.copyOnSelection,
 )
 
@@ -1471,6 +1502,8 @@ class TerminalSpikeViewModel(
     val bufferedInputDraftState = BufferedInputDraftState()
     private val _uiState = MutableStateFlow(TerminalSpikeUiState())
     val uiState: StateFlow<TerminalSpikeUiState> = _uiState.asStateFlow()
+    private var pendingRestoredActiveSessionId =
+        savedStateHandle.get<Long>(ACTIVE_TERMINAL_SESSION_ID)
     internal val terminalBuildFeature = createTerminalBuildFeature(viewModelScope, controller)
     private val appLogger = AppLogger()
     private val appContainer = (application as TerminalSpikeApplication).container
@@ -1485,6 +1518,8 @@ class TerminalSpikeViewModel(
     private var activeRemoteClipboardMode = RemoteClipboardMode.ASK
     @Volatile
     private var notificationPermissionEducationConsumed = false
+    @Volatile
+    private var tmuxSessionSelectorEnabled = true
     private var terminalProfilesById = emptyMap<String, TerminalProfile>()
     private var customTerminalThemesById = emptyMap<String, CustomTerminalTheme>()
     private var keyboardProfilesById = emptyMap<String, KeyboardProfile>()
@@ -1500,6 +1535,7 @@ class TerminalSpikeViewModel(
     private val terminalDataRepository = appContainer.terminalDataRepository
     private val recentSessionRepository = appContainer.recentSessions
     private val knownHostManager = appContainer.knownHostManager
+    internal val sftp = SftpSessionController(viewModelScope) { SftpClient(knownHostManager) }
     private val hostConnectionTester by lazy(LazyThreadSafetyMode.NONE) {
         JschHostConnectionTester(knownHostManager)
     }
@@ -1531,6 +1567,7 @@ class TerminalSpikeViewModel(
     )
     private val catalogPublicationGate = LatestValuePublicationGate(terminalDataRepository::loadCatalog)
     private val knownHostPublicationMutex = Mutex()
+    private val imagePasteMutex = Mutex()
     private val recentSessionObservationStarted = AtomicBoolean(false)
     private val connectionsCatalogRetryInProgress = AtomicBoolean(false)
     private val moshStatusRequestInProgress = AtomicBoolean(false)
@@ -1541,6 +1578,17 @@ class TerminalSpikeViewModel(
     init {
         observeRemoteSessions()
         observeRemoteClipboardRequests()
+        viewModelScope.launch {
+            uiState
+                .map { state -> state.activeSessionId }
+                .distinctUntilChanged()
+                .collect { sessionId ->
+                    savedStateHandle[ACTIVE_TERMINAL_SESSION_ID] = sessionId
+                    if (sessionId != LOCAL_TERMINAL_SESSION_ID) {
+                        savedStateHandle[LAST_ACTIVE_REMOTE_SESSION_ID] = sessionId
+                    }
+                }
+        }
         viewModelScope.launch {
             moshExtensionClient.status.collect { status ->
                 _uiState.update { state -> state.copy(moshExtension = status.toUiState()) }
@@ -1572,6 +1620,7 @@ class TerminalSpikeViewModel(
                     ?.let { profile ->
                         appContainer.keyboardProfiles.update(
                             profile.copy(
+                                orderedActions = KeyboardAction.DEFAULT_ORDER,
                                 layout = KeyboardLayout.TWO_ROWS,
                                 updatedAtEpochMillis = System.currentTimeMillis(),
                             ),
@@ -1635,6 +1684,8 @@ class TerminalSpikeViewModel(
                         notificationPermissionEducationConsumed =
                             notificationPermissionEducationConsumed ||
                             snapshot.appSettings.notificationPermissionEducationConsumed
+                        tmuxSessionSelectorEnabled =
+                            !snapshot.appSettings.tmuxSessionSelectorDisabled
                         activeRendererProfile = rendererProfile
                         activeScrollbackLines = snapshot.terminalProfile?.scrollbackLines
                             ?: DEFAULT_PROFILE_SCROLLBACK_LINES
@@ -1657,6 +1708,7 @@ class TerminalSpikeViewModel(
                                     snapshot.appSettings.keepScreenOnWhileTerminalVisible,
                                 multilinePasteConfirmationEnabled =
                                     snapshot.appSettings.multilinePasteConfirmationEnabled,
+                                voiceInputLanguageTag = snapshot.appSettings.voiceInputLanguageTag,
                             )
                         }
                     }
@@ -1695,7 +1747,7 @@ class TerminalSpikeViewModel(
         return state.copy(
             extraKeys = runtimeKeys ?: TerminalExtraKey.DEFAULT_ORDER,
             accessoryActions = runtimeActions
-                ?: TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
+                ?: defaultRuntimeAccessoryActions(),
             keyboardRuntimeCompatible = runtimeActions != null,
             keyboardLayout = keyboard?.layout ?: KeyboardLayout.TWO_ROWS,
             modifierBehavior = modifierBehavior,
@@ -1714,6 +1766,7 @@ class TerminalSpikeViewModel(
     private fun observeRemoteSessions() {
         viewModelScope.launch {
             remoteSessions.sessions.collect { snapshots ->
+                val restoredActiveSessionId = pendingRestoredActiveSessionId
                 val pendingClipboard = pendingRemoteClipboardRequest
                 if (
                     pendingClipboard != null &&
@@ -1754,7 +1807,7 @@ class TerminalSpikeViewModel(
                     }
                     val projected = state.withRemoteSessionSnapshots(
                         remoteSessions = snapshots,
-                        preferredSessionId = newApproval?.id,
+                        preferredSessionId = newApproval?.id ?: restoredActiveSessionId,
                     )
                     val projectedActive = projected.sessions.firstOrNull {
                         it.id == projected.activeSessionId
@@ -1778,6 +1831,7 @@ class TerminalSpikeViewModel(
                         withKeyboard
                     }
                 }
+                pendingRestoredActiveSessionId = null
                 if (reachedConnected) refreshKnownHostsAfterRemoteConnection()
             }
         }
@@ -2261,50 +2315,15 @@ class TerminalSpikeViewModel(
             ?.command
 
     internal fun insertConnectionsSnippet(persistentId: String, targetSessionId: Long): Boolean {
-        val snippet = connectionsCatalogLoad.value?.catalog?.snippets
-            ?.firstOrNull { it.snippet.id == persistentId }
-            ?.snippet
+        val presentationId = connectionsCatalogLoad.value
+            ?.catalog
+            ?.snippetPresentationId(persistentId)
             ?: return false
-        val state = _uiState.value
-        val target = state.sessions.firstOrNull { it.id == targetSessionId }
-        if (target?.connectionState !is ConnectionState.Connected) {
-            _uiState.update { it.copy(notice = uiText(R.string.notice_terminal_not_connected)) }
-            return false
-        }
-        val inserted = snippet.command + if (snippet.appendEnter) "\n" else ""
-        val current = bufferedInputDraftState.value
-        val start = current.selection.min.coerceIn(0, current.text.length)
-        val end = current.selection.max.coerceIn(start, current.text.length)
-        val nextText = current.text.replaceRange(start, end, inserted)
-        if (nextText.length > MAX_BUFFERED_INPUT_CHARACTERS) {
-            _uiState.update {
-                it.copy(
-                    notice = uiText(
-                        R.string.notice_snippet_too_large,
-                        MAX_BUFFERED_INPUT_CHARACTERS,
-                    ),
-                )
-            }
-            return false
-        }
-        val cursor = start + inserted.length
-        val updated = bufferedInputDraftState.updateForTarget(
-            TextFieldValue(text = nextText, selection = TextRange(cursor)),
-            targetSessionId,
+        return sendSnippet(
+            id = presentationId,
+            targetSessionId = targetSessionId,
+            sendsImmediatelyOverride = false,
         )
-        if (!updated) {
-            _uiState.update {
-                it.copy(notice = uiText(R.string.notice_text_draft_other_terminal))
-            }
-            return false
-        }
-        _uiState.update {
-            it.copy(
-                activeSessionId = targetSessionId,
-                notice = uiText(R.string.notice_snippet_inserted, UiText.Dynamic(snippet.name)),
-            )
-        }
-        return true
     }
 
     internal fun runConnectionsSnippet(persistentId: String, targetSessionId: Long): Boolean {
@@ -2507,6 +2526,91 @@ class TerminalSpikeViewModel(
         job.invokeOnCompletion { deferredSecrets.wipeUnclaimed() }
         job.start()
         return true
+    }
+
+    internal fun openSftp(persistentHostId: String) {
+        openSftp(persistentHostId, transientSecret = null)
+    }
+
+    internal fun submitSftpAuthentication(persistentHostId: String, secret: CharArray) {
+        val bytes = try {
+            secret.toUtf8Secret()
+        } finally {
+            secret.fill('\u0000')
+        }
+        openSftp(persistentHostId, bytes)
+    }
+
+    private fun openSftp(persistentHostId: String, transientSecret: ByteArray?) {
+        val catalog = connectionsCatalogLoad.value?.catalog
+        val profile = catalog?.hosts?.firstOrNull { it.profile.id == persistentHostId }?.profile
+        val credential = profile?.credentialId?.let { credentialId ->
+            catalog.credentials.firstOrNull { it.id == credentialId }
+        }
+        if (catalog == null || profile == null) {
+            transientSecret?.fill(0)
+            _uiState.update { it.copy(notice = uiText(R.string.notice_saved_host_unavailable)) }
+            return
+        }
+        val storedAuthentication = credential?.authentication
+        val hasSavedSecret = credential?.savedSecretAvailability == CatalogSecretAvailability.AVAILABLE
+        val identity = (storedAuthentication as? StoredSshAuthentication.PrivateKey)
+            ?.keyIdentityId
+            ?.let { id -> catalog.identities.firstOrNull { it.id == id } }
+        val requiredSecret = when {
+            storedAuthentication is StoredSshAuthentication.PrivateKey &&
+                identity?.isPassphraseProtected == true && !hasSavedSecret -> SftpSecretKind.PASSPHRASE
+            (storedAuthentication is StoredSshAuthentication.Password || storedAuthentication == null) &&
+                !hasSavedSecret -> SftpSecretKind.PASSWORD
+            else -> null
+        }
+        if (requiredSecret != null && transientSecret == null) {
+            sftp.requestAuthentication(profile.id, profile.displayName, requiredSecret)
+            return
+        }
+        if (storedAuthentication is StoredSshAuthentication.PrivateKey && identity == null) {
+            transientSecret?.fill(0)
+            _uiState.update { it.copy(notice = uiText(R.string.notice_choose_available_private_key)) }
+            return
+        }
+        val authentication = when (storedAuthentication) {
+            is StoredSshAuthentication.PrivateKey -> com.yanjiyu.terminalspike.connection.SshAuthentication.PrivateKey(
+                identityName = requireNotNull(identity).name,
+                loadKey = { terminalDataRepository.copyPrivateKey(identity.id) },
+                passphrase = transientSecret,
+                loadPassphrase = if (transientSecret == null && hasSavedSecret) {
+                    { terminalDataRepository.copyCredentialSecret(requireNotNull(credential).id) }
+                } else null,
+            )
+            is StoredSshAuthentication.KeyboardInteractive -> if (transientSecret != null) {
+                com.yanjiyu.terminalspike.connection.SshAuthentication.KeyboardInteractive.SessionOnly(
+                    transientSecret,
+                )
+            } else if (hasSavedSecret) {
+                com.yanjiyu.terminalspike.connection.SshAuthentication.KeyboardInteractive.ReusableResponse {
+                    terminalDataRepository.copyCredentialSecret(requireNotNull(credential).id)
+                }
+            } else {
+                com.yanjiyu.terminalspike.connection.SshAuthentication.KeyboardInteractive.SessionOnly()
+            }
+            is StoredSshAuthentication.Password, null -> if (transientSecret != null) {
+                com.yanjiyu.terminalspike.connection.SshAuthentication.Password(transientSecret)
+            } else {
+                com.yanjiyu.terminalspike.connection.SshAuthentication.StoredPassword {
+                    terminalDataRepository.copyCredentialSecret(requireNotNull(credential).id)
+                }
+            }
+        }
+        sftp.connect(
+            hostName = profile.displayName,
+            config = SshConnectionConfig(
+                host = profile.hostname,
+                port = profile.port,
+                username = profile.username,
+                authentication = authentication,
+                keepaliveIntervalSeconds = profile.keepaliveIntervalSeconds ?: 30,
+            ),
+        )
     }
 
     /**
@@ -2843,14 +2947,14 @@ class TerminalSpikeViewModel(
             else -> null
         }
         if (error != null) {
-            pendingPassword?.fill(0)
-            pendingPassphrase?.fill(0)
+            pendingPassword.fill(0)
+            pendingPassphrase.fill(0)
             _uiState.update { it.copy(notice = error) }
             return
         }
         if (!_uiState.value.canStartSshSession(replacementSessionId)) {
-            pendingPassword?.fill(0)
-            pendingPassphrase?.fill(0)
+            pendingPassword.fill(0)
+            pendingPassphrase.fill(0)
             _uiState.update { it.copy(notice = uiText(R.string.notice_session_limit)) }
             return
         }
@@ -2934,8 +3038,8 @@ class TerminalSpikeViewModel(
                 moshServerCommand = connectionOptions.moshServerCommand,
             )
         } catch (error: Exception) {
-            pendingPassword?.fill(0)
-            pendingPassphrase?.fill(0)
+            pendingPassword.fill(0)
+            pendingPassphrase.fill(0)
             _uiState.update { it.copy(notice = uiText(R.string.notice_host_prepare_failed)) }
             return
         }
@@ -2954,8 +3058,8 @@ class TerminalSpikeViewModel(
                 nowEpochMillis = System.currentTimeMillis(),
             )
         }.getOrElse {
-            pendingPassword?.fill(0)
-            pendingPassphrase?.fill(0)
+            pendingPassword.fill(0)
+            pendingPassphrase.fill(0)
             _uiState.update { it.copy(notice = uiText(R.string.notice_host_prepare_failed)) }
             return
         }
@@ -2963,8 +3067,8 @@ class TerminalSpikeViewModel(
             catalog?.persistentIdentityId(identity.id) ?: identity.recoveryToken
         }
         if (selectedIdentity != null && persistentIdentityId == null) {
-            pendingPassword?.fill(0)
-            pendingPassphrase?.fill(0)
+            pendingPassword.fill(0)
+            pendingPassphrase.fill(0)
             _uiState.update {
                 it.copy(notice = uiText(R.string.notice_reimport_key_before_save_host))
             }
@@ -3195,6 +3299,7 @@ class TerminalSpikeViewModel(
             keepaliveIntervalSeconds = runtimeProfiles.keepaliveIntervalSeconds,
             terminalType = runtimeProfiles.terminalType,
             startupCommand = runtimeProfiles.startupCommand,
+            tmuxSessionSelectorEnabled = tmuxSessionSelectorEnabled,
         )
             val safeWorkspaceName = privacySafeWorkspaceFriendlyName(
             candidate = workspaceName,
@@ -3218,16 +3323,14 @@ class TerminalSpikeViewModel(
                 keyboardProfileId = runtimeProfiles.keyboardProfileId,
                 replacementSessionId = replacementSessionId,
                 terminalConfiguration = RemoteSessionTerminalConfiguration(
-                    scrollbackLines = (
-                        runtimeProfiles.terminalProfile?.scrollbackLines ?: activeScrollbackLines
-                    ).coerceIn(
+                    scrollbackLines = runtimeProfiles.terminalProfile.scrollbackLines.coerceIn(
                         minimumValue = 1,
                         maximumValue = ModelLimits.MAX_SCROLLBACK_LINES,
                     ),
-                    rendererProfile = runtimeProfiles.terminalProfile?.toRendererProfile(
+                    rendererProfile = runtimeProfiles.terminalProfile.toRendererProfile(
                         customTerminalFonts,
                         customTerminalThemesById.values,
-                    ) ?: activeRendererProfile,
+                    ),
                     remoteClipboardMode = runtimeProfiles.remoteClipboardMode,
                 ),
                 reliabilityPolicy = runtimeProfiles.reliabilityPolicy,
@@ -3334,6 +3437,13 @@ class TerminalSpikeViewModel(
                 )
             }
         }
+    }
+
+    fun selectLastActiveRemoteSessionForTerminalEntry() {
+        val targetSessionId = _uiState.value.preferredTerminalEntrySessionId(
+            savedStateHandle.get<Long>(LAST_ACTIVE_REMOTE_SESSION_ID),
+        ) ?: return
+        selectSession(targetSessionId)
     }
 
     fun profileForSession(sessionId: Long): SavedSshProfile? {
@@ -3800,14 +3910,38 @@ class TerminalSpikeViewModel(
         }
     }
 
-    fun sendSnippet(id: Long) {
+    fun sendSnippet(id: Long): Boolean = sendSnippet(id, _uiState.value.activeSessionId)
+
+    fun sendSnippet(id: Long, targetSessionId: Long): Boolean = sendSnippet(
+        id = id,
+        targetSessionId = targetSessionId,
+        sendsImmediatelyOverride = null,
+    )
+
+    private fun sendSnippet(
+        id: Long,
+        targetSessionId: Long,
+        sendsImmediatelyOverride: Boolean?,
+    ): Boolean {
         val state = _uiState.value
-        val snippet = state.snippets.firstOrNull { it.id == id } ?: return
-        if (state.activeSession.connectionState !is ConnectionState.Connected) {
+        val snippet = state.snippets.firstOrNull { it.id == id }
+            ?.let { saved ->
+                sendsImmediatelyOverride?.let { saved.copy(sendsImmediately = it) } ?: saved
+            }
+            ?: return false
+        val target = state.sessions.firstOrNull { it.id == targetSessionId }
+        if (target == null ||
+            (!target.isLocalTerminal && target.connectionState !is ConnectionState.Connected)
+        ) {
             _uiState.update { it.copy(notice = uiText(R.string.notice_connect_before_snippet)) }
-            return
+            return false
         }
-        dispatchSnippet(state, snippet, confirmed = false)
+        _uiState.update { it.copy(activeSessionId = targetSessionId) }
+        return dispatchSnippet(
+            state = state.copy(activeSessionId = targetSessionId),
+            snippet = snippet,
+            confirmed = false,
+        ) != SnippetDispatchOutcome.REJECTED
     }
 
     fun confirmSnippetSend(id: Long) {
@@ -3818,22 +3952,34 @@ class TerminalSpikeViewModel(
                 it.copy(
                     pendingSnippetSendId = null,
                     pendingSnippetTargetSessionId = null,
+                    pendingSnippetSendsImmediately = null,
                     notice = uiText(R.string.notice_terminal_changed_review_snippet),
                 )
             }
             return
         }
-        val snippet = state.snippets.firstOrNull { it.id == id } ?: run {
-            _uiState.update {
-                it.copy(pendingSnippetSendId = null, pendingSnippetTargetSessionId = null)
-            }
-            return
-        }
-        if (state.activeSession.connectionState !is ConnectionState.Connected) {
+        val snippet = state.snippets.firstOrNull { it.id == id }?.let { saved ->
+            state.pendingSnippetSendsImmediately?.let {
+                saved.copy(sendsImmediately = it)
+            } ?: saved
+        } ?: run {
             _uiState.update {
                 it.copy(
                     pendingSnippetSendId = null,
                     pendingSnippetTargetSessionId = null,
+                    pendingSnippetSendsImmediately = null,
+                )
+            }
+            return
+        }
+        if (!state.activeSession.isLocalTerminal &&
+            state.activeSession.connectionState !is ConnectionState.Connected
+        ) {
+            _uiState.update {
+                it.copy(
+                    pendingSnippetSendId = null,
+                    pendingSnippetTargetSessionId = null,
+                    pendingSnippetSendsImmediately = null,
                     notice = uiText(R.string.notice_connect_before_snippet),
                 )
             }
@@ -3844,7 +3990,11 @@ class TerminalSpikeViewModel(
 
     fun cancelSnippetSend() {
         _uiState.update {
-            it.copy(pendingSnippetSendId = null, pendingSnippetTargetSessionId = null)
+            it.copy(
+                pendingSnippetSendId = null,
+                pendingSnippetTargetSessionId = null,
+                pendingSnippetSendsImmediately = null,
+            )
         }
     }
 
@@ -3852,19 +4002,19 @@ class TerminalSpikeViewModel(
         state: TerminalSpikeUiState,
         snippet: CommandSnippet,
         confirmed: Boolean,
-    ) {
-        val activeController = controllerFor(state.activeSessionId)
-        when (
-            dispatchSnippet(snippet, confirmed) {
-                activeController.sendPaste(snippet.command, appendEnter = snippet.appendEnter)
-            }
-        ) {
-            SnippetDispatchOutcome.INSERT_UNAVAILABLE -> {
+    ): SnippetDispatchOutcome {
+        val activeController = controllerForExistingSession(state.activeSessionId)
+        val outcome = dispatchSnippet(snippet, confirmed) { appendEnter ->
+            activeController?.sendPaste(snippet.command, appendEnter = appendEnter) == true
+        }
+        when (outcome) {
+            SnippetDispatchOutcome.INSERTED -> {
                 _uiState.update {
                     it.copy(
                         pendingSnippetSendId = null,
                         pendingSnippetTargetSessionId = null,
-                        notice = uiText(R.string.notice_snippet_insert_unavailable),
+                        pendingSnippetSendsImmediately = null,
+                        notice = null,
                     )
                 }
             }
@@ -3873,6 +4023,7 @@ class TerminalSpikeViewModel(
                     it.copy(
                         pendingSnippetSendId = snippet.id,
                         pendingSnippetTargetSessionId = state.activeSessionId,
+                        pendingSnippetSendsImmediately = snippet.sendsImmediately,
                         notice = null,
                     )
                 }
@@ -3882,6 +4033,7 @@ class TerminalSpikeViewModel(
                     it.copy(
                         pendingSnippetSendId = null,
                         pendingSnippetTargetSessionId = null,
+                        pendingSnippetSendsImmediately = null,
                         notice = uiText(
                             R.string.notice_snippet_sent,
                             UiText.Dynamic(snippet.label),
@@ -3894,11 +4046,13 @@ class TerminalSpikeViewModel(
                     it.copy(
                         pendingSnippetSendId = null,
                         pendingSnippetTargetSessionId = null,
+                        pendingSnippetSendsImmediately = null,
                         notice = uiText(R.string.notice_snippet_queue_failed),
                     )
                 }
             }
         }
+        return outcome
     }
 
     fun sendBufferedInput(sessionId: Long, text: String): Boolean {
@@ -3925,6 +4079,114 @@ class TerminalSpikeViewModel(
             return false
         }
         _uiState.update { it.copy(notice = null) }
+        return true
+    }
+
+    /** Streams one IME image through the same ordered path used by multi-select and clipboard. */
+    internal fun pasteImage(
+        sessionId: Long,
+        mimeType: String,
+        open: () -> InputStream?,
+        onFinished: () -> Unit = {},
+    ): Boolean = pasteImages(
+        sessionId = sessionId,
+        images = listOf(TerminalImagePasteSource(mimeType, open, onFinished)),
+    )
+
+    /**
+     * Uploads an ordered image batch over the authenticated SSH side channel and pastes each
+     * resulting path in selection order. Codex turns those paths into multiple `[Image #N]`
+     * attachments in its current input.
+     */
+    internal fun pasteImages(
+        sessionId: Long,
+        images: List<TerminalImagePasteSource>,
+    ): Boolean {
+        if (images.isEmpty()) return false
+        val prepared = images.mapNotNull { image ->
+            pastedImageExtension(image.mimeType)?.let { extension -> image to extension }
+        }
+        if (prepared.isEmpty()) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_image_paste_format_unsupported)) }
+            return false
+        }
+        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId }
+        if (session == null || session.isLocalTerminal ||
+            session.connectionState !is ConnectionState.Connected
+        ) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_image_paste_requires_remote)) }
+            return false
+        }
+        val unsupportedCount = images.size - prepared.size
+        prepared.map { it.first }.toSet().let { accepted ->
+            images.filterNot(accepted::contains).forEach { runCatching(it.onFinished) }
+        }
+        _uiState.update {
+            it.copy(
+                notice = if (prepared.size == 1) {
+                    uiText(R.string.notice_image_paste_uploading)
+                } else {
+                    quantityText(
+                        R.plurals.notice_image_paste_uploading_count,
+                        prepared.size,
+                        prepared.size,
+                    )
+                }
+            )
+        }
+        viewModelScope.launch {
+            imagePasteMutex.withLock {
+                var insertedCount = 0
+                var oversizedCount = 0
+                prepared.forEach { (image, extension) ->
+                    val result = try {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val input = requireNotNull(image.open()) {
+                                    "The selected image is no longer available."
+                                }
+                                remoteSessions.uploadPastedImage(
+                                    sessionId = sessionId,
+                                    fileName = "${UUID.randomUUID()}.$extension",
+                                    source = PastedImageSizeLimitInputStream(input),
+                                ).getOrThrow()
+                            }
+                        }
+                    } finally {
+                        runCatching(image.onFinished)
+                    }
+                    if (result.exceptionOrNull().hasCause<PastedImageTooLargeException>()) {
+                        oversizedCount += 1
+                    }
+                    val remotePath = result.getOrNull()
+                    if (remotePath != null &&
+                        controllerForExistingSession(sessionId)?.sendPaste(remotePath) == true
+                    ) {
+                        insertedCount += 1
+                    }
+                }
+                _uiState.update {
+                    it.copy(
+                        notice = when {
+                            insertedCount == images.size -> quantityText(
+                                R.plurals.notice_image_paste_attached_count,
+                                insertedCount,
+                                insertedCount,
+                            )
+                            insertedCount > 0 -> uiText(
+                                R.string.notice_image_paste_partial,
+                                insertedCount,
+                                images.size,
+                            )
+                            oversizedCount > 0 -> uiText(R.string.notice_image_paste_too_large)
+                            unsupportedCount == images.size ->
+                                uiText(R.string.notice_image_paste_format_unsupported)
+                            else -> uiText(R.string.notice_image_paste_failed)
+                        },
+                    )
+                }
+            }
+        }
         return true
     }
 
@@ -4021,6 +4283,14 @@ class TerminalSpikeViewModel(
         remoteSessions.cancelKeyboardInteractiveChallenge(sessionId, challengeToken)
     }
 
+    fun answerTmuxSessionPrompt(sessionId: Long, promptToken: Long, tmuxSessionId: String?) {
+        remoteSessions.answerTmuxSessionPrompt(sessionId, promptToken, tmuxSessionId)
+    }
+
+    fun deleteTmuxSession(sessionId: Long, promptToken: Long, tmuxSessionId: String) {
+        remoteSessions.deleteTmuxSession(sessionId, promptToken, tmuxSessionId)
+    }
+
     fun disconnectSsh(sessionId: Long = _uiState.value.activeSessionId) {
         if (sessionId == LOCAL_TERMINAL_SESSION_ID) return
         pendingRemoteClipboardRequest
@@ -4035,6 +4305,46 @@ class TerminalSpikeViewModel(
             ?.takeIf { it.sessionId == sessionId }
             ?.let(::discardRemoteClipboardRequest)
         remoteSessions.close(sessionId)
+    }
+
+    internal suspend fun queryActiveTmuxSessions(sessionId: Long): TmuxSessionCatalog =
+        withContext(Dispatchers.IO) {
+            runCatching { remoteSessions.queryTmuxSessionCatalog(sessionId) }
+                .getOrElse { TmuxSessionCatalog() }
+        }
+
+    internal suspend fun queryActiveTmuxSessionPreviews(sessionId: Long): TmuxSessionCatalog =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                remoteSessions.queryTmuxSessionCatalog(sessionId, includePreviews = true)
+            }.getOrElse { TmuxSessionCatalog() }
+        }
+
+    internal fun terminalSwitcherPreviewLines(sessionId: Long): List<String> =
+        controllerForExistingSession(sessionId)?.previewLines().orEmpty()
+
+    internal suspend fun terminateActiveTmuxSession(
+        sessionId: Long,
+        tmuxSessionId: String,
+    ): TmuxSessionCatalog = withContext(Dispatchers.IO) {
+        runCatching { remoteSessions.terminateTmuxSession(sessionId, tmuxSessionId) }
+            .getOrElse { TmuxSessionCatalog(deleteFailed = true) }
+    }
+
+    internal suspend fun switchActiveTmuxSession(sessionId: Long, tmuxSessionId: String): Boolean {
+        if (!tmuxSessionId.isTmuxSessionId()) return false
+        val state = _uiState.value
+        if (
+            state.sessions.none { it.id == sessionId } ||
+            state.sessions.first { it.id == sessionId }.connectionState !is ConnectionState.Connected
+        ) {
+            return false
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                remoteSessions.switchTmuxSession(sessionId, tmuxSessionId)
+            }.getOrDefault(false)
+        }
     }
 
     fun jumpToBottom() {
@@ -4252,6 +4562,7 @@ class TerminalSpikeViewModel(
     }
 
     override fun onCleared() {
+        sftp.close()
         cancelConnectionsHostTest()
         cancelTerminalTranscriptExport()
         pendingRemoteClipboardRequest?.let(::discardRemoteClipboardRequest)
@@ -4272,6 +4583,8 @@ class TerminalSpikeViewModel(
         private const val DEFAULT_PROFILE_SCROLLBACK_LINES = 20_000
         private const val WORKSPACE_RECENT_HISTORY_SCAN_LIMIT = 64
         private const val CONNECTIONS_RECENT_HOST_LIMIT = 64
+        private const val ACTIVE_TERMINAL_SESSION_ID = "active_terminal_session_id"
+        private const val LAST_ACTIVE_REMOTE_SESSION_ID = "last_active_remote_session_id"
         private const val PENDING_IDENTITY_IMPORT_URI = "pending_identity_import_uri"
         private const val PENDING_IDENTITY_RECOVERY_TOKEN = "pending_identity_recovery_token"
     }
@@ -4375,6 +4688,16 @@ internal fun InputStream.readSensitiveBounded(
         onBufferWiped(scratch)
         output.close()
     }
+}
+
+private inline fun <reified T : Throwable> Throwable?.hasCause(): Boolean {
+    var current = this
+    val visited = mutableSetOf<Throwable>()
+    while (current != null && visited.add(current)) {
+        if (current is T) return true
+        current = current.cause
+    }
+    return false
 }
 
 private class SensitiveByteAccumulator(

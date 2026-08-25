@@ -72,7 +72,7 @@ internal class AndroidMoshExtensionPlatform(
     override fun bind(connection: ServiceConnection): Boolean = applicationContext.bindService(
         Intent(MoshExtensionContract.BIND_ACTION).setComponent(MoshExtensionContract.component),
         connection,
-        Context.BIND_AUTO_CREATE or Context.BIND_NOT_FOREGROUND,
+        Context.BIND_AUTO_CREATE,
     )
 
     override fun unbind(connection: ServiceConnection) {

@@ -4,10 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.SemanticsMatcher
@@ -30,7 +27,6 @@ import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.TerminalAccessoryBar
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -39,10 +35,9 @@ class TerminalAccessoryWorkflowTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun rawAndTextLabelsAreHiddenAndDeckUsesAFullSizeCollapseHandle() {
+    fun rawAndTextLabelsAndDeckVisibilityControlsAreHidden() {
         composeRule.setContent {
             val density = LocalDensity.current
-            var collapsed by remember { mutableStateOf(false) }
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
                 MaterialTheme {
                     Box(Modifier.width(320.dp)) {
@@ -51,7 +46,6 @@ class TerminalAccessoryWorkflowTest {
                             modifiers = AccessoryModifierSnapshot(),
                             layout = KeyboardLayout.TWO_ROWS,
                             inputMode = TerminalInputMode.RAW,
-                            collapsed = collapsed,
                             customizationEnabled = true,
                             inputTargetId = 7L,
                             bufferedInputSendEnabled = true,
@@ -61,7 +55,6 @@ class TerminalAccessoryWorkflowTest {
                             onSendBufferedInput = { _, _ -> true },
                             onBufferedInputModeChanged = {},
                             onDirectInputMode = {},
-                            onCollapsedChange = { collapsed = it },
                         )
                     }
                 }
@@ -70,15 +63,13 @@ class TerminalAccessoryWorkflowTest {
 
         composeRule.onNodeWithText("Raw").assertDoesNotExist()
         composeRule.onNodeWithText("Text").assertDoesNotExist()
-        composeRule.onNodeWithTag("terminal_accessory_collapse").performClick()
-
-        val expandBounds = composeRule.onNodeWithTag("terminal_accessory_expand")
-            .assertIsDisplayed()
-            .fetchSemanticsNode()
-            .boundsInRoot
-        assertTrue(expandBounds.height >= 48.dp.value)
-        composeRule.onNodeWithText("Show terminal keys").performClick()
+        composeRule.onNodeWithTag("terminal_accessory_collapse").assertDoesNotExist()
+        composeRule.onNodeWithTag("terminal_accessory_expand").assertDoesNotExist()
+        composeRule.onNodeWithText("Show terminal keys").assertDoesNotExist()
         composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key /").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key →").assertIsDisplayed()
     }
 
     @Test
@@ -91,7 +82,6 @@ class TerminalAccessoryWorkflowTest {
                         TerminalExtraKey.CTRL_C.toAccessoryAction(),
                     ),
                     modifiers = AccessoryModifierSnapshot(control = AccessoryModifierState.LOCKED),
-                    collapsed = false,
                     customizationEnabled = false,
                     inputTargetId = 7L,
                     bufferedInputSendEnabled = true,
@@ -101,7 +91,6 @@ class TerminalAccessoryWorkflowTest {
                     onSendBufferedInput = { _, _ -> true },
                     onBufferedInputModeChanged = {},
                     onDirectInputMode = {},
-                    onCollapsedChange = {},
                 )
             }
         }
@@ -127,7 +116,6 @@ class TerminalAccessoryWorkflowTest {
                 TerminalAccessoryBar(
                     actions = listOf(local),
                     modifiers = AccessoryModifierSnapshot(),
-                    collapsed = false,
                     customizationEnabled = false,
                     inputTargetId = 7L,
                     bufferedInputSendEnabled = true,
@@ -137,7 +125,6 @@ class TerminalAccessoryWorkflowTest {
                     onSendBufferedInput = { _, _ -> true },
                     onBufferedInputModeChanged = {},
                     onDirectInputMode = {},
-                    onCollapsedChange = {},
                 )
             }
         }

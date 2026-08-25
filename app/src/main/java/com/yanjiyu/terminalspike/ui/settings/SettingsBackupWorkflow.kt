@@ -309,6 +309,11 @@ internal class SettingsBackupWorkflow(
         cancelPendingExport()
         releaseOwnedImport()
         _state.value = readyState().copy(step = BackupWorkflowStep.EXPORT_SETUP)
+        requestExportDocument(
+            mode = BackupMode.FULL,
+            includeCustomFonts = true,
+            passphrase = portableBackupKey(),
+        )
     }
 
     /** Takes ownership of [passphrase]. */
@@ -418,6 +423,7 @@ internal class SettingsBackupWorkflow(
                         header = header,
                     )
                 }
+                unlockSelectedBackup(portableBackupKey())
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -461,17 +467,14 @@ internal class SettingsBackupWorkflow(
                         step = BackupWorkflowStep.AUTHENTICATED_PREVIEW,
                         header = unlocked.preview.header,
                         archive = unlocked.preview,
-                        selectedStrategy = BackupImportStrategy.MERGE,
+                        selectedStrategy = BackupImportStrategy.REPLACE_CORRESPONDING,
                     )
                 }
+                prepareImportPreview()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                _state.value = readyState().copy(
-                    step = BackupWorkflowStep.PASSPHRASE_REQUIRED,
-                    header = header,
-                    error = error.toWorkflowError(BackupWorkflowError.UNLOCK_FAILED),
-                )
+                fail(error.toWorkflowError(BackupWorkflowError.UNLOCK_FAILED))
             } finally {
                 passphrase.fill('\u0000')
             }
@@ -636,6 +639,9 @@ internal class SettingsBackupWorkflow(
             BackupMode.STANDARD -> STANDARD_MIN_PASSPHRASE_CHARACTERS
             BackupMode.FULL -> FULL_MIN_PASSPHRASE_CHARACTERS
         }
+
+        private fun portableBackupKey(): CharArray =
+            "terminal-spike-portable-backup-v1".toCharArray()
     }
 }
 

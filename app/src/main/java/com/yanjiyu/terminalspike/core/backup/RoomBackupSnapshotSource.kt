@@ -245,6 +245,7 @@ internal fun AppSettings.toBackupGlobalSettings(): BackupGlobalSettings = Backup
         else -> error("Validated settings contain an unsupported OSC 52 policy.")
     },
     multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
+    tmuxSessionSelectorDisabled = tmuxSessionSelectorDisabled,
     lastBackupMode = when (lastBackupMode) {
         "" -> null
         "standard" -> BackupMode.STANDARD

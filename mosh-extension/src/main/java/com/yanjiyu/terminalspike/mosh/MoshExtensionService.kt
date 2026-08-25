@@ -4,13 +4,19 @@
  */
 package com.yanjiyu.terminalspike.mosh
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.Process
@@ -44,6 +50,7 @@ public class MoshExtensionService : Service() {
     private val callbackBroadcastGate = SerializedCallbackGate()
     private val slotAllocator = WorkerSlotAllocator(WORKER_COMPONENTS.size)
     private val sessions = mutableMapOf<String, BrokerSession>()
+    private var foregroundStarted = false
     private val lastEvents = object : LinkedHashMap<String, MoshSessionEvent>(MAX_REPLAY_EVENTS + 1, 0.75f, true) {
         override fun removeEldestEntry(
             eldest: MutableMap.MutableEntry<String, MoshSessionEvent>?,
@@ -152,6 +159,7 @@ public class MoshExtensionService : Service() {
 
     override fun onDestroy() {
         stopAllSessions(MoshStopReason.APP_SHUTDOWN)
+        finishForeground()
         callbackBroadcastGate.run { callbacks.kill() }
         super.onDestroy()
     }
@@ -163,7 +171,16 @@ public class MoshExtensionService : Service() {
         // Reserve the identifier, worker slot and pipe endpoints atomically. Binder dispatch can
         // call this method concurrently, so checking the map before inserting would let two equal
         // identifiers allocate different workers and overwrite one another.
-        val prepared = synchronized(stateLock) { prepareSessionLocked(request) }
+        val prepared = synchronized(stateLock) {
+            prepareSessionLocked(request).also {
+                try {
+                    ensureForegroundLocked()
+                } catch (error: RuntimeException) {
+                    discardPreparedSessionLocked(it)
+                    throw IllegalStateException("Could not keep the Mosh transport active", error)
+                }
+            }
+        }
         val session = prepared.session
         val connection = checkNotNull(session.connection)
 
@@ -220,7 +237,7 @@ public class MoshExtensionService : Service() {
         }
         val slot = slotAllocator.acquire() ?: run {
             request.moshKeyRead.closeBrokerCopy()
-            throw IllegalStateException("The extension's four isolated Mosh workers are occupied")
+            throw IllegalStateException("The extension's isolated Mosh workers are occupied")
         }
         val inputPipe = try {
             ParcelFileDescriptor.createReliablePipe()
@@ -412,11 +429,68 @@ public class MoshExtensionService : Service() {
             session.finished = true
             sessions.remove(session.request.sessionId)
             slotAllocator.release(session.slot)
+            if (sessions.isEmpty()) finishForegroundLocked()
             session.bound
         }
         session.closeWorkerDescriptors()
         val connection = session.connection
         if (shouldUnbind && connection != null) runCatching { unbindService(connection) }
+    }
+
+    /** Must be called with [stateLock] held. */
+    private fun ensureForegroundLocked() {
+        if (foregroundStarted) return
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                getString(R.string.session_notification_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
+        val openExtension = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MoshExtensionActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_terminal)
+            .setContentTitle(getString(R.string.session_notification_title))
+            .setContentText(getString(R.string.session_notification_body))
+            .setContentIntent(openExtension)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setOngoing(true)
+            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        foregroundStarted = true
+    }
+
+    private fun finishForeground() = synchronized(stateLock) { finishForegroundLocked() }
+
+    /** Must be called with [stateLock] held. */
+    private fun finishForegroundLocked() {
+        if (!foregroundStarted) return
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundStarted = false
+    }
+
+    /** Must be called with [stateLock] held. */
+    private fun discardPreparedSessionLocked(prepared: PreparedBrokerSession) {
+        val session = prepared.session
+        sessions.remove(session.request.sessionId)
+        slotAllocator.release(session.slot)
+        session.closeWorkerDescriptors()
+        prepared.terminalInputWrite.closeBrokerCopy()
+        prepared.terminalOutputRead.closeBrokerCopy()
     }
 
     private fun publishEvent(event: MoshSessionEvent) {
@@ -476,6 +550,8 @@ public class MoshExtensionService : Service() {
 
     private companion object {
         const val MAX_REPLAY_EVENTS = 64
+        const val NOTIFICATION_CHANNEL_ID = "active_mosh_sessions"
+        const val NOTIFICATION_ID = 2_002
         val CAPABILITY_FLAGS = MoshCapability.IPV4 or
             MoshCapability.IPV6 or
             MoshCapability.NETWORK_ROAMING or
@@ -485,14 +561,23 @@ public class MoshExtensionService : Service() {
             MoshApi.PROTOCOL_VERSION,
             MoshApi.PROTOCOL_VERSION,
             CAPABILITY_FLAGS,
-            4,
+            MOSH_WORKER_COUNT,
         )
         val WORKER_COMPONENTS = arrayOf(
             ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker0Service::class.java.name),
             ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker1Service::class.java.name),
             ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker2Service::class.java.name),
             ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker3Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker4Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker5Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker6Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker7Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker8Service::class.java.name),
+            ComponentName("com.yanjiyu.terminalspike.mosh", MoshWorker9Service::class.java.name),
         )
+        init {
+            check(WORKER_COMPONENTS.size == MOSH_WORKER_COUNT)
+        }
     }
 }
 
@@ -573,6 +658,7 @@ private fun disconnectedEvent(sessionId: String, reason: Int) = MoshSessionEvent
 )
 
 private const val MAIN_APPLICATION_PACKAGE = "com.yanjiyu.terminalspike"
+internal const val MOSH_WORKER_COUNT = 10
 
 private fun ParcelFileDescriptor.closeBrokerCopy() {
     runCatching(::close)

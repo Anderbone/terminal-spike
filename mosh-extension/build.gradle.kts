@@ -107,7 +107,7 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "com.yanjiyu.terminalspike.mosh"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
+        versionCode = 4
         versionName = "1.0.0-mosh-1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -175,6 +175,7 @@ val buildMoshNative = tasks.register<BuildMoshNativeTask>("buildMoshNative") {
     description = "Builds the pinned Mosh client for arm64-v8a and x86_64."
     sourceInputs.from(
         fileTree("third_party") { include("**/*") },
+        fileTree("patches") { include("**/*") },
         fileTree("scripts") { include("**/*") },
         fileTree("src/main/cpp") { include("**/*") },
     )

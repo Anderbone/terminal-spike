@@ -4,9 +4,12 @@
  */
 package com.yanjiyu.terminalspike.mosh
 
+import android.content.Context
 import android.os.ParcelFileDescriptor
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,6 +17,15 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class MoshNativeSmokeTest {
+    @Test
+    fun launcherUsesTheMatchingMoshAdaptiveIconFamily() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val applicationInfo = context.applicationInfo
+
+        assertEquals(R.mipmap.ic_launcher, applicationInfo.icon)
+        assertNotNull(context.packageManager.getApplicationIcon(applicationInfo))
+    }
+
     @Test
     fun packagedNativeEngineReportsPinnedUpstreamVersion() {
         assertEquals("mosh-1.4.0", MoshNativeBridge.version())

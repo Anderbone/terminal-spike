@@ -21,6 +21,7 @@ import com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine
 import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
+import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -508,9 +509,6 @@ internal class SshSessionRepository(
      */
     fun duplicateUserInitiatedSession(sessionId: Long): DuplicateSshSessionResult {
         val request = synchronized(lock) {
-            if (runtimes.size >= MAX_REMOTE_SESSIONS) {
-                return DuplicateSshSessionResult.SessionLimitReached
-            }
             val source = runtimes[sessionId]
                 ?.takeUnless(SshSessionRuntime::terminated)
                 ?: return DuplicateSshSessionResult.Unavailable
@@ -549,6 +547,23 @@ internal class SshSessionRepository(
     fun controllerFor(sessionId: Long): TerminalController? = synchronized(lock) {
         pendingStarts[sessionId]?.runtime?.terminal?.controller
             ?: runtimes[sessionId]?.terminal?.controller
+    }
+
+    /** Uploads through the exact live session's authenticated SSH side channel. */
+    fun uploadPastedImage(
+        sessionId: Long,
+        fileName: String,
+        source: InputStream,
+    ): Result<String> = runCatching {
+        val uploader = synchronized(lock) {
+            val runtime = runtimes[sessionId]
+                ?.takeUnless(SshSessionRuntime::terminated)
+                ?.takeIf { it.connectionState is ConnectionState.Connected }
+                ?: error("The terminal session is not connected.")
+            runtime.connection as? RemoteImageUploadConnection
+                ?: error("Image paste requires a live SSH or Mosh session.")
+        }
+        source.use { input -> uploader.uploadPastedImage(fileName, input) }
     }
 
     fun connectionSeedFor(sessionId: Long): RemoteSessionConnectionSeed? = synchronized(lock) {
@@ -664,6 +679,47 @@ internal class SshSessionRepository(
         }?.cancelKeyboardInteractiveChallenge(challengeToken)
     }
 
+    fun answerTmuxSessionPrompt(sessionId: Long, promptToken: Long, tmuxSessionId: String?) {
+        synchronized(lock) {
+            runtimes[sessionId]
+                ?.takeUnless(SshSessionRuntime::terminated)
+                ?.connection
+        }?.answerTmuxSessionPrompt(promptToken, tmuxSessionId)
+    }
+
+    fun deleteTmuxSession(sessionId: Long, promptToken: Long, tmuxSessionId: String) {
+        synchronized(lock) {
+            runtimes[sessionId]
+                ?.takeUnless(SshSessionRuntime::terminated)
+                ?.connection
+        }?.deleteTmuxSession(promptToken, tmuxSessionId)
+    }
+
+    fun queryTmuxSessionCatalog(
+        sessionId: Long,
+        includePreviews: Boolean = false,
+    ): TmuxSessionCatalog = synchronized(lock) {
+        runtimes[sessionId]
+            ?.takeUnless(SshSessionRuntime::terminated)
+            ?.connection
+    }?.queryTmuxSessionCatalog(includePreviews) ?: TmuxSessionCatalog()
+
+    fun terminateTmuxSession(sessionId: Long, tmuxSessionId: String): TmuxSessionCatalog =
+        synchronized(lock) {
+            runtimes[sessionId]
+                ?.takeUnless(SshSessionRuntime::terminated)
+                ?.connection
+        }?.terminateTmuxSession(tmuxSessionId) ?: TmuxSessionCatalog(deleteFailed = true)
+
+    fun switchTmuxSession(
+        sessionId: Long,
+        tmuxSessionId: String,
+    ): Boolean = synchronized(lock) {
+        runtimes[sessionId]
+            ?.takeUnless(SshSessionRuntime::terminated)
+            ?.connection
+    }?.switchTmuxSession(tmuxSessionId) ?: false
+
     fun disconnect(sessionId: Long) {
         val termination = terminateOne(sessionId, ConnectionState.Disconnected) ?: return
         finishTermination(termination, clearTerminal = false)
@@ -739,9 +795,6 @@ internal class SshSessionRepository(
         return synchronized(lock) {
         val replacementId = request.replacementSessionId
         val replaced = if (replacementId == null) {
-            if (runtimes.size >= MAX_REMOTE_SESSIONS) {
-                return@synchronized SessionPreparation.LimitReached
-            }
             null
         } else {
             val candidate = runtimes[replacementId]
@@ -1648,7 +1701,6 @@ internal class SshSessionRepository(
     private fun now(): Long = nowEpochMillis().coerceAtLeast(0L)
 
     private companion object {
-        const val MAX_REMOTE_SESSIONS = 4
         const val SESSION_ACTIVITY_PUBLISH_INTERVAL_MILLIS = 15_000L
         const val RECENT_SESSION_WRITE_COALESCE_MILLIS = 250L
     }
@@ -1792,6 +1844,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
     val reconnectKeepalive = keepaliveIntervalSeconds
     val reconnectTerminalType = terminalType
     val reconnectStartupCommand = startupCommand
+    val reconnectTmuxSelector = tmuxSessionSelectorEnabled
     return {
         SshConnectionConfig(
             host = reconnectHost,
@@ -1801,6 +1854,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
             keepaliveIntervalSeconds = reconnectKeepalive,
             terminalType = reconnectTerminalType,
             startupCommand = reconnectStartupCommand,
+            tmuxSessionSelectorEnabled = reconnectTmuxSelector,
         )
     }
 }

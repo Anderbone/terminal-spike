@@ -19,11 +19,14 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.OverScroller
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.CursorStyle
@@ -78,6 +81,8 @@ class FastTerminalView @JvmOverloads constructor(
     private var baselineOffsetPx = 1f
     private val scrollGestureRouter = TerminalScrollGestureRouter()
     private val mouseWheelAccumulator = TerminalMouseWheelAccumulator(MAX_MOUSE_WHEEL_STEPS_PER_EVENT)
+    private var flingDestination = TerminalScrollDestination.NONE
+    private var previousFlingY = 0
     private val selection = TerminalSelectionModel()
     private var terminalController: TerminalController? = null
     private var terminalTheme: TerminalTheme = TerminalThemes.current
@@ -103,9 +108,11 @@ class FastTerminalView @JvmOverloads constructor(
     private var clipboardActionCallback = TerminalClipboardActionCallback { request ->
         defaultClipboardWriter.write(request) != null
     }
+    private var imageContentCallback: TerminalImageContentCallback? = null
     private var linkActionCallback = TerminalLinkActionCallback {
         // Opening is intentionally inert until a surrounding policy callback is installed.
     }
+    private var preImeBackCallback: (() -> Unit)? = null
     private val directInputSink = object : TerminalInputSink {
         override fun send(bytes: ByteArray) {
             if (directInputEnabled) terminalController?.send(bytes)
@@ -114,7 +121,7 @@ class FastTerminalView @JvmOverloads constructor(
     private val gestureActions = TerminalGestureActions(
         stopFling = {
             scrollGestureRouter.onGestureStart()
-            scroller.forceFinished(true)
+            stopActiveFling()
         },
         requestFocus = { if (directInputEnabled) requestFocus() },
         scrollBy = ::handleGestureScroll,
@@ -122,6 +129,7 @@ class FastTerminalView @JvmOverloads constructor(
         showKeyboard = { if (directInputEnabled) showKeyboard() },
         performClick = { performClick() },
         handleTap = ::handleTerminalTap,
+        handleLongPress = ::showLinkActionsAt,
         selectionHandleAt = ::selectionHandleAt,
         startSelection = ::startSelectionAt,
         dragSelection = ::dragSelection,
@@ -681,7 +689,7 @@ class FastTerminalView @JvmOverloads constructor(
         val visible = terminalController?.viewport?.visibleRows(0) ?: return false
         val row = visible.first.coerceAtMost((visible.lastExclusive - 1).coerceAtLeast(0))
         val y = terminalRowCenterY(row)
-        return startSelectionAt(x, y)
+        return showLinkActionsAt(x, y) || startSelectionAt(x, y)
     }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
@@ -763,11 +771,28 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun computeScroll() {
-        if (!scroller.computeScrollOffset()) return
+        if (!scroller.computeScrollOffset()) {
+            flingDestination = TerminalScrollDestination.NONE
+            return
+        }
         val controller = terminalController ?: return
-        val previous = controller.viewport.autoFollow
-        controller.viewport.scrollTo(scroller.currY.toFloat())
-        controller.reportViewportStateIfChanged(previous)
+        when (flingDestination) {
+            TerminalScrollDestination.LOCAL_SCROLLBACK -> {
+                val previous = controller.viewport.autoFollow
+                controller.viewport.scrollTo(scroller.currY.toFloat())
+                controller.reportViewportStateIfChanged(previous)
+            }
+            TerminalScrollDestination.REMOTE_MOUSE -> {
+                if (!controller.isMouseTrackingEnabled()) {
+                    stopActiveFling()
+                    return
+                }
+                val distanceY = (scroller.currY - previousFlingY).toFloat()
+                previousFlingY = scroller.currY
+                sendRemoteMouseWheel(distanceY, remoteFlingX, remoteFlingY)
+            }
+            TerminalScrollDestination.NONE -> return
+        }
         postInvalidateOnAnimation()
     }
 
@@ -777,7 +802,16 @@ class FastTerminalView @JvmOverloads constructor(
         if (!directInputEnabled) return null
         if (terminalController == null) return null
         TerminalInputConnection.configureEditorInfo(outAttrs)
-        return TerminalInputConnection(this, directInputSink).also { activeInputConnection = it }
+        return TerminalInputConnection(this, directInputSink) { request ->
+            imageContentCallback?.onImageContent(request) ?: false
+        }.also { activeInputConnection = it }
+    }
+
+    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyPreIme(keyCode, event)
+        val callback = preImeBackCallback ?: return super.onKeyPreIme(keyCode, event)
+        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) callback()
+        return true
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -849,6 +883,14 @@ class FastTerminalView @JvmOverloads constructor(
         }
     }
 
+    fun setImageContentCallback(callback: TerminalImageContentCallback?) {
+        imageContentCallback = callback
+    }
+
+    fun setPreImeBackCallback(callback: (() -> Unit)?) {
+        preImeBackCallback = callback
+    }
+
     /**
      * Installs only bounded stable references and reveals the active match in the native viewport.
      * Returns false for a stale result rather than retargeting it to newer terminal content.
@@ -910,8 +952,14 @@ class FastTerminalView @JvmOverloads constructor(
         val link = linkAt(x, y)
         if (link != null) {
             activeLink = link
-            showSelectionActionMode()
-            invalidate()
+            if (TerminalLinkPolicy.canOpen(link.uri)) {
+                linkActionCallback.onLinkAction(
+                    TerminalLinkActionRequest(TerminalLinkAction.OPEN, link),
+                )
+            } else {
+                showSelectionActionMode()
+                invalidate()
+            }
             sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED)
             return true
         }
@@ -924,11 +972,28 @@ class FastTerminalView @JvmOverloads constructor(
         return false
     }
 
+    /** Long-pressing a detected URL opens a focused Open/Copy menu instead of word selection. */
+    private fun showLinkActionsAt(x: Float, y: Float): Boolean {
+        val link = linkAt(x, y) ?: return false
+        selection.clear()
+        selectionActionMode?.finish()
+        selectionActionMode = null
+        activeLink = link
+        hideSoftwareKeyboard()
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        showSelectionActionMode()
+        invalidate()
+        return true
+    }
+
     private fun startSelectionAt(x: Float, y: Float): Boolean {
         val controller = terminalController ?: return false
         val row = terminalRowAt(y) ?: return false
         val column = terminalColumnAt(x)
         if (!selection.beginWord(controller, row, column)) return false
+        // Selection is a local terminal-output action, not text entry. Hiding the IME leaves the
+        // floating Copy/Select all toolbar and both drag handles unobstructed on a phone.
+        hideSoftwareKeyboard()
         activeLink = controller.selectionLineAt(row)?.let { selectable ->
             TerminalLinkResolver.find(
                 selectable = selectable,
@@ -1034,8 +1099,8 @@ class FastTerminalView @JvmOverloads constructor(
         }
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = when (item.itemId) {
-            MENU_COPY_SELECTION -> copySelectionToClipboard().also { if (it) mode.finish() }
-            MENU_SELECT_ALL -> selectAllOutput()
+            android.R.id.copy -> copySelectionToClipboard().also { if (it) mode.finish() }
+            android.R.id.selectAll -> selectAllOutput()
             MENU_OPEN_LINK -> requestActiveLinkAction(TerminalLinkAction.OPEN).also { if (it) mode.finish() }
             MENU_COPY_LINK -> requestActiveLinkAction(TerminalLinkAction.COPY).also { if (it) mode.finish() }
             else -> false
@@ -1072,9 +1137,9 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun populateSelectionMenu(menu: Menu) {
         if (selection.hasSelection) {
-            menu.add(Menu.NONE, MENU_COPY_SELECTION, 0, R.string.terminal_action_copy)
+            menu.add(Menu.NONE, android.R.id.copy, 0, R.string.terminal_action_copy)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            menu.add(Menu.NONE, MENU_SELECT_ALL, 1, R.string.terminal_action_select_all)
+            menu.add(Menu.NONE, android.R.id.selectAll, 1, R.string.terminal_action_select_all)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         }
         activeLink?.let { link ->
@@ -1135,13 +1200,16 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun announceTerminalAccessibility(message: CharSequence) {
-        sendAccessibilityEventUnchecked(
-            AccessibilityEvent.obtain(AccessibilityEvent.TYPE_ANNOUNCEMENT).apply {
-                className = FastTerminalView::class.java.name
-                packageName = context.packageName
-                text.add(message)
-            },
-        )
+        val accessibilityManager = context.getSystemService(AccessibilityManager::class.java)
+        dispatchTerminalAccessibilityAnnouncement(accessibilityManager?.isEnabled == true) {
+            sendAccessibilityEventUnchecked(
+                AccessibilityEvent.obtain(AccessibilityEvent.TYPE_ANNOUNCEMENT).apply {
+                    className = FastTerminalView::class.java.name
+                    packageName = context.packageName
+                    text.add(message)
+                },
+            )
+        }
     }
 
     private fun clearSelectionAndLinkActions() {
@@ -1179,7 +1247,7 @@ class FastTerminalView @JvmOverloads constructor(
     ) {
         if (!scrollGestureRouter.updateConfiguration(touchMode, twoFingerLocalScrollOverride)) return
         mouseWheelAccumulator.reset()
-        scroller.forceFinished(true)
+        stopActiveFling()
     }
 
     private fun scrollViewportBy(distanceY: Float) {
@@ -1242,42 +1310,73 @@ class FastTerminalView @JvmOverloads constructor(
                 scrollViewportBy(distanceY)
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
-                val wheelSteps = mouseWheelAccumulator.consume(
-                    distanceY = distanceY,
-                    stepPx = lineHeightPx * MOUSE_WHEEL_LINES_PER_STEP,
-                )
-                repeat(abs(wheelSteps)) {
-                    controller.sendMouseWheel(
-                        up = wheelSteps < 0,
-                        column = ((x - horizontalPaddingPx) / cellWidthPx).toInt(),
-                        row = ((y - verticalPaddingPx) / lineHeightPx).toInt(),
-                    )
-                }
+                remoteFlingX = x
+                remoteFlingY = y
+                sendRemoteMouseWheel(distanceY, x, y)
             }
             TerminalScrollDestination.NONE -> mouseWheelAccumulator.reset()
         }
     }
 
-    private fun startFling(velocityY: Float) {
+    private fun startFling(velocityY: Float, x: Float, y: Float) {
         val controller = terminalController ?: return
         if (pinchZoomConsumed) return
-        if (
-            scrollGestureRouter.destination(controller.isMouseTrackingEnabled()) !=
-            TerminalScrollDestination.LOCAL_SCROLLBACK
-        ) {
-            return
+        flingDestination = scrollGestureRouter.destination(controller.isMouseTrackingEnabled())
+        when (flingDestination) {
+            TerminalScrollDestination.LOCAL_SCROLLBACK -> scroller.fling(
+                0,
+                controller.viewport.scrollY.toInt(),
+                0,
+                -velocityY.toInt(),
+                0,
+                0,
+                0,
+                controller.viewport.maximumScrollY.toInt(),
+            )
+            TerminalScrollDestination.REMOTE_MOUSE -> {
+                mouseWheelAccumulator.reset()
+                previousFlingY = 0
+                remoteFlingX = x
+                remoteFlingY = y
+                scroller.fling(
+                    0,
+                    0,
+                    0,
+                    -velocityY.toInt(),
+                    0,
+                    0,
+                    -REMOTE_FLING_DISTANCE_BOUND_PX,
+                    REMOTE_FLING_DISTANCE_BOUND_PX,
+                )
+            }
+            TerminalScrollDestination.NONE -> return
         }
-        scroller.fling(
-            0,
-            controller.viewport.scrollY.toInt(),
-            0,
-            -velocityY.toInt(),
-            0,
-            0,
-            0,
-            controller.viewport.maximumScrollY.toInt(),
-        )
         postInvalidateOnAnimation()
+    }
+
+    private var remoteFlingX = 0f
+    private var remoteFlingY = 0f
+
+    private fun sendRemoteMouseWheel(distanceY: Float, x: Float, y: Float) {
+        val controller = terminalController ?: return
+        val wheelSteps = mouseWheelAccumulator.consume(
+            distanceY = distanceY,
+            stepPx = lineHeightPx * MOUSE_WHEEL_LINES_PER_STEP,
+        )
+        repeat(abs(wheelSteps)) {
+            controller.sendMouseWheel(
+                up = wheelSteps < 0,
+                column = ((x - horizontalPaddingPx) / cellWidthPx).toInt(),
+                row = ((y - verticalPaddingPx) / lineHeightPx).toInt(),
+            )
+        }
+    }
+
+    private fun stopActiveFling() {
+        scroller.forceFinished(true)
+        flingDestination = TerminalScrollDestination.NONE
+        previousFlingY = 0
+        mouseWheelAccumulator.reset()
     }
 
     private fun showKeyboard() {
@@ -1288,6 +1387,20 @@ class FastTerminalView @JvmOverloads constructor(
     fun requestTerminalInputFocus() {
         if (!directInputEnabled || !isAttachedToWindow || !requestFocus()) return
         restartTerminalInput(showKeyboard = true)
+    }
+
+    fun toggleSoftwareKeyboard() {
+        if (ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) != true) {
+            requestTerminalInputFocus()
+            return
+        }
+        hideSoftwareKeyboard()
+    }
+
+    private fun hideSoftwareKeyboard() {
+        val targetWindowToken = windowToken ?: rootView.windowToken ?: return
+        val inputMethodManager = context.getSystemService(InputMethodManager::class.java)
+        inputMethodManager?.hideSoftInputFromWindow(targetWindowToken, 0)
     }
 
     fun setDirectInputEnabled(enabled: Boolean) {
@@ -1370,13 +1483,12 @@ class FastTerminalView @JvmOverloads constructor(
         private const val MAX_ACCESSIBLE_CHARACTERS = 16_384
         private const val MOUSE_WHEEL_LINES_PER_STEP = 1.5f
         private const val MAX_MOUSE_WHEEL_STEPS_PER_EVENT = 6
+        private const val REMOTE_FLING_DISTANCE_BOUND_PX = 1_000_000
         private const val MIN_PINCH_FONT_SIZE_SP = 8f
         private const val MAX_PINCH_FONT_SIZE_SP = 72f
         private const val MIN_PINCH_FONT_DELTA_SP = 0.05f
         private const val TERMINAL_RESIZE_SETTLE_MS = 120L
         private const val CURSOR_BLINK_INTERVAL_MS = 500L
-        private const val MENU_COPY_SELECTION = 1
-        private const val MENU_SELECT_ALL = 2
         private const val MENU_OPEN_LINK = 3
         private const val MENU_COPY_LINK = 4
         private const val ENABLE_LIGATURE_FEATURES = "'liga' 1, 'calt' 1"
@@ -1387,4 +1499,13 @@ class FastTerminalView @JvmOverloads constructor(
         val result: TerminalFindResult,
         val activeMatchIndex: Int,
     )
+}
+
+internal inline fun dispatchTerminalAccessibilityAnnouncement(
+    accessibilityEnabled: Boolean,
+    announce: () -> Unit,
+): Boolean {
+    if (!accessibilityEnabled) return false
+    announce()
+    return true
 }

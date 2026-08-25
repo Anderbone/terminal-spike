@@ -33,23 +33,33 @@ internal enum class SettingsCategory(
     APPEARANCE(
         R.string.settings_category_appearance,
         R.string.settings_category_appearance_summary,
-        "appearance theme colour color accent font size line height spacing preview",
+        "appearance app theme light dark terminal theme font size line height spacing preview",
     ),
     TERMINAL(
         R.string.settings_category_terminal,
         R.string.settings_category_terminal_summary,
-        "terminal scrollback cursor bell links osc 8 52 clipboard paste alternate screen touch term",
+        "terminal links clipboard paste url multiline",
     ),
     KEYBOARD(
         R.string.settings_category_keyboard,
         R.string.settings_category_keyboard_summary,
-        "keyboard keys accessory rows modifiers haptic repeat raw text tmux vim preset",
+        "keyboard keys accessory rows layout vim preset voice microphone speech language dictation",
+    ),
+    SSH_KEYS(
+        R.string.settings_category_ssh_keys,
+        R.string.settings_category_ssh_keys_summary,
+        "ssh keys identities private public import generate fingerprint authentication",
+    ),
+    SNIPPETS(
+        R.string.settings_category_snippets,
+        R.string.settings_category_snippets_summary,
+        "snippets commands saved insert run terminal shortcuts",
     ),
     SESSIONS_BACKGROUND(
         R.string.settings_category_sessions_background,
         R.string.settings_category_sessions_background_summary,
         "sessions background battery optimisation optimization data saver keep screen awake cpu " +
-            "foreground ssh keepalive reconnect network retry",
+            "foreground ssh keepalive reconnect network retry tmux selector attach session",
     ),
     NOTIFICATIONS(
         R.string.settings_category_notifications,
@@ -59,7 +69,7 @@ internal enum class SettingsCategory(
     BACKUP_RESTORE(
         R.string.settings_category_backup_restore,
         R.string.settings_category_backup_restore_summary,
-        "backup restore export import drive device encrypted passphrase",
+        "backup restore export import drive device file complete",
     ),
     SECURITY(
         R.string.settings_category_security,
@@ -112,6 +122,28 @@ internal enum class AccentPreset(
     }
 }
 
+internal enum class VoiceInputLanguage(
+    val languageTag: String,
+    @StringRes val labelRes: Int,
+) {
+    DEVICE_DEFAULT("", R.string.settings_voice_language_device),
+    ENGLISH_UK("en-GB", R.string.settings_voice_language_english_uk),
+    ENGLISH_US("en-US", R.string.settings_voice_language_english_us),
+    CHINESE_SIMPLIFIED("zh-CN", R.string.settings_voice_language_chinese_simplified),
+    CANTONESE("zh-HK", R.string.settings_voice_language_cantonese),
+    JAPANESE("ja-JP", R.string.settings_voice_language_japanese),
+    KOREAN("ko-KR", R.string.settings_voice_language_korean),
+    FRENCH("fr-FR", R.string.settings_voice_language_french),
+    GERMAN("de-DE", R.string.settings_voice_language_german),
+    SPANISH("es-ES", R.string.settings_voice_language_spanish),
+    ;
+
+    companion object {
+        fun fromLanguageTag(value: String): VoiceInputLanguage =
+            entries.firstOrNull { it.languageTag == value } ?: DEVICE_DEFAULT
+    }
+}
+
 internal data class AppPreferences(
     val appearanceMode: AppearanceMode = AppearanceMode.SYSTEM,
     val dynamicColorEnabled: Boolean = false,
@@ -119,6 +151,7 @@ internal data class AppPreferences(
     val keepaliveIntervalSeconds: Int = 30,
     val reconnectEnabled: Boolean = false,
     val reconnectMaxAttempts: Int = 5,
+    val tmuxSessionSelectorEnabled: Boolean = true,
     val keepCpuAwake: Boolean = false,
     val notificationPrivacyEnabled: Boolean = true,
     val disconnectNotificationsEnabled: Boolean = false,
@@ -128,7 +161,8 @@ internal data class AppPreferences(
     val appLockDelaySeconds: Int = 30,
     val screenshotBlockingEnabled: Boolean = false,
     val sensitiveClipboardClearSeconds: Int = 0,
-    val multilinePasteConfirmationEnabled: Boolean = true,
+    val multilinePasteConfirmationEnabled: Boolean = false,
+    val voiceInputLanguage: VoiceInputLanguage = VoiceInputLanguage.DEVICE_DEFAULT,
 )
 
 internal enum class SensitiveClipboardClearPreset(
@@ -175,8 +209,13 @@ internal fun settingsCategorySummary(
         uiText(
             R.string.settings_category_terminal_live_summary,
             profile.name,
-            profile.scrollbackLines,
-            profile.termValue,
+            uiText(
+                if (state.preferences.multilinePasteConfirmationEnabled) {
+                    R.string.settings_summary_enabled
+                } else {
+                    R.string.settings_summary_disabled
+                },
+            ),
         )
     } ?: uiText(category.summaryRes)
     SettingsCategory.KEYBOARD -> state.keyboardProfile?.let { profile ->
@@ -301,26 +340,7 @@ internal object KeyboardPresets {
     val general = KeyboardPreset(
         id = "general",
         labelRes = R.string.settings_keyboard_preset_general,
-        actions = listOf(
-            KeyboardAction.ESCAPE,
-            KeyboardAction.CONTROL,
-            KeyboardAction.ALT,
-            KeyboardAction.TAB,
-            KeyboardAction.CTRL_C,
-            KeyboardAction.CTRL_W,
-            KeyboardAction.CTRL_D,
-            KeyboardAction.CTRL_L,
-            KeyboardAction.CTRL_R,
-            KeyboardAction.CTRL_U,
-            KeyboardAction.CTRL_A,
-            KeyboardAction.CTRL_E,
-            KeyboardAction.HOME,
-            KeyboardAction.END,
-            KeyboardAction.ARROW_UP,
-            KeyboardAction.ARROW_DOWN,
-            KeyboardAction.ARROW_LEFT,
-            KeyboardAction.ARROW_RIGHT,
-        ),
+        actions = KeyboardAction.DEFAULT_ORDER,
         layout = KeyboardLayout.TWO_ROWS,
         modifierBehavior = ModifierBehavior.ONE_SHOT,
     )
@@ -397,7 +417,7 @@ internal object KeyboardPresets {
         modifierBehavior = ModifierBehavior.ONE_SHOT,
     )
 
-    val selectable = listOf(general, tmuxCodex, vim, minimal)
+    val selectable = listOf(general, vim, minimal)
 
     fun selectedId(profile: KeyboardProfile): String = selectable.firstOrNull { it.matches(profile) }?.id ?: "custom"
 }
@@ -439,16 +459,111 @@ internal fun planKeyboardDeckMigration(
 internal fun KeyboardProfile.isUntouchedShippedKeyboardDeck(): Boolean =
     id == LegacyIds.defaultKeyboardProfile &&
         name == SHIPPED_KEYBOARD_PROFILE_NAME &&
-        layout == KeyboardLayout.ONE_ROW &&
-        orderedActions in shippedOneRowKeyboardActionOrders &&
+        (
+            (
+                layout == KeyboardLayout.ONE_ROW &&
+                    orderedActions in shippedOneRowKeyboardActionOrders &&
+                    createdAtEpochMillis == updatedAtEpochMillis
+                ) ||
+                (
+                    layout == KeyboardLayout.TWO_ROWS &&
+                        orderedActions in previousGeneralKeyboardActionOrders
+                )
+            ) &&
         modifierBehavior == KeyboardPresets.general.modifierBehavior &&
         hapticFeedbackEnabled == KeyboardPresets.general.hapticFeedbackEnabled &&
         keyRepeatEnabled == KeyboardPresets.general.keyRepeatEnabled &&
         inputMode == KeyboardPresets.general.inputMode &&
-        tmuxPrefix == KeyboardPresets.general.tmuxPrefix &&
-        createdAtEpochMillis == updatedAtEpochMillis
+        tmuxPrefix == KeyboardPresets.general.tmuxPrefix
 
 private const val SHIPPED_KEYBOARD_PROFILE_NAME = "Default"
+
+private val previousGeneralKeyboardActionOrders: List<List<KeyboardAction>> = listOf(
+    listOf(
+        KeyboardAction.ESCAPE,
+        KeyboardAction.SLASH,
+        KeyboardAction.AT_SIGN,
+        KeyboardAction.DOLLAR,
+        KeyboardAction.PASTE,
+        KeyboardAction.HOME,
+        KeyboardAction.ARROW_UP,
+        KeyboardAction.END,
+        KeyboardAction.PAGE_UP,
+        KeyboardAction.BACKSPACE,
+        KeyboardAction.TAB,
+        KeyboardAction.CONTROL,
+        KeyboardAction.ALT,
+        KeyboardAction.CTRL_C,
+        KeyboardAction.CTRL_W,
+        KeyboardAction.ARROW_LEFT,
+        KeyboardAction.ARROW_DOWN,
+        KeyboardAction.ARROW_RIGHT,
+        KeyboardAction.ENTER,
+        KeyboardAction.HIDE_KEYBOARD,
+    ),
+    listOf(
+        KeyboardAction.ESCAPE,
+        KeyboardAction.SLASH,
+        KeyboardAction.AT_SIGN,
+        KeyboardAction.DOLLAR,
+        KeyboardAction.HOME,
+        KeyboardAction.ARROW_UP,
+        KeyboardAction.END,
+        KeyboardAction.PAGE_UP,
+        KeyboardAction.PASTE,
+        KeyboardAction.BACKSPACE,
+        KeyboardAction.TAB,
+        KeyboardAction.CONTROL,
+        KeyboardAction.ALT,
+        KeyboardAction.CTRL_C,
+        KeyboardAction.CTRL_W,
+        KeyboardAction.ARROW_LEFT,
+        KeyboardAction.ARROW_DOWN,
+        KeyboardAction.ARROW_RIGHT,
+        KeyboardAction.ENTER,
+        KeyboardAction.HIDE_KEYBOARD,
+    ),
+    listOf(
+        KeyboardAction.ESCAPE,
+        KeyboardAction.CONTROL,
+        KeyboardAction.ALT,
+        KeyboardAction.TAB,
+        KeyboardAction.CTRL_C,
+        KeyboardAction.CTRL_W,
+        KeyboardAction.CTRL_D,
+        KeyboardAction.CTRL_L,
+        KeyboardAction.CTRL_R,
+        KeyboardAction.CTRL_U,
+        KeyboardAction.CTRL_A,
+        KeyboardAction.CTRL_E,
+        KeyboardAction.HOME,
+        KeyboardAction.END,
+        KeyboardAction.ARROW_UP,
+        KeyboardAction.ARROW_DOWN,
+        KeyboardAction.ARROW_LEFT,
+        KeyboardAction.ARROW_RIGHT,
+    ),
+    listOf(
+        KeyboardAction.ESCAPE,
+        KeyboardAction.SLASH,
+        KeyboardAction.AT_SIGN,
+        KeyboardAction.DOLLAR,
+        KeyboardAction.HOME,
+        KeyboardAction.ARROW_UP,
+        KeyboardAction.END,
+        KeyboardAction.PAGE_UP,
+        KeyboardAction.PASTE,
+        KeyboardAction.TAB,
+        KeyboardAction.CONTROL,
+        KeyboardAction.CTRL_C,
+        KeyboardAction.CTRL_W,
+        KeyboardAction.ARROW_LEFT,
+        KeyboardAction.ARROW_DOWN,
+        KeyboardAction.ARROW_RIGHT,
+        KeyboardAction.ENTER,
+        KeyboardAction.HIDE_KEYBOARD,
+    ),
+)
 
 private val shippedOneRowKeyboardActionOrders: List<List<KeyboardAction>> = listOf(
     listOf(
@@ -495,10 +610,12 @@ private val shippedOneRowKeyboardActionOrders: List<List<KeyboardAction>> = list
         KeyboardAction.AT_SIGN,
         KeyboardAction.HIDE_KEYBOARD,
     ),
+    *previousGeneralKeyboardActionOrders.toTypedArray(),
     KeyboardPresets.general.actions,
 )
 
-internal val runtimeSupportedKeyboardActions: List<KeyboardAction> = KeyboardAction.entries
+internal val runtimeSupportedKeyboardActions: List<KeyboardAction> =
+    KeyboardAction.entries.filterNot { it == KeyboardAction.TMUX_PREFIX }
 
 /**
  * Projects every persisted keyboard action into a truthful runtime type. Local actions remain
@@ -526,8 +643,16 @@ private fun KeyboardAction.toRuntimeAccessoryActionOrNull(
         action = TerminalLocalAccessoryAction.PASTE,
         stableId = wireCode,
     )
+    KeyboardAction.SELECT_IMAGES -> TerminalAccessoryAction.Local(
+        action = TerminalLocalAccessoryAction.SELECT_IMAGES,
+        stableId = wireCode,
+    )
     KeyboardAction.SNIPPETS -> TerminalAccessoryAction.Local(
         action = TerminalLocalAccessoryAction.SNIPPETS,
+        stableId = wireCode,
+    )
+    KeyboardAction.TMUX_SESSIONS -> TerminalAccessoryAction.Local(
+        action = TerminalLocalAccessoryAction.TMUX_SESSIONS,
         stableId = wireCode,
     )
     KeyboardAction.KEYBOARD_SETTINGS -> TerminalAccessoryAction.Local(
@@ -536,6 +661,13 @@ private fun KeyboardAction.toRuntimeAccessoryActionOrNull(
     )
     else -> toTerminalExtraKeyOrNull()?.toAccessoryAction(stableId = wireCode)
 }
+
+internal fun defaultRuntimeAccessoryActions(): List<TerminalAccessoryAction> =
+    KeyboardAction.DEFAULT_ORDER.map { action ->
+        requireNotNull(
+            action.toRuntimeAccessoryActionOrNull(KeyboardProfile.DEFAULT_TMUX_PREFIX),
+        )
+    }
 
 internal fun KeyboardProfile.toRuntimeExtraKeysOrNull(): List<TerminalExtraKey>? {
     val keys = ArrayList<TerminalExtraKey>(orderedActions.size)
@@ -606,7 +738,9 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.SHIFT,
     KeyboardAction.TMUX_PREFIX,
     KeyboardAction.PASTE,
+    KeyboardAction.SELECT_IMAGES,
     KeyboardAction.SNIPPETS,
+    KeyboardAction.TMUX_SESSIONS,
     KeyboardAction.KEYBOARD_SETTINGS,
     -> null
     else -> runCatching { TerminalExtraKey.valueOf(name) }.getOrNull()
@@ -618,10 +752,25 @@ internal fun settingsCategoriesForSearch(
 ): List<SettingsCategory> {
     val normalizedTerms = query.trim().lowercase().split(Regex("\\s+")).filter(String::isNotEmpty)
     return SettingsCategory.entries.filter { category ->
+        category in userFacingSettingsCategories &&
         (includeDeveloper || category != SettingsCategory.DEVELOPER) &&
             normalizedTerms.all { term -> term in category.searchTerms }
     }
 }
+
+internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
+    SettingsCategory.APPEARANCE,
+    SettingsCategory.TERMINAL,
+    SettingsCategory.KEYBOARD,
+    SettingsCategory.SSH_KEYS,
+    SettingsCategory.SNIPPETS,
+    SettingsCategory.SESSIONS_BACKGROUND,
+    SettingsCategory.NOTIFICATIONS,
+    SettingsCategory.BACKUP_RESTORE,
+    SettingsCategory.MOSH,
+    SettingsCategory.ABOUT,
+    SettingsCategory.DEVELOPER,
+)
 
 internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     appearanceMode = when (themeMode) {
@@ -634,6 +783,7 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     keepaliveIntervalSeconds = keepaliveIntervalSeconds,
     reconnectEnabled = reconnectEnabled,
     reconnectMaxAttempts = reconnectMaxAttempts,
+    tmuxSessionSelectorEnabled = !tmuxSessionSelectorDisabled,
     keepCpuAwake = keepCpuAwake,
     notificationPrivacyEnabled = notificationPrivacyEnabled,
     disconnectNotificationsEnabled = disconnectNotificationsEnabled,
@@ -649,6 +799,7 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     screenshotBlockingEnabled = screenshotBlockingEnabled,
     sensitiveClipboardClearSeconds = sensitiveClipboardClearSeconds,
     multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
+    voiceInputLanguage = VoiceInputLanguage.fromLanguageTag(voiceInputLanguageTag),
 )
 
 internal fun AppearanceMode.toProto(): AppSettings.ThemeMode = when (this) {

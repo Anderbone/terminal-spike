@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference
 @RunWith(AndroidJUnit4::class)
 class TerminalClipboardWriterTest {
     @Test
-    fun explicitRemoteClipboardPathWritesASensitiveClip() {
+    fun explicitRemoteClipboardPathWritesVisiblePlainText() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             dismissPendingAutofillSavePrompts()
             val token = scenario.writeAndAwaitClipboardChange { writer ->
@@ -44,8 +44,9 @@ class TerminalClipboardWriterTest {
                     "allowed remote value",
                     clip?.getItemAt(0)?.text?.toString(),
                 )
+                assertNotNull(clip?.description?.extras)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    assertTrue(
+                    assertFalse(
                         clip
                             ?.description
                             ?.extras
@@ -58,7 +59,7 @@ class TerminalClipboardWriterTest {
     }
 
     @Test
-    fun writesSensitiveClipAndOlderTokenCannotClearNewerIdenticalCopy() {
+    fun writesVisiblePlainTextAndOlderTokenCannotClearNewerIdenticalCopy() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             dismissPendingAutofillSavePrompts()
             val request = TerminalClipboardRequest(
@@ -77,8 +78,9 @@ class TerminalClipboardWriterTest {
                 val clipboard = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
                 val clip = clipboard.primaryClip
                 assertEquals("same terminal value", clip?.getItemAt(0)?.text?.toString())
+                assertNotNull(clip?.description?.extras)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    assertTrue(
+                    assertFalse(
                         clip
                             ?.description
                             ?.extras

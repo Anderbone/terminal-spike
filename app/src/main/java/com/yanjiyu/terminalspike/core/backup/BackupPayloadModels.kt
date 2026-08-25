@@ -279,6 +279,7 @@ data class BackupGlobalSettings(
     val sensitiveClipboardClearSeconds: Int = 0,
     val osc52Policy: RemoteClipboardMode = RemoteClipboardMode.ASK,
     val multilinePasteConfirmationEnabled: Boolean = true,
+    val tmuxSessionSelectorDisabled: Boolean = false,
     val lastBackupMode: BackupMode? = null,
 ) {
     init {

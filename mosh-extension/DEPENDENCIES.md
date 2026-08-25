@@ -18,8 +18,13 @@ Every native input is immutable, official source. `third_party/SOURCES.tsv` is m
 No OpenSSL, GMP, analytics, advertising, cloud, AI, account, sync, or terminal-application source is
 compiled into this extension.
 
-The only patch applied to an upstream archive is
-`patches/mosh-1.4.0-android-key-hygiene.patch`, SHA-256
-`5240b0a7e90c1d223acb1f793e80787211ad88bc201fb1e87777d757c428d6ec`. The build applies it to a
-fresh Mosh extraction with `--fuzz=0`; it removes avoidable printable/copy key material from the
-Android client path and does not modify the checked-in archive.
+The build applies two reviewed patches to each fresh Mosh extraction with `--fuzz=0` and does not
+modify the checked-in archive:
+
+- `patches/mosh-1.4.0-android-key-hygiene.patch`, SHA-256
+  `5240b0a7e90c1d223acb1f793e80787211ad88bc201fb1e87777d757c428d6ec`, removes avoidable
+  printable/copy key material from the Android client path.
+- `patches/mosh-1.4.0-android-network.patch`, SHA-256
+  `f86ed279988f817179de160cf45fc3456bc36495736f4364f59c00abae36d560`, leaves Linux-specific
+  path-MTU and ECN socket configuration to Android so framework-managed VPN routes can carry the
+  client datagrams.

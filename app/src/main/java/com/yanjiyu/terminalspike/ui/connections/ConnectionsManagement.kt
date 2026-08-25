@@ -302,18 +302,23 @@ internal fun validateHostEditor(
     draft: HostEditorDraft,
     availableKeyIds: Set<String>,
 ): HostEditorValidation {
-    val displayName = draft.displayName.trim()
     val hostname = draft.hostname.trim().removeSurrounding("[", "]")
+    val enteredDisplayName = draft.displayName.trim()
+    val displayName = enteredDisplayName.ifEmpty {
+        hostname.take(ModelLimits.MAX_DISPLAY_NAME_LENGTH)
+    }
     val username = draft.username.trim()
     val port = draft.port.toIntOrNull()
     val group = draft.group.trim().takeIf(String::isNotEmpty)
     val tag = draft.tag.trim().takeIf(String::isNotEmpty)
     val startupCommand = draft.startupCommand.takeIf(String::isNotBlank)
-    val displayNameError = validatePlainText(
-        value = displayName,
-        labelRes = R.string.connections_field_friendly_name,
-        maximumLength = ModelLimits.MAX_DISPLAY_NAME_LENGTH,
-    )
+    val displayNameError = enteredDisplayName.takeIf(String::isNotEmpty)?.let {
+        validatePlainText(
+            value = it,
+            labelRes = R.string.connections_field_friendly_name,
+            maximumLength = ModelLimits.MAX_DISPLAY_NAME_LENGTH,
+        )
+    }
     val hostnameError = validateHostname(hostname)
     val portError = if (port == null || port !in ModelLimits.MIN_PORT..ModelLimits.MAX_PORT) {
         uiText(R.string.connections_validation_port)

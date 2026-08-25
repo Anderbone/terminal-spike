@@ -13,14 +13,13 @@ class ConnectionDialogNavigationTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun cancellingQuickConnectKeepsTheWorkspaceVisible() {
-        composeRule.onNodeWithContentDescription("Start a new SSH connection").performClick()
-        composeRule.onNodeWithText("New SSH session").assertIsDisplayed()
+    fun cancellingAddHostKeepsConnectionsVisible() {
+        composeRule.onNodeWithContentDescription("Add host").performClick()
+        composeRule.onNodeWithText("Add host").assertIsDisplayed()
 
         composeRule.onNodeWithText("Cancel").performClick()
 
-        composeRule.onNodeWithText("New SSH session").assertDoesNotExist()
-        composeRule.onNodeWithText("Active sessions").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Connections screen").assertIsDisplayed()
         composeRule.onNodeWithText("Renderer lab").assertDoesNotExist()
     }
 }

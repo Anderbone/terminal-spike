@@ -5,7 +5,7 @@
     <string name="settings_summary_disabled">Off</string>
     <string name="settings_category_list_description">Settings categories</string>
     <string name="settings_category_appearance_live_summary">%1$s · %2$s · %3$dsp</string>
-    <string name="settings_category_terminal_live_summary">%1$s · %2$d lines · TERM %3$s</string>
+    <string name="settings_category_terminal_live_summary">%1$s · links automatic · paste confirmation %2$s</string>
     <string name="settings_category_keyboard_live_summary">%1$s · %2$s</string>
     <plurals name="settings_category_keyboard_key_count">
         <item quantity="one">%1$d key</item>
@@ -33,6 +33,7 @@
     <string name="navigation_terminal">Terminal</string>
     <string name="navigation_settings">Settings</string>
     <string name="navigation_open_workspace">Open local workspace</string>
+    <string name="navigation_open_connections">Open connections</string>
     <string name="navigation_open_terminal">Open terminal</string>
     <string name="navigation_open_settings">Open settings</string>
     <string name="navigation_back_from">Back from %1$s</string>
@@ -93,6 +94,21 @@
     <string name="terminal_multiline_paste_title">Paste multiple lines?</string>
     <string name="terminal_multiline_paste_message">This will paste the complete multiline draft into the current terminal. No extra Enter key will be added.</string>
     <string name="terminal_paste">Paste</string>
+    <string name="notice_image_paste_uploading">Uploading image…</string>
+    <plurals name="notice_image_paste_uploading_count">
+        <item quantity="one">Uploading %d image…</item>
+        <item quantity="other">Uploading %d images…</item>
+    </plurals>
+    <string name="notice_image_paste_attached">Image attached to terminal input</string>
+    <plurals name="notice_image_paste_attached_count">
+        <item quantity="one">%d image attached to terminal input</item>
+        <item quantity="other">%d images attached to terminal input</item>
+    </plurals>
+    <string name="notice_image_paste_partial">%1$d of %2$d images attached to terminal input</string>
+    <string name="notice_image_paste_failed">Could not attach the image</string>
+    <string name="notice_image_paste_requires_remote">Image paste requires a connected SSH or Mosh session</string>
+    <string name="notice_image_paste_format_unsupported">This image format is not supported</string>
+    <string name="notice_image_paste_too_large">Images must be 20 MB or smaller</string>
     <string name="terminal_customize_keys">Customize terminal keys</string>
     <string name="terminal_edit_keys_short">EDIT</string>
     <string name="terminal_modifier_off">%1$s off</string>
@@ -426,6 +442,7 @@
     <string name="host_editor_edit_title">Edit host</string>
     <string name="host_editor_connection_heading">Connection</string>
     <string name="host_editor_friendly_name">Friendly name</string>
+    <string name="host_editor_connection_name_optional">Connection name (optional)</string>
     <string name="host_editor_protocol">Protocol</string>
     <string name="protocol_mosh">Mosh</string>
     <string name="host_editor_mosh_unavailable">Mosh extension not installed or not ready. You can save this host, but Mosh cannot start yet.</string>
@@ -478,7 +495,7 @@
     <string name="host_editor_mosh_fallback_detail">Fallback starts a fresh SSH shell and never follows authentication or host-key rejection.</string>
     <string name="host_editor_save_failed">Could not save this host. Your changes are still here; try again.</string>
     <string name="host_editor_saving">Saving…</string>
-    <string name="host_editor_save">Save host</string>
+    <string name="host_editor_save">Save</string>
     <string name="host_editor_test_start_failed">Connection test could not start.</string>
     <string name="host_editor_cancel_test">Cancel test</string>
     <string name="host_editor_test_connection">Test connection</string>
@@ -561,6 +578,11 @@
     <string name="host_connect_action">Connect</string>
     <string name="host_connect_with_ssh">Connect with SSH</string>
     <string name="session_new_description">New terminal session</string>
+    <string name="session_add_saved_connection_description">Add saved connection to terminal</string>
+    <string name="terminal_saved_connection_picker_title">Open saved connection</string>
+    <string name="terminal_saved_connection_picker_detail">Choose a saved connection to open in a new terminal session.</string>
+    <string name="terminal_saved_connection_picker_empty">No saved connections yet. Add one from the Connections workspace first.</string>
+    <string name="terminal_saved_connection_picker_open_connections">Go to Connections</string>
     <string name="session_close_title">Close %1$s?</string>
     <string name="session_close_connected_detail">Disconnect keeps this tab and its local scrollback. Closing disconnects the SSH session and permanently removes the tab and scrollback.</string>
     <string name="session_close_disconnected_detail">This permanently removes the session tab and its local scrollback.</string>

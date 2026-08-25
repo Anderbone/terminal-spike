@@ -245,6 +245,12 @@ public class MoshWorker0Service : BaseMoshWorkerService()
 public class MoshWorker1Service : BaseMoshWorkerService()
 public class MoshWorker2Service : BaseMoshWorkerService()
 public class MoshWorker3Service : BaseMoshWorkerService()
+public class MoshWorker4Service : BaseMoshWorkerService()
+public class MoshWorker5Service : BaseMoshWorkerService()
+public class MoshWorker6Service : BaseMoshWorkerService()
+public class MoshWorker7Service : BaseMoshWorkerService()
+public class MoshWorker8Service : BaseMoshWorkerService()
+public class MoshWorker9Service : BaseMoshWorkerService()
 
 internal data class NativeFinalEvent(
     val state: Int,

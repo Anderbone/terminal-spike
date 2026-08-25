@@ -26,7 +26,7 @@ import org.junit.Test
 
 class MoshBootstrapTest {
     @Test
-    fun successReturnsNumericEndpointAndMutableKeyThenClosesEverySshResource() = runTest {
+    fun successReturnsNumericEndpointMutableKeyAndAuthenticatedSideChannel() = runTest {
         val password = "bootstrap-password".encodeToByteArray()
         val channel = FakeExecChannel(
             stdoutBytes = (
@@ -51,11 +51,19 @@ class MoshBootstrapTest {
         )
         assertTrue(password.isAllZero())
         assertTrue(channel.closeCalled)
-        assertTrue(session.closeCalled)
+        assertFalse(session.closeCalled)
+
+        val uploadedPath = result.uploadPastedImage(
+            "00000000-0000-0000-0000-000000000001.png",
+            ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+        )
+        assertEquals("/home/user/image.png", uploadedPath)
+        assertArrayEquals(byteArrayOf(1, 2, 3), session.uploadedBytes)
 
         val returnedKey = result.sessionKey
         result.close()
         assertTrue(returnedKey.isAllZero())
+        assertTrue(session.closeCalled)
     }
 
     @Test
@@ -402,10 +410,16 @@ private class FakeExecSession(
 ) : MoshSshExecSession {
     var closeCalled = false
     var command: String? = null
+    var uploadedBytes: ByteArray? = null
 
     override fun openExec(command: String): MoshExecChannel {
         this.command = command
         return channel
+    }
+
+    override fun uploadPastedImage(fileName: String, source: InputStream): String {
+        uploadedBytes = source.readBytes()
+        return "/home/user/image.png"
     }
 
     override fun close() {

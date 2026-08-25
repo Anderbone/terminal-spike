@@ -89,31 +89,27 @@ class WorkspacePresentationTest {
     }
 
     @Test
-    fun cardOverflowHeaderMenuAndEmptyActionDispatchRealCallbacks() {
+    fun cardOverflowAndTerminalDestinationDispatchRealCallbacksWithoutHeaderMenu() {
         var reopened: Long? = null
         var duplicated: Long? = null
         var openedTerminal = false
-        var openedConnections = false
         setWorkspaceContent(
             workspace = populatedWorkspace(),
             onReopen = { reopened = it },
             onDuplicate = { duplicated = it },
             onOpenTerminal = { openedTerminal = true },
-            onOpenConnections = { openedConnections = true },
         )
 
         composeRule.onNodeWithTag("workspace-active-session-11").performClick()
         composeRule.onNodeWithContentDescription("Session actions for Production").performClick()
         composeRule.onNodeWithText("Duplicate").performClick()
         composeRule.onNodeWithContentDescription("Open terminal").performClick()
-        composeRule.onNodeWithContentDescription("Workspace destinations").performClick()
-        composeRule.onNodeWithContentDescription("Open Connections from Workspace menu").performClick()
+        composeRule.onNodeWithContentDescription("Workspace destinations").assertDoesNotExist()
 
         composeRule.runOnIdle {
             assertEquals(11L, reopened)
             assertEquals(11L, duplicated)
             assertTrue(openedTerminal)
-            assertTrue(openedConnections)
         }
     }
 

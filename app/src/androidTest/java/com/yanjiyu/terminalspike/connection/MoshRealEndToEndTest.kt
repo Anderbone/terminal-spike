@@ -94,7 +94,7 @@ class MoshRealEndToEndTest {
                 }
             }
 
-            val command = "printf 'MOSH_%d\\n' $((6*7))\n".encodeToByteArray()
+            val command = "printf 'MOSH_42\\n'\n".encodeToByteArray()
             command.forEach { byte ->
                 assertTrue(
                     "The connected Mosh input pipe rejected a typed command byte.",

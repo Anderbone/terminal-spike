@@ -27,42 +27,42 @@ class ExtraKeysBarLayoutTest {
     }
 
     @Test
-    fun shippedDefaultIsExactlyOneNineByTwoPageWithoutAnExtraLiveAction() {
+    fun shippedDefaultIsExactlyOneTenByTwoPageWithoutAnExtraLiveAction() {
         val pages = terminalShortcutPages(
             keys = TerminalExtraKey.DEFAULT_ORDER,
-            columnCount = 9,
+            columnCount = 10,
             includeCustomizeAction = false,
         )
 
-        assertEquals(18, TerminalExtraKey.DEFAULT_ORDER.size)
-        assertEquals(listOf(18), pages.map { it.size })
+        assertEquals(20, TerminalExtraKey.DEFAULT_ORDER.size)
+        assertEquals(listOf(20), pages.map { it.size })
         assertEquals(TerminalExtraKey.DEFAULT_ORDER, pages.single().filterNotNull())
     }
 
     @Test
-    fun oneRowProfilePaginatesAtExactlyNinePhoneKeys() {
+    fun oneRowProfilePaginatesAtExactlyTenPhoneKeys() {
         val pages = terminalShortcutPages(
             keys = TerminalExtraKey.DEFAULT_ORDER,
-            columnCount = 9,
+            columnCount = 10,
             rowCount = 1,
             includeCustomizeAction = false,
         )
 
-        assertEquals(listOf(9, 9), pages.map { it.size })
+        assertEquals(listOf(10, 10), pages.map { it.size })
         assertEquals(TerminalExtraKey.DEFAULT_ORDER, pages.flatten().filterNotNull())
     }
 
     @Test
-    fun columnCountIsExactlyNineAtCompactAndDeviceWidths() {
-        assertEquals(9, terminalShortcutColumnCount(320f))
-        assertEquals(9, terminalShortcutColumnCount(360f))
-        assertEquals(9, terminalShortcutColumnCount(412f))
-        assertEquals(9, terminalShortcutColumnCount(1_000f))
+    fun columnCountIsExactlyTenAtCompactAndDeviceWidths() {
+        assertEquals(10, terminalShortcutColumnCount(320f))
+        assertEquals(10, terminalShortcutColumnCount(360f))
+        assertEquals(10, terminalShortcutColumnCount(412f))
+        assertEquals(10, terminalShortcutColumnCount(1_000f))
     }
 
     @Test
     fun columnCountReducesOnlyForWindowsNarrowerThanCompactPhoneWidth() {
-        assertEquals(8, terminalShortcutColumnCount(288f))
+        assertEquals(9, terminalShortcutColumnCount(288f))
         assertEquals(7, terminalShortcutColumnCount(240f))
     }
 

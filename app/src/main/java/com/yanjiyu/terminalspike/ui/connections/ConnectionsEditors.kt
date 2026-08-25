@@ -3,7 +3,9 @@ package com.yanjiyu.terminalspike.ui.connections
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -13,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -67,6 +70,7 @@ internal fun HostEditorDialog(
     moshAvailable: Boolean,
     onDraftChanged: ((HostEditorDraft) -> Unit)? = null,
     onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null,
     onSave: suspend (HostEditorSubmission) -> Result<Unit>,
     onTest: ((HostEditorSubmission) -> Long)?,
     testState: HostConnectionTestUiState = HostConnectionTestUiState.Idle,
@@ -89,12 +93,14 @@ internal fun HostEditorDialog(
     var transientSecretWasEntered by rememberSaveable(editorToken) {
         mutableStateOf(false)
     }
+    val initialSavePassword = savedSecretAvailable || initial.persistentId == null
     var savePassword by rememberSaveable(editorToken) {
-        mutableStateOf(savedSecretAvailable)
+        mutableStateOf(initialSavePassword)
     }
     var errors by remember { mutableStateOf(HostEditorErrors()) }
     var advancedExpanded by remember { mutableStateOf(false) }
     var discardConfirmation by remember { mutableStateOf(false) }
+    var deleteConfirmation by remember { mutableStateOf(false) }
     var openMoshStatusAfterDiscard by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveFailure by remember { mutableStateOf<UiText?>(null) }
@@ -118,7 +124,7 @@ internal fun HostEditorDialog(
         visibleTestState is HostConnectionTestUiState.AwaitingHostIdentity ||
         visibleTestState is HostConnectionTestUiState.AwaitingKeyboardInteractive
     val testResult = (visibleTestState as? HostConnectionTestUiState.Complete)?.result
-    val isDirty = draft != initial || secretState.hasValue || savePassword != savedSecretAvailable
+    val isDirty = draft != initial || secretState.hasValue || savePassword != initialSavePassword
     val transientSecretNeedsReentry = transientSecretWasEntered && !secretState.hasValue
     val secretReentryMessage = when (draft.authenticationMethod) {
         HostAuthenticationMethod.PASSWORD -> uiText(R.string.host_editor_secret_reenter_password)
@@ -211,6 +217,17 @@ internal fun HostEditorDialog(
         }
         nextErrors = nextErrors.copy(authentication = authenticationError)
         errors = nextErrors
+        if (
+            nextErrors.group != null ||
+            nextErrors.tag != null ||
+            nextErrors.startupCommand != null ||
+            nextErrors.keepalive != null ||
+            nextErrors.moshPort != null ||
+            nextErrors.moshServerCommand != null ||
+            nextErrors.moshLocale != null
+        ) {
+            advancedExpanded = true
+        }
         val value = validation.value?.takeIf { nextErrors.isEmpty } ?: return null
         return HostEditorSubmission(
             value = value,
@@ -218,6 +235,49 @@ internal fun HostEditorDialog(
             savePassword = draft.authenticationMethod == HostAuthenticationMethod.PASSWORD &&
                 savePassword,
         )
+    }
+
+    fun toggleConnectionTest() {
+        if (testing) {
+            cancelOwnedTest()
+            return
+        }
+        // A new test replaces the exact prior completed presentation.
+        cancelOwnedTest()
+        val submission = submissionOrNull(forTest = true) ?: return
+        testedDraft = draft
+        try {
+            testOperationToken = onTest?.invoke(submission)
+        } catch (_: Exception) {
+            submission.wipe()
+            saveFailure = uiText(R.string.host_editor_test_start_failed)
+        }
+    }
+
+    fun saveHost() {
+        val submission = submissionOrNull(forTest = false) ?: return
+        saving = true
+        saveFailure = null
+        scope.launch {
+            val result = try {
+                onSave(submission)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Result.failure(error)
+            } finally {
+                submission.wipe()
+            }
+            if (result.isSuccess) {
+                secretState.wipe()
+                transientSecretWasEntered = false
+                cancelOwnedTest()
+                onDismiss()
+            } else {
+                saveFailure = uiText(R.string.host_editor_save_failed)
+                saving = false
+            }
+        }
     }
 
     AlertDialog(
@@ -260,18 +320,6 @@ internal fun HostEditorDialog(
                 Text(
                     stringResource(R.string.host_editor_connection_heading),
                     style = MaterialTheme.typography.titleSmall,
-                )
-                OutlinedTextField(
-                    value = draft.displayName,
-                    onValueChange = { updateDraft(draft.copy(displayName = it.take(96))) },
-                    modifier = Modifier.fillMaxWidth().testTag(HostEditorNameTestTag),
-                    label = { Text(stringResource(R.string.host_editor_friendly_name)) },
-                    supportingText = errors.displayName?.let { message ->
-                        ({ Text(message.resolve()) })
-                    },
-                    isError = errors.displayName != null,
-                    enabled = editorControlsEnabled,
-                    singleLine = true,
                 )
                 Text(
                     stringResource(R.string.host_editor_protocol),
@@ -318,30 +366,6 @@ internal fun HostEditorDialog(
                         }
                     }
                 }
-                nearbySshDiscoveryController?.let { controller ->
-                    val discoveryActive = nearbySshDiscoveryState is NearbySshDiscoveryState.Searching ||
-                        nearbySshDiscoveryState is NearbySshDiscoveryState.Resolving
-                    OutlinedButton(
-                        onClick = {
-                            if (discoveryActive) controller.cancel() else controller.start()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(HostEditorNearbySshButtonTestTag),
-                        enabled = !saving && !testing,
-                    ) {
-                        Text(
-                            stringResource(
-                                if (discoveryActive) {
-                                    R.string.connections_nearby_ssh_cancel
-                                } else {
-                                    R.string.connections_nearby_ssh_detect
-                                },
-                            ),
-                        )
-                    }
-                    NearbySshInlineStatus(nearbySshDiscoveryState)
-                }
                 OutlinedTextField(
                     value = draft.hostname,
                     onValueChange = { updateDraft(draft.copy(hostname = it.take(253))) },
@@ -386,14 +410,15 @@ internal fun HostEditorDialog(
                     )
                 }
 
-                HorizontalDivider()
                 Text(
                     stringResource(R.string.host_editor_authentication),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.labelMedium,
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     HostAuthenticationMethod.entries.forEach { method ->
                         FilterChip(
@@ -429,6 +454,7 @@ internal fun HostEditorDialog(
                                                 R.string.host_editor_auth_interactive
                                         },
                                     ),
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             },
                         )
@@ -475,6 +501,7 @@ internal fun HostEditorDialog(
                             Checkbox(
                                 checked = savePassword,
                                 onCheckedChange = ::updateSavePassword,
+                                modifier = Modifier.testTag(HostEditorSavePasswordTestTag),
                                 enabled = editorControlsEnabled,
                             )
                             Column {
@@ -508,60 +535,17 @@ internal fun HostEditorDialog(
                 errors.authentication
                     ?.takeUnless { transientSecretNeedsReentry && it == secretReentryMessage }
                     ?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                HorizontalDivider()
-                Text(stringResource(R.string.host_editor_profiles_heading), style = MaterialTheme.typography.titleSmall)
-                SimpleOptionMenu(
-                    label = stringResource(R.string.host_editor_terminal_profile),
-                    selectedId = draft.terminalProfileId,
-                    options = catalog.terminalProfiles,
-                    onSelected = { updateDraft(draft.copy(terminalProfileId = it)) },
-                    enabled = editorControlsEnabled,
-                )
-                SimpleOptionMenu(
-                    label = stringResource(R.string.host_editor_keyboard_profile),
-                    selectedId = draft.keyboardProfileId,
-                    options = catalog.keyboardProfiles,
-                    onSelected = { updateDraft(draft.copy(keyboardProfileId = it)) },
-                    enabled = editorControlsEnabled,
-                )
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = draft.isFavourite,
-                        onCheckedChange = { updateDraft(draft.copy(isFavourite = it)) },
-                        enabled = editorControlsEnabled,
-                    )
-                    Text(stringResource(R.string.host_editor_favourite))
-                }
                 OutlinedTextField(
-                    value = draft.group,
-                    onValueChange = { updateDraft(draft.copy(group = it.take(64))) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.host_editor_group_optional)) },
-                    supportingText = errors.group?.let { message -> ({ Text(message.resolve()) }) },
-                    isError = errors.group != null,
+                    value = draft.displayName,
+                    onValueChange = { updateDraft(draft.copy(displayName = it.take(96))) },
+                    modifier = Modifier.fillMaxWidth().testTag(HostEditorNameTestTag),
+                    label = { Text(stringResource(R.string.host_editor_connection_name_optional)) },
+                    supportingText = errors.displayName?.let { message ->
+                        ({ Text(message.resolve()) })
+                    },
+                    isError = errors.displayName != null,
                     enabled = editorControlsEnabled,
                     singleLine = true,
-                )
-                OutlinedTextField(
-                    value = draft.tag,
-                    onValueChange = { updateDraft(draft.copy(tag = it.take(48))) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.host_editor_tag_optional)) },
-                    supportingText = errors.tag?.let { message -> ({ Text(message.resolve()) }) },
-                    isError = errors.tag != null,
-                    enabled = editorControlsEnabled,
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = draft.startupCommand,
-                    onValueChange = { updateDraft(draft.copy(startupCommand = it.take(4096))) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.host_editor_startup_command_optional)) },
-                    supportingText = errors.startupCommand?.let { message -> ({ Text(message.resolve()) }) },
-                    isError = errors.startupCommand != null,
-                    enabled = editorControlsEnabled,
-                    minLines = 2,
-                    maxLines = 4,
                 )
 
                 OutlinedButton(
@@ -572,6 +556,99 @@ internal fun HostEditorDialog(
                     Text(stringResource(if (advancedExpanded) R.string.host_editor_hide_advanced else R.string.host_editor_show_advanced))
                 }
                 if (advancedExpanded) {
+                    nearbySshDiscoveryController?.let { controller ->
+                        val discoveryActive =
+                            nearbySshDiscoveryState is NearbySshDiscoveryState.Searching ||
+                                nearbySshDiscoveryState is NearbySshDiscoveryState.Resolving
+                        OutlinedButton(
+                            onClick = {
+                                if (discoveryActive) controller.cancel() else controller.start()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(HostEditorNearbySshButtonTestTag),
+                            enabled = !saving && !testing,
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (discoveryActive) {
+                                        R.string.connections_nearby_ssh_cancel
+                                    } else {
+                                        R.string.connections_nearby_ssh_detect
+                                    },
+                                ),
+                            )
+                        }
+                        NearbySshInlineStatus(nearbySshDiscoveryState)
+                    }
+                    HorizontalDivider()
+                    Text(
+                        stringResource(R.string.host_editor_profiles_heading),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    SimpleOptionMenu(
+                        label = stringResource(R.string.host_editor_terminal_profile),
+                        selectedId = draft.terminalProfileId,
+                        options = catalog.terminalProfiles,
+                        onSelected = { updateDraft(draft.copy(terminalProfileId = it)) },
+                        enabled = editorControlsEnabled,
+                    )
+                    SimpleOptionMenu(
+                        label = stringResource(R.string.host_editor_keyboard_profile),
+                        selectedId = draft.keyboardProfileId,
+                        options = catalog.keyboardProfiles,
+                        onSelected = { updateDraft(draft.copy(keyboardProfileId = it)) },
+                        enabled = editorControlsEnabled,
+                    )
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = draft.isFavourite,
+                            onCheckedChange = { updateDraft(draft.copy(isFavourite = it)) },
+                            enabled = editorControlsEnabled,
+                        )
+                        Text(stringResource(R.string.host_editor_favourite))
+                    }
+                    OutlinedTextField(
+                        value = draft.group,
+                        onValueChange = { updateDraft(draft.copy(group = it.take(64))) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.host_editor_group_optional)) },
+                        supportingText = errors.group?.let { message ->
+                            ({ Text(message.resolve()) })
+                        },
+                        isError = errors.group != null,
+                        enabled = editorControlsEnabled,
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = draft.tag,
+                        onValueChange = { updateDraft(draft.copy(tag = it.take(48))) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.host_editor_tag_optional)) },
+                        supportingText = errors.tag?.let { message ->
+                            ({ Text(message.resolve()) })
+                        },
+                        isError = errors.tag != null,
+                        enabled = editorControlsEnabled,
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = draft.startupCommand,
+                        onValueChange = {
+                            updateDraft(draft.copy(startupCommand = it.take(4096)))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = {
+                            Text(stringResource(R.string.host_editor_startup_command_optional))
+                        },
+                        supportingText = errors.startupCommand?.let { message ->
+                            ({ Text(message.resolve()) })
+                        },
+                        isError = errors.startupCommand != null,
+                        enabled = editorControlsEnabled,
+                        minLines = 2,
+                        maxLines = 4,
+                    )
                     Text(stringResource(R.string.host_editor_keepalive_override), style = MaterialTheme.typography.labelMedium)
                     EnumChips(
                         values = HostKeepaliveMode.entries,
@@ -733,64 +810,33 @@ internal fun HostEditorDialog(
                 }
 
                 testResult?.let { result -> HostConnectionTestSummary(result) }
+                if (onDelete != null) {
+                    TextButton(
+                        onClick = { deleteConfirmation = true },
+                        enabled = !testing && !saving,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(HostEditorDeleteTestTag),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.connections_delete_host))
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    val submission = submissionOrNull(forTest = false) ?: return@Button
-                    saving = true
-                    saveFailure = null
-                    scope.launch {
-                        val result = try {
-                            onSave(submission)
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            Result.failure(error)
-                        } finally {
-                            submission.wipe()
-                        }
-                        if (result.isSuccess) {
-                            secretState.wipe()
-                            transientSecretWasEntered = false
-                            cancelOwnedTest()
-                            onDismiss()
-                        } else {
-                            saveFailure = uiText(R.string.host_editor_save_failed)
-                            saving = false
-                        }
-                    }
-                },
-                enabled = !testing && !saving,
-                modifier = Modifier.testTag(HostEditorSaveTestTag),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
-                Text(stringResource(if (saving) R.string.host_editor_saving else R.string.host_editor_save))
-            }
-        },
-        dismissButton = {
-            Row {
                 if (onTest != null) {
                     TextButton(
-                        onClick = {
-                            if (testing) {
-                                cancelOwnedTest()
-                            } else {
-                                // A new test replaces the exact prior completed presentation.
-                                cancelOwnedTest()
-                                val submission = submissionOrNull(forTest = true)
-                                    ?: return@TextButton
-                                testedDraft = draft
-                                try {
-                                    testOperationToken = onTest(submission)
-                                } catch (_: Exception) {
-                                    submission.wipe()
-                                    saveFailure = uiText(R.string.host_editor_test_start_failed)
-                                }
-                            }
-                        },
+                        onClick = ::toggleConnectionTest,
                         enabled = !saving,
                         modifier = Modifier.testTag(HostEditorTestConnectionTestTag),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
                     ) {
                         Text(
                             stringResource(
@@ -803,12 +849,64 @@ internal fun HostEditorDialog(
                         )
                     }
                 }
-                TextButton(onClick = ::requestDismiss, enabled = !saving) {
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = ::requestDismiss,
+                    enabled = !saving,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
                     Text(stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = ::saveHost,
+                    enabled = !testing && !saving,
+                    modifier = Modifier.testTag(HostEditorSaveTestTag),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    Text(
+                        stringResource(
+                            if (saving) R.string.host_editor_saving else R.string.host_editor_save,
+                        ),
+                    )
                 }
             }
         },
+        dismissButton = {},
     )
+
+    if (deleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmation = false },
+            title = {
+                Text(stringResource(R.string.connections_delete_title, initial.displayName))
+            },
+            text = { Text(stringResource(R.string.connections_delete_host_detail)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        cancelOwnedTest()
+                        secretState.wipe()
+                        transientSecretWasEntered = false
+                        deleteConfirmation = false
+                        onDelete?.invoke()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    modifier = Modifier.testTag(HostEditorConfirmDeleteTestTag),
+                ) {
+                    Text(stringResource(R.string.connections_delete_host))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmation = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     when (val discovery = nearbySshDiscoveryState) {
         is NearbySshDiscoveryState.Searching -> if (
@@ -1950,11 +2048,14 @@ private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, defau
     enumValues<T>().firstOrNull { it.name == value } ?: default
 
 internal const val HostEditorDialogTestTag = "host-editor-dialog"
+internal const val HostEditorDeleteTestTag = "host-editor-delete"
+internal const val HostEditorConfirmDeleteTestTag = "host-editor-confirm-delete"
 internal const val HostEditorNameTestTag = "host-editor-name"
 internal const val HostEditorHostnameTestTag = "host-editor-hostname"
 internal const val HostEditorUsernameTestTag = "host-editor-username"
 internal const val HostEditorPortTestTag = "host-editor-port"
 internal const val HostEditorSecretTestTag = "host-editor-secret"
+internal const val HostEditorSavePasswordTestTag = "host-editor-save-password"
 internal const val HostConnectSecretTestTag = "host-connect-secret"
 internal const val HostEditorSaveTestTag = "host-editor-save"
 internal const val HostEditorTestConnectionTestTag = "host-editor-test-connection"

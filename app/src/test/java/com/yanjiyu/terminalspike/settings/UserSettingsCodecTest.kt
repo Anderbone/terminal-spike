@@ -88,7 +88,7 @@ class UserSettingsCodecTest {
 
     @Test
     fun defaultLayoutUsesSupportedKeysWithoutDuplicates() {
-        assertEquals(18, TerminalExtraKey.DEFAULT_ORDER.size)
+        assertEquals(20, TerminalExtraKey.DEFAULT_ORDER.size)
         assertTrue(TerminalExtraKey.DEFAULT_ORDER.all { it in TerminalExtraKey.entries })
         assertEquals(TerminalExtraKey.DEFAULT_ORDER.size, TerminalExtraKey.DEFAULT_ORDER.distinct().size)
     }

@@ -963,6 +963,7 @@ private fun BackupGlobalSettings.toRestoredAppSettings(base: AppSettings): AppSe
         },
     )
     .setMultilinePasteConfirmationEnabled(multilinePasteConfirmationEnabled)
+    .setTmuxSessionSelectorDisabled(tmuxSessionSelectorDisabled)
     .apply {
         this@toRestoredAppSettings.lastBackupMode?.let { mode ->
             setLastBackupMode(mode.name.lowercase())

@@ -1,13 +1,21 @@
 # Product completion status
 
-Last updated: 2026-08-10T04:37:04Z
+Last updated: 2026-08-19T10:55:02Z
 
 This is the authoritative implementation checklist for the paid-release polish programme. A phase is checked only when its implementation, migrations, tests, documentation, and applicable device evidence are complete. A passing narrow test does not complete a broader item.
 
-The later product direction deliberately keeps **Workspace**, **Terminal**, and **Settings** as the
-three primary phone destinations. Connections is a first-class secondary catalogue reached from
-Workspace and terminal context. This supersedes the earlier Connections-as-primary navigation
-draft; it is not an accidental omission.
+The current product direction keeps **Connections**, **Terminal**, and **Settings** as the three
+primary phone destinations. Connections is the main catalogue for saved hosts, keys, and snippets;
+Terminal owns active sessions.
+
+The 2026-08-19 launcher-branding refresh has a newer current-source gate than the historical phase
+evidence below. The full 482-task unit/lint/debug/release/Android-test/package-integrity/native/
+benchmark gate passed; fresh unit totals are app `815/0/0/0`, Mosh API `11/0/0/0`, and extension
+`8/0/0/0`. Focused connected contracts passed app 2/2 and extension 4/4 on exact Wi-Fi serial
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp` (`SM-F976B`). Final exact-serial installs of both
+debug APKs succeeded and `MainActivity` cold-launched in 716 ms as `topResumedActivity`. Current
+debug SHA-256 values are main `e6c6098c7421ce4015b30151b92553b281a7990dbc7a2c661609947db25530ec`
+and extension `2e4b6f2ec1ff92d171885bfefdb2c18ebe88458cce0a17410ee5a00de0f0ad53`.
 
 After every substantial code slice, run the relevant unit tests, `./gradlew test`, `./gradlew lint`, debug and release builds, and Android-test assembly before continuing. Then resolve the fresh output of `adb devices -l`, install/launch by exact serial on every currently connected authorized USB and Wi-Fi phone, verify `MainActivity` is foreground, and report offline, unauthorized, and failed targets. A slice is not green merely because one device or one build variant passed.
 
@@ -96,8 +104,8 @@ Phase 2 closure evidence:
 ## Phase 3 — Navigation and design system
 
 - [x] Phase 3 complete.
-- [x] Keep exactly Workspace, Terminal, and Settings as phone destinations per the latest product direction.
-- [x] Remove Tools as a top-level destination and keep Connections as an owner-aware secondary catalogue.
+- [x] Keep exactly Connections, Terminal, and Settings as phone destinations per the latest product direction.
+- [x] Remove Tools and the redundant Workspace-to-Connections route as top-level destinations.
 - [x] Add compact `NavigationBar` and expanded-width `NavigationRail`/list-detail behavior.
 - [x] Respect status, navigation, cut-out, gesture, and IME insets edge to edge.
 - [x] Add reusable spacing, shape, typography, icon, status-color, feedback, and motion primitives.
@@ -169,7 +177,7 @@ Phase 3 closure evidence:
 ## Phase 7 — Keyboard and IME
 
 - [ ] Phase 7 complete — the physical IME walkthrough is pending.
-- [x] Replace the heavy square grid with one/two refined accessible rows that collapse and respect insets; give every action a standalone at-least-48 dp target while preserving the exact default 18-key, 9 × 2 deck.
+- [x] Replace the heavy square grid with one/two refined accessible rows that respect insets; give every action a standalone at-least-48 dp target while preserving the exact default 20-key, 10 × 2 deck.
 - [x] Add the complete accessory action set, presets, compact searchable multi-column replacement picker, drag reorder, and restore.
 - [x] Add one-shot and double-tap locked modifiers with distinct visuals and correct clearing.
 - [x] Add long-press repeat, optional haptics, physical-keyboard independence, and configurable tmux prefix.
@@ -317,9 +325,9 @@ Local release-like evidence, distinct from production signing and public-release
 
 ## Definition of done audit
 
-- [ ] Bottom navigation reads Workspace, Terminal, and Settings; Connections remains an owner-aware secondary catalogue and Tools is not a top-level destination.
+- [ ] Bottom navigation reads Connections, Terminal, and Settings; Tools is not a top-level destination.
 - [ ] Tools has been removed as a top-level destination everywhere.
-- [ ] Workspace is useful but uncluttered.
+- [ ] Connections is useful but uncluttered.
 - [ ] Renderer Lab is unavailable in release.
 - [ ] Connections has polished Hosts, Keys, and Snippets tabs.
 - [ ] Host rows contain no inline Edit/Use/X debug-style actions.

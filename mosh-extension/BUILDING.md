@@ -36,7 +36,8 @@ The Gradle native task performs these deterministic stages for both `arm64-v8a` 
    3.21.12;
 3. cross-compile static Protocol Buffers Lite and static GNU Nettle with public-key algorithms,
    shared libraries, fat dispatch, documentation and GMP disabled;
-4. compile the project-owned Android poll/JNI adapter plus unmodified Mosh client libraries;
+4. apply the recorded Android key-hygiene and UDP-socket patches with zero fuzz, then compile the
+   project-owned Android poll/JNI adapter plus the pinned Mosh client libraries;
 5. link `libmosh_extension.so` with hidden visibility and 16 KiB page alignment, retaining an
    unstripped local symbol file while AGP strips the release package.
 

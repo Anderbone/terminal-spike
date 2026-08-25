@@ -180,6 +180,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun setReconnectMaxAttempts(attempts: Int) =
         updateGlobal { it.setReconnectMaxAttempts(attempts) }
 
+    fun setTmuxSessionSelectorEnabled(enabled: Boolean) =
+        updateGlobal { it.setTmuxSessionSelectorDisabled(!enabled) }
+
     fun setKeepCpuAwake(enabled: Boolean) =
         updateGlobal { it.setKeepCpuAwake(enabled) }
 
@@ -265,6 +268,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
 
     fun setMultilinePasteConfirmation(enabled: Boolean) =
         updateGlobal { it.setMultilinePasteConfirmationEnabled(enabled) }
+
+    fun setVoiceInputLanguage(language: VoiceInputLanguage) =
+        updateGlobal { it.setVoiceInputLanguageTag(language.languageTag) }
 
     fun setTerminalTheme(themeId: String) {
         val supported = TerminalThemes.presets.any { it.id == themeId } ||
@@ -356,7 +362,7 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun resetAppearanceProfile() = updateTerminalProfile {
         it.copy(
             themeId = TerminalThemes.CURRENT_ID,
-            fontId = SYSTEM_MONOSPACE_FONT_ID,
+            fontId = DEFAULT_FONT_ID,
             fontSizeSp = DEFAULT_FONT_SIZE_SP,
             lineHeightMultiplier = DEFAULT_LINE_HEIGHT,
             letterSpacingEm = DEFAULT_LETTER_SPACING,
@@ -536,6 +542,7 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
 
     companion object {
         const val SYSTEM_MONOSPACE_FONT_ID = TerminalRendererProfile.SYSTEM_MONOSPACE_FONT_ID
+        const val DEFAULT_FONT_ID = TerminalRendererProfile.DEFAULT_FONT_ID
         const val DEFAULT_FONT_SIZE_SP = 14f
         const val DEFAULT_LINE_HEIGHT = 1f
         const val DEFAULT_LETTER_SPACING = 0f

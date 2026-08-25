@@ -2,7 +2,7 @@
 
 Terminal Spike is a local-first native Android SSH terminal release candidate. It opens on a device-only workspace for active sessions, saved connections, identities, snippets, trusted host keys, and terminal configuration. A dedicated Compose application shell surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
 
-Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, protected private-key material, a customizable extra-key bar, bounded VT/xterm screen semantics, and up to four simultaneous remote-session tabs are implemented. Genuine Mosh 1.4.0 transport is available through an optional, separately installed GPL extension; the main APK contains only the permissive IPC API and continues to provide SSH when the extension is absent. There is no SFTP, sync, analytics, advertising, AI, or subscription code.
+Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, protected private-key material, SFTP file management, a customizable extra-key bar, bounded VT/xterm screen semantics, and simultaneous remote-session tabs are implemented. Live SSH and Mosh terminals can paste a phone clipboard image into tools such as Codex: the app streams the image over the session's authenticated SSH side channel to a private cache directory on the connected host and bracket-pastes its remote path. Genuine Mosh 1.4.0 transport is available through an optional, separately installed GPL extension; the main APK contains only the permissive IPC API and continues to provide SSH when the extension is absent. The Mosh extension advertises and enforces its capacity of ten process-isolated concurrent transports independently. There is no sync, analytics, advertising, bundled AI, or subscription code.
 
 ## Prerequisites
 
@@ -25,13 +25,19 @@ From a shell:
 ./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest
 ```
 
-The frozen current-source artifact gates completed successfully. Fresh JUnit totals in
-tests/failures/errors/skipped order were app JVM `785/0/0/0`,
+The 2026-08-19 current-source artifact gates completed successfully after the launcher-branding
+refresh. Fresh JUnit totals in tests/failures/errors/skipped order were app JVM `815/0/0/0`,
 `mosh-api` `11/0/0/0`, and Mosh extension `8/0/0/0`. Debug and release lint/build gates,
 release APK/AAB packaging verification, both Android-test APKs, extension native outputs for
 `arm64-v8a` and `x86_64`, and benchmark assembly were green. The resulting debug APK SHA-256 values
-are main app `9cc65469c2ec982801d51b78e67ef3d2fd592020e4aa4f38e5e93de973e08408` and Mosh
-extension `3adccc800da4fd94623b43130f7c84e55ccb3816be7f16f48e6f62d901d88bd3`.
+are main app `e6c6098c7421ce4015b30151b92553b281a7990dbc7a2c661609947db25530ec` and Mosh
+extension `2e4b6f2ec1ff92d171885bfefdb2c18ebe88458cce0a17410ee5a00de0f0ad53`.
+
+Focused current connected tests passed 2/2 for main launcher/lifecycle behavior and 4/4 for the
+Mosh launcher/native smoke contract on authorized Wi-Fi target
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp` (`SM-F976B`). Both final debug APKs then installed
+successfully by exact serial, and the app cold-launched in 716 ms with `MainActivity` reported as
+`topResumedActivity`.
 
 Final exact-serial installs of those version `0.0.1` artifacts succeeded on authorized USB
 `RZCW81JZ9CP` (`SM-S911B`) and Wi-Fi
@@ -72,6 +78,9 @@ AVD `terminal-spike-release-test`; the app cold-launched in 504 ms and `MainActi
 local acceptance evidence only and does not establish production
 signing, public extension distribution, or store readiness.
 
+See [docs/PUBLISHING.md](docs/PUBLISHING.md) for the remaining production-signing, Play Console,
+store-listing, manual acceptance, and Mosh legal gates.
+
 Install and launch on a connected device:
 
 ```bash
@@ -105,26 +114,26 @@ The native build uses pinned official sources and produces `arm64-v8a` and `x86_
 
 ## Try a remote shell
 
-1. From **Workspace**, tap **New connection**, or open **Connections** and choose a saved host. Choose **SSH**, or choose **Mosh** when Settings reports that the separately installed extension is verified and available.
+1. From **Connections**, add or choose a saved host. Choose **SSH**, or choose **Mosh** when Settings reports that the separately installed extension is verified and available.
 2. Enter a host, port, and username, then use a password or an imported private key. Password saving is off by default; opt in with **Save password on this device** while also saving the host. Key passphrases remain one-time only.
 3. On first contact, compare the displayed SHA-256 fingerprint with a trusted fingerprint from the server administrator, then tap **Trust and connect**. Mosh uses this strict SSH step to authenticate and start `mosh-server`, then switches the terminal transport to the server's UDP port.
-4. Tap the terminal to open the keyboard. The workspace resizes above the IME; hiding the keyboard restores the full terminal height. PTY resize is settled at the end of the keyboard animation to avoid repeated remote redraws. The default live deck is exactly 18 buttons in two rows of nine, including direct **^C** and **^W** chords; customize it from **Settings → Keyboard**. Swipe the input strip to its left page for a normal editable field with correction and selection, then tap **Send** to paste the exact staged text without Enter. Swipe back to restore immediate terminal input with suggestions disabled. The compact strip has no permanent Raw/Text selector labels; the same default mode can also be chosen in Settings.
-5. Add another tab with the trailing **+**, tap a short tab name to switch, double-tap a connection tab to duplicate it, or long-press it for disconnect/close actions. A double tap starts the duplicate immediately when authentication can be safely reloaded; only an intentionally non-retained one-shot password or passphrase asks for re-entry. Each remote tab keeps isolated scrollback and connection state.
+4. Tap the terminal to open the keyboard. The workspace resizes above the IME; hiding the keyboard restores the full terminal height. PTY resize is settled at the end of the keyboard animation to avoid repeated remote redraws. The default live deck is exactly 20 buttons in two rows of ten, with an image button immediately left of **Home** for selecting up to 20 photos, direct **^C** and **^W** chords, and a stacked-window key in the former Alt slot that opens the active tmux-session switcher; customize it from **Settings → Keyboard**. Selected images and multi-image clipboard content are uploaded and inserted in order so compatible terminal tools can show several attachments in the current input. Long-press terminal output to select it; the keyboard hides so the local **Copy** and **Select all** toolbar and drag handles remain visible. Swipe the input strip to its left page for a normal editable field with correction and selection, then tap **Send** to paste the exact staged text without Enter. Swipe back to restore immediate terminal input with correction, completion, and suggestions disabled. The compact strip has no permanent Raw/Text selector labels; the same default mode can also be chosen in Settings.
+5. When **Settings → Sessions &amp; Background → Show tmux session selector** is enabled, every authenticated connection checks the remote server before opening its terminal. Choose **Start new session** to protect new work, **Attach** to resume an existing session, or **Open shell** to skip tmux. If tmux is missing or the check fails, the chooser says so instead of disappearing. Add another app tab with the trailing **+**, tap a short tab name to switch, use the stacked-window button in the top bar to jump to or close any app tab, double-tap a connection tab to duplicate it, or long-press it for disconnect/close actions. A remote tab automatically prefers a safe OSC 0/2 terminal title over its connection name; for a tmux session name, enable `set -g set-titles on` and use `set -g set-titles-string '#S'` in the remote tmux configuration. Stock tmux titles are shortened to the session name. A double tap starts the duplicate immediately when authentication can be safely reloaded; only an intentionally non-retained one-shot password or passphrase asks for re-entry. Each remote tab keeps isolated scrollback and connection state.
 6. Tap **Disconnect** when finished.
 
 Accepted host keys are stored in the app-private database. If a known key changes, connection is blocked. Trusted keys and their full selectable fingerprints can be reviewed or forgotten from **Settings → Security**, and clearing app data removes them all.
 
 ## Connections and settings
 
-The phone shell has exactly three primary destinations: **Workspace**, **Terminal**, and **Settings**. This is a deliberate later product decision. The first-class Connections catalogue contains saved hosts, SSH keys, and snippets and opens from Workspace or terminal context; it is not a fourth bottom-navigation destination. **Settings** contains appearance, terminal, keyboard, background, backup, security, Mosh, and About/licence controls.
+The phone shell has exactly three primary destinations: **Connections**, **Terminal**, and **Settings**. Connections is the main page for saved hosts, SSH keys, and snippets. **Terminal** owns active sessions, and **Settings** contains appearance, terminal, keyboard, background, backup, security, Mosh, and About/licence controls.
 
-- Host profiles save a display name, host, port, and username. Workspace lists every saved host favourites-first, and one tap resolves the current authoritative saved authentication. A password can be saved separately only with explicit opt-in. Quick Connect preserves a selected saved private-key association; **Forget** removes retained authentication.
+- Host profiles save a display name, host, port, and username. Connections lists every saved host and resolves the current authoritative saved authentication. A password can be saved separately only with explicit opt-in. **Forget** removes retained authentication.
 - Mosh profiles also save an optional UDP port/range and one executable name or path for `mosh-server`; command fragments and arguments are rejected. If the verified extension is unavailable, the profile remains saved but Mosh connect is disabled and SSH can be selected explicitly. Per-profile fallback can be Never, Ask, or Automatic; Automatic is an explicit opt-in that starts a clearly reported fresh SSH shell only for eligible Mosh transport failures, never a claim that the Mosh process resumed.
 - SSH private keys are imported through Android's document picker, validated by the SSH library, encrypted under an app-specific Android Keystore key, and stored only in app-private storage. Encrypted-key passphrases are requested for each connection and never saved. Trusted host keys can be reviewed and removed from **Settings → Security**.
-- Terminal appearance includes the built-in theme catalogue, persistent custom themes, System monospace, Source Code Pro, JetBrains Mono, IBM Plex Mono, Cascadia Mono, and a Symbols Nerd Font Mono fallback for Powerline/Nerd glyphs. TTF/OTF imports use the system document picker, stay private to the app, and are rejected when representative glyph advances show that the font is proportional and would break the terminal cell grid.
-- The extra-key editor can show, hide, reset, and reorder the complete accessory action set. Replacing a key uses a compact searchable multi-column picker, the visible order is used directly by the bottom key bar, and every action has a standalone at-least-48 dp touch target while the default deck remains exactly 18 keys arranged as 9 × 2.
+- Terminal appearance defaults to bundled JetBrains Mono and includes the built-in theme catalogue, persistent custom themes, System monospace, Source Code Pro, IBM Plex Mono, Cascadia Mono, and a Symbols Nerd Font Mono fallback for Powerline/Nerd glyphs. TTF/OTF imports use the system document picker, stay private to the app, and are rejected when representative glyph advances show that the font is proportional and would break the terminal cell grid.
+- The extra-key editor can show, hide, reset, and reorder the complete accessory action set. Replacing a key uses a compact searchable multi-column picker, the visible order is used directly by the bottom key bar, and every action has a standalone at-least-48 dp touch target while the default deck remains exactly 20 keys arranged as 10 × 2.
 - Snippets support names, multiline commands, and optional Enter. A snippet is sent only after tapping **Send**, and only to the active connected remote tab. The paste and optional Enter are accepted as one bounded writer batch; a full or stopped transport reports failure instead of claiming the snippet was sent. Do not put passwords or access tokens in snippets.
-- **Settings → Backup & Restore** writes one versioned, passphrase-encrypted file through Android's document picker. Standard backups omit saved secret payloads; Full encrypted backups can include them. Imported custom-font bytes remain excluded by default and have a separate explicit opt-in with a size/licensing warning. Backup passphrases stay in wipeable mutable buffers and are cleared at the operation boundary rather than retained in UI state. Restore authenticates and previews the archive before Merge, Replace, or Keep both is applied transactionally. Included fonts are content-hash validated, format/size/monospace checked, and installed before their profiles become active; excluded fonts safely fall back to System monospace without dropping profile or host references. Google Drive is available when its document provider is installed; Terminal Spike does not log into Google or call a Drive API.
+- **Settings → Backup & Restore** writes one complete portable file through Android's document picker, with no mode or passphrase prompt. It includes hosts, portable credential material, SSH keys, snippets, settings, profiles, themes, and referenced imported fonts. Restore validates the archive, previews replacement changes, and applies them transactionally. Because the file can contain credentials and is not protected by a user secret, it must be stored privately. Google Drive is available when its document provider is installed; Terminal Spike does not log into Google or call a Drive API.
 - **Settings → About** shows the installed version, local-first privacy summary, and the complete selectable third-party notices and licence text packaged in that APK.
 - **Settings → Mosh Extension** reports Checking, Not installed, Disabled, Untrusted, Incompatible, Available, or Error from live package/signature/API/capability checks. Available state includes the installed version, negotiated API, capabilities, and session limit; **Refresh** or **Retry** repeats the check. It does not download or install an extension.
 

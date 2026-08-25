@@ -24,7 +24,7 @@ class BufferedInputPagerTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun stagedTextStaysBoundToItsOriginalSessionUntilAccepted() {
+    fun stagedTextFollowsTheActiveSessionWhenSent() {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val inputTargetId = mutableLongStateOf(11L)
         var sendCount = 0
@@ -68,17 +68,7 @@ class BufferedInputPagerTest {
 
         composeRule.runOnIdle {
             assertEquals(1, sendCount)
-            assertEquals(11L, sentTargetId)
-            assertEquals("printf 'exact ✓'", sentText)
-        }
-        composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
-
-        composeRule.runOnIdle { inputTargetId.longValue = 11L }
-        composeRule.onNodeWithText(resources.getString(R.string.terminal_send)).performClick()
-
-        composeRule.runOnIdle {
-            assertEquals(2, sendCount)
-            assertEquals(11L, sentTargetId)
+            assertEquals(22L, sentTargetId)
             assertEquals("printf 'exact ✓'", sentText)
         }
         composeRule.onNodeWithText(resources.getString(R.string.terminal_buffered_input_placeholder)).assertIsDisplayed()

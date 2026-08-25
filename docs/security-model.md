@@ -14,7 +14,7 @@ dependencies: docs/architecture.md
 ## Security goals
 
 - Unknown SSH host keys are never silently trusted; mismatches always block.
-- Passwords, private keys, saved passphrases, backup passphrases, and Mosh session keys are encrypted or absent at rest and narrowly scoped in memory.
+- Passwords, private keys, saved passphrases, and Mosh session keys are encrypted or absent in app-private storage and narrowly scoped in memory. Portable backup files are a user-controlled exception and must be kept private.
 - Terminal contents, snippets, credentials, and complete connection strings do not enter ordinary logs, notifications, analytics, crash upload, or hidden network requests.
 - A lost/corrupt/invalidated device key produces an explicit recoverable state; it never silently erases user data.
 - Main-app compromise is not expanded by an unverified extension package, and the extension never receives saved SSH authentication material.
@@ -29,6 +29,9 @@ dependencies: docs/architecture.md
 5. Storage Access Framework providers, which receive only user-selected encrypted backup/custom-font/transcript files.
 6. Optional Mosh extension APK, which is a separate UID/process and remains untrusted until package, signature, permission, and API checks pass.
 7. Android notifications/recents/screenshots, which can expose UI to the lock screen or physical observers unless privacy controls apply.
+8. The user-installed Android speech recognition service. Voice input requests offline processing,
+   holds interim/final text only in the terminal composer, and never opens an app-owned network
+   connection; provider availability and processing behavior remain controlled by Android.
 
 The design does not claim protection from a rooted/compromised OS, a malicious accessibility service, a hostile IME selected by the user, an attacker controlling an unlocked app, or a remote shell that the user deliberately authenticated to.
 
@@ -113,14 +116,14 @@ Remote terminal output is untrusted input.
 
 ## Backup security
 
-Both Standard and Full portable backups are passphrase-encrypted and authenticated. Full is the only mode that can contain saved passwords/private keys/passphrases. Android Keystore masters, live sockets, temporary prompts, Mosh keys, logs, and transcripts are never exported. The exact format, KDF bounds, AEAD, transaction, and tamper behavior are in `docs/backup-format.md`.
+The app exposes one complete, authenticated portable backup without a passphrase prompt. It contains portable saved passwords, private keys, saved passphrases, settings, profiles, snippets, and referenced fonts. Its app-defined portability material detects corruption but is not a confidentiality boundary, so possession of the file must be treated as access to those credentials. Android Keystore masters, live sockets, temporary prompts, Mosh keys, logs, and transcripts are never exported. The exact format and transaction behavior are in `docs/backup-format.md`.
 
 ## Mosh extension security
 
 The implemented local/debug boundary is defensive on both sides:
 
 - The main app binds one explicit package/component protected by a signature permission. It validates the service declaration, permission owner/protection, installed signing certificate/lineage, API range, model version, capabilities, and session limit before use.
-- The extension verifies the Binder caller UID resolves to the exact main-app package with a matching signature on every entry point. Its broker and four private worker processes are separate from the main application's UID/process.
+- The extension verifies the Binder caller UID resolves to the exact main-app package with a matching signature on every entry point. Its broker and ten private worker processes are separate from the main application's UID/process.
 - The main app performs DNS/TCP, strict SSH host verification, password/private-key authentication, and one bounded `mosh-server` bootstrap. Only session ID, numeric endpoint, UDP port, ephemeral Mosh key, dimensions, locale, and reviewed option flags cross the boundary; the public request model has no hostname credential, password, private key, passphrase, or saved credential ID field.
 - The ephemeral 22-character key crosses a one-shot PFD. The extension requires exactly 22 bytes plus EOF, avoids environment variables and persistence, and clears mutable printable/decoded key buffers after native initialization. Bootstrap and failure cleanup close descriptors and wipe main-app mutable key material.
 - Terminal bytes use separate PFD pipes with bounded backpressure, not repeated high-frequency Binder transactions. Binder carries only bounded control and redacted state events.
@@ -138,6 +141,9 @@ APK/process separation is an engineering security boundary, not a claim that GPL
 - Notification privacy hides username, hostname/IP, terminal title, and command content; it can show a generic session count.
 - Background health uses public Android settings intents only and never nags or silently requests unrestricted battery access.
 - CPU wake and screen-on behavior are opt-in, scoped to active/visible sessions, and released immediately.
+- Voice input requests microphone permission only after the composer microphone is tapped. The
+  active control visibly changes to Listening/Processing with an explicit Stop action, and
+  recognised text is reviewable before the user sends it to a terminal.
 
 ## Security verification
 

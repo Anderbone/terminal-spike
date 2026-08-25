@@ -26,9 +26,11 @@ class AppSettingsSerializerTest {
         assertEquals(CURRENT_KEYBOARD_DECK_REVISION, defaults.keyboardDeckRevision)
         assertTrue(defaults.notificationPrivacyEnabled)
         assertFalse(defaults.notificationPermissionEducationConsumed)
-        assertTrue(defaults.multilinePasteConfirmationEnabled)
+        assertFalse(defaults.multilinePasteConfirmationEnabled)
         assertFalse(defaults.reconnectEnabled)
         assertFalse(defaults.keepCpuAwake)
+        assertFalse(defaults.tmuxSessionSelectorDisabled)
+        assertEquals("", defaults.voiceInputLanguageTag)
         assertSame(defaults, AppSettingsValidator.requireValidCurrent(defaults))
     }
 
@@ -167,6 +169,17 @@ class AppSettingsSerializerTest {
 
         assertEquals(setOf(AppSettingsViolation.LAST_BACKUP_MODE), error.violations)
         assertArrayEquals(byteArrayOf(), output.toByteArray())
+    }
+
+    @Test
+    fun unsupportedVoiceLanguageIsRejected() = runTest {
+        val invalid = AppSettingsSerializer.defaultValue.toBuilder()
+            .setVoiceInputLanguageTag("not-a-supported-locale")
+            .build()
+
+        val error = expectInvalid { AppSettingsSerializer.writeTo(invalid, ByteArrayOutputStream()) }
+
+        assertEquals(setOf(AppSettingsViolation.VOICE_INPUT_LANGUAGE), error.violations)
     }
 
     @Test

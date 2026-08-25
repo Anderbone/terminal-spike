@@ -89,7 +89,7 @@ class BufferedInputValueTest {
     }
 
     @Test
-    fun draftStateKeepsItsOriginalSessionUntilAccepted() {
+    fun draftStateSendsToTheActiveSession() {
         val draftState = BufferedInputDraftState()
         val draft = TextFieldValue(
             text = "git status",
@@ -104,7 +104,7 @@ class BufferedInputValueTest {
             false
         }
 
-        assertEquals(11L, sentTargetId)
+        assertEquals(22L, sentTargetId)
         assertEquals(draft.copy(selection = TextRange(3)), draftState.value)
 
         draftState.dispatch(activeSessionId = 11L, sendEnabled = true) { targetId, _ ->
@@ -117,18 +117,18 @@ class BufferedInputValueTest {
     }
 
     @Test
-    fun targetedSnippetInsertionCannotMoveANonEmptyDraftToAnotherSession() {
+    fun targetedSnippetInsertionCanEditANonEmptyDraftFromAnotherSession() {
         val draftState = BufferedInputDraftState()
         val original = TextFieldValue("echo first")
         draftState.update(original, activeSessionId = 11L)
 
-        assertFalse(
+        assertTrue(
             draftState.updateForTarget(
                 TextFieldValue("echo firstecho second"),
                 targetSessionId = 22L,
             ),
         )
-        assertEquals(original, draftState.value)
+        assertEquals(TextFieldValue("echo firstecho second"), draftState.value)
         assertEquals(
             true,
             draftState.updateForTarget(

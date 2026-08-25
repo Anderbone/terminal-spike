@@ -7,6 +7,8 @@ assigned a public semantic version to this release candidate.
 
 ### Added
 
+- Added a project-owned terminal-window launcher family for the main app and Mosh extension,
+  including adaptive, round, Android 13 monochrome, reproducible SVG, and 512 px Play store assets.
 - Polished Workspace, Terminal, and hierarchical Settings primary experiences, plus a first-class
   Connections catalogue for hosts, keys, and snippets, with adaptive phone and expanded layouts;
   Workspace now presents every saved host favourites-first with one-tap authoritative authentication.
@@ -23,8 +25,14 @@ assigned a public semantic version to this release candidate.
 - Built-in terminal theme catalogue, persistent custom theme editor, live appearance previews,
   System monospace, Source Code Pro, JetBrains Mono, IBM Plex Mono, Cascadia Mono, private TTF/OTF
   import, and Symbols Nerd Font Mono fallback.
-- Editable 18-key terminal accessory deck, keyboard presets/actions, one-shot and locked
+- Editable 20-key terminal accessory deck, keyboard presets/actions, one-shot and locked
   modifiers, Raw/Text input modes, committed-composition handling, repeat, haptics, and tmux help.
+- Large terminal-tab and live tmux-session switchers with direct jump and confirmed close actions;
+  the default accessory deck now opens the tmux switcher in the former Alt slot.
+- Phone clipboard image paste for live SSH and Mosh terminals: PNG, JPEG, WebP, and GIF content is streamed
+  through the authenticated session's SFTP channel and inserted as a Codex-compatible remote path.
+- Multi-image photo selection and clipboard paste for terminal input, with ordered uploads and an
+  image selector replacing Paste on the shipped default accessory deck.
 - Versioned streaming Standard and Full encrypted backup/restore through Android’s document picker,
   with authenticated preview, conflict strategies, transactional apply, and crash recovery.
 - Optional, separately installed Mosh extension APK with a versioned signature-verified Binder API,
@@ -34,12 +42,27 @@ assigned a public semantic version to this release candidate.
   local-data recovery reset, local-first privacy statement, and open-source notices.
 - User-triggered foreground LAN SSH discovery using Android NSD without subnet scanning or saved
   credential inference.
+- Review-before-send terminal voice input using Android speech recognition, with a clearly visible
+  Listening/Stop state and a persisted device/English/Chinese/Japanese/Korean/French/German/Spanish
+  language choice in Keyboard settings.
 - Reproducible terminal fixtures, Macrobenchmark/Baseline Profile module, local OpenSSH Docker test
   environment, byte-fragmented real-Mosh command delivery with reconstructed VT-screen assertions,
   and release-packaging integrity checks.
 
 ### Changed
 
+- Added native inertial continuation for tmux/remote mouse-mode touch scrolling while keeping wheel
+  reports line-height-thresholded and bounded per display frame.
+
+- Long-pressing a detected terminal URL now prioritises a focused Open link / Copy link action menu;
+  Open link continues through Android's default browser handling.
+- Kept compact primary navigation visually fixed when switching between Connections and Settings,
+  and let immersive terminals use the status-bar area while retaining bottom/side safe insets.
+- Compacted tmux session chooser rows while keeping the entire named session row tappable.
+- Made remote terminal tabs follow safe OSC window-title updates, including concise tmux session
+  names, while retaining the connection name as the fallback.
+- Made bundled JetBrains Mono the default terminal font while retaining System monospace as an
+  explicit option.
 - Replaced debug-style host/key/snippet controls and the long accessory-key replacement list with
   deliberate menus, confirmations, a compact searchable multi-column key grid, full selectable
   known-host fingerprints, and 48 dp accessory hit targets.
@@ -57,6 +80,14 @@ assigned a public semantic version to this release candidate.
 
 ### Fixed
 
+- Made raw terminal input reliably disable terminal-unsafe correction and completion, kept local
+  Copy and Paste available, hid the IME during local output selection, and made the tmux chooser
+  explain a missing/failed server check as well as offering a new protected session. The tmux probe now runs
+  portably through `/bin/sh`, including for Fish login shells, and falls
+  back to the remote account shell when non-interactive SSH and terminal `PATH` values differ.
+- Made terminal selection, link, and approved remote clipboard writes ordinary plain-text clips
+  without app-private description metadata, while retaining safe delayed-clear ownership through
+  Android's system clipboard timestamp.
 - Corrected the native Mosh `Overlay::PredictionEngine` type used by the final extension build.
 - Preserved the selected saved private-key association when a host is started through Quick Connect.
 - Kept backup import/export passphrases in wipeable mutable buffers and cleared them at operation
@@ -64,12 +95,17 @@ assigned a public semantic version to this release candidate.
 - Exposed the same separately confirmed full app-data reset from every fail-closed startup and
   Settings recovery gate.
 - Gave every accessory action a standalone at-least-48 dp touch target without changing the exact
-  default deck of 18 keys arranged as 9 × 2.
+  default deck of 20 keys arranged as 10 × 2.
 - Updated the stale Settings section-count instrumentation assertion and targeted the embedded
   native `EditText` directly so the full app connected suite exercises the current UI hierarchy.
 
 ### Validation
 
+- The 2026-08-19 branding gate passed the complete unit, lint, debug/release build,
+  Android-test-assembly, release APK/AAB packaging, Mosh native, and benchmark suite (482 Gradle
+  tasks). Focused launcher/native device contracts passed 2/2 for the app and 4/4 for the extension
+  on `SM-F976B`; exact-serial installs succeeded and `MainActivity` cold-launched as
+  `topResumedActivity` in 716 ms.
 - The frozen current-source gates completed successfully. Tests/failures/errors/skipped were app
   JVM `785/0/0/0`, `mosh-api` `11/0/0/0`, and
   extension `8/0/0/0`; debug/release lint and builds, release APK/AAB packaging verification, both

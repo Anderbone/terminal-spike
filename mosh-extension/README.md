@@ -7,8 +7,8 @@ main `com.yanjiyu.terminalspike` APK. The main app performs SSH authentication a
 Mosh key, terminal dimensions, reviewed options, and terminal byte pipes.
 
 The implementation uses pinned official Mosh 1.4.0 source. It does not contain source copied from
-Termius, Termux, ConnectBot, LobiShell, or another terminal application. Four private Android worker
-services isolate Mosh's process-global timestamp and terminal state, allowing up to four concurrent
+Termius, Termux, ConnectBot, LobiShell, or another terminal application. Ten private Android worker
+services isolate Mosh's process-global timestamp and terminal state, allowing up to ten concurrent
 sessions without claiming that upstream's CLI is thread-safe.
 
 The upstream Mosh transport can retain a session while its network path changes. API v1 includes a

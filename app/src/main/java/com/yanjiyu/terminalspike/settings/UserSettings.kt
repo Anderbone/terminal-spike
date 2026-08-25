@@ -49,7 +49,7 @@ data class CommandSnippet(
     val appendEnter: Boolean,
     /** Authoritative Room policy; legacy codec rows default to safe multiline confirmation. */
     val confirmMultilineExecution: Boolean = true,
-    /** False for Room INSERT snippets until the compatibility terminal gains an insert surface. */
+    /** False uses the snippet's insert action; appendEnter remains independently configurable. */
     val sendsImmediately: Boolean = true,
 )
 

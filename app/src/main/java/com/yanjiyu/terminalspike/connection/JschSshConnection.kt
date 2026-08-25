@@ -1,10 +1,13 @@
 package com.yanjiyu.terminalspike.connection
 
 import com.jcraft.jsch.ChannelShell
+import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.JSchException
+import com.jcraft.jsch.Session
 import com.yanjiyu.terminalspike.core.security.credential.CredentialStoreException
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
@@ -15,7 +18,7 @@ import kotlin.concurrent.thread
 class JschSshConnection(
     private val knownHostManager: KnownHostManager,
     private val config: SshConnectionConfig,
-) : Connection {
+) : Connection, RemoteImageUploadConnection {
     /** Compatibility constructor for the legacy ViewModel while its owner completes cutover. */
     constructor(
         knownHostsFile: () -> File,
@@ -34,6 +37,19 @@ class JschSshConnection(
     private var output: OutputStream? = null
     private var writer: BoundedSshWriter? = null
     private var startupInputGate: StartupFirstInputGate? = null
+    private var tmuxSelector: TmuxSessionSelector? = null
+    private var attachedTmuxSessionId: String? = null
+    private val imageUploadLock = Any()
+
+    override fun uploadPastedImage(fileName: String, source: InputStream): String {
+        val session = synchronized(lock) {
+            authenticatedSession?.session?.takeIf { it.isConnected }
+                ?: error("The SSH session is not connected.")
+        }
+        return synchronized(imageUploadLock) {
+            uploadPastedImageViaSftp(session, fileName, source)
+        }
+    }
 
     override suspend fun connect(
         columns: Int,
@@ -73,6 +89,22 @@ class JschSshConnection(
             val newSession = openedSession.session
 
             if (!isActive(attempt)) return
+
+            val tmuxChoice = if (config.tmuxSessionSelectorEnabled) {
+                TmuxSessionSelector(newSession) { prompt ->
+                    attempt.states.publish(ConnectionState.AwaitingApproval(prompt))
+                }.also { selector ->
+                    synchronized(lock) { tmuxSelector = selector }
+                }.awaitChoice()
+            } else {
+                null
+            }
+            synchronized(lock) { tmuxSelector = null }
+            if (!isActive(attempt)) return
+            synchronized(lock) {
+                attachedTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId
+            }
+            val tmuxStartupCommand = tmuxChoice?.let(::tmuxStartupCommand)
 
             val newShell = newSession.openChannel("shell") as ChannelShell
             configureSshPty(
@@ -121,7 +153,7 @@ class JschSshConnection(
             }
             if (!connectionStillWanted) return
             val startupResult = attempt.publishConnectedAndDispatchStartup(
-                command = config.startupCommand,
+                command = resolveSshStartupCommand(config.startupCommand, tmuxStartupCommand),
                 sendOnce = newWriter::offer,
             ) ?: return
             if (startupResult == SshStartupDispatchResult.REJECTED) {
@@ -237,7 +269,54 @@ class JschSshConnection(
             ?.cancelKeyboardInteractiveChallenge(challengeToken)
     }
 
+    override fun answerTmuxSessionPrompt(promptToken: Long, sessionId: String?) {
+        synchronized(lock) { tmuxSelector }?.answer(promptToken, sessionId)
+    }
+
+    override fun deleteTmuxSession(promptToken: Long, sessionId: String) {
+        synchronized(lock) { tmuxSelector }?.delete(promptToken, sessionId)
+    }
+
+    override fun queryTmuxSessionCatalog(includePreviews: Boolean): TmuxSessionCatalog {
+        val (session, activeSessionId) = synchronized(lock) {
+            authenticatedSession?.session?.takeIf { running && it.isConnected } to
+                attachedTmuxSessionId
+        }
+        session ?: return TmuxSessionCatalog()
+        return queryTmuxSessionCatalog(JschTmuxCommandRunner(session), includePreviews).copy(
+            activeSessionId = activeSessionId,
+        )
+    }
+
+    override fun terminateTmuxSession(sessionId: String): TmuxSessionCatalog {
+        val session = synchronized(lock) {
+            authenticatedSession?.session?.takeIf { running && it.isConnected }
+        } ?: return TmuxSessionCatalog(deleteFailed = true)
+        return terminateTmuxSession(JschTmuxCommandRunner(session), sessionId)
+    }
+
+    override fun switchTmuxSession(sessionId: String): Boolean {
+        val (session, sourceSessionId) = synchronized(lock) {
+            val connected = authenticatedSession?.session?.takeIf { running && it.isConnected }
+            connected to attachedTmuxSessionId
+        }
+        if (session == null) return false
+        val switched = when (val result = switchOrAttachTmuxSession(
+            JschTmuxCommandRunner(session),
+            sessionId,
+            sourceSessionId,
+        )) {
+            TmuxSessionSwitchResult.Switched -> true
+            is TmuxSessionSwitchResult.Attach ->
+                trySend((result.command + '\r').encodeToByteArray())
+            TmuxSessionSwitchResult.Failed -> false
+        }
+        if (switched) synchronized(lock) { attachedTmuxSessionId = sessionId }
+        return switched
+    }
+
     override fun cancelPendingPrompts() {
+        synchronized(lock) { tmuxSelector }?.cancel()
         synchronized(lock) { activeAttempt?.hostKeyRepository }?.retire()
         synchronized(lock) { authenticatedSession }
             ?.cancelPendingKeyboardInteractiveChallenge()
@@ -253,6 +332,7 @@ class JschSshConnection(
             activeAttempt?.also { it.explicitCloseRequested = true }
         }
         try {
+            synchronized(lock) { tmuxSelector }?.cancel()
             attempt?.hostKeyRepository?.retire()
             synchronized(lock) { authenticatedSession }
                 ?.cancelPendingKeyboardInteractiveChallenge()
@@ -312,6 +392,9 @@ class JschSshConnection(
                 shell = shell,
                 authenticatedSession = authenticatedSession,
             )
+            tmuxSelector?.cancel()
+            tmuxSelector = null
+            attachedTmuxSessionId = null
             writer = null
             startupInputGate = null
             output = null
@@ -338,6 +421,52 @@ class JschSshConnection(
             "SSH startup input could not be queued. Connection closed to prevent ambiguous shell state."
         private const val WRITER_FAILURE_MESSAGE = "SSH connection lost while sending data."
     }
+}
+
+/** Shared by SSH terminals and the authenticated SSH side channel retained by a Mosh session. */
+internal fun uploadPastedImageViaSftp(
+    session: Session,
+    fileName: String,
+    source: InputStream,
+): String {
+    require(PASTED_IMAGE_FILE_NAME.matches(fileName)) { "Invalid pasted-image file name." }
+    require(session.isConnected) { "The SSH image-upload side channel is not connected." }
+    val sftp = session.openChannel("sftp") as ChannelSftp
+    var remotePath: String? = null
+    try {
+        sftp.connect(IMAGE_UPLOAD_CHANNEL_TIMEOUT_MS)
+        val home = normalizeAbsolutePath(sftp.pwd())
+        val cache = sftp.ensureDirectory(home, ".cache")
+        val appCache = sftp.ensureDirectory(cache, "terminal-spike")
+        sftp.chmod(REMOTE_PRIVATE_DIRECTORY_MODE, appCache)
+        val imageCache = sftp.ensureDirectory(appCache, "pasted-images")
+        sftp.chmod(REMOTE_PRIVATE_DIRECTORY_MODE, imageCache)
+        remotePath = childPath(imageCache, fileName)
+        source.use { input -> sftp.put(input, remotePath) }
+        sftp.chmod(REMOTE_PRIVATE_FILE_MODE, remotePath)
+        return remotePath
+    } catch (error: Throwable) {
+        remotePath?.let { partial -> runCatching { sftp.rm(partial) } }
+        throw error
+    } finally {
+        runCatching { sftp.disconnect() }
+    }
+}
+
+private const val IMAGE_UPLOAD_CHANNEL_TIMEOUT_MS = 10_000
+private const val REMOTE_PRIVATE_DIRECTORY_MODE = 448 // 0700
+private const val REMOTE_PRIVATE_FILE_MODE = 384 // 0600
+private val PASTED_IMAGE_FILE_NAME = Regex("[a-f0-9-]{36}\\.(png|jpe?g|webp|gif)")
+
+private fun ChannelSftp.ensureDirectory(parent: String, name: String): String {
+    val path = childPath(parent, name)
+    val existing = runCatching { lstat(path) }.getOrNull()
+    if (existing == null) {
+        mkdir(path)
+    } else {
+        require(existing.isDir) { "Remote image cache path is not a directory." }
+    }
+    return path
 }
 
 /** Maps transport diagnostics to display-safe categories without echoing endpoints or credentials. */

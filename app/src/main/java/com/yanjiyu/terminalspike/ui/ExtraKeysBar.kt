@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,15 +25,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -51,6 +58,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -72,7 +80,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.core.model.KeyboardLayout
 import com.yanjiyu.terminalspike.core.model.TerminalInputMode
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
@@ -84,6 +94,8 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.resolve
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -92,8 +104,8 @@ internal const val MAX_BUFFERED_INPUT_CHARACTERS = 4_096
 
 private const val COMPOSE_PAGE = 0
 private const val FIRST_SHORTCUT_PAGE = 1
-private const val TARGET_SHORTCUT_COLUMNS = 9
-private const val MIN_COMPACT_SHORTCUT_KEY_WIDTH_DP = 30f
+private const val TARGET_SHORTCUT_COLUMNS = 10
+private const val MIN_COMPACT_SHORTCUT_KEY_WIDTH_DP = 29f
 private const val SHORTCUT_KEY_SPACING_DP = 2f
 private const val SHORTCUT_HORIZONTAL_PADDING_DP = 3f
 
@@ -105,8 +117,6 @@ class BufferedInputDraftState {
     var validationMessage by mutableStateOf<UiText?>(null)
         private set
 
-    private var targetSessionId: Long? = null
-
     fun update(nextValue: TextFieldValue, activeSessionId: Long) {
         if (nextValue.text.length > MAX_BUFFERED_INPUT_CHARACTERS) {
             validationMessage = uiText(
@@ -116,20 +126,11 @@ class BufferedInputDraftState {
             return
         }
         validationMessage = null
-        if (value.text.isEmpty() || nextValue.text.isEmpty()) {
-            targetSessionId = activeSessionId
-        }
         value = nextValue
     }
 
-    /** Refuses to move a non-empty draft to another terminal implicitly. */
+    /** Applies caller-targeted edits without pinning the shared draft to one terminal. */
     fun updateForTarget(nextValue: TextFieldValue, targetSessionId: Long): Boolean {
-        if (value.text.isNotEmpty() &&
-            this.targetSessionId != null &&
-            this.targetSessionId != targetSessionId
-        ) {
-            return false
-        }
         update(nextValue, targetSessionId)
         return value == nextValue
     }
@@ -140,11 +141,10 @@ class BufferedInputDraftState {
         onSend: (Long, String) -> Boolean,
     ) {
         if (!value.isBufferedSendEligible(sendEnabled, validationMessage)) return
-        val accepted = onSend(targetSessionId ?: activeSessionId, value.text)
+        val accepted = onSend(activeSessionId, value.text)
         value = value.afterBufferedSend(accepted)
         if (accepted) {
             validationMessage = null
-            targetSessionId = activeSessionId
         }
     }
 }
@@ -159,6 +159,7 @@ fun ExtraKeysBar(
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
+    voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
     bufferedInputSendEnabled: Boolean,
@@ -170,7 +171,6 @@ fun ExtraKeysBar(
     onDirectInputMode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var collapsed by remember(inputTargetId) { mutableStateOf(false) }
     TerminalAccessoryBar(
         actions = keys.map { it.toAccessoryAction() },
         modifiers = AccessoryModifierSnapshot(
@@ -179,10 +179,10 @@ fun ExtraKeysBar(
         ),
         layout = layout,
         inputMode = inputMode,
-        collapsed = collapsed,
         hapticFeedbackEnabled = hapticFeedbackEnabled,
         keyRepeatEnabled = keyRepeatEnabled,
         multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
+        voiceInputLanguageTag = voiceInputLanguageTag,
         customizationEnabled = customizationEnabled,
         inputTargetId = inputTargetId,
         bufferedInputSendEnabled = bufferedInputSendEnabled,
@@ -207,22 +207,21 @@ fun ExtraKeysBar(
         onSendBufferedInput = onSendBufferedInput,
         onBufferedInputModeChanged = onBufferedInputModeChanged,
         onDirectInputMode = onDirectInputMode,
-        onCollapsedChange = { collapsed = it },
         modifier = modifier,
     )
 }
 
-/** Typed accessory surface used by live sessions. Collapse ownership remains outside Compose. */
+/** Typed accessory surface used by live sessions. */
 @Composable
 fun TerminalAccessoryBar(
     actions: List<TerminalAccessoryAction>,
     modifiers: AccessoryModifierSnapshot,
     layout: KeyboardLayout = KeyboardLayout.TWO_ROWS,
     inputMode: TerminalInputMode = TerminalInputMode.RAW,
-    collapsed: Boolean,
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
+    voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
     bufferedInputSendEnabled: Boolean,
@@ -232,7 +231,6 @@ fun TerminalAccessoryBar(
     onSendBufferedInput: (Long, String) -> Boolean,
     onBufferedInputModeChanged: (Boolean) -> Unit,
     onDirectInputMode: () -> Unit,
-    onCollapsedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -299,66 +297,51 @@ fun TerminalAccessoryBar(
                 onDispose { currentOnBufferedInputModeChanged(false) }
             }
 
-            // A focused Text composer stays mounted; this prevents an externally restored collapse
-            // flag from unexpectedly tearing down its IME connection.
-            if (collapsed && pagerState.currentPage != COMPOSE_PAGE) {
-                DeckExpandHandle(
-                    onExpand = { onCollapsedChange(false) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                return@BoxWithConstraints
-            }
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                DeckCollapseControl(
-                    collapseEnabled = pagerState.currentPage != COMPOSE_PAGE,
-                    onCollapse = { onCollapsedChange(true) },
-                )
-                HorizontalPager(
-                    state = pagerState,
-                    beyondViewportPageCount = 1,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (rowCount == 1) 54.dp else 106.dp)
-                        .testTag("terminal_input_pager")
-                        .semantics {
-                            contentDescription = pagerDescription
-                            stateDescription = pagerStateDescription
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (rowCount == 1) 54.dp else 106.dp)
+                    .testTag("terminal_input_pager")
+                    .semantics {
+                        contentDescription = pagerDescription
+                        stateDescription = pagerStateDescription
+                    },
+            ) { page ->
+                if (page == COMPOSE_PAGE) {
+                    BufferedInputPage(
+                        inputTargetId = inputTargetId,
+                        sendEnabled = bufferedInputSendEnabled,
+                        draftState = bufferedInputDraftState,
+                        active = pagerState.settledPage == COMPOSE_PAGE,
+                        multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
+                        voiceInputLanguageTag = voiceInputLanguageTag,
+                        onSend = onSendBufferedInput,
+                    )
+                } else {
+                    ExtraKeyPage(
+                        cells = shortcutPages[page - FIRST_SHORTCUT_PAGE],
+                        columnCount = columnCount,
+                        rowCount = rowCount,
+                        modifiers = modifiers,
+                        customizationEnabled = customizationEnabled,
+                        keyRepeatEnabled = keyRepeatEnabled,
+                        onPressFeedback = {
+                            if (hapticFeedbackEnabled) {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                         },
-                ) { page ->
-                    if (page == COMPOSE_PAGE) {
-                        BufferedInputPage(
-                            inputTargetId = inputTargetId,
-                            sendEnabled = bufferedInputSendEnabled,
-                            draftState = bufferedInputDraftState,
-                            active = pagerState.settledPage == COMPOSE_PAGE,
-                            multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
-                            onSend = onSendBufferedInput,
-                        )
-                    } else {
-                        ExtraKeyPage(
-                            cells = shortcutPages[page - FIRST_SHORTCUT_PAGE],
-                            columnCount = columnCount,
-                            rowCount = rowCount,
-                            modifiers = modifiers,
-                            customizationEnabled = customizationEnabled,
-                            keyRepeatEnabled = keyRepeatEnabled,
-                            onPressFeedback = {
-                                if (hapticFeedbackEnabled) {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                }
-                            },
-                            onAction = onAction,
-                            onCustomize = onCustomize,
-                        )
-                    }
+                        onAction = onAction,
+                        onCustomize = onCustomize,
+                    )
                 }
             }
         }
     }
 }
 
-/** Uses the requested nine-key row at phone widths, reducing only in narrower split windows. */
+/** Uses the requested ten-key row at phone widths, reducing only in narrower split windows. */
 internal fun terminalShortcutColumnCount(availableWidthDp: Float): Int {
     require(availableWidthDp.isFinite() && availableWidthDp > 0f) {
         "Shortcut deck width must be finite and positive."
@@ -372,7 +355,7 @@ internal fun terminalShortcutColumnCount(availableWidthDp: Float): Int {
 
 /**
  * When requested, null is the one customize cell. All configured keys remain in their exact order
- * when pages are read top-to-bottom, left-to-right. The shipped 18-key deck omits that extra live
+ * when pages are read top-to-bottom, left-to-right. The shipped 20-key deck omits that extra live
  * cell because its editor already lives in Settings > Keyboard.
  */
 internal fun terminalShortcutPages(
@@ -405,7 +388,8 @@ private fun <T> terminalPages(
 }
 
 private fun List<TerminalAccessoryAction>.matchDefaultAccessoryDeck(): Boolean =
-    map { it.defaultDeckKeyOrNull() } == TerminalExtraKey.DEFAULT_ORDER
+    map(TerminalAccessoryAction::stableId) == KeyboardAction.DEFAULT_ORDER.map(KeyboardAction::wireCode) ||
+        map { it.defaultDeckKeyOrNull() } == TerminalExtraKey.DEFAULT_ORDER
 
 private fun TerminalAccessoryAction.defaultDeckKeyOrNull(): TerminalExtraKey? = when (this) {
     is TerminalAccessoryAction.Key -> key
@@ -416,69 +400,12 @@ private fun TerminalAccessoryAction.defaultDeckKeyOrNull(): TerminalExtraKey? = 
     }
     is TerminalAccessoryAction.Local -> when (action) {
         TerminalLocalAccessoryAction.HIDE_KEYBOARD -> TerminalExtraKey.HIDE_KEYBOARD
+        TerminalLocalAccessoryAction.TMUX_SESSIONS -> null
+        TerminalLocalAccessoryAction.SELECT_IMAGES -> null
         else -> null
     }
-    is TerminalAccessoryAction.TmuxPrefix -> null
-}
-
-@Composable
-private fun DeckCollapseControl(
-    collapseEnabled: Boolean,
-    onCollapse: () -> Unit,
-) {
-    val collapseDescription = stringResource(R.string.terminal_accessory_collapse)
-    val collapseUnavailableDescription =
-        stringResource(R.string.terminal_accessory_collapse_unavailable)
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .padding(horizontal = 4.dp)
-            .accessoryKeyInput(
-                enabled = collapseEnabled,
-                repeatEnabled = false,
-                onPressFeedback = {},
-                onClick = onCollapse,
-            )
-            .testTag("terminal_accessory_collapse")
-            .semantics {
-                contentDescription = if (collapseEnabled) {
-                    collapseDescription
-                } else {
-                    collapseUnavailableDescription
-                }
-            },
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) { Text("⌄") }
-    }
-}
-
-@Composable
-private fun DeckExpandHandle(
-    onExpand: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val expandDescription = stringResource(R.string.terminal_accessory_expand_description)
-    Surface(
-        modifier = modifier
-            .height(48.dp)
-            .accessoryKeyInput(
-                enabled = true,
-                repeatEnabled = false,
-                onPressFeedback = {},
-                onClick = onExpand,
-            )
-            .testTag("terminal_accessory_expand")
-            .semantics { contentDescription = expandDescription },
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.terminal_accessory_expand), style = MaterialTheme.typography.labelLarge)
-        }
-    }
+    is TerminalAccessoryAction.TmuxPrefix ->
+        if (chord.equals("C-b", ignoreCase = true)) TerminalExtraKey.CTRL_B else null
 }
 
 @Composable
@@ -488,6 +415,7 @@ private fun BufferedInputPage(
     draftState: BufferedInputDraftState,
     active: Boolean,
     multilineConfirmationEnabled: Boolean,
+    voiceInputLanguageTag: String,
     onSend: (Long, String) -> Boolean,
 ) {
     val draft = draftState.value
@@ -495,7 +423,46 @@ private fun BufferedInputPage(
     val inputDescription = stringResource(R.string.terminal_buffered_input_description)
     val focusRequester = remember { FocusRequester() }
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+    val currentInputTargetId by rememberUpdatedState(inputTargetId)
+    val currentVoiceLanguageTag by rememberUpdatedState(voiceInputLanguageTag)
     var confirmingMultilinePaste by remember { mutableStateOf(false) }
+    var voicePhase by remember { mutableStateOf(VoiceInputPhase.IDLE) }
+    var partialTranscript by remember { mutableStateOf("") }
+    var voiceFailure by remember { mutableStateOf<VoiceInputFailure?>(null) }
+    val voiceRecognizer = remember(context) {
+        AndroidVoiceInputRecognizer(
+            context = context,
+            onPhase = { voicePhase = it },
+            onPartial = { partialTranscript = it },
+            onResult = { transcript ->
+                voiceFailure = null
+                draftState.updateForTarget(
+                    draftState.value.withVoiceTranscript(transcript),
+                    currentInputTargetId,
+                )
+            },
+            onFailure = { voiceFailure = it },
+        )
+    }
+    val microphonePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            voiceFailure = null
+            voiceRecognizer.start(currentVoiceLanguageTag)
+        } else {
+            voiceFailure = VoiceInputFailure.PERMISSION_DENIED
+        }
+    }
+
+    DisposableEffect(voiceRecognizer) {
+        onDispose { voiceRecognizer.destroy() }
+    }
+
+    LaunchedEffect(inputTargetId) {
+        if (voicePhase != VoiceInputPhase.IDLE) voiceRecognizer.cancel()
+    }
 
     fun sendDraft() {
         if (!draft.isBufferedSendEligible(sendEnabled, validationMessage)) return
@@ -520,6 +487,7 @@ private fun BufferedInputPage(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val voiceStatus = voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
         OutlinedTextField(
             value = draft,
             onValueChange = { nextValue -> draftState.update(nextValue, inputTargetId) },
@@ -533,8 +501,58 @@ private fun BufferedInputPage(
             minLines = 1,
             maxLines = 3,
             isError = validationMessage != null,
-            supportingText = validationMessage?.let { message ->
-                { Text(message.resolve()) }
+            supportingText = (validationMessage?.resolve() ?: voiceStatus)?.let { message ->
+                { Text(message, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            },
+            trailingIcon = {
+                val voiceActive = voicePhase != VoiceInputPhase.IDLE
+                val voiceState = stringResource(
+                    if (voiceActive) R.string.terminal_voice_state_on else R.string.terminal_voice_state_off,
+                )
+                val voiceDescription = stringResource(R.string.terminal_voice_input)
+                Surface(
+                    shape = CircleShape,
+                    color = if (voiceActive) {
+                        MaterialTheme.colorScheme.errorContainer
+                    } else {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    contentColor = if (voiceActive) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    },
+                    modifier = Modifier.semantics {
+                        contentDescription = voiceDescription
+                        stateDescription = voiceState
+                    },
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (voiceActive) {
+                                voiceRecognizer.stop()
+                            } else if (!voiceRecognizer.available) {
+                                voiceFailure = VoiceInputFailure.UNAVAILABLE
+                            } else if (
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO,
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                voiceFailure = null
+                                voiceRecognizer.start(currentVoiceLanguageTag)
+                            } else {
+                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        ConnectionsGlyphIcon(
+                            glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
+                            modifier = Modifier.size(21.dp),
+                        )
+                    }
+                }
             },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
@@ -576,6 +594,30 @@ private fun BufferedInputPage(
                 TextButton(onClick = { confirmingMultilinePaste = false }) {
                     Text(stringResource(R.string.cancel))
                 }
+            },
+        )
+    }
+}
+
+@Composable
+private fun voiceInputStatus(
+    phase: VoiceInputPhase,
+    partialTranscript: String,
+    failure: VoiceInputFailure?,
+): String? = when (phase) {
+    VoiceInputPhase.LISTENING -> partialTranscript.takeIf(String::isNotBlank)?.let { transcript ->
+        stringResource(R.string.terminal_voice_listening_with_words, transcript)
+    } ?: stringResource(R.string.terminal_voice_listening)
+    VoiceInputPhase.PROCESSING -> stringResource(R.string.terminal_voice_processing)
+    VoiceInputPhase.IDLE -> failure?.let { value ->
+        stringResource(
+            when (value) {
+                VoiceInputFailure.UNAVAILABLE -> R.string.terminal_voice_unavailable
+                VoiceInputFailure.PERMISSION_DENIED -> R.string.terminal_voice_permission_denied
+                VoiceInputFailure.NO_MATCH -> R.string.terminal_voice_no_match
+                VoiceInputFailure.BUSY -> R.string.terminal_voice_busy
+                VoiceInputFailure.OFFLINE_UNAVAILABLE -> R.string.terminal_voice_offline_unavailable
+                VoiceInputFailure.UNKNOWN -> R.string.terminal_voice_failed
             },
         )
     }
@@ -654,6 +696,7 @@ private fun ExtraKeyRow(
                     description = customizeDescription,
                     disabledReason = null,
                     repeatEnabled = false,
+                    glyph = null,
                     onPressFeedback = onPressFeedback,
                     onClick = onCustomize,
                 )
@@ -671,6 +714,12 @@ private fun ExtraKeyRow(
                     description = cell.accessibilityDescription.resolve(),
                     disabledReason = disabledReason,
                     repeatEnabled = keyRepeatEnabled && cell.supportsLongPressRepeat,
+                    glyph = when ((cell as? TerminalAccessoryAction.Local)?.action) {
+                        TerminalLocalAccessoryAction.TMUX_SESSIONS -> ConnectionsGlyph.WINDOWS
+                        TerminalLocalAccessoryAction.SELECT_IMAGES -> ConnectionsGlyph.IMAGE
+                        TerminalLocalAccessoryAction.HIDE_KEYBOARD -> ConnectionsGlyph.KEYBOARD
+                        else -> null
+                    },
                     onPressFeedback = onPressFeedback,
                     onClick = { onAction(cell) },
                 )
@@ -688,6 +737,7 @@ private fun RowScope.ExtraKeyButton(
     description: String,
     disabledReason: String?,
     repeatEnabled: Boolean,
+    glyph: ConnectionsGlyph?,
     onPressFeedback: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -738,17 +788,24 @@ private fun RowScope.ExtraKeyButton(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp), contentAlignment = Alignment.Center) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = baseFontSizeSp.sp,
-                    lineHeight = (baseFontSizeSp + 2f).sp,
-                ),
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-            )
+            if (glyph != null) {
+                ConnectionsGlyphIcon(
+                    glyph = glyph,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = baseFontSizeSp.sp,
+                        lineHeight = (baseFontSizeSp + 2f).sp,
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+            }
             if (modifierState == AccessoryModifierState.LOCKED) {
                 Text(
                     text = "🔒",

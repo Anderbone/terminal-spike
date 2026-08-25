@@ -2,6 +2,9 @@ package com.yanjiyu.terminalspike
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -15,6 +18,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.hasFocus
@@ -24,6 +28,10 @@ import com.yanjiyu.terminalspike.ui.settings.KeyboardPreviewTestTag
 import com.yanjiyu.terminalspike.ui.settings.KeyboardSettingsTestTag
 import com.yanjiyu.terminalspike.ui.settings.SecuritySettingsTestTag
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
+import com.yanjiyu.terminalspike.ui.NewTerminalSessionTestTag
+import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
+import com.yanjiyu.terminalspike.ui.TerminalChromeTitleTestTag
+import com.yanjiyu.terminalspike.ui.TerminalEmptyStateTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -32,60 +40,72 @@ class MainScreenSmokeTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun localWorkspaceIsLaunchDestination() {
-        composeRule.onNodeWithTag("workspace-app-bar").assertIsDisplayed()
-        composeRule.onNodeWithText("Active sessions").assertIsDisplayed()
-        composeRule.onNodeWithText("Saved hosts").assertIsDisplayed()
-        composeRule.onNodeWithText("Recent connections").assertIsDisplayed()
+    fun connectionsAreTheLaunchDestination() {
+        composeRule.onNodeWithContentDescription("Connections screen").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
+        composeRule.onNodeWithText("SSH keys").assertDoesNotExist()
+        composeRule.onNodeWithText("Snippets").assertDoesNotExist()
         composeRule.onNodeWithText("Renderer lab").assertDoesNotExist()
         composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Open connections").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open terminal").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open connections").assertDoesNotExist()
     }
 
     @Test
     fun terminalDestinationIsCleanAndRendererLabRemainsDeveloperOnly() {
         openTerminal()
 
+        composeRule.onNodeWithTag(TerminalChromeTitleTestTag).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Back to Connections").assertIsDisplayed()
+        composeRule.onNodeWithTag(TerminalEmptyStateTestTag).assertIsDisplayed()
         composeRule.onNodeWithText("No terminal session is open.").assertIsDisplayed()
-        composeRule.onNodeWithTag("new-terminal-session").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Choose a saved connection to start a secure terminal session.",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithTag(NewTerminalSessionTestTag)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open connections").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open terminal").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
         composeRule.onNodeWithTag("terminal_container").assertDoesNotExist()
-        composeRule.runOnIdle { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
-        composeRule.onNodeWithTag("workspace-app-bar").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open settings").performClick()
+        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open terminal").performClick()
+        composeRule.onNodeWithTag(TerminalEmptyStateTestTag).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open connections").performClick()
+        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
 
         openRendererLab()
         composeRule.onNodeWithTag("terminal_container").assertIsDisplayed()
+        composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertDoesNotExist()
     }
 
     @Test
-    fun sshConnectionDialogIsReachable() {
-        composeRule.onNodeWithContentDescription("Start a new SSH connection").performClick()
+    fun addHostDialogIsReachable() {
+        composeRule.onNodeWithContentDescription("Add host").performClick()
 
-        composeRule.onNodeWithText("New SSH session").assertIsDisplayed()
-        composeRule.onNodeWithText("Host").assertIsDisplayed()
-        composeRule.onNodeWithText("Password").assertIsDisplayed()
-        composeRule.onNodeWithText("Save password on this device").assertIsDisplayed()
+        composeRule.onNodeWithText("Add host").assertIsDisplayed()
+        composeRule.onNodeWithText("Connection name (optional)").assertIsDisplayed()
+        composeRule.onNodeWithText("Hostname or IP").assertIsDisplayed()
     }
 
     @Test
     fun encryptedConnectionsAreReachable() {
         composeRule.waitForIdle()
-        openConnectionsCatalog()
-
         composeRule.onNodeWithContentDescription("Connections screen").assertIsDisplayed()
         composeRule.onNodeWithText("Active sessions").assertDoesNotExist()
-        composeRule.onNodeWithText("Hosts").assertIsDisplayed()
-        composeRule.onNodeWithText("Keys").assertIsDisplayed()
-        composeRule.onNodeWithText("Snippets").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Back from connections").performClick()
-        composeRule.onNodeWithTag("workspace-app-bar").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
+        composeRule.onNodeWithText("SSH keys").assertDoesNotExist()
+        composeRule.onNodeWithText("Snippets").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Back from connections").assertDoesNotExist()
     }
 
     @Test
     fun knownHostsAreManagedOnlyUnderSettingsSecurity() {
-        composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
-        openConnectionsCatalog()
         composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
@@ -95,6 +115,17 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithTag(SecuritySettingsTestTag)
             .performScrollToNode(hasText("Known hosts"))
         composeRule.onNodeWithText("Known hosts").assertIsDisplayed()
+    }
+
+    @Test
+    fun sshKeysAndSnippetsAreManagedFromSettings() {
+        composeRule.onNodeWithContentDescription("Open settings").performClick()
+        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .performScrollToNode(hasText("SSH keys"))
+        composeRule.onNodeWithText("SSH keys").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .performScrollToNode(hasText("Snippets"))
+        composeRule.onNodeWithText("Snippets").assertIsDisplayed()
     }
 
     @Test
@@ -163,11 +194,5 @@ class MainScreenSmokeTest {
             .performScrollToNode(hasText("Developer"))
         composeRule.onNodeWithText("Developer").performClick()
         composeRule.onNodeWithContentDescription("Open renderer lab").performClick()
-    }
-
-    private fun openConnectionsCatalog() {
-        composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("Workspace destinations").performClick()
-        composeRule.onNodeWithContentDescription("Open Connections from Workspace menu").performClick()
     }
 }

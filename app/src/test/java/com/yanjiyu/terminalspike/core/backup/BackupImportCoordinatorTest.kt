@@ -299,6 +299,7 @@ class BackupImportCoordinatorTest {
                         defaultTerminalProfileId = null,
                         defaultKeyboardProfileId = null,
                         lastBackupMode = BackupMode.FULL,
+                        tmuxSessionSelectorDisabled = true,
                     ),
                 ),
                 BackupImportStrategy.REPLACE_CORRESPONDING,
@@ -312,6 +313,7 @@ class BackupImportCoordinatorTest {
             keyboardProfileId = "",
             lastBackupMode = "full",
         )
+        assertTrue(requireNotNull(mixedPersistence.appliedSettings).tmuxSessionSelectorDisabled)
     }
 
     @Test

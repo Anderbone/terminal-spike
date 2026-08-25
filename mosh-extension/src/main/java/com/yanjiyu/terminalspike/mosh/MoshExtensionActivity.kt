@@ -82,7 +82,7 @@ private fun MoshExtensionInformation() {
         InformationSection(
             title = "Transport",
             body = "Pinned official Mosh 1.4.0 client code. Supports IPv4, IPv6, UDP roaming, " +
-                "terminal input/output pipes, resize, cancellation, and four process-isolated sessions.",
+                "terminal input/output pipes, resize, cancellation, and ten process-isolated sessions.",
         )
         InformationSection(
             title = "Security boundary",
