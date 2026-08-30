@@ -9,6 +9,7 @@ services:
     init: true
     ports:
       - "${TERMINAL_SPIKE_SSH_BIND_ADDRESS:-127.0.0.1}:${TERMINAL_SPIKE_SSH_PORT:-22222}:22"
+      - "62000-62010:62000-62010/udp"
     tmpfs:
       - /run
       - /tmp

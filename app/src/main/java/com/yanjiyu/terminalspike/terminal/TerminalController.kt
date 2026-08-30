@@ -87,8 +87,6 @@ class TerminalController(
     private var pendingLiveLine: TerminalLine? = null
     private var hasPendingLiveLine = false
     private var pendingTerminalFrame: TerminalFrameUpdate? = null
-    private var pendingPrimaryScrollbackClear = false
-    private var pendingAlternateScrollbackClear = false
     private var frameScheduled = false
     private var acceptingOutput = false
     private var paused = false
@@ -257,18 +255,8 @@ class TerminalController(
             // Input protocol modes must take effect as soon as the parser observes them. Waiting for
             // the next render frame can encode a keypad press with the preceding DECKPAM state.
             terminalModes = frame.modes
-            if (frame.clearScrollbackRequested) {
-                if (frame.alternateScreen) {
-                    alternateTerminalScrollbackQueue.clear()
-                    pendingAlternateScrollbackClear = true
-                } else {
-                    // Both queues feed the controller-owned primary history. Anything queued before
-                    // ED3 belongs to the saved lines being erased; later updates enqueue after it.
-                    outputQueue.clear()
-                    primaryTerminalScrollbackQueue.clear()
-                    pendingPrimaryScrollbackClear = true
-                }
-            }
+            // ED3 clears the remote program's terminal display history, not the app-owned local
+            // transcript. Only the explicit clearLocalScrollback action may destroy retained rows.
             if (frame.alternateScreen && rendererProfile.preserveAlternateScreenHistory) {
                 alternateTerminalScrollbackQueue.addAll(frame.completedScrollback)
             } else if (!frame.alternateScreen) {
@@ -282,10 +270,9 @@ class TerminalController(
                 completedScrollback = emptyList(),
                 responses = emptyList(),
                 remoteClipboardRequests = emptyList(),
+                terminalNotifications = emptyList(),
                 bellSequence = maxOf(earlierFrame?.bellSequence ?: 0L, frame.bellSequence),
                 bellCount = coalescedBellCount,
-                clearScrollbackRequested =
-                    earlierFrame?.clearScrollbackRequested == true || frame.clearScrollbackRequested,
                 dirtyRows = mergeSortedDirtyRows(
                     first = earlierFrame?.dirtyRows,
                     second = frame.dirtyRows,
@@ -320,8 +307,6 @@ class TerminalController(
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
-            pendingPrimaryScrollbackClear = false
-            pendingAlternateScrollbackClear = false
         }
         publishPerformance(visibleLines = viewport.visibleRows(0).count)
     }
@@ -335,8 +320,6 @@ class TerminalController(
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
-            pendingPrimaryScrollbackClear = false
-            pendingAlternateScrollbackClear = false
             buffer.clear()
             alternateScrollback.clear()
             liveLine = null
@@ -359,8 +342,6 @@ class TerminalController(
             outputQueue.clear()
             primaryTerminalScrollbackQueue.clear()
             alternateTerminalScrollbackQueue.clear()
-            pendingPrimaryScrollbackClear = false
-            pendingAlternateScrollbackClear = false
             buffer.clear()
             alternateScrollback.clear()
             bumpSelectionContentRevision()
@@ -598,10 +579,6 @@ class TerminalController(
         val hasMore = synchronized(queueLock) {
             val previousTerminalScreen = terminalScreen
             val previousCursor = cursor
-            val primaryHistoryCleared = pendingPrimaryScrollbackClear
-            val alternateHistoryCleared = pendingAlternateScrollbackClear
-            pendingPrimaryScrollbackClear = false
-            pendingAlternateScrollbackClear = false
             val batch = outputQueue.drain(MAX_LINES_PER_FRAME)
             val primaryTerminalScrollback = primaryTerminalScrollbackQueue.drain(MAX_LINES_PER_FRAME)
             val alternateTerminalLines = alternateTerminalScrollbackQueue.drain(MAX_LINES_PER_FRAME)
@@ -615,8 +592,6 @@ class TerminalController(
             pendingTerminalFrame = null
             frameScheduled = false
 
-            if (primaryHistoryCleared) buffer.clear()
-            if (alternateHistoryCleared) alternateScrollback.clear()
             if (batch.isNotEmpty()) buffer.append(batch)
             if (primaryTerminalScrollback.isNotEmpty()) buffer.append(primaryTerminalScrollback)
             terminalScreenModeChanged =
@@ -652,7 +627,6 @@ class TerminalController(
                 }
             }
             contentChanged =
-                primaryHistoryCleared || alternateHistoryCleared ||
                 batch.isNotEmpty() || primaryTerminalScrollback.isNotEmpty() ||
                 alternateTerminalLines.isNotEmpty() || screen != null ||
                 updateLiveLine || terminalFrame != null
@@ -668,8 +642,7 @@ class TerminalController(
             if (contentChanged) bumpSelectionContentRevision()
 
             val structuralChange =
-                primaryHistoryCleared || alternateHistoryCleared ||
-                    batch.isNotEmpty() || primaryTerminalScrollback.isNotEmpty() ||
+                batch.isNotEmpty() || primaryTerminalScrollback.isNotEmpty() ||
                     alternateTerminalLines.isNotEmpty() || screen != null || updateLiveLine ||
                     terminalScreenModeChanged ||
                     terminalFrame != null && (

@@ -610,8 +610,8 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "com.yanjiyu.terminalspike"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.0.1"
+        versionCode = 5
+        versionName = "0.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

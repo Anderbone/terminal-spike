@@ -47,6 +47,30 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun osc9PublishesBoundedOneShotTerminalNotificationsWithoutRenderingText() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+        val update = engine.accept(
+            buildString {
+                append("\u001B]9;Codex finished the requested change\u0007")
+                repeat(4) { append("\u001B]9;extra-$it\u001B\\") }
+            }.bytes(),
+        )
+
+        assertEquals(
+            listOf(
+                "Codex finished the requested change",
+                "extra-0",
+                "extra-1",
+                "extra-2",
+            ),
+            update.terminalNotifications,
+        )
+        assertTrue(update.screen.all { it.text.isEmpty() })
+        assertEquals(0, update.bellCount)
+        assertTrue(engine.accept(byteArrayOf()).terminalNotifications.isEmpty())
+    }
+
+    @Test
     fun decscusrPublishesStandardShapeAndBlinkIncludingDefaultParameter() {
         val engine = VtTerminalEngine(columns = 8, rows = 2)
 
@@ -177,6 +201,35 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun fastAndSlowFiveHundredRowSshStreamsProduceTheSameNumberedHistory() {
+        val fast = VtTerminalEngine(columns = 40, rows = 4)
+        val slow = VtTerminalEngine(columns = 40, rows = 4)
+        val text = (1..500).joinToString("\r\n") { "row-$it" }
+        val fastRows = fast.accept(text.bytes()).completedScrollback.map { it.text }
+        val slowRows = buildList {
+            text.chunked(7).forEach { chunk ->
+                addAll(slow.accept(chunk.bytes()).completedScrollback.map { it.text })
+            }
+        }
+
+        assertEquals(fastRows, slowRows)
+        assertEquals((1..496).map { "row-$it" }, fastRows)
+    }
+
+    @Test
+    fun unicodeSplitInputProgressRewriteAndClearRemainMutableScreenState() {
+        val engine = VtTerminalEngine(columns = 20, rows = 3)
+        val unicode = "中🚀e\u0301".toByteArray(Charsets.UTF_8)
+        unicode.forEach { byte -> engine.accept(byteArrayOf(byte)) }
+        val progress = engine.accept("\r10%\r90%\u001B[2K\rready".bytes())
+        val rewritten = engine.accept("\u001B[1;1HDONE".bytes())
+
+        assertTrue(progress.completedScrollback.isEmpty())
+        assertTrue(rewritten.completedScrollback.isEmpty())
+        assertTrue(rewritten.screen.first().text.startsWith("DONE"))
+    }
+
+    @Test
     fun scrollsPrimaryScreenIntoScrollback() {
         val engine = VtTerminalEngine(columns = 8, rows = 2)
 
@@ -255,6 +308,58 @@ class VtTerminalEngineTest {
         assertEquals("middle", update.screen[0].text)
         assertEquals("next", update.screen[1].text)
         assertEquals("status", update.screen[2].text)
+    }
+
+    @Test
+    fun primaryTopAnchoredScrollRegionRetainsActualCodexStyleOutput() {
+        val engine = VtTerminalEngine(columns = 40, rows = 24)
+        engine.accept("\u001B[20;1HCODEX_INPUT\u001B[24;1HCODEX_STATUS".bytes())
+        val codexOutput = buildString {
+            append("\u001B[1;19r\u001B[19;1H\r\n")
+            (1..200).forEach { number ->
+                append("CODEX_SCROLL_%03d".format(number))
+                if (number < 200) append("\r\n")
+            }
+            append("\u001B[r")
+        }
+
+        val update = engine.accept(codexOutput.bytes())
+        val retained = (update.completedScrollback + update.screen).map { it.text.trim() }
+
+        assertEquals((1..200).map { "CODEX_SCROLL_%03d".format(it) }, retained.filter {
+            it.startsWith("CODEX_SCROLL_")
+        })
+        assertTrue(update.completedScrollback.any { it.text.trim() == "CODEX_SCROLL_001" })
+        assertTrue(update.screen.any { it.text.trim() == "CODEX_SCROLL_200" })
+        assertEquals("CODEX_INPUT", update.screen[19].text)
+        assertEquals("CODEX_STATUS", update.screen[23].text)
+    }
+
+    @Test
+    fun primaryTopAnchoredCodexHistoryIsIndependentOfOneByteTransportChunks() {
+        val engine = VtTerminalEngine(columns = 40, rows = 24)
+        engine.accept("\u001B[20;1HCODEX_INPUT\u001B[24;1HCODEX_STATUS".bytes())
+        val codexOutput = buildString {
+            append("\u001B[1;19r\u001B[19;1H\r\n")
+            (1..200).forEach { number ->
+                append("CODEX_SCROLL_%03d".format(number))
+                if (number < 200) append("\r\n")
+            }
+            append("\u001B[r")
+        }.bytes()
+        val retainedHistory =
+            mutableListOf<com.yanjiyu.terminalspike.terminal.model.TerminalLine>()
+        codexOutput.forEach { byte ->
+            retainedHistory += engine.accept(byteArrayOf(byte)).completedScrollback
+        }
+        val finalFrame = engine.accept(byteArrayOf())
+        val retained = (retainedHistory + finalFrame.screen).map { it.text.trim() }
+
+        assertEquals((1..200).map { "CODEX_SCROLL_%03d".format(it) }, retained.filter {
+            it.startsWith("CODEX_SCROLL_")
+        })
+        assertEquals("CODEX_INPUT", finalFrame.screen[19].text)
+        assertEquals("CODEX_STATUS", finalFrame.screen[23].text)
     }
 
     @Test

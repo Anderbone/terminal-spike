@@ -40,6 +40,8 @@ class JschSshConnection(
     private var tmuxSelector: TmuxSessionSelector? = null
     private var attachedTmuxSessionId: String? = null
     private val imageUploadLock = Any()
+    private var requestedColumns = DEFAULT_TERMINAL_COLUMNS
+    private var requestedRows = DEFAULT_TERMINAL_ROWS
 
     override fun uploadPastedImage(fileName: String, source: InputStream): String {
         val session = synchronized(lock) {
@@ -61,6 +63,8 @@ class JschSshConnection(
         val attempt = ConnectionAttempt(ConnectionStatePublisher(onState))
         synchronized(lock) {
             activeAttempt = attempt
+            requestedColumns = columns.coerceAtLeast(1)
+            requestedRows = rows.coerceAtLeast(1)
         }
         var repository: VerifyingHostKeyRepository? = null
         try {
@@ -107,18 +111,21 @@ class JschSshConnection(
             val tmuxStartupCommand = tmuxChoice?.let(::tmuxStartupCommand)
 
             val newShell = newSession.openChannel("shell") as ChannelShell
-            configureSshPty(
-                target = JschShellPtyTarget(newShell),
-                terminalType = config.terminalType,
-                columns = columns,
-                rows = rows,
-            )
             val input = newShell.inputStream
             val newOutput = newShell.outputStream
             val channelRegistered = synchronized(lock) {
                 if (activeAttempt !== attempt || attempt.explicitCloseRequested) {
                     false
                 } else {
+                    // Register and configure under the same lock used by resize(). A view can
+                    // report its measured size before the SSH shell exists; retaining that latest
+                    // size prevents the remote PTY and local VT engine from diverging.
+                    configureSshPty(
+                        target = JschShellPtyTarget(newShell),
+                        terminalType = config.terminalType,
+                        columns = requestedColumns,
+                        rows = requestedRows,
+                    )
                     shell = newShell
                     output = newOutput
                     true
@@ -236,12 +243,13 @@ class JschSshConnection(
     }
 
     override fun resize(columns: Int, rows: Int) {
-        synchronized(lock) { shell }?.setPtySize(
-            columns.coerceAtLeast(1),
-            rows.coerceAtLeast(1),
-            0,
-            0,
-        )
+        val boundedColumns = columns.coerceAtLeast(1)
+        val boundedRows = rows.coerceAtLeast(1)
+        synchronized(lock) {
+            requestedColumns = boundedColumns
+            requestedRows = boundedRows
+            shell?.setPtySize(boundedColumns, boundedRows, 0, 0)
+        }
     }
 
     override fun answerHostIdentityPrompt(
@@ -411,6 +419,8 @@ class JschSshConnection(
 
     companion object {
         private const val CHANNEL_TIMEOUT_MS = 10_000
+        private const val DEFAULT_TERMINAL_COLUMNS = 80
+        private const val DEFAULT_TERMINAL_ROWS = 24
         private const val READ_BUFFER_SIZE = 8 * 1024
         private const val OUTGOING_QUEUE_CAPACITY = 256
         private const val STARTUP_RESERVED_WRITER_SLOTS = 1

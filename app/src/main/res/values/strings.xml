@@ -51,6 +51,11 @@
     <string name="session_notification_reconnected_title">Remote terminal reconnected</string>
     <string name="session_notification_reconnected_text">A fresh shell was opened. Only multiplexer-managed processes may have survived.</string>
     <string name="session_background_service_failed">Remote terminal stopped because Android could not keep its foreground service active.</string>
+    <string name="terminal_program_notification_channel_name">Terminal task completion</string>
+    <string name="terminal_program_notification_channel_description">Alerts from terminal applications, including completed Codex turns</string>
+    <string name="terminal_program_notification_title">Terminal task complete</string>
+    <string name="terminal_program_notification_named_title">%1$s task complete</string>
+    <string name="terminal_program_notification_text">Tap to open the terminal tab.</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Private, local, and tuned for your terminal</string>
     <string name="settings_screen_description">Settings screen</string>
@@ -412,6 +417,7 @@
     <string name="done">Done</string>
     <string name="ok">OK</string>
     <string name="not_now">Not now</string>
+    <string name="terminal_local_network_permission_denied">Local network permission is required to connect to LAN hosts.</string>
     <string name="try_again">Try again</string>
 
     <string name="app_lock_prompt_title">Unlock Terminal Spike</string>

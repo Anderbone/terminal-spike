@@ -1513,7 +1513,7 @@ class TerminalSpikeViewModel(
     @Volatile
     private var activeRendererProfile = TerminalRendererProfile()
     @Volatile
-    private var activeScrollbackLines = DEFAULT_PROFILE_SCROLLBACK_LINES
+    private var activeScrollbackLines = DEFAULT_RUNTIME_SCROLLBACK_LINES
     @Volatile
     private var activeRemoteClipboardMode = RemoteClipboardMode.ASK
     @Volatile
@@ -1687,8 +1687,10 @@ class TerminalSpikeViewModel(
                         tmuxSessionSelectorEnabled =
                             !snapshot.appSettings.tmuxSessionSelectorDisabled
                         activeRendererProfile = rendererProfile
-                        activeScrollbackLines = snapshot.terminalProfile?.scrollbackLines
-                            ?: DEFAULT_PROFILE_SCROLLBACK_LINES
+                        activeScrollbackLines = resolveRuntimeScrollbackLines(
+                            snapshot.terminalProfile?.scrollbackLines
+                                ?: DEFAULT_RUNTIME_SCROLLBACK_LINES,
+                        )
                         activeRemoteClipboardMode = snapshot.terminalProfile
                             ?.links
                             ?.remoteClipboardMode
@@ -1812,6 +1814,12 @@ class TerminalSpikeViewModel(
                     val projectedActive = projected.sessions.firstOrNull {
                         it.id == projected.activeSessionId
                     }
+                    val failureNotice = projectedActive?.let { active ->
+                        newConnectionFailureNotice(
+                            current = active.connectionState,
+                            previous = previous[active.id],
+                        )
+                    }
                     val withKeyboard = if (
                         previousActive?.id != projectedActive?.id ||
                         previousActive?.keyboardProfileId != projectedActive?.keyboardProfileId
@@ -1823,7 +1831,9 @@ class TerminalSpikeViewModel(
                     } else {
                         projected
                     }
-                    if (openedFreshShell) {
+                    if (failureNotice != null) {
+                        withKeyboard.copy(notice = failureNotice)
+                    } else if (openedFreshShell) {
                         withKeyboard.copy(
                             notice = uiText(R.string.notice_reconnected_new_shell),
                         )
@@ -3323,9 +3333,8 @@ class TerminalSpikeViewModel(
                 keyboardProfileId = runtimeProfiles.keyboardProfileId,
                 replacementSessionId = replacementSessionId,
                 terminalConfiguration = RemoteSessionTerminalConfiguration(
-                    scrollbackLines = runtimeProfiles.terminalProfile.scrollbackLines.coerceIn(
-                        minimumValue = 1,
-                        maximumValue = ModelLimits.MAX_SCROLLBACK_LINES,
+                    scrollbackLines = resolveRuntimeScrollbackLines(
+                        runtimeProfiles.terminalProfile.scrollbackLines,
                     ),
                     rendererProfile = runtimeProfiles.terminalProfile.toRendererProfile(
                         customTerminalFonts,
@@ -4580,7 +4589,6 @@ class TerminalSpikeViewModel(
         private const val MAX_SESSION_TITLE_LENGTH = 40
         private const val MAX_SECRET_LENGTH = 1_024
         private const val MAX_PRIVATE_KEY_BYTES = 256 * 1_024
-        private const val DEFAULT_PROFILE_SCROLLBACK_LINES = 20_000
         private const val WORKSPACE_RECENT_HISTORY_SCAN_LIMIT = 64
         private const val CONNECTIONS_RECENT_HOST_LIMIT = 64
         private const val ACTIVE_TERMINAL_SESSION_ID = "active_terminal_session_id"
@@ -4589,6 +4597,13 @@ class TerminalSpikeViewModel(
         private const val PENDING_IDENTITY_RECOVERY_TOKEN = "pending_identity_recovery_token"
     }
 }
+
+internal fun newConnectionFailureNotice(
+    current: ConnectionState,
+    previous: ConnectionState?,
+): UiText? = (current as? ConnectionState.Failed)
+    ?.takeIf { previous !is ConnectionState.Failed }
+    ?.let { failure -> UiText.Dynamic(failure.message) }
 
 internal data class ModifierActivation(
     val armed: Boolean,

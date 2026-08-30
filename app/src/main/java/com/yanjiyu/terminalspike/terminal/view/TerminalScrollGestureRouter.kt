@@ -59,8 +59,9 @@ internal class TerminalScrollGestureRouter(
             TouchScrollMode.REMOTE_MOUSE -> if (remoteMouseTrackingEnabled) {
                 TerminalScrollDestination.REMOTE_MOUSE
             } else {
-                // Never inject unsolicited mouse packets into an ordinary shell.
-                TerminalScrollDestination.NONE
+                // A shell that has not negotiated mouse tracking cannot consume remote wheel
+                // reports. Keep its already-captured history reachable instead of dropping touch.
+                TerminalScrollDestination.LOCAL_SCROLLBACK
             }
         }
     }

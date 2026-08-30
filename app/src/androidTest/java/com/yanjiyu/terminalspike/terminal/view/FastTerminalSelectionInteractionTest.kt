@@ -6,9 +6,11 @@ import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.MainActivity
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.terminal.TerminalController
+import com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine
 import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
 import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
@@ -26,6 +28,162 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class FastTerminalSelectionInteractionTest {
+    @Test
+    fun twoHundredLiveTerminalRowsCanScrollBackToTheFirstRow() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var controller: TerminalController
+            lateinit var view: FastTerminalView
+            scenario.onActivity { activity ->
+                controller = TerminalController(TerminalBuffer(capacity = 1_000))
+                view = attachTerminalView(activity, controller)
+                val engine = VtTerminalEngine(
+                    columns = controller.terminalColumns,
+                    rows = controller.terminalRows,
+                )
+                (1..200).forEach { row ->
+                    controller.updateTerminalFrame(
+                        engine.accept("$row. test text here\r\n".encodeToByteArray()),
+                    )
+                }
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            SystemClock.sleep(100L)
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity {
+                assertTrue(
+                    "Chunked output retained ${controller.lineCount()} total rows and " +
+                        "${controller.buffer.lineCount()} history rows",
+                    controller.lineCount() >= 200,
+                )
+                assertTrue(controller.viewport.scrollY > 0f)
+
+                var swipeCount = 0
+                while (controller.viewport.scrollY > 0.5f && swipeCount < 256) {
+                    val start = SystemClock.uptimeMillis()
+                    val x = view.width / 2f
+                    val startY = view.height * 0.25f
+                    val endY = view.height * 0.85f
+                    val events = listOf(
+                        MotionEvent.obtain(start, start, MotionEvent.ACTION_DOWN, x, startY, 0),
+                        MotionEvent.obtain(
+                            start,
+                            start + 40L,
+                            MotionEvent.ACTION_MOVE,
+                            x,
+                            endY,
+                            0,
+                        ),
+                        MotionEvent.obtain(
+                            start,
+                            start + 80L,
+                            MotionEvent.ACTION_UP,
+                            x,
+                            endY,
+                            0,
+                        ),
+                    )
+                    events.forEach { event ->
+                        try {
+                            view.onTouchEvent(event)
+                        } finally {
+                            event.recycle()
+                        }
+                    }
+                    swipeCount += 1
+                }
+
+                assertTrue(
+                    "Native swipes stopped after $swipeCount attempts with " +
+                        "scrollY=${controller.viewport.scrollY}",
+                    controller.viewport.scrollY <= 0.5f,
+                )
+                assertFalse(controller.viewport.autoFollow)
+                val firstVisible = controller.viewport.visibleRows(overscan = 0).first
+                assertEquals(0, firstVisible)
+                assertEquals("1. test text here", controller.lineAt(firstVisible)?.text)
+            }
+        }
+    }
+
+    @Test
+    fun reattachedTabCanScrollThroughTwoHundredRowsReceivedWhileDetached() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var controller: TerminalController
+            lateinit var view: FastTerminalView
+            scenario.onActivity { activity ->
+                controller = TerminalController(TerminalBuffer(capacity = 1_000))
+                view = attachTerminalView(activity, controller)
+                activity.setContentView(View(activity))
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity {
+                val engine = VtTerminalEngine(
+                    columns = controller.terminalColumns,
+                    rows = controller.terminalRows,
+                )
+                val output = (1..200).joinToString(separator = "") { row ->
+                    "$row. test text here\r\n"
+                }
+                controller.updateTerminalFrame(engine.accept(output.encodeToByteArray()))
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity { activity -> activity.setContentView(view) }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity {
+                assertTrue(controller.lineCount() >= 200)
+                assertTrue(
+                    "Reattached viewport retained only ${controller.viewport.lineCount} rows",
+                    controller.viewport.lineCount >= 200,
+                )
+
+                var swipeCount = 0
+                while (controller.viewport.scrollY > 0.5f && swipeCount < 256) {
+                    val start = SystemClock.uptimeMillis()
+                    val x = view.width / 2f
+                    val events = listOf(
+                        MotionEvent.obtain(
+                            start,
+                            start,
+                            MotionEvent.ACTION_DOWN,
+                            x,
+                            view.height * 0.25f,
+                            0,
+                        ),
+                        MotionEvent.obtain(
+                            start,
+                            start + 40L,
+                            MotionEvent.ACTION_MOVE,
+                            x,
+                            view.height * 0.85f,
+                            0,
+                        ),
+                        MotionEvent.obtain(
+                            start,
+                            start + 80L,
+                            MotionEvent.ACTION_UP,
+                            x,
+                            view.height * 0.85f,
+                            0,
+                        ),
+                    )
+                    events.forEach { event ->
+                        try {
+                            view.onTouchEvent(event)
+                        } finally {
+                            event.recycle()
+                        }
+                    }
+                    swipeCount += 1
+                }
+
+                assertTrue(controller.viewport.scrollY <= 0.5f)
+                val firstVisible = controller.viewport.visibleRows(overscan = 0).first
+                assertEquals(0, firstVisible)
+                assertEquals("1. test text here", controller.lineAt(firstVisible)?.text)
+            }
+        }
+    }
+
     @Test
     fun attachingAPrepopulatedTabSynchronizesItsViewportImmediately() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

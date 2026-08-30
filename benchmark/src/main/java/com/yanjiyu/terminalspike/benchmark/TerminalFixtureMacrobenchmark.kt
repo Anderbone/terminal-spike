@@ -45,9 +45,11 @@ class TerminalFixtureMacrobenchmark {
             compilationMode = CompilationMode.Partial(),
             startupMode = StartupMode.WARM,
             iterations = 3,
-            setupBlock = { pressHome() },
+            setupBlock = {
+                pressHome()
+                startTerminalFixtureAndWait(scenarioId)
+            },
         ) {
-            startTerminalFixtureAndWait(scenarioId)
             device.swipe(
                 device.displayWidth / 2,
                 device.displayHeight * 3 / 4,

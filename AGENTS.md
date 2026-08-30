@@ -14,3 +14,13 @@
 - Do not broaden scope without an explicit task.
 - Do not copy source from Termius, LobiShell, ConnectBot, Termux, or other terminal applications.
 - Keep SDK paths, signing material, secrets, build outputs, APKs, and machine-specific IDE files out of Git.
+
+## Terminal scrollback regression gate
+
+- Preserve direct SSH and Mosh scrollback for inline terminal UIs such as Codex when tmux is absent.
+- A scroll region whose top margin is terminal row zero owns real terminal history even when its bottom margin leaves an input or status area on screen. Rows removed from that region must enter bounded scrollback. A region that starts below row zero must not enter generic scrollback.
+- Preserve `primaryTopAnchoredScrollRegionRetainsActualCodexStyleOutput` and its one-byte transport-chunk counterpart. Do not weaken their requirement that all 200 numbered rows survive in order and that rows below the scroll margin stay unchanged.
+- Preserve the opt-in real USB `SshRealEndToEndTest` Codex path. It must open actual Codex first, wait for the input box, ask Codex itself for 200 numbered lines, verify every marker from `CODEX_SCROLL_001` through `CODEX_SCROLL_200` in order, and dispatch real `MotionEvent` drags until row 001 is visible.
+- Never substitute output produced by the shell before Codex starts, a synthetic controller workload, zooming, parser-only checks, or the presence of only rows 001 and 200 for the real Codex acceptance path.
+- The bottom viewport must initially contain row 200 and exclude row 001. A gesture toward older history must reduce `scrollY`; passing only because row 001 was already visible is invalid.
+- Run real terminal device tests only on the authorized USB target. Never run them on the Wi-Fi foldable. See `docs/terminal-codex-scrollback-regression.md` for the evidence contract and exact test layers.

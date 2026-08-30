@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private val appLockViewModel: AppLockViewModel by viewModels()
     private val currentSettings = MutableStateFlow<AppSettings?>(null)
     private val disconnectAllConfirmationRequested = MutableStateFlow(false)
+    private val openTerminalSessionRequested = MutableStateFlow<Long?>(null)
     private var settingsJob: Job? = null
     private lateinit var appContainer: AppContainer
     private lateinit var appLockAuthenticator: AndroidAppLockAuthenticator
@@ -84,6 +85,8 @@ class MainActivity : ComponentActivity() {
             val authorityState = appContainer.authoritativeData.state
                 .collectAsStateWithLifecycle().value
             val disconnectAllRequested = disconnectAllConfirmationRequested
+                .collectAsStateWithLifecycle().value
+            val openTerminalSessionId = openTerminalSessionRequested
                 .collectAsStateWithLifecycle().value
             val activeRemoteSessionCount = appContainer.sshSessionRepository.sessions
                 .collectAsStateWithLifecycle().value
@@ -157,7 +160,13 @@ class MainActivity : ComponentActivity() {
                     MainRoot.CONTENT -> Unit
                 }
                 MainContentStateHost(visible = mainRoot == MainRoot.CONTENT) {
-                    TerminalSpikeScreen(viewModel = viewModel)
+                    TerminalSpikeScreen(
+                        viewModel = viewModel,
+                        openTerminalSessionId = openTerminalSessionId,
+                        onOpenTerminalSessionConsumed = {
+                            openTerminalSessionRequested.value = null
+                        },
+                    )
                 }
                 if (
                     shouldShowDisconnectAllConfirmation(
@@ -293,9 +302,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun captureNotificationAction(source: Intent?) {
-        if (source?.action != ACTION_CONFIRM_DISCONNECT_ALL) return
-        disconnectAllConfirmationRequested.value = true
-        setIntent(Intent(source).setAction(null))
+        when (source?.action) {
+            ACTION_CONFIRM_DISCONNECT_ALL -> disconnectAllConfirmationRequested.value = true
+            ACTION_OPEN_TERMINAL_SESSION -> source
+                .getLongExtra(EXTRA_TERMINAL_SESSION_ID, -1L)
+                .takeIf { it >= 0L }
+                ?.let { openTerminalSessionRequested.value = it }
+            else -> return
+        }
+        setIntent(
+            Intent(source).apply {
+                action = null
+                removeExtra(EXTRA_TERMINAL_SESSION_ID)
+            },
+        )
     }
 
     private fun applyWindowSecurity() {
@@ -321,6 +341,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         internal const val ACTION_CONFIRM_DISCONNECT_ALL =
             "com.yanjiyu.terminalspike.action.CONFIRM_DISCONNECT_ALL_REMOTE_TERMINALS"
+        internal const val ACTION_OPEN_TERMINAL_SESSION =
+            "com.yanjiyu.terminalspike.action.OPEN_TERMINAL_SESSION"
+        internal const val EXTRA_TERMINAL_SESSION_ID = "terminal_session_id"
         private const val STATE_DISCONNECT_ALL_CONFIRMATION = "disconnect_all_confirmation"
     }
 }

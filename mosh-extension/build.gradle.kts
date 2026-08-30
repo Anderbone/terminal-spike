@@ -107,8 +107,8 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "com.yanjiyu.terminalspike.mosh"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.0.0-mosh-1.4.0"
+        versionCode = 5
+        versionName = "1.0.1-mosh-1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {

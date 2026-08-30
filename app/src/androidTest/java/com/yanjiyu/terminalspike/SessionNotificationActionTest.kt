@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.yanjiyu.terminalspike.connection.TerminalProgramNotificationEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,6 +38,36 @@ class SessionNotificationActionTest {
             context.getString(R.string.session_notification_title),
             notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
         )
+    }
+
+    @Test
+    fun terminalProgramNotificationTargetsItsOriginatingTerminalTab() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val event = TerminalProgramNotificationEvent(
+            sessionId = 42L,
+            sessionTitle = "Terminal Spike dev",
+            message = "Codex completed the requested change.",
+        )
+        val notification = SessionNotificationFactory(context)
+            .buildTerminalProgramNotification(event, privacyEnabled = false)
+        val intent = terminalProgramNotificationIntent(context, event.sessionId)
+
+        assertEquals(MainActivity.ACTION_OPEN_TERMINAL_SESSION, intent.action)
+        assertEquals(
+            event.sessionId,
+            intent.getLongExtra(MainActivity.EXTRA_TERMINAL_SESSION_ID, -1L),
+        )
+        assertEquals(
+            "Terminal Spike dev task complete",
+            notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+        )
+        assertEquals(
+            event.message,
+            notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            assertTrue(notification.contentIntent.isActivity)
+        }
     }
 
     @Test

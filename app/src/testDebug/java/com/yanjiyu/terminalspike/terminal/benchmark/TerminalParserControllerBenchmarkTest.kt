@@ -45,7 +45,7 @@ class TerminalParserControllerBenchmarkTest {
             assertTrue(result.controllerFrames > 0)
             assertTrue(result.controllerLineCount in 1..100_040)
             assertEquals(64, result.transcriptSha256.length)
-            assertFalse(result.alternateScreen)
+            assertEquals(spec.kind == TerminalFixtureKind.TMUX_STATUS, result.alternateScreen)
         }
     }
 

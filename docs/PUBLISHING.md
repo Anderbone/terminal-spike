@@ -21,10 +21,10 @@ distribution. Complete every applicable item below for each separately published
 
 1. Approve the public product identity. Confirm whether **Terminal Spike** is the final store name,
    then approve the permanent application IDs. Change them only before the first public upload.
-2. The current upload candidates use main `versionCode = 4`, `versionName = 0.0.1`; the extension
-   uses code 4 and `1.0.0-mosh-1.4.0`. Play Console had already consumed version code 1, and the
-   working tree previously reached code 3. Increment every later upload's version code while
-   choosing public version names independently.
+2. The current production upload candidates use main `versionCode = 5`, `versionName = 0.0.2`; the
+   extension uses code 5 and `1.0.1-mosh-1.4.0`. Play Console has consumed version code 4 for both
+   packages on testing tracks. Increment every later upload's version code while choosing public
+   version names independently.
 3. Create and securely back up a production upload key outside Git, enroll both Play apps in Play
    App Signing, and deliberately configure the same app-signing certificate for both packages.
    Their signature-protected Binder permission requires matching installed signatures. Produce and

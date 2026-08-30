@@ -1,0 +1,1 @@
+Updated optional Mosh transport extension for Terminal Spike, based on Mosh 1.4.0. Adds process-isolated sessions, network-change support, lifecycle hardening, refreshed launcher artwork, and arm64-v8a/x86_64 support. Requires Terminal Spike and a compatible mosh-server.

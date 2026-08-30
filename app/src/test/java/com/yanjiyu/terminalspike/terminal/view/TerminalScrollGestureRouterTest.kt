@@ -28,12 +28,12 @@ class TerminalScrollGestureRouterTest {
     }
 
     @Test
-    fun explicitRemoteModeWaitsForNegotiatedMouseTracking() {
+    fun explicitRemoteModeFallsBackToLocalHistoryWithoutNegotiatedMouseTracking() {
         val router = TerminalScrollGestureRouter(touchMode = TouchScrollMode.REMOTE_MOUSE)
 
         router.onGestureStart()
 
-        assertEquals(TerminalScrollDestination.NONE, router.destination(false))
+        assertEquals(TerminalScrollDestination.LOCAL_SCROLLBACK, router.destination(false))
         assertEquals(TerminalScrollDestination.REMOTE_MOUSE, router.destination(true))
     }
 

@@ -1,0 +1,1 @@
+First public release of Terminal Spike: secure SSH terminals, saved connections and keys, SFTP, multiple sessions and tmux workflows, customizable terminal themes and key deck, encrypted backup and restore, and optional Mosh support. Includes refreshed launcher artwork plus reliability, privacy, accessibility, and performance improvements.

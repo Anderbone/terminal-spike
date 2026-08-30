@@ -80,4 +80,5 @@ class TerminalViewportTest {
         assertEquals(750f, viewport.scrollY)
         assertTrue(viewport.autoFollow)
     }
+
 }

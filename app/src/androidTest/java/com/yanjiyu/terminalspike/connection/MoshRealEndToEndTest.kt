@@ -94,7 +94,7 @@ class MoshRealEndToEndTest {
                 }
             }
 
-            val command = "printf 'MOSH_42\\n'\n".encodeToByteArray()
+            val command = COMMAND.encodeToByteArray()
             command.forEach { byte ->
                 assertTrue(
                     "The connected Mosh input pipe rejected a typed command byte.",
@@ -103,6 +103,13 @@ class MoshRealEndToEndTest {
             }
             val collected = ByteArrayOutputStream()
             val terminal = VtTerminalEngine(columns = 80, rows = 24)
+            val displayHistory = MoshDisplayHistory()
+            val retainedHistory = mutableListOf<com.yanjiyu.terminalspike.terminal.model.TerminalLine>()
+            var latestScreen = emptyList<com.yanjiyu.terminalspike.terminal.model.TerminalLine>()
+            var frameCount = 0
+            var firstRowWasDisplayed = false
+            var lastObservedRange: String? = null
+            val observedRanges = mutableListOf<String>()
             withTimeout(OUTPUT_TIMEOUT_MILLIS) {
                 while (true) {
                     val chunk = output.receive()
@@ -110,11 +117,41 @@ class MoshRealEndToEndTest {
                         "Mosh fixture output exceeded its bounded capture."
                     }
                     collected.write(chunk)
-                    val frame = terminal.accept(chunk)
+                    val parsed = terminal.accept(chunk)
+                    frameCount += 1
+                    firstRowWasDisplayed = firstRowWasDisplayed ||
+                        parsed.screen.any { it.text.trimEnd() == firstExpectedRow() }
+                    val visibleMoshRows = parsed.screen.map { it.text.trimEnd() }
+                        .filter { it.startsWith("MOSH_SCROLL_") }
+                    val observedRange = visibleMoshRows.takeIf { it.isNotEmpty() }
+                        ?.let { "${it.first()}..${it.last()}" }
+                    if (
+                        observedRange != null && observedRange != lastObservedRange &&
+                        observedRanges.size < MAX_OBSERVED_RANGES
+                    ) {
+                        observedRanges += observedRange
+                        lastObservedRange = observedRange
+                    }
+                    val frame = displayHistory.retainDisplayedRows(parsed)
+                    retainedHistory += frame.completedScrollback
+                    latestScreen = frame.screen
                     val rendered = frame.screen.joinToString("\n") { line -> line.text }
                     if (MARKER in rendered) break
                 }
             }
+            assertTrue(
+                "The first of 200 real Mosh rows must survive in reconstructed scrollback. " +
+                    "frameCount=$frameCount, firstRowWasDisplayed=$firstRowWasDisplayed, " +
+                    "observedRanges=$observedRanges, " +
+                    "retainedHead=${retainedHistory.take(6).map { it.text.trimEnd() }}, " +
+                    "retainedTail=${retainedHistory.takeLast(6).map { it.text.trimEnd() }}, " +
+                    "finalScreen=${latestScreen.map { it.text.trimEnd() }}",
+                retainedHistory.any { it.text.trimEnd() == firstExpectedRow() },
+            )
+            assertTrue(
+                "The last of 200 real Mosh rows must remain on the final terminal screen.",
+                latestScreen.any { it.text.trimEnd() == lastExpectedRow() },
+            )
         } finally {
             connection.close()
             states.close()
@@ -138,8 +175,18 @@ class MoshRealEndToEndTest {
         const val CONNECT_TIMEOUT_MILLIS = 60_000L
         const val OUTPUT_TIMEOUT_MILLIS = 30_000L
         const val CLOSE_TIMEOUT_MILLIS = 5_000L
-        const val MAX_CAPTURE_BYTES = 128 * 1024
-        const val MARKER = "MOSH_42"
+        const val MAX_CAPTURE_BYTES = 512 * 1024
+        const val OUTPUT_ROW_COUNT = 200
+        const val MAX_OBSERVED_RANGES = 16
+        const val COMMAND =
+            "i=1; while [ \"\$i\" -le $OUTPUT_ROW_COUNT ]; do " +
+                "printf 'MOSH_SCROLL_%03d\\n' \"\$i\"; sleep 0.03; i=\$((i+1)); done; " +
+                "printf 'MOSH_SCROLL_%s\\n' DONE\n"
+        const val MARKER = "MOSH_SCROLL_DONE"
+
+        fun firstExpectedRow(): String = "MOSH_SCROLL_001"
+
+        fun lastExpectedRow(): String = "MOSH_SCROLL_200"
     }
 }
 

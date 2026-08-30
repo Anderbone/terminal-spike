@@ -17,6 +17,49 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun primaryHistoryExposesOldestMiddleAndNewestRowsThroughTheViewport() {
+        assertHistoryReachable(alternate = false)
+    }
+
+    @Test
+    fun alternateHistoryExposesOldestMiddleAndNewestRowsThroughTheViewport() {
+        assertHistoryReachable(alternate = true)
+    }
+
+    private fun assertHistoryReachable(alternate: Boolean) {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 512), scheduler)
+        controller.viewport.updateGeometry(heightPx = 50, newLineHeightPx = 10f)
+        val completed = List(200) { index -> TerminalLine.plain("history-$index") }
+        val screen = List(5) { index -> TerminalLine.plain("screen-$index") }
+        val expected = completed.map(TerminalLine::text) + screen.map(TerminalLine::text)
+
+        controller.updateTerminalFrame(
+            frame(completed = completed, screen = screen, alternate = alternate),
+        )
+        scheduler.drainAll()
+        controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+        assertEquals(expected.size, controller.lineCount())
+
+        controller.viewport.scrollTo(0f)
+        assertEquals(0, controller.viewport.visibleRows(overscan = 0).first)
+        assertEquals(expected.first(), controller.lineAt(0)?.text)
+
+        controller.viewport.scrollTo(controller.viewport.maximumScrollY / 2f)
+        val middleRow = controller.viewport.visibleRows(overscan = 0).first
+        assertTrue(middleRow in 1 until expected.lastIndex)
+        assertEquals(expected[middleRow], controller.lineAt(middleRow)?.text)
+
+        controller.viewport.jumpToBottom()
+        assertEquals(
+            controller.lineCount(),
+            controller.viewport.visibleRows(overscan = 0).lastExclusive,
+        )
+        assertEquals(expected.last(), controller.lineAt(controller.lineCount() - 1)?.text)
+    }
+
+    @Test
     fun clearLocalScrollbackPreservesLiveScreenAndTransportAndInvalidatesReferences() {
         val scheduler = ManualFrameScheduler()
         val sink = RecordingInputSink()
@@ -136,7 +179,7 @@ class TerminalControllerWorkflowTest {
     }
 
     @Test
-    fun ed3ClearsOnlyPriorPrimaryHistoryAndRetainsPostClearRowsAndLiveScreen() {
+    fun remoteEd3RetainsAppOwnedPrimaryHistory() {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(capacity = 8), scheduler)
         controller.updateTerminalFrame(
@@ -164,7 +207,10 @@ class TerminalControllerWorkflowTest {
         )
         scheduler.drainAll()
 
-        assertEquals(listOf("after-clear", "prompt"), controller.transcriptSnapshot().rows.map { it.line.text })
+        assertEquals(
+            listOf("old-1", "old-2", "after-clear", "prompt"),
+            controller.transcriptSnapshot().rows.map { it.line.text },
+        )
         assertEquals("prompt", controller.lineAt(controller.lineCount() - 1)?.text)
         assertEquals(6, controller.cursor.column)
         assertTrue(controller.cursor.visible)
@@ -172,7 +218,7 @@ class TerminalControllerWorkflowTest {
     }
 
     @Test
-    fun alternateEd3DoesNotErasePrimaryHistory() {
+    fun remoteEd3RetainsAppOwnedAlternateAndPrimaryHistory() {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(capacity = 8), scheduler)
         controller.updateTerminalFrame(
@@ -199,7 +245,10 @@ class TerminalControllerWorkflowTest {
             ),
         )
         scheduler.drainAll()
-        assertEquals(listOf("alternate-screen"), controller.transcriptSnapshot().rows.map { it.line.text })
+        assertEquals(
+            listOf("alternate-history", "alternate-screen"),
+            controller.transcriptSnapshot().rows.map { it.line.text },
+        )
 
         controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("primary-screen"))))
         scheduler.drainAll()

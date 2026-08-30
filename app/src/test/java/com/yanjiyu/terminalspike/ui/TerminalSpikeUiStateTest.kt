@@ -2,9 +2,11 @@ package com.yanjiyu.terminalspike.ui
 
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.ConnectionState
+import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
 import com.yanjiyu.terminalspike.connection.KnownHostSummary
 import com.yanjiyu.terminalspike.connection.SshAuthentication
 import com.yanjiyu.terminalspike.connection.SshConnectionConfig
+import com.yanjiyu.terminalspike.connection.TmuxSessionPrompt
 import com.yanjiyu.terminalspike.connection.SessionNotificationVisibility
 import com.yanjiyu.terminalspike.connection.MoshFallbackFailure
 import com.yanjiyu.terminalspike.core.data.repository.CatalogSecretAvailability
@@ -51,6 +53,65 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalSpikeUiStateTest {
+    @Test
+    fun android17RequestsLocalNetworkPermissionOnlyWhileMissing() {
+        assertFalse(shouldRequestLocalNetworkPermission(sdkInt = 36, permissionGranted = false))
+        assertFalse(shouldRequestLocalNetworkPermission(sdkInt = 37, permissionGranted = true))
+        assertTrue(shouldRequestLocalNetworkPermission(sdkInt = 37, permissionGranted = false))
+    }
+
+    @Test
+    fun freshActiveConnectionFailureBecomesVisibleNotice() {
+        val failed = ConnectionState.Failed("SSH authentication failed.")
+
+        assertEquals(
+            UiText.Dynamic("SSH authentication failed."),
+            newConnectionFailureNotice(failed, ConnectionState.Connecting),
+        )
+        assertNull(newConnectionFailureNotice(failed, failed))
+        assertNull(newConnectionFailureNotice(ConnectionState.Connected, ConnectionState.Connecting))
+    }
+
+    @Test
+    fun approvalDialogBelongsOnlyToTheActiveSession() {
+        val backgroundPrompt = SessionTabUi(
+            id = 1,
+            title = "Mosh",
+            connectionState = ConnectionState.AwaitingApproval(
+                TmuxSessionPrompt(
+                    promptToken = 10,
+                    sessions = emptyList(),
+                ),
+            ),
+        )
+        val activePrompt = SessionTabUi(
+            id = 2,
+            title = "SSH",
+            connectionState = ConnectionState.AwaitingApproval(
+                HostIdentityPrompt.FirstContact(
+                    promptToken = 20,
+                    endpoint = "server.example:22",
+                    algorithm = "ssh-ed25519",
+                    newFingerprint = "SHA256:test",
+                ),
+            ),
+        )
+
+        assertEquals(
+            activePrompt,
+            activeApprovalSession(listOf(backgroundPrompt, activePrompt), activePrompt.id),
+        )
+        assertNull(
+            activeApprovalSession(
+                listOf(
+                    backgroundPrompt,
+                    activePrompt.copy(connectionState = ConnectionState.Connected),
+                ),
+                activePrompt.id,
+            ),
+        )
+    }
+
     @Test
     fun primaryDestinationSwapsKeepTheSharedFooterStable() {
         assertTrue(keepsPrimaryNavigationStable(AppRoute.WORKSPACE, AppRoute.SETTINGS))

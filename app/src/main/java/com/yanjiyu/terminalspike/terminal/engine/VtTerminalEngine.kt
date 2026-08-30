@@ -48,6 +48,8 @@ data class TerminalFrameUpdate(
     val responses: List<ByteArray> = emptyList(),
     val terminalTitle: String? = null,
     val remoteClipboardRequests: List<TerminalRemoteClipboardRequest> = emptyList(),
+    /** One-shot OSC 9 messages emitted by terminal applications in this update. */
+    val terminalNotifications: List<String> = emptyList(),
     /** Monotonic parser-local sequence of the latest text-mode BEL. */
     val bellSequence: Long = 0L,
     /** Bounded BEL count emitted by this update; OSC terminator BELs are not alerts. */
@@ -106,6 +108,7 @@ class VtTerminalEngine(
     private var terminalTitle: String? = null
     private var activeHyperlink: TerminalHyperlink? = null
     private var bellSequence = 0L
+    private val pendingTerminalNotifications = ArrayDeque<String>()
     private val deferredPrimaryResizeScrollback = ArrayDeque<TerminalLine>()
     private val deferredAlternateResizeScrollback = ArrayDeque<TerminalLine>()
 
@@ -185,6 +188,7 @@ class VtTerminalEngine(
         autoWrap = true
         terminalTitle = null
         activeHyperlink = null
+        pendingTerminalNotifications.clear()
         deferredPrimaryResizeScrollback.clear()
         deferredAlternateResizeScrollback.clear()
     }
@@ -646,9 +650,7 @@ class VtTerminalEngine(
 
     private fun scrollUp(completed: MutableList<TerminalLine>) {
         val removed = active.scrollUp(style)
-        val primaryFullScreenScroll = !useAlternate && active.topMargin == 0 && active.bottomMargin == rows - 1
-        val alternateTopAnchoredScroll = useAlternate && active.topMargin == 0
-        if (primaryFullScreenScroll || alternateTopAnchoredScroll) {
+        if (active.topMargin == 0) {
             completed += removed
         }
     }
@@ -714,9 +716,24 @@ class VtTerminalEngine(
         when (raw.substring(0, separator)) {
             "0", "2" -> terminalTitle = raw.substring(separator + 1).takeIf(String::isNotEmpty)
             "8" -> applyOscHyperlink(raw.substring(separator + 1))
+            "9" -> enqueueTerminalNotification(raw.substring(separator + 1))
             "52" -> if (remoteClipboardRequests.size < MAX_REMOTE_CLIPBOARD_REQUESTS_PER_ACCEPT) {
                 decodeOsc52(raw.substring(separator + 1))?.let(remoteClipboardRequests::add)
             }
+        }
+    }
+
+    private fun enqueueTerminalNotification(payload: String) {
+        if (pendingTerminalNotifications.size >= MAX_TERMINAL_NOTIFICATIONS_PER_ACCEPT) return
+        payload.trim()
+            .take(MAX_TERMINAL_NOTIFICATION_LENGTH)
+            .takeIf(String::isNotEmpty)
+            ?.let(pendingTerminalNotifications::addLast)
+    }
+
+    private fun drainTerminalNotifications(): List<String> = buildList {
+        while (pendingTerminalNotifications.isNotEmpty()) {
+            add(pendingTerminalNotifications.removeFirst())
         }
     }
 
@@ -847,6 +864,7 @@ class VtTerminalEngine(
             responses = responses,
             terminalTitle = terminalTitle,
             remoteClipboardRequests = remoteClipboardRequests,
+            terminalNotifications = drainTerminalNotifications(),
             bellSequence = bellSequence,
             bellCount = bellCount,
             clearScrollbackRequested = clearScrollbackRequested,
@@ -1395,6 +1413,8 @@ class VtTerminalEngine(
         private const val MAX_OSC_SEQUENCE = 1_024
         private const val MAX_OSC52_BASE64_LENGTH = 1_024
         private const val MAX_REMOTE_CLIPBOARD_REQUESTS_PER_ACCEPT = 4
+        private const val MAX_TERMINAL_NOTIFICATIONS_PER_ACCEPT = 4
+        private const val MAX_TERMINAL_NOTIFICATION_LENGTH = 512
         private const val MAX_DEFERRED_RESIZE_SCROLLBACK = 20_000
         private const val MAX_PARAMETERS = 32
         private const val MAX_PARAMETER_VALUE = 100_000

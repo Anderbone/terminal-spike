@@ -67,7 +67,28 @@ synthetic output rather than copying a terminal transcript:
 | `cursor-redraw` | 20,000 updates | 2,560,000 bytes | cursor positioning and line erasure |
 | `full-screen-redraw` | 12,000 updates | 2,304,000 bytes | clear/home and multi-row replacement |
 | `cjk-wide` | 20,000 lines | 2,880,000 bytes | CJK, emoji, combining, ZWJ, and regional indicators |
-| `tmux-status` | 20,000 updates | 2,880,000 bytes | bottom-row status repaint and cursor restoration |
+| `tmux-status` | 20,000 updates | 2,880,000 bytes | mouse-aware alternate-screen pane scrolling, retained history, bottom-row status repaint, and cursor restoration |
+
+### 2026-08-28 physical retained-history result
+
+The corrected `tmux-status` fixture is loaded outside the measured block. Each iteration then times
+two swipe journeys through retained alternate-screen history. On USB-connected Android 16
+`SM-S911B`, three iterations of the release-like benchmark measured:
+
+| Immutable-row cache | CPU P50 | CPU P90 | CPU P95 | CPU P99 |
+|---|---:|---:|---:|---:|
+| 256 rows | 5.64 ms | 9.30 ms | 13.21 ms | 14.92 ms |
+| 512 rows | 4.87 ms | 6.85 ms | 8.07 ms | 9.48 ms |
+
+The 512-row bound reduced these percentiles by approximately 13.5%, 26.4%, 38.9%, and 36.4%
+respectively. CPU frequency was not locked and sustained-performance mode was unavailable, so this
+is same-device directional evidence rather than a universal device claim. All six physical
+benchmark scenarios passed. Tests and benchmark installs were pinned to USB serial `RZCW81JZ9CP`;
+none ran on the Wi-Fi foldable.
+
+The cache is not part of the current baseline. It was removed after foldable-device evidence showed
+inaccessible or stale-looking live history. These figures remain a historical experiment only and
+must not be used as the current renderer result.
 
 Fixture generation streams bounded chunks and deliberately permits UTF-8 and escape sequences to
 cross chunk boundaries. `TerminalParserControllerBenchmarkHarness` uses an injected manual frame

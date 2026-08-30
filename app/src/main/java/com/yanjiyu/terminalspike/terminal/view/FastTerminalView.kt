@@ -40,6 +40,7 @@ import com.yanjiyu.terminalspike.terminal.TerminalFindResult
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
 import com.yanjiyu.terminalspike.terminal.model.TerminalCellWidth
+import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import com.yanjiyu.terminalspike.terminal.model.TerminalTheme
@@ -82,7 +83,6 @@ class FastTerminalView @JvmOverloads constructor(
     private val scrollGestureRouter = TerminalScrollGestureRouter()
     private val mouseWheelAccumulator = TerminalMouseWheelAccumulator(MAX_MOUSE_WHEEL_STEPS_PER_EVENT)
     private var flingDestination = TerminalScrollDestination.NONE
-    private var previousFlingY = 0
     private val selection = TerminalSelectionModel()
     private var terminalController: TerminalController? = null
     private var terminalTheme: TerminalTheme = TerminalThemes.current
@@ -315,8 +315,7 @@ class FastTerminalView @JvmOverloads constructor(
             val line = controller.lineAt(rowIndex)
             if (line != null) {
                 val rowTop = verticalPaddingPx + rowIndex * lineHeightPx - viewport.scrollY
-                val baseline = rowTop + baselineOffsetPx
-                drawLine(canvas, line.runs, baseline, rowTop)
+                drawLine(canvas, line.runs, rowTop + baselineOffsetPx, rowTop)
             }
             rowIndex += 1
         }
@@ -783,13 +782,8 @@ class FastTerminalView @JvmOverloads constructor(
                 controller.reportViewportStateIfChanged(previous)
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
-                if (!controller.isMouseTrackingEnabled()) {
-                    stopActiveFling()
-                    return
-                }
-                val distanceY = (scroller.currY - previousFlingY).toFloat()
-                previousFlingY = scroller.currY
-                sendRemoteMouseWheel(distanceY, remoteFlingX, remoteFlingY)
+                stopActiveFling()
+                return
             }
             TerminalScrollDestination.NONE -> return
         }
@@ -1310,8 +1304,6 @@ class FastTerminalView @JvmOverloads constructor(
                 scrollViewportBy(distanceY)
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
-                remoteFlingX = x
-                remoteFlingY = y
                 sendRemoteMouseWheel(distanceY, x, y)
             }
             TerminalScrollDestination.NONE -> mouseWheelAccumulator.reset()
@@ -1335,27 +1327,16 @@ class FastTerminalView @JvmOverloads constructor(
             )
             TerminalScrollDestination.REMOTE_MOUSE -> {
                 mouseWheelAccumulator.reset()
-                previousFlingY = 0
-                remoteFlingX = x
-                remoteFlingY = y
-                scroller.fling(
-                    0,
-                    0,
-                    0,
-                    -velocityY.toInt(),
-                    0,
-                    0,
-                    -REMOTE_FLING_DISTANCE_BOUND_PX,
-                    REMOTE_FLING_DISTANCE_BOUND_PX,
-                )
+                // Remote mouse applications such as tmux already translate each wheel report into
+                // line scrolling. A synthetic pixel fling floods the PTY with reports and can make
+                // tmux discard intermediate copy-mode redraws, leaving the client screen corrupted.
+                flingDestination = TerminalScrollDestination.NONE
+                return
             }
             TerminalScrollDestination.NONE -> return
         }
         postInvalidateOnAnimation()
     }
-
-    private var remoteFlingX = 0f
-    private var remoteFlingY = 0f
 
     private fun sendRemoteMouseWheel(distanceY: Float, x: Float, y: Float) {
         val controller = terminalController ?: return
@@ -1375,7 +1356,6 @@ class FastTerminalView @JvmOverloads constructor(
     private fun stopActiveFling() {
         scroller.forceFinished(true)
         flingDestination = TerminalScrollDestination.NONE
-        previousFlingY = 0
         mouseWheelAccumulator.reset()
     }
 
@@ -1482,8 +1462,9 @@ class FastTerminalView @JvmOverloads constructor(
         private const val SELECTION_AUTOSCROLL_EDGE_DP = 28f
         private const val MAX_ACCESSIBLE_CHARACTERS = 16_384
         private const val MOUSE_WHEEL_LINES_PER_STEP = 1.5f
-        private const val MAX_MOUSE_WHEEL_STEPS_PER_EVENT = 6
-        private const val REMOTE_FLING_DISTANCE_BOUND_PX = 1_000_000
+        // Remote applications perform their own line acceleration. Never burst several protocol
+        // reports from one touch event: tmux may coalesce or discard the resulting copy-mode frames.
+        private const val MAX_MOUSE_WHEEL_STEPS_PER_EVENT = 1
         private const val MIN_PINCH_FONT_SIZE_SP = 8f
         private const val MAX_PINCH_FONT_SIZE_SP = 72f
         private const val MIN_PINCH_FONT_DELTA_SP = 0.05f

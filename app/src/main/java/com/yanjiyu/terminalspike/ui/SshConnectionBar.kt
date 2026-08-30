@@ -265,7 +265,9 @@ fun SessionChrome(
         )
     }
 
-    val promptSession = sessions.firstOrNull { it.connectionState is ConnectionState.AwaitingApproval }
+    // Approval dialogs belong to a specific terminal tab. Showing an arbitrary background
+    // session's prompt can cover the active session's prompt and leave both connections waiting.
+    val promptSession = activeApprovalSession(sessions, activeSessionId)
     val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
     val hostPrompt = pendingPrompt as? HostIdentityPrompt
     val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge
@@ -326,6 +328,13 @@ fun SessionChrome(
             },
         )
     }
+}
+
+internal fun activeApprovalSession(
+    sessions: List<SessionTabUi>,
+    activeSessionId: Long,
+): SessionTabUi? = sessions.firstOrNull { session ->
+    session.id == activeSessionId && session.connectionState is ConnectionState.AwaitingApproval
 }
 
 @Composable

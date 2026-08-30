@@ -152,10 +152,14 @@ internal object TerminalBenchmarkFixtureGenerator {
                 "\r\n",
             )
             TerminalFixtureKind.TMUX_STATUS -> Triple(
-                "\u001B[${spec.rows};1H\u001B[48;5;${colour};38;5;${(colour + 127) % 256}m" +
-                    " session:${index % 32}  window:${index % 12} pane:${index % 8} ",
-                "cpu=${index * 13 % 100}% host=dev-${index % 19} ",
-                "\u001B[0m\u001B[1;1H",
+                (if (index == 0) "\u001B[?1049h\u001B[?1000h" else "") +
+                    "\u001B[1;${spec.rows - 1}r\u001B[${spec.rows - 1};1H" +
+                    "\u001B[38;5;${colour}mpane=${index % 8} task=$index ",
+                "output-${index % 251} ",
+                "\u001B[0m\r\n\u001B[r\u001B[${spec.rows};1H" +
+                    "\u001B[48;5;${colour};38;5;${(colour + 127) % 256}m" +
+                    " session:${index % 32} window:${index % 12} pane:${index % 8} " +
+                    "cpu=${index * 13 % 100}% host=dev-${index % 19} \u001B[0m\u001B[1;1H",
             )
         }
         return padToMinimumBytes(prefix, filler, suffix, spec.minimumRecordBytes)

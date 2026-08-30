@@ -3,6 +3,7 @@ package com.yanjiyu.terminalspike.ui
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.CursorStyle
 import com.yanjiyu.terminalspike.core.model.HostProfile
+import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +11,23 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RuntimeTerminalResolutionTest {
+    @Test
+    fun zeroScrollbackUsesCanonicalRuntimeDefault() {
+        assertEquals(
+            DEFAULT_RUNTIME_SCROLLBACK_LINES,
+            resolveRuntimeScrollbackLines(configuredLines = 0),
+        )
+    }
+
+    @Test
+    fun positiveScrollbackIsPreservedAndBounded() {
+        assertEquals(10_000, resolveRuntimeScrollbackLines(configuredLines = 10_000))
+        assertEquals(
+            ModelLimits.MAX_SCROLLBACK_LINES,
+            resolveRuntimeScrollbackLines(configuredLines = Int.MAX_VALUE),
+        )
+    }
+
     @Test
     fun explicitHostProfileSuppliesTermAndStartup() {
         val default = terminalProfile(DEFAULT_PROFILE_ID, "xterm-256color")

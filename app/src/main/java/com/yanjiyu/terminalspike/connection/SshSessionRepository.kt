@@ -66,6 +66,12 @@ internal data class SshSessionSnapshot(
     val moshFallbackPolicy: MoshFallbackPolicy = MoshFallbackPolicy.NEVER,
 )
 
+internal data class TerminalProgramNotificationEvent(
+    val sessionId: Long,
+    val sessionTitle: String,
+    val message: String,
+)
+
 /** The non-secret endpoint/options needed to ask for authentication and start a fresh transport. */
 internal data class RemoteSessionConnectionSeed(
     val host: String,
@@ -359,6 +365,12 @@ internal class SshSessionRepository(
     )
     val remoteClipboardRequests: SharedFlow<RemoteClipboardWriteRequestEvent> =
         _remoteClipboardRequests.asSharedFlow()
+    private val _terminalProgramNotifications = MutableSharedFlow<TerminalProgramNotificationEvent>(
+        replay = 0,
+        extraBufferCapacity = 16,
+    )
+    internal val terminalProgramNotifications: SharedFlow<TerminalProgramNotificationEvent> =
+        _terminalProgramNotifications.asSharedFlow()
     private var nextSessionId = 1L
     private var nextRuntimeToken = 1L
     private var nextRemoteClipboardRequestId = 1L
@@ -1032,6 +1044,9 @@ internal class SshSessionRepository(
                 onRemoteClipboardRequest = { request ->
                     emitRemoteClipboardRequest(runtime, connection, request)
                 },
+                onTerminalNotification = { message ->
+                    emitTerminalProgramNotification(runtime, connection, message)
+                },
             )
             val terminalTitle = sanitizeTerminalTitle(
                 runtime.terminal.terminalTitle,
@@ -1054,6 +1069,27 @@ internal class SshSessionRepository(
             }
         }
         if (metadataChanged) queueRecentSessionPersistence(runtime, runtime.connectionState)
+    }
+
+    private fun emitTerminalProgramNotification(
+        runtime: SshSessionRuntime,
+        connection: Connection,
+        message: String,
+    ) {
+        val event = synchronized(lock) {
+            if (
+                runtimes[runtime.id] !== runtime || runtime.terminated ||
+                runtime.connection !== connection || runtime.connectionState !is ConnectionState.Connected
+            ) {
+                return
+            }
+            TerminalProgramNotificationEvent(
+                sessionId = runtime.id,
+                sessionTitle = runtime.workspaceName,
+                message = message,
+            )
+        }
+        _terminalProgramNotifications.tryEmit(event)
     }
 
     private fun recordAcceptedOutboundSessionActivity(runtime: SshSessionRuntime) {
@@ -1953,6 +1989,15 @@ internal interface SshSessionTerminal {
         accept(bytes, sendResponse)
     }
 
+    fun accept(
+        bytes: ByteArray,
+        sendResponse: (ByteArray) -> Unit,
+        onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
+        onTerminalNotification: (String) -> Unit,
+    ) {
+        accept(bytes, sendResponse, onRemoteClipboardRequest)
+    }
+
     fun detach() = Unit
 
     fun stopAndClear()
@@ -1977,6 +2022,7 @@ private class DefaultSshSessionTerminal(
         columns = controller.terminalColumns,
         rows = controller.terminalRows,
     )
+    private var moshDisplayHistory: MoshDisplayHistory? = null
 
     @Volatile
     override var terminalTitle: String? = null
@@ -1990,12 +2036,15 @@ private class DefaultSshSessionTerminal(
     }
 
     override fun attach(connection: Connection, onInputAccepted: () -> Unit) {
+        moshDisplayHistory = if (connection is MoshConnection) MoshDisplayHistory() else null
         controller.setInputSink(
             sink = connection,
             onInputAccepted = onInputAccepted,
             onResize = { newColumns, newRows ->
                 connection.resize(newColumns, newRows)
-                controller.updateTerminalFrame(engine.resize(newColumns, newRows))
+                val update = engine.resize(newColumns, newRows)
+                moshDisplayHistory?.reset(update)
+                controller.updateTerminalFrame(update)
             },
         )
     }
@@ -2009,14 +2058,26 @@ private class DefaultSshSessionTerminal(
         sendResponse: (ByteArray) -> Unit,
         onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
     ) {
-        val update = engine.accept(bytes)
+        accept(bytes, sendResponse, onRemoteClipboardRequest, onTerminalNotification = {})
+    }
+
+    override fun accept(
+        bytes: ByteArray,
+        sendResponse: (ByteArray) -> Unit,
+        onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
+        onTerminalNotification: (String) -> Unit,
+    ) {
+        val parsedUpdate = engine.accept(bytes)
+        val update = moshDisplayHistory?.retainDisplayedRows(parsedUpdate) ?: parsedUpdate
         update.responses.forEach(sendResponse)
         terminalTitle = update.terminalTitle
         update.remoteClipboardRequests.forEach(onRemoteClipboardRequest)
+        update.terminalNotifications.forEach(onTerminalNotification)
         controller.updateTerminalFrame(update)
     }
 
     override fun detach() {
+        moshDisplayHistory = null
         controller.resetInputSink()
     }
 

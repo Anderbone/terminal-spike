@@ -598,6 +598,8 @@ internal fun keepsPrimaryNavigationStable(initial: AppRoute, target: AppRoute): 
 fun TerminalSpikeScreen(
     viewModel: TerminalSpikeViewModel,
     modifier: Modifier = Modifier,
+    openTerminalSessionId: Long? = null,
+    onOpenTerminalSessionConsumed: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val connectionsState by viewModel.connectionsUiState.collectAsStateWithLifecycle()
@@ -631,6 +633,8 @@ fun TerminalSpikeScreen(
     val transcriptExportFailedMessage = stringResource(R.string.terminal_transcript_export_failed)
     val transcriptUnavailableMessage = stringResource(R.string.terminal_transcript_unavailable)
     val documentPickerFailedMessage = stringResource(R.string.terminal_document_picker_failed)
+    val localNetworkPermissionDeniedMessage =
+        stringResource(R.string.terminal_local_network_permission_denied)
     val sshPublicKeyClipboardLabel = stringResource(R.string.terminal_clipboard_ssh_public_key)
     val commandSnippetClipboardLabel = stringResource(R.string.terminal_clipboard_command_snippet)
     val tmuxSwitchFailedMessage = stringResource(R.string.tmux_session_switcher_switch_failed)
@@ -688,6 +692,23 @@ fun TerminalSpikeScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         viewModel.onNotificationPermissionResult(granted)
+    }
+    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(localNetworkPermissionDeniedMessage)
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        val permissionGranted = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL ||
+            rootView.context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (shouldRequestLocalNetworkPermission(Build.VERSION.SDK_INT, permissionGranted)) {
+            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        }
     }
     val transcriptExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(TERMINAL_TRANSCRIPT_MIME_TYPE),
@@ -909,6 +930,17 @@ fun TerminalSpikeScreen(
         rendererLabVisible = rendererLab
         terminalOwner = terminalOwnerForEntry(source, terminalOwner)
         destination = AppRoute.TERMINAL_DETAIL
+    }
+
+    LaunchedEffect(openTerminalSessionId, state.sessions) {
+        val sessionId = openTerminalSessionId ?: return@LaunchedEffect
+        if (state.sessions.none { it.id == sessionId }) return@LaunchedEffect
+        viewModel.selectSession(sessionId)
+        rendererLabVisible = false
+        terminalOwner = terminalOwnerForEntry(destination, terminalOwner)
+        destination = AppRoute.TERMINAL_DETAIL
+        focusSessionId = sessionId
+        onOpenTerminalSessionConsumed()
     }
 
     fun launchWorkspaceProfile(profileId: Long) {
@@ -1847,6 +1879,13 @@ fun TerminalSpikeScreen(
         )
     }
 }
+
+internal fun shouldRequestLocalNetworkPermission(
+    sdkInt: Int,
+    permissionGranted: Boolean,
+): Boolean = sdkInt >= ANDROID_17_API_LEVEL && !permissionGranted
+
+private const val ANDROID_17_API_LEVEL = 37
 
 @Composable
 internal fun NoticeSnackbarHost(

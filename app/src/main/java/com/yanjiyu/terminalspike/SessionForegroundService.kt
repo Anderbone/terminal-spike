@@ -21,6 +21,7 @@ import com.yanjiyu.terminalspike.connection.SessionForegroundStartResult
 import com.yanjiyu.terminalspike.connection.SessionForegroundStarter
 import com.yanjiyu.terminalspike.connection.SessionNotificationVisibility
 import com.yanjiyu.terminalspike.connection.SshSessionSnapshot
+import com.yanjiyu.terminalspike.connection.TerminalProgramNotificationEvent
 import com.yanjiyu.terminalspike.connection.requiresForegroundService
 import com.yanjiyu.terminalspike.core.data.settings.AppSettingsSerializer
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,8 @@ class SessionForegroundService : Service() {
     private lateinit var notificationFactory: SessionNotificationFactory
     private lateinit var cpuAwakePolicy: SessionCpuAwakePolicy
     private val transitionDetector = SessionTransitionDetector()
+    @Volatile
+    private var notificationPrivacyEnabled = true
     private var foregroundStarted = false
     private var endingForIdle = false
     private var latestStartId = 0
@@ -82,6 +85,7 @@ class SessionForegroundService : Service() {
                     ),
                 )
             }.collect { runtimeState ->
+                notificationPrivacyEnabled = runtimeState.notificationPrivacyEnabled
                 val notificationState = runtimeState.sessions.toNotificationState()
                 cpuAwakePolicy.update(
                     enabled = runtimeState.keepCpuAwake,
@@ -98,6 +102,14 @@ class SessionForegroundService : Service() {
                         privacyEnabled = runtimeState.notificationPrivacyEnabled,
                     )
                 }
+            }
+        }
+        serviceScope.launch {
+            repository.terminalProgramNotifications.collect { event ->
+                notificationFactory.publishTerminalProgramNotification(
+                    event = event,
+                    privacyEnabled = notificationPrivacyEnabled,
+                )
             }
         }
     }
@@ -363,6 +375,18 @@ internal class SessionNotificationFactory(
             setSound(null, null)
         }
         notificationManager.createNotificationChannel(channel)
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                PROGRAM_NOTIFICATION_CHANNEL_ID,
+                applicationContext.getString(R.string.terminal_program_notification_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = applicationContext.getString(
+                    R.string.terminal_program_notification_channel_description,
+                )
+                setShowBadge(true)
+            },
+        )
     }
 
     fun build(
@@ -473,6 +497,69 @@ internal class SessionNotificationFactory(
         }
     }
 
+    internal fun buildTerminalProgramNotification(
+        event: TerminalProgramNotificationEvent,
+        privacyEnabled: Boolean,
+    ): Notification {
+        val safeSessionTitle = event.sessionTitle.toNotificationFriendlyName()
+        val safeMessage = event.message
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_PROGRAM_NOTIFICATION_TEXT_LENGTH)
+            .ifEmpty { applicationContext.getString(R.string.terminal_program_notification_text) }
+        val openSession = PendingIntent.getActivity(
+            applicationContext,
+            PROGRAM_NOTIFICATION_REQUEST_CODE_BASE + (event.sessionId.hashCode() and 0x0fff),
+            terminalProgramNotificationIntent(applicationContext, event.sessionId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val title = if (!privacyEnabled && safeSessionTitle != null) {
+            applicationContext.getString(
+                R.string.terminal_program_notification_named_title,
+                safeSessionTitle,
+            )
+        } else {
+            applicationContext.getString(R.string.terminal_program_notification_title)
+        }
+        val text = if (privacyEnabled) {
+            applicationContext.getString(R.string.terminal_program_notification_text)
+        } else {
+            safeMessage
+        }
+        return NotificationCompat.Builder(applicationContext, PROGRAM_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_terminal)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(openSession)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(
+                if (privacyEnabled) {
+                    NotificationCompat.VISIBILITY_SECRET
+                } else {
+                    NotificationCompat.VISIBILITY_PRIVATE
+                },
+            )
+            .setLocalOnly(true)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
+            .build()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun publishTerminalProgramNotification(
+        event: TerminalProgramNotificationEvent,
+        privacyEnabled: Boolean,
+    ) {
+        runCatching {
+            notificationManager.notify(
+                "terminal-program-${event.sessionId}",
+                PROGRAM_NOTIFICATION_ID,
+                buildTerminalProgramNotification(event, privacyEnabled),
+            )
+        }
+    }
+
     private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
         applicationContext,
         OPEN_APP_REQUEST_CODE,
@@ -483,9 +570,19 @@ internal class SessionNotificationFactory(
 
     companion object {
         internal const val CHANNEL_ID = "active_remote_terminal_sessions"
+        internal const val PROGRAM_NOTIFICATION_CHANNEL_ID = "terminal_program_notifications"
         private const val OPEN_APP_REQUEST_CODE = 2_001
         private const val DISCONNECT_ALL_REQUEST_CODE = 2_002
         private const val DISCONNECT_EVENT_ID = 2_003
         private const val RECONNECT_EVENT_ID = 2_004
+        private const val PROGRAM_NOTIFICATION_ID = 2_005
+        private const val PROGRAM_NOTIFICATION_REQUEST_CODE_BASE = 3_000
+        private const val MAX_PROGRAM_NOTIFICATION_TEXT_LENGTH = 512
     }
 }
+
+internal fun terminalProgramNotificationIntent(context: Context, sessionId: Long): Intent =
+    Intent(context, MainActivity::class.java)
+        .setAction(MainActivity.ACTION_OPEN_TERMINAL_SESSION)
+        .putExtra(MainActivity.EXTRA_TERMINAL_SESSION_ID, sessionId)
+        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
