@@ -284,15 +284,16 @@ class FastTerminalView @JvmOverloads constructor(
         }
         activeLink?.let { link ->
             val row = controller.selectionIndexOf(link.line)
-            val current = row?.let(controller::selectionLineAt)?.let { selectable ->
+            val current = row?.let { linkRow ->
                 TerminalLinkResolver.find(
-                    selectable = selectable,
+                    source = controller,
+                    row = linkRow,
                     column = link.startColumn,
                     osc8Enabled = controller.rendererProfile.osc8HyperlinksEnabled,
                     plainTextUrlsEnabled = controller.rendererProfile.detectPlainTextUrls,
                 )
             }
-            if (current?.uri != link.uri) activeLink = null
+            if (current != link) activeLink = null
         }
         selectionActionMode?.invalidate()
         if (
@@ -995,15 +996,17 @@ class FastTerminalView @JvmOverloads constructor(
 
     /** Long-pressing a detected URL opens a focused Open/Copy menu instead of word selection. */
     private fun showLinkActionsAt(x: Float, y: Float): Boolean {
+        val controller = terminalController ?: return false
         val link = linkAt(x, y) ?: return false
-        selection.clear()
         selectionActionMode?.finish()
         selectionActionMode = null
+        if (!selection.selectLink(controller, link)) return false
         activeLink = link
         hideSoftwareKeyboard()
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         showSelectionActionMode()
         invalidate()
+        sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED)
         return true
     }
 
@@ -1077,9 +1080,10 @@ class FastTerminalView @JvmOverloads constructor(
     private fun linkAt(x: Float, y: Float): TerminalLinkTarget? {
         val controller = terminalController ?: return null
         val row = terminalRowAt(y) ?: return null
-        val selectable = controller.selectionLineAt(row) ?: return null
+        if (controller.selectionLineAt(row) == null) return null
         return TerminalLinkResolver.find(
-            selectable = selectable,
+            source = controller,
+            row = row,
             column = terminalColumnAt(x),
             osc8Enabled = controller.rendererProfile.osc8HyperlinksEnabled,
             plainTextUrlsEnabled = controller.rendererProfile.detectPlainTextUrls,
@@ -1157,7 +1161,7 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun populateSelectionMenu(menu: Menu) {
-        if (selection.hasSelection) {
+        if (selection.hasSelection && activeLink == null) {
             menu.add(Menu.NONE, android.R.id.copy, 0, R.string.terminal_action_copy)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             menu.add(Menu.NONE, android.R.id.selectAll, 1, R.string.terminal_action_select_all)

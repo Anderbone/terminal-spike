@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -114,7 +115,12 @@ class BufferedInputDraftState {
     var value by mutableStateOf(TextFieldValue())
         private set
 
+    private var lastSentValue: TextFieldValue? = null
+
     var validationMessage by mutableStateOf<UiText?>(null)
+        private set
+
+    var deliveryMessage by mutableStateOf<UiText?>(null)
         private set
 
     fun update(nextValue: TextFieldValue, activeSessionId: Long) {
@@ -126,7 +132,17 @@ class BufferedInputDraftState {
             return
         }
         validationMessage = null
+        deliveryMessage = null
+        lastSentValue = null
         value = nextValue
+    }
+
+    fun restoreLastSent() {
+        val restored = lastSentValue ?: return
+        value = restored.copy(selection = TextRange(restored.text.length))
+        lastSentValue = null
+        validationMessage = null
+        deliveryMessage = null
     }
 
     /** Applies caller-targeted edits without pinning the shared draft to one terminal. */
@@ -141,10 +157,13 @@ class BufferedInputDraftState {
         onSend: (Long, String) -> Boolean,
     ) {
         if (!value.isBufferedSendEligible(sendEnabled, validationMessage)) return
+        val sentValue = value
         val accepted = onSend(activeSessionId, value.text)
         value = value.afterBufferedSend(accepted)
         if (accepted) {
+            lastSentValue = sentValue
             validationMessage = null
+            deliveryMessage = uiText(R.string.terminal_buffered_input_pasted_recoverable)
         }
     }
 }
@@ -420,7 +439,9 @@ private fun BufferedInputPage(
 ) {
     val draft = draftState.value
     val validationMessage = draftState.validationMessage
+    val deliveryMessage = draftState.deliveryMessage
     val inputDescription = stringResource(R.string.terminal_buffered_input_description)
+    val restoreInputDescription = stringResource(R.string.terminal_restore_last_sent_input)
     val focusRequester = remember { FocusRequester() }
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
@@ -501,56 +522,76 @@ private fun BufferedInputPage(
             minLines = 1,
             maxLines = 3,
             isError = validationMessage != null,
-            supportingText = (validationMessage?.resolve() ?: voiceStatus)?.let { message ->
+            supportingText = (
+                validationMessage?.resolve() ?: deliveryMessage?.resolve() ?: voiceStatus
+            )?.let { message ->
                 { Text(message, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             },
             trailingIcon = {
                 val voiceActive = voicePhase != VoiceInputPhase.IDLE
-                val voiceState = stringResource(
-                    if (voiceActive) R.string.terminal_voice_state_on else R.string.terminal_voice_state_off,
-                )
-                val voiceDescription = stringResource(R.string.terminal_voice_input)
-                Surface(
-                    shape = CircleShape,
-                    color = if (voiceActive) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    },
-                    contentColor = if (voiceActive) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    },
-                    modifier = Modifier.semantics {
-                        contentDescription = voiceDescription
-                        stateDescription = voiceState
-                    },
-                ) {
+                if (deliveryMessage != null) {
                     IconButton(
-                        onClick = {
-                            if (voiceActive) {
-                                voiceRecognizer.stop()
-                            } else if (!voiceRecognizer.available) {
-                                voiceFailure = VoiceInputFailure.UNAVAILABLE
-                            } else if (
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO,
-                                ) == PackageManager.PERMISSION_GRANTED
-                            ) {
-                                voiceFailure = null
-                                voiceRecognizer.start(currentVoiceLanguageTag)
-                            } else {
-                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        modifier = Modifier.size(44.dp),
+                        onClick = draftState::restoreLastSent,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .semantics { contentDescription = restoreInputDescription },
                     ) {
                         ConnectionsGlyphIcon(
-                            glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
-                            modifier = Modifier.size(21.dp),
+                            glyph = ConnectionsGlyph.BACK,
+                            modifier = Modifier.size(20.dp),
                         )
+                    }
+                } else {
+                    val voiceState = stringResource(
+                        if (voiceActive) {
+                            R.string.terminal_voice_state_on
+                        } else {
+                            R.string.terminal_voice_state_off
+                        },
+                    )
+                    val voiceDescription = stringResource(R.string.terminal_voice_input)
+                    Surface(
+                        shape = CircleShape,
+                        color = if (voiceActive) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        contentColor = if (voiceActive) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = voiceDescription
+                            stateDescription = voiceState
+                        },
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (voiceActive) {
+                                    voiceRecognizer.stop()
+                                } else if (!voiceRecognizer.available) {
+                                    voiceFailure = VoiceInputFailure.UNAVAILABLE
+                                } else if (
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    voiceFailure = null
+                                    voiceRecognizer.start(currentVoiceLanguageTag)
+                                } else {
+                                    microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            ConnectionsGlyphIcon(
+                                glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
+                                modifier = Modifier.size(21.dp),
+                            )
+                        }
                     }
                 }
             },

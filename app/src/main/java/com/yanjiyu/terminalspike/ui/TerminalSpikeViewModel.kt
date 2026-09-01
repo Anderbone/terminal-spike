@@ -117,7 +117,7 @@ import com.yanjiyu.terminalspike.ui.connections.buildConnectionsReadyState
 import com.yanjiyu.terminalspike.ui.settings.toRuntimeExtraKeysOrNull
 import com.yanjiyu.terminalspike.ui.settings.toRuntimeAccessoryActionsOrNull
 import com.yanjiyu.terminalspike.ui.settings.defaultRuntimeAccessoryActions
-import com.yanjiyu.terminalspike.ui.settings.isUntouchedShippedKeyboardDeck
+import com.yanjiyu.terminalspike.ui.settings.upgradeShippedKeyboardDeck
 import com.yanjiyu.terminalspike.ui.sftp.SftpSecretKind
 import com.yanjiyu.terminalspike.ui.sftp.SftpSessionController
 import kotlinx.coroutines.Dispatchers
@@ -1616,14 +1616,10 @@ class TerminalSpikeViewModel(
                 appContainer.startLegacyMigrationForCutover().await()
                 val initialSettings = appContainer.settings.settings.first()
                 appContainer.keyboardProfiles.get(initialSettings.defaultKeyboardProfileId)
-                    ?.takeIf { it.isUntouchedShippedKeyboardDeck() }
-                    ?.let { profile ->
+                    ?.upgradeShippedKeyboardDeck(System.currentTimeMillis())
+                    ?.let { upgraded ->
                         appContainer.keyboardProfiles.update(
-                            profile.copy(
-                                orderedActions = KeyboardAction.DEFAULT_ORDER,
-                                layout = KeyboardLayout.TWO_ROWS,
-                                updatedAtEpochMillis = System.currentTimeMillis(),
-                            ),
+                            upgraded,
                         )
                     }
                 combine(

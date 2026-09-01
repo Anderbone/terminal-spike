@@ -80,6 +80,12 @@ assigned a public semantic version to this release candidate.
 
 ### Fixed
 
+- Restored whole-link Open/Copy actions for URLs that span terminal soft wraps, including tmux
+  history rows, while keeping hard-ended rows separate.
+- Migrated the released 20-key default deck that combined the tmux switcher with Paste so its
+  intended image-selection key is restored without changing custom keyboard profiles.
+- Restored immediate clearing after a successful Text-mode paste while retaining a one-tap undo
+  copy for recovery when a remote full-screen app had moved its own input focus.
 - Made raw terminal input reliably disable terminal-unsafe correction and completion, kept local
   Copy and Paste available, hid the IME during local output selection, and made the tmux chooser
   explain a missing/failed server check as well as offering a new protected session. The tmux probe now runs

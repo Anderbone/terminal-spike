@@ -16,7 +16,7 @@ import org.junit.Test
 
 class TmuxSessionSelectorTest {
     @Test
-    fun paneHistoryCaptureTargetsPhysicalRowsWithoutJoiningThem() {
+    fun paneHistoryCaptureJoinsOnlyTmuxMarkedWrapsSoTheParserCanRestoreThem() {
         val metadataCommands = mutableListOf<String>()
         val historyCommands = mutableListOf<String>()
         val capture = captureTmuxPane(
@@ -39,10 +39,9 @@ class TmuxSessionSelectorTest {
         assertTrue(capture.authoritative)
         assertTrue(metadataCommands.single().contains("display-message -p -t '\$7'"))
         assertEquals(
-            "'/usr/bin/tmux' capture-pane -p -e -N -t '%9' -S '-3' -E -1",
+            "'/usr/bin/tmux' capture-pane -p -e -J -t '%9' -S '-3' -E -1",
             historyCommands.single(),
         )
-        assertFalse(historyCommands.single().contains(" -J "))
     }
 
     @Test
@@ -69,7 +68,7 @@ class TmuxSessionSelectorTest {
         assertEquals(2, capture.historyRows)
         assertEquals("history\nsaved primary\n", capture.content.toString(Charsets.UTF_8))
         assertEquals(2, historyCommands.size)
-        assertTrue(historyCommands.last().contains("capture-pane -p -e -N -a -t '%9'"))
+        assertTrue(historyCommands.last().contains("capture-pane -p -e -J -a -t '%9'"))
     }
 
     @Test
@@ -120,7 +119,7 @@ class TmuxSessionSelectorTest {
         assertEquals(2, capture.historyRows)
         assertEquals("history\nsaved primary\n", capture.content.toString(Charsets.UTF_8))
         assertEquals(2, historyCommands.size)
-        assertTrue(historyCommands.last().contains("capture-pane -p -e -N -a -t '%9'"))
+        assertTrue(historyCommands.last().contains("capture-pane -p -e -J -a -t '%9'"))
     }
 
     @Test

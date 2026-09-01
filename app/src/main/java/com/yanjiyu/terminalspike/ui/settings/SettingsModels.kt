@@ -443,18 +443,19 @@ internal fun planKeyboardDeckMigration(
             upgradedProfile = null,
         )
     }
-    val upgraded = canonicalProfile
-        ?.takeIf(KeyboardProfile::isUntouchedShippedKeyboardDeck)
-        ?.copy(
-            orderedActions = KeyboardPresets.general.actions,
-            layout = KeyboardPresets.general.layout,
-            updatedAtEpochMillis = maxOf(nowEpochMillis, canonicalProfile.updatedAtEpochMillis),
-        )
+    val upgraded = canonicalProfile?.upgradeShippedKeyboardDeck(nowEpochMillis)
     return KeyboardDeckMigrationPlan(
         shouldRecordCompletion = true,
         upgradedProfile = upgraded,
     )
 }
+
+internal fun KeyboardProfile.upgradeShippedKeyboardDeck(nowEpochMillis: Long): KeyboardProfile? =
+    takeIf(KeyboardProfile::isUntouchedShippedKeyboardDeck)?.copy(
+        orderedActions = KeyboardPresets.general.actions,
+        layout = KeyboardPresets.general.layout,
+        updatedAtEpochMillis = maxOf(nowEpochMillis, updatedAtEpochMillis),
+    )
 
 internal fun KeyboardProfile.isUntouchedShippedKeyboardDeck(): Boolean =
     id == LegacyIds.defaultKeyboardProfile &&
@@ -479,6 +480,9 @@ internal fun KeyboardProfile.isUntouchedShippedKeyboardDeck(): Boolean =
 private const val SHIPPED_KEYBOARD_PROFILE_NAME = "Default"
 
 private val previousGeneralKeyboardActionOrders: List<List<KeyboardAction>> = listOf(
+    KeyboardAction.DEFAULT_ORDER.map { action ->
+        if (action == KeyboardAction.SELECT_IMAGES) KeyboardAction.PASTE else action
+    },
     listOf(
         KeyboardAction.ESCAPE,
         KeyboardAction.SLASH,

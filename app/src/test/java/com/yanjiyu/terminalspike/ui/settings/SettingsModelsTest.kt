@@ -312,21 +312,21 @@ class SettingsModelsTest {
     }
 
     @Test
-    fun previousTwentyKeyReferenceDeckReplacesPasteWithImageSelectionBeforeHome() {
+    fun shippedTmuxAndPasteDeckReplacesPasteWithImageSelectionBeforeHome() {
         val previousReferenceDeck = listOf(
             KeyboardAction.ESCAPE,
             KeyboardAction.SLASH,
             KeyboardAction.AT_SIGN,
             KeyboardAction.DOLLAR,
+            KeyboardAction.PASTE,
             KeyboardAction.HOME,
             KeyboardAction.ARROW_UP,
             KeyboardAction.END,
             KeyboardAction.PAGE_UP,
-            KeyboardAction.PASTE,
             KeyboardAction.BACKSPACE,
             KeyboardAction.TAB,
             KeyboardAction.CONTROL,
-            KeyboardAction.ALT,
+            KeyboardAction.TMUX_SESSIONS,
             KeyboardAction.CTRL_C,
             KeyboardAction.CTRL_W,
             KeyboardAction.ARROW_LEFT,

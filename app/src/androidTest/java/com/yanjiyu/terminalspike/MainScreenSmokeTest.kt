@@ -159,7 +159,7 @@ class MainScreenSmokeTest {
     }
 
     @Test
-    fun bufferedInputPageStagesTextAndClearsOnlyAfterSend() {
+    fun bufferedInputPageClearsSentTextAndOffersRecovery() {
         openRendererLab()
         val pager = composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
 
@@ -175,6 +175,9 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithText("Send").assertIsDisplayed().performClick()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.terminal_buffered_input_placeholder),
+        ).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            composeRule.activity.getString(R.string.terminal_restore_last_sent_input),
         ).assertIsDisplayed()
 
         pager.performTouchInput { swipeLeft() }

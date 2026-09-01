@@ -143,6 +143,24 @@ class TerminalSelectionModel(
         return true
     }
 
+    /** Selects the complete visible label represented by a resolved terminal link. */
+    fun selectLink(source: TerminalSelectionSource, link: TerminalLinkTarget): Boolean {
+        val startRow = source.selectionIndexOf(link.line) ?: return clearAndFalse()
+        val endRow = source.selectionIndexOf(link.endLine) ?: return clearAndFalse()
+        if (startRow > endRow || endRow - startRow + 1 > maximumSelectedLines) {
+            return clearAndFalse()
+        }
+        val start = source.selectionLineAt(startRow) ?: return clearAndFalse()
+        val end = source.selectionLineAt(endRow) ?: return clearAndFalse()
+        val startPosition = TerminalLineGeometry.positionAtColumn(start.line, link.startColumn)
+        val endPosition = TerminalLineGeometry.positionAtColumn(end.line, link.endColumn)
+        rawRange = TerminalSelectionRange(
+            start = TerminalTextPosition(start.anchor, startPosition.textOffset, startPosition.column),
+            end = TerminalTextPosition(end.anchor, endPosition.textOffset, endPosition.column),
+        )
+        return validate(source)
+    }
+
     /** Clears both endpoints when either source row has been trimmed or redrawn. */
     fun validate(source: TerminalSelectionSource): Boolean {
         val normalized = normalizedRange(source) ?: return clearAndFalse()

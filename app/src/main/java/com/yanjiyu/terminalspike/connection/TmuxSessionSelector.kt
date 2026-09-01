@@ -429,7 +429,7 @@ internal fun captureTmuxPane(
         } else {
             runCatching {
                 historyRunner.run(
-                    "${quotePosixShellArgument(executable)} capture-pane -p -e -N -t " +
+                    "${quotePosixShellArgument(executable)} capture-pane -p -e -J -t " +
                         "${quotePosixShellArgument(metadata.paneId)} -S " +
                         "${quotePosixShellArgument("-$capturedHistoryRows")} -E -1",
                 ).takeIf { it.exitStatus == 0 }?.stdout
@@ -440,7 +440,7 @@ internal fun captureTmuxPane(
         } else {
             runCatching {
                 historyRunner.run(
-                    "${quotePosixShellArgument(executable)} capture-pane -p -e -N -a -t " +
+                    "${quotePosixShellArgument(executable)} capture-pane -p -e -J -a -t " +
                         quotePosixShellArgument(metadata.paneId),
                 ).takeIf { it.exitStatus == 0 }?.stdout
             }.getOrNull() ?: return null

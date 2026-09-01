@@ -22,9 +22,9 @@ internal data class TmuxLocalHistorySnapshot(
 )
 
 /**
- * Converts tmux's SGR-preserving physical-row capture into the same line model as live terminal
- * output. The dedicated one-row engine keeps parsing off the renderer path and makes every captured
- * newline complete exactly one history row.
+ * Converts tmux's SGR-preserving capture into the same line model as live terminal output. Tmux
+ * joins only rows that it knows were wrapped; the dedicated one-row engine restores their physical
+ * geometry and soft-wrap markers off the renderer path.
  */
 internal fun parseTmuxHistoryCapture(capture: TmuxPaneCapture): TmuxLocalHistorySnapshot? {
     val remoteMousePassthrough = capture.mouseTrackingActive || capture.paneInMode
@@ -65,7 +65,7 @@ internal fun parseTmuxHistoryCapture(capture: TmuxPaneCapture): TmuxLocalHistory
     )
 }
 
-/** tmux writes LF-delimited rows and one final LF; a terminal LF also needs an explicit CR. */
+/** Tmux writes LF-delimited logical lines and one final LF; a terminal LF also needs a CR. */
 private fun tmuxCaptureRowsAsTerminalBytes(content: ByteArray): ByteArray? {
     var end = content.size
     if (end == 0 || content[end - 1] != NEWLINE) return null

@@ -3,6 +3,7 @@ package com.yanjiyu.terminalspike.terminal.view
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -290,13 +291,55 @@ class FastTerminalSelectionInteractionTest {
                 }
 
                 assertTrue(view.performLongClick())
-                assertNull(view.selectedTextForTesting())
+                assertEquals("https://example.test/docs", view.selectedTextForTesting())
                 val info = AccessibilityNodeInfo.obtain()
                 assertTrue(view.performAccessibilityAction(R.id.terminal_action_open_link, null))
                 view.onInitializeAccessibilityNodeInfo(info)
                 assertTrue(info.actionList.any { it.id == R.id.terminal_action_open_link })
                 assertTrue(info.actionList.any { it.id == R.id.terminal_action_copy_link })
                 assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+                info.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun longPressingWrappedPlainTextLinkSelectsAllRowsAndOffersLinkActions() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var view: FastTerminalView
+            val requests = mutableListOf<TerminalLinkActionRequest>()
+            val clipboardRequests = mutableListOf<TerminalClipboardRequest>()
+            scenario.onActivity { activity ->
+                val controller = TerminalController().apply {
+                    buffer.append(TerminalLine.plain("https://example.", softWrappedToNext = true))
+                    buffer.append(TerminalLine.plain("test/a/very/long/", softWrappedToNext = true))
+                    buffer.append(TerminalLine.plain("path?q=1"))
+                }
+                view = attachTerminalView(activity, controller).apply {
+                    setLinkActionCallback { request -> requests += request }
+                    setClipboardActionCallback { request ->
+                        clipboardRequests += request
+                        true
+                    }
+                }
+            }
+            longPressCell(scenario, view, row = 1, column = 4)
+            scenario.onActivity {
+                assertEquals(
+                    "https://example.test/a/very/long/path?q=1",
+                    view.selectedTextForTesting(),
+                )
+                val info = AccessibilityNodeInfo.obtain()
+                view.onInitializeAccessibilityNodeInfo(info)
+                assertTrue(info.actionList.any { it.id == R.id.terminal_action_open_link })
+                assertTrue(info.actionList.any { it.id == R.id.terminal_action_copy_link })
+                assertTrue(view.performAccessibilityAction(R.id.terminal_action_open_link, null))
+                assertTrue(view.performAccessibilityAction(R.id.terminal_action_copy_link, null))
+                assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+                assertEquals(
+                    listOf("https://example.test/a/very/long/path?q=1"),
+                    clipboardRequests.map { it.text },
+                )
                 info.recycle()
             }
         }
@@ -394,6 +437,37 @@ class FastTerminalSelectionInteractionTest {
             view.onTouchEvent(up)
         } finally {
             up.recycle()
+        }
+    }
+
+    private fun longPressCell(
+        scenario: ActivityScenario<MainActivity>,
+        view: FastTerminalView,
+        row: Int,
+        column: Int,
+    ) {
+        val now = SystemClock.uptimeMillis()
+        val density = view.resources.displayMetrics.density
+        val x = 8f * density + 9f * density * column + 2f
+        val y = 5f * density + 17f * density * row + 4f
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+        scenario.onActivity {
+            try {
+                view.onTouchEvent(down)
+            } finally {
+                down.recycle()
+            }
+        }
+        SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 100L)
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        val upTime = SystemClock.uptimeMillis()
+        val up = MotionEvent.obtain(now, upTime, MotionEvent.ACTION_UP, x, y, 0)
+        scenario.onActivity {
+            try {
+                view.onTouchEvent(up)
+            } finally {
+                up.recycle()
+            }
         }
     }
 }

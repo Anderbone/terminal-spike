@@ -43,6 +43,24 @@ class TmuxHistoryCaptureTest {
     }
 
     @Test
+    fun joinedTmuxWrapsAreRestoredAsSoftWrappedPhysicalRows() {
+        val snapshot = parseTmuxHistoryCapture(
+            capture(
+                historyRows = 3,
+                columns = 20,
+                content = "https://example.test/a/very/long/path?q=1\n".encodeToByteArray(),
+            ),
+        )
+
+        requireNotNull(snapshot)
+        assertEquals(
+            listOf("https://example.test", "/a/very/long/path?q=", "1"),
+            snapshot.lines.map { it.text },
+        )
+        assertEquals(listOf(true, true, false), snapshot.lines.map { it.softWrappedToNext })
+    }
+
+    @Test
     fun alternatePaneWithoutMouseTrackingKeepsHistoryLocal() {
         val snapshot = parseTmuxHistoryCapture(
             capture(
@@ -130,12 +148,13 @@ class TmuxHistoryCaptureTest {
     private fun capture(
         historyRows: Int,
         content: ByteArray,
+        columns: Int = 80,
         alternateScreenActive: Boolean = false,
         mouseTrackingActive: Boolean = false,
     ) = TmuxPaneCapture(
         sessionId = "\$1",
         paneId = "%2",
-        columns = 80,
+        columns = columns,
         rows = 24,
         historyRows = historyRows,
         alternateScreenActive = alternateScreenActive,

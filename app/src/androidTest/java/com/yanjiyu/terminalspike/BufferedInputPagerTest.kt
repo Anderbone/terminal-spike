@@ -71,7 +71,17 @@ class BufferedInputPagerTest {
             assertEquals(22L, sentTargetId)
             assertEquals("printf 'exact ✓'", sentText)
         }
-        composeRule.onNodeWithText(resources.getString(R.string.terminal_buffered_input_placeholder)).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            resources.getString(R.string.terminal_buffered_input_placeholder),
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            resources.getString(R.string.terminal_buffered_input_pasted_recoverable),
+        ).assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription(
+            resources.getString(R.string.terminal_restore_last_sent_input),
+        ).performClick()
+        composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
     }
 
     @Test
@@ -122,6 +132,12 @@ class BufferedInputPagerTest {
             assertEquals(1, sendCount)
             assertEquals(exactDraft, sentText)
         }
-        composeRule.onNodeWithText(resources.getString(R.string.terminal_buffered_input_placeholder)).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            resources.getString(R.string.terminal_buffered_input_placeholder),
+        ).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            resources.getString(R.string.terminal_restore_last_sent_input),
+        ).performClick()
+        composeRule.onNodeWithText(exactDraft).assertIsDisplayed()
     }
 }

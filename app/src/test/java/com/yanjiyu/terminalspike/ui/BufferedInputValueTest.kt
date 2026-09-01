@@ -39,6 +39,12 @@ class BufferedInputValueTest {
 
         assertEquals("nihao", dispatched)
         assertEquals(TextFieldValue(), draftState.value)
+        assertNotNull(draftState.deliveryMessage)
+
+        draftState.restoreLastSent()
+
+        assertEquals(TextFieldValue("nihao", selection = TextRange(5)), draftState.value)
+        assertEquals(null, draftState.deliveryMessage)
     }
 
     @Test
@@ -75,10 +81,23 @@ class BufferedInputValueTest {
     }
 
     @Test
-    fun acceptedSendClearsTheDraft() {
+    fun acceptedSendClearsTheVisibleDraft() {
         val draft = TextFieldValue("git status")
 
         assertEquals(TextFieldValue(), draft.afterBufferedSend(accepted = true))
+    }
+
+    @Test
+    fun startingANewDraftDiscardsThePreviousRecoveryCopy() {
+        val draftState = BufferedInputDraftState()
+        draftState.update(TextFieldValue("old words"), activeSessionId = 11L)
+        draftState.dispatch(activeSessionId = 11L, sendEnabled = true) { _, _ -> true }
+
+        draftState.update(TextFieldValue("new words"), activeSessionId = 11L)
+        draftState.restoreLastSent()
+
+        assertEquals(TextFieldValue("new words"), draftState.value)
+        assertEquals(null, draftState.deliveryMessage)
     }
 
     @Test

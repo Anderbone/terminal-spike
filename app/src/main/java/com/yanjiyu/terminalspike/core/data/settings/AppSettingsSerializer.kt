@@ -7,7 +7,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 internal const val CURRENT_APP_SETTINGS_SCHEMA = 1
-internal const val CURRENT_KEYBOARD_DECK_REVISION = 6
+internal const val CURRENT_KEYBOARD_DECK_REVISION = 7
 
 internal object AppSettingsSerializer : Serializer<AppSettings> {
     override val defaultValue: AppSettings = AppSettings.newBuilder()
