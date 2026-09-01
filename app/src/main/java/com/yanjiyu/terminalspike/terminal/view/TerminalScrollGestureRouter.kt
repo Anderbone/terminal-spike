@@ -9,6 +9,23 @@ internal enum class TerminalScrollDestination {
     NONE,
 }
 
+/** Exact reason the first classified move chose its terminal scroll destination. */
+internal enum class TerminalScrollDecisionReason {
+    TWO_FINGER_LOCAL_OVERRIDE,
+    AUTO_TMUX_LOCAL_READY,
+    AUTO_TMUX_LOCAL_PENDING,
+    AUTO_REMOTE_MOUSE_TRACKING,
+    AUTO_LOCAL_NO_MOUSE_TRACKING,
+    EXPLICIT_LOCAL_SCROLLBACK,
+    EXPLICIT_REMOTE_MOUSE,
+    EXPLICIT_REMOTE_FALLBACK_LOCAL,
+}
+
+internal data class TerminalScrollDecision(
+    val destination: TerminalScrollDestination,
+    val reason: TerminalScrollDecisionReason,
+)
+
 /**
  * Keeps profile-driven touch routing independent from Android gesture and rendering objects.
  *
@@ -22,6 +39,7 @@ internal class TerminalScrollGestureRouter(
     private var touchMode = touchMode
     private var twoFingerLocalScrollOverride = twoFingerLocalScrollOverride
     private var localOverrideLatched = false
+    private var tmuxDecisionLatched: TerminalScrollDecision? = null
 
     fun updateConfiguration(
         touchMode: TouchScrollMode,
@@ -41,33 +59,84 @@ internal class TerminalScrollGestureRouter(
 
     fun onGestureStart() {
         localOverrideLatched = false
+        tmuxDecisionLatched = null
     }
 
     fun observePointerCount(pointerCount: Int) {
         if (twoFingerLocalScrollOverride && pointerCount >= 2) localOverrideLatched = true
     }
 
-    fun destination(remoteMouseTrackingEnabled: Boolean): TerminalScrollDestination {
-        if (localOverrideLatched) return TerminalScrollDestination.LOCAL_SCROLLBACK
-        return when (touchMode) {
-            TouchScrollMode.AUTO -> if (remoteMouseTrackingEnabled) {
-                TerminalScrollDestination.REMOTE_MOUSE
-            } else {
-                TerminalScrollDestination.LOCAL_SCROLLBACK
+    fun destination(
+        remoteMouseTrackingEnabled: Boolean,
+        confirmedTmuxSession: Boolean = false,
+        tmuxLocalScrollAvailable: Boolean = false,
+    ): TerminalScrollDestination = decision(
+        remoteMouseTrackingEnabled = remoteMouseTrackingEnabled,
+        confirmedTmuxSession = confirmedTmuxSession,
+        tmuxLocalScrollAvailable = tmuxLocalScrollAvailable,
+    ).destination
+
+    fun decision(
+        remoteMouseTrackingEnabled: Boolean,
+        confirmedTmuxSession: Boolean = false,
+        tmuxLocalScrollAvailable: Boolean = false,
+    ): TerminalScrollDecision {
+        if (localOverrideLatched) {
+            return TerminalScrollDecision(
+                destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                reason = TerminalScrollDecisionReason.TWO_FINGER_LOCAL_OVERRIDE,
+            )
+        }
+        if (confirmedTmuxSession) {
+            tmuxDecisionLatched?.let { return it }
+        }
+        val resolved = when (touchMode) {
+            TouchScrollMode.AUTO -> when {
+                confirmedTmuxSession && tmuxLocalScrollAvailable ->
+                    TerminalScrollDecision(
+                        destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                        reason = TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_READY,
+                    )
+                confirmedTmuxSession -> TerminalScrollDecision(
+                    destination = TerminalScrollDestination.NONE,
+                    reason = TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_PENDING,
+                )
+                remoteMouseTrackingEnabled -> TerminalScrollDecision(
+                    destination = TerminalScrollDestination.REMOTE_MOUSE,
+                    reason = TerminalScrollDecisionReason.AUTO_REMOTE_MOUSE_TRACKING,
+                )
+                else -> TerminalScrollDecision(
+                    destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                    reason = TerminalScrollDecisionReason.AUTO_LOCAL_NO_MOUSE_TRACKING,
+                )
             }
-            TouchScrollMode.LOCAL_SCROLLBACK -> TerminalScrollDestination.LOCAL_SCROLLBACK
+            TouchScrollMode.LOCAL_SCROLLBACK -> TerminalScrollDecision(
+                destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                reason = TerminalScrollDecisionReason.EXPLICIT_LOCAL_SCROLLBACK,
+            )
             TouchScrollMode.REMOTE_MOUSE -> if (remoteMouseTrackingEnabled) {
-                TerminalScrollDestination.REMOTE_MOUSE
+                TerminalScrollDecision(
+                    destination = TerminalScrollDestination.REMOTE_MOUSE,
+                    reason = TerminalScrollDecisionReason.EXPLICIT_REMOTE_MOUSE,
+                )
             } else {
                 // A shell that has not negotiated mouse tracking cannot consume remote wheel
                 // reports. Keep its already-captured history reachable instead of dropping touch.
-                TerminalScrollDestination.LOCAL_SCROLLBACK
+                TerminalScrollDecision(
+                    destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                    reason = TerminalScrollDecisionReason.EXPLICIT_REMOTE_FALLBACK_LOCAL,
+                )
             }
         }
+        if (confirmedTmuxSession && resolved.destination != TerminalScrollDestination.NONE) {
+            tmuxDecisionLatched = resolved
+        }
+        return resolved
     }
 
     fun onGestureEnd() {
         localOverrideLatched = false
+        tmuxDecisionLatched = null
     }
 }
 

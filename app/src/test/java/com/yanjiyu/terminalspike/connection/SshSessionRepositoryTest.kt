@@ -35,6 +35,78 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
     @Test
+    fun successfulTmuxSwitchImmediatelyBootstrapsLocalHistory() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val connection = FakeConnection().apply { tmuxSwitchResult = true }
+        val terminal = FakeTerminal()
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connection },
+            terminalFactory = SshSessionTerminalFactory { terminal },
+        )
+        try {
+            val started = repository.startUserInitiatedSession("Remote shell", config())
+                as StartSshSessionResult.Started
+            runCurrent()
+            val refreshesBeforeSwitch = terminal.tmuxHistoryRefreshCalls.get()
+
+            assertTrue(repository.switchTmuxSession(started.sessionId, "\$40"))
+
+            assertEquals(listOf("\$40"), connection.tmuxSwitches)
+            assertEquals(refreshesBeforeSwitch + 1, terminal.tmuxHistoryRefreshCalls.get())
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun liveTextBellPublishesGenericTaskCompletionButOscTerminatorBellDoesNot() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val connection = FakeConnection()
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connection },
+        )
+        val events = mutableListOf<TerminalProgramNotificationEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.terminalProgramNotifications.collect { events += it }
+        }
+        try {
+            val started = repository.startUserInitiatedSession("Remote shell", config())
+                as StartSshSessionResult.Started
+            runCurrent()
+
+            connection.emitBytes("\u001B]2;Codex\u0007".toByteArray())
+            runCurrent()
+            assertTrue(events.isEmpty())
+
+            connection.emitBytes(byteArrayOf(0x07))
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    TerminalProgramNotificationEvent(
+                        sessionId = started.sessionId,
+                        sessionTitle = "Remote shell",
+                        message = "",
+                    ),
+                ),
+                events,
+            )
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
     fun pastedImageUsesTheExactLiveSshTransportUploadChannel() = runTest {
         val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val connection = UploadingFakeConnection()
@@ -1567,6 +1639,7 @@ class SshSessionRepositoryTest {
         override var terminalTitle: String? = null
             private set
         val stopCalls = AtomicInteger()
+        val tmuxHistoryRefreshCalls = AtomicInteger()
         private var onInputAccepted: () -> Unit = {}
         var nextRemoteClipboardText: String? = null
 
@@ -1596,6 +1669,10 @@ class SshSessionRepositoryTest {
             onInputAccepted = {}
         }
 
+        override fun refreshTmuxHistory() {
+            tmuxHistoryRefreshCalls.incrementAndGet()
+        }
+
         override fun stopAndClear() {
             stopCalls.incrementAndGet()
             detach()
@@ -1615,6 +1692,8 @@ class SshSessionRepositoryTest {
         private var bytesCallback: ((ByteArray) -> Unit)? = null
         val closeCalls = AtomicInteger()
         val connectCalls = AtomicInteger()
+        var tmuxSwitchResult = false
+        val tmuxSwitches = mutableListOf<String>()
 
         override suspend fun connect(
             columns: Int,
@@ -1650,6 +1729,11 @@ class SshSessionRepositoryTest {
         override fun cancelKeyboardInteractiveChallenge(challengeToken: Long) = Unit
 
         override fun cancelPendingPrompts() = Unit
+
+        override fun switchTmuxSession(sessionId: String): Boolean {
+            tmuxSwitches += sessionId
+            return tmuxSwitchResult
+        }
 
         override fun close() {
             if (closeCalls.incrementAndGet() == 1) {

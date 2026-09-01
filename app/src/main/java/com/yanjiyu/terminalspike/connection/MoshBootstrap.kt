@@ -61,10 +61,56 @@ internal class MoshBootstrapResult(
     sessionKey: ByteArray,
     private val sshSideChannel: MoshSshExecSession? = null,
     initialTmuxSessionId: String? = null,
+    startedInTmux: Boolean = initialTmuxSessionId != null,
+    private var tmuxExecutable: String? = null,
+    private var tmuxSessionsBeforeStart: Set<String> = emptySet(),
+    private var cachedTmuxPaneCapture: TmuxPaneCapture? = null,
+    private var tmuxLiveHistoryRefreshPending: Boolean = startedInTmux,
 ) : AutoCloseable {
     val addressBytes: ByteArray = addressBytes.copyOf()
     val sessionKey: ByteArray = sessionKey
     private var attachedTmuxSessionId: String? = initialTmuxSessionId
+    private val startedInTmux = startedInTmux
+
+    val isTmuxSession: Boolean
+        get() = synchronized(this) { startedInTmux || attachedTmuxSessionId != null }
+
+    fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? {
+        if (includeHistory) {
+            synchronized(this) {
+                cachedTmuxPaneCapture?.let { cached ->
+                    cachedTmuxPaneCapture = null
+                    return cached
+                }
+            }
+        }
+        val sideChannel = sshSideChannel ?: return null
+        val (executable, authoritative) = synchronized(this) {
+            tmuxExecutable to tmuxLiveHistoryRefreshPending
+        }
+        executable ?: return null
+        val metadataRunner = sideChannel.tmuxCommandRunner()
+        val targetSessionId = synchronized(this) { attachedTmuxSessionId } ?: resolveNewTmuxSessionId(
+            metadataRunner,
+            synchronized(this) { tmuxSessionsBeforeStart },
+        ) ?: return null
+        synchronized(this) {
+            if (attachedTmuxSessionId == null) attachedTmuxSessionId = targetSessionId
+        }
+        val capture = captureTmuxPane(
+            metadataRunner = metadataRunner,
+            historyRunner = sideChannel.tmuxHistoryCommandRunner(),
+            executable = executable,
+            sessionId = targetSessionId,
+            authoritative = authoritative && includeHistory,
+            includeHistory = includeHistory,
+        ) ?: return null
+        return synchronized(this) {
+            capture.takeIf { attachedTmuxSessionId == targetSessionId }?.also {
+                if (authoritative && includeHistory) tmuxLiveHistoryRefreshPending = false
+            }
+        }
+    }
 
     init {
         try {
@@ -104,15 +150,24 @@ internal class MoshBootstrapResult(
 
     fun switchTmuxSession(sessionId: String, sendInput: (ByteArray) -> Boolean): Boolean {
         val sourceSessionId = synchronized(this) { attachedTmuxSessionId }
-        val switched = when (val result = sshSideChannel?.let { sideChannel ->
-            switchOrAttachTmuxSession(sideChannel.tmuxCommandRunner(), sessionId, sourceSessionId)
+        val sideChannel = sshSideChannel
+        val runner = sideChannel?.tmuxCommandRunner()
+        val executable = synchronized(this) { tmuxExecutable } ?: runner?.let(::queryTmuxExecutable)
+        val switched = when (val result = runner?.let {
+            switchOrAttachTmuxSession(it, sessionId, sourceSessionId)
         } ?: TmuxSessionSwitchResult.Failed) {
             TmuxSessionSwitchResult.Switched -> true
             is TmuxSessionSwitchResult.Attach ->
                 sendInput((result.command + '\r').encodeToByteArray())
             TmuxSessionSwitchResult.Failed -> false
         }
-        if (switched) synchronized(this) { attachedTmuxSessionId = sessionId }
+        if (switched) synchronized(this) {
+            attachedTmuxSessionId = sessionId
+            tmuxExecutable = executable
+            tmuxSessionsBeforeStart = emptySet()
+            cachedTmuxPaneCapture = null
+            tmuxLiveHistoryRefreshPending = true
+        }
         return switched
     }
 
@@ -130,6 +185,13 @@ internal class MoshBootstrapResult(
 private fun MoshSshExecSession.tmuxCommandRunner(): TmuxCommandRunner =
     TmuxCommandRunner { command ->
         readBoundedExecOutput(openExec(command), TMUX_MOSH_EXEC_LIMITS).use { output ->
+            TmuxExecOutput(output.stdout.copyOf(), output.exitStatus)
+        }
+    }
+
+private fun MoshSshExecSession.tmuxHistoryCommandRunner(): TmuxCommandRunner =
+    TmuxCommandRunner { command ->
+        readBoundedExecOutput(openExec(command), TMUX_HISTORY_MOSH_EXEC_LIMITS).use { output ->
             TmuxExecOutput(output.stdout.copyOf(), output.exitStatus)
         }
     }
@@ -219,6 +281,15 @@ internal class MoshBootstrapExecutor(
                 null
             }
             ensureActive(operation)
+            val initialTmuxCapture = (tmuxChoice as? TmuxStartupChoice.Attach)?.let { choice ->
+                captureTmuxPane(
+                    metadataRunner = session.tmuxCommandRunner(),
+                    historyRunner = session.tmuxHistoryCommandRunner(),
+                    executable = choice.executable,
+                    sessionId = choice.sessionId,
+                    authoritative = true,
+                )
+            }
             val command = try {
                 buildMoshServerCommand(
                     request = request,
@@ -243,6 +314,11 @@ internal class MoshBootstrapExecutor(
                 key = parsed.key,
                 sshSideChannel = session,
                 initialTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
+                startedInTmux = tmuxChoice != null,
+                tmuxExecutable = tmuxChoice?.executable,
+                tmuxSessionsBeforeStart =
+                    (tmuxChoice as? TmuxStartupChoice.NewSession)?.existingSessionIds.orEmpty(),
+                cachedTmuxPaneCapture = initialTmuxCapture,
             )
             parsed = null // The result now owns the only project-owned key copy.
             if (!finishSuccess(operation)) {
@@ -600,9 +676,9 @@ internal data class MoshExecLimits(
     init {
         require(channelConnectTimeoutMillis in 1..60_000)
         require(totalTimeoutMillis in 1..60_000)
-        require(maximumOutputBytes in 1..(1024 * 1024))
+        require(maximumOutputBytes in 1..TmuxPaneCapture.MAX_CAPTURE_BYTES)
         require(maximumLineBytes in 1..maximumOutputBytes)
-        require(maximumLines in 1..10_000)
+        require(maximumLines in 1..(ModelLimits.MAX_SCROLLBACK_LINES + 1))
         require(pollIntervalMillis in 1..1_000)
     }
 }
@@ -953,6 +1029,10 @@ private fun InetAddress.toBootstrapResult(
     key: ByteArray,
     sshSideChannel: MoshSshExecSession,
     initialTmuxSessionId: String?,
+    startedInTmux: Boolean,
+    tmuxExecutable: String?,
+    tmuxSessionsBeforeStart: Set<String>,
+    cachedTmuxPaneCapture: TmuxPaneCapture?,
 ): MoshBootstrapResult {
     val family = when (this) {
         is Inet4Address -> MoshAddressFamily.IPV4
@@ -969,6 +1049,10 @@ private fun InetAddress.toBootstrapResult(
         key,
         sshSideChannel,
         initialTmuxSessionId,
+        startedInTmux,
+        tmuxExecutable,
+        tmuxSessionsBeforeStart,
+        cachedTmuxPaneCapture,
     )
 }
 
@@ -999,6 +1083,13 @@ private val TMUX_MOSH_EXEC_LIMITS = MoshExecLimits(
     maximumOutputBytes = 64 * 1024,
     maximumLineBytes = 2 * 1024,
     maximumLines = 256,
+)
+private val TMUX_HISTORY_MOSH_EXEC_LIMITS = MoshExecLimits(
+    channelConnectTimeoutMillis = 10_000,
+    totalTimeoutMillis = 30_000,
+    maximumOutputBytes = TmuxPaneCapture.MAX_CAPTURE_BYTES,
+    maximumLineBytes = 256 * 1024,
+    maximumLines = ModelLimits.MAX_SCROLLBACK_LINES + 1,
 )
 internal const val DEFAULT_MOSH_LOCALE = "en_US.UTF-8"
 private const val MAX_MOSH_LOCALE_LENGTH = 64

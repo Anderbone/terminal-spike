@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.connection
 
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.Session
+import com.yanjiyu.terminalspike.core.model.ModelLimits
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.concurrent.LinkedBlockingQueue
@@ -44,9 +45,14 @@ internal data class TmuxSessionPrompt(
 internal sealed interface TmuxStartupChoice {
     val executable: String
 
-    data class NewSession(override val executable: String) : TmuxStartupChoice {
+    data class NewSession(
+        override val executable: String,
+        val existingSessionIds: Set<String> = emptySet(),
+    ) : TmuxStartupChoice {
         init {
             require(executable.isTmuxExecutablePath())
+            require(existingSessionIds.size <= MAX_TMUX_SESSIONS)
+            require(existingSessionIds.all(String::isTmuxSessionId))
         }
     }
 
@@ -95,7 +101,10 @@ internal class TmuxSessionSelector(
                         target == TMUX_NEW_SESSION_SELECTION &&
                         inspection.availability == TmuxAvailability.AVAILABLE
                     ) {
-                        return TmuxStartupChoice.NewSession(requireNotNull(inspection.executable))
+                        return TmuxStartupChoice.NewSession(
+                            executable = requireNotNull(inspection.executable),
+                            existingSessionIds = inspection.sessions.mapTo(linkedSetOf(), TmuxSession::id),
+                        )
                     }
                     if (inspection.sessions.none { it.id == target }) {
                         deleteFailed = true
@@ -166,8 +175,23 @@ private data class TmuxInspection(
     val sessions: List<TmuxSession> = emptyList(),
 )
 
-internal class JschTmuxCommandRunner(private val session: Session) : TmuxCommandRunner {
-    override fun run(command: String): TmuxExecOutput = runBoundedTmuxExec(session, command)
+internal class JschTmuxCommandRunner(
+    private val session: Session,
+    private val limits: TmuxExecLimits = DEFAULT_TMUX_EXEC_LIMITS,
+) : TmuxCommandRunner {
+    override fun run(command: String): TmuxExecOutput = runBoundedTmuxExec(session, command, limits)
+}
+
+internal data class TmuxExecLimits(
+    val channelConnectTimeoutMillis: Int,
+    val totalTimeoutMillis: Long,
+    val maximumOutputBytes: Int,
+) {
+    init {
+        require(channelConnectTimeoutMillis in 1..60_000)
+        require(totalTimeoutMillis in 1..60_000)
+        require(maximumOutputBytes in 1..TmuxPaneCapture.MAX_CAPTURE_BYTES)
+    }
 }
 
 private sealed interface TmuxSelectorAction {
@@ -200,6 +224,11 @@ internal fun queryTmuxSessions(commandRunner: TmuxCommandRunner): List<TmuxSessi
     inspectTmuxSessions(commandRunner).takeIf {
         it.availability == TmuxAvailability.AVAILABLE
     }?.sessions
+
+internal fun queryTmuxExecutable(commandRunner: TmuxCommandRunner): String? =
+    inspectTmuxSessions(commandRunner).takeIf {
+        it.availability == TmuxAvailability.AVAILABLE
+    }?.executable
 
 internal fun queryTmuxSessionCatalog(
     commandRunner: TmuxCommandRunner,
@@ -358,6 +387,142 @@ private fun captureTmuxPreview(
         .orEmpty()
 }.getOrDefault(emptyList())
 
+/**
+ * Captures only physical history rows for one stable pane target. Metadata and history use separate
+ * execs so a session target is resolved to a pane ID once; animation never invokes either runner.
+ */
+internal fun captureTmuxPane(
+    metadataRunner: TmuxCommandRunner,
+    historyRunner: TmuxCommandRunner,
+    executable: String,
+    sessionId: String,
+    authoritative: Boolean = false,
+    includeHistory: Boolean = true,
+): TmuxPaneCapture? {
+    if (!executable.isTmuxExecutablePath() || !sessionId.isTmuxSessionId()) return null
+    val metadata = runCatching {
+        metadataRunner.run(
+            "${quotePosixShellArgument(executable)} display-message -p -t " +
+                "${quotePosixShellArgument(sessionId)} " +
+                quotePosixShellArgument(TMUX_PANE_CAPTURE_FORMAT),
+        ).takeIf { it.exitStatus == 0 }
+            ?.stdout
+            ?.toString(Charsets.UTF_8)
+            ?.lineSequence()
+            ?.filter(String::isNotEmpty)
+            ?.singleOrNull()
+            ?.let(::parseTmuxPaneCaptureMetadata)
+    }.getOrNull() ?: return null
+    if (metadata.sessionId != sessionId) return null
+
+    val savedPrimaryRows = if (metadata.alternateScreenActive) metadata.rows else 0
+    val capturedHistoryRows = minOf(
+        metadata.historyRows,
+        ModelLimits.MAX_SCROLLBACK_LINES - savedPrimaryRows,
+    )
+    val capturedRows = capturedHistoryRows + savedPrimaryRows
+    val content = if (!includeHistory || capturedRows == 0) {
+        byteArrayOf()
+    } else {
+        val physicalHistory = if (capturedHistoryRows == 0) {
+            byteArrayOf()
+        } else {
+            runCatching {
+                historyRunner.run(
+                    "${quotePosixShellArgument(executable)} capture-pane -p -e -N -t " +
+                        "${quotePosixShellArgument(metadata.paneId)} -S " +
+                        "${quotePosixShellArgument("-$capturedHistoryRows")} -E -1",
+                ).takeIf { it.exitStatus == 0 }?.stdout
+            }.getOrNull() ?: return null
+        }
+        val savedPrimaryScreen = if (savedPrimaryRows == 0) {
+            byteArrayOf()
+        } else {
+            runCatching {
+                historyRunner.run(
+                    "${quotePosixShellArgument(executable)} capture-pane -p -e -N -a -t " +
+                        quotePosixShellArgument(metadata.paneId),
+                ).takeIf { it.exitStatus == 0 }?.stdout
+            }.getOrNull() ?: return null
+        }
+        if (physicalHistory.size > TmuxPaneCapture.MAX_CAPTURE_BYTES - savedPrimaryScreen.size) {
+            return null
+        }
+        physicalHistory + savedPrimaryScreen
+    }
+    if (content.size > TmuxPaneCapture.MAX_CAPTURE_BYTES) return null
+
+    return TmuxPaneCapture(
+        sessionId = metadata.sessionId,
+        paneId = metadata.paneId,
+        columns = metadata.columns,
+        rows = metadata.rows,
+        historyRows = capturedRows,
+        alternateScreenActive = metadata.alternateScreenActive,
+        mouseTrackingActive = metadata.mouseTrackingActive,
+        paneInMode = metadata.paneInMode,
+        historyIncluded = includeHistory,
+        truncatedBefore = metadata.historyRows > capturedHistoryRows,
+        authoritative = authoritative,
+        content = content,
+    )
+}
+
+/**
+ * Resolves the app-created session only after one unique new ID exists.
+ *
+ * Capture can race the interactive `new-session` startup command. Existing attached sessions are
+ * not evidence of the app's target and must never be guessed or latched while creation is pending.
+ */
+internal fun resolveNewTmuxSessionId(
+    commandRunner: TmuxCommandRunner,
+    existingSessionIds: Set<String>,
+): String? {
+    val sessions = queryTmuxSessions(commandRunner) ?: return null
+    val newlyCreated = sessions.filterNot { it.id in existingSessionIds }
+    return newlyCreated.singleOrNull()?.id
+}
+
+private data class TmuxPaneCaptureMetadata(
+    val sessionId: String,
+    val paneId: String,
+    val columns: Int,
+    val rows: Int,
+    val historyRows: Int,
+    val alternateScreenActive: Boolean,
+    val mouseTrackingActive: Boolean,
+    val paneInMode: Boolean,
+)
+
+private fun parseTmuxPaneCaptureMetadata(line: String): TmuxPaneCaptureMetadata? {
+    val fields = line.split('\t', limit = 8)
+    if (fields.size != 8) return null
+    val sessionId = fields[0].takeIf(String::isTmuxSessionId) ?: return null
+    val paneId = fields[1].takeIf { TMUX_PANE_ID.matches(it) } ?: return null
+    val columns = fields[2].toIntOrNull()?.takeIf { it in 1..MAX_TMUX_PANE_COLUMNS } ?: return null
+    val rows = fields[3].toIntOrNull()?.takeIf { it in 1..MAX_TMUX_PANE_ROWS } ?: return null
+    val historyRows = fields[4].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+    val alternateScreenActive = fields[5].parseTmuxBoolean() ?: return null
+    val mouseTrackingActive = fields[6].parseTmuxBoolean() ?: return null
+    val paneInMode = fields[7].parseTmuxBoolean() ?: return null
+    return TmuxPaneCaptureMetadata(
+        sessionId = sessionId,
+        paneId = paneId,
+        columns = columns,
+        rows = rows,
+        historyRows = historyRows,
+        alternateScreenActive = alternateScreenActive,
+        mouseTrackingActive = mouseTrackingActive,
+        paneInMode = paneInMode,
+    )
+}
+
+private fun String.parseTmuxBoolean(): Boolean? = when (this) {
+    "0" -> false
+    "1" -> true
+    else -> null
+}
+
 private data class TmuxClient(
     val tty: String,
     val sessionId: String,
@@ -425,7 +590,11 @@ private fun deleteTmuxSession(
     }.getOrDefault(false)
 }
 
-private fun runBoundedTmuxExec(session: Session, command: String): TmuxExecOutput {
+private fun runBoundedTmuxExec(
+    session: Session,
+    command: String,
+    limits: TmuxExecLimits,
+): TmuxExecOutput {
     val channel = session.openChannel("exec") as ChannelExec
     channel.setPty(false)
     channel.setInputStream(null)
@@ -434,16 +603,34 @@ private fun runBoundedTmuxExec(session: Session, command: String): TmuxExecOutpu
     val stderr = channel.extInputStream
     val output = ByteArrayOutputStream()
     val scratch = ByteArray(TMUX_READ_BUFFER_BYTES)
-    val deadline = System.nanoTime() + TMUX_EXEC_TIMEOUT_MILLIS * 1_000_000L
+    val deadline = System.nanoTime() + limits.totalTimeoutMillis * 1_000_000L
     try {
-        channel.connect(TMUX_CHANNEL_CONNECT_TIMEOUT_MILLIS)
+        channel.connect(limits.channelConnectTimeoutMillis)
         while (true) {
-            drainTmuxInput(stdout, output, scratch, retain = true)
-            drainTmuxInput(stderr, output, scratch, retain = false)
-            check(output.size() <= TMUX_MAX_OUTPUT_BYTES) { "tmux output exceeded its limit." }
+            drainTmuxInput(
+                stdout,
+                output,
+                scratch,
+                retain = true,
+                maximumOutputBytes = limits.maximumOutputBytes,
+            )
+            drainTmuxInput(
+                stderr,
+                output,
+                scratch,
+                retain = false,
+                maximumOutputBytes = limits.maximumOutputBytes,
+            )
+            check(output.size() <= limits.maximumOutputBytes) { "tmux output exceeded its limit." }
             if (channel.isClosed) {
-                drainTmuxInput(stdout, output, scratch, retain = true)
-                check(output.size() <= TMUX_MAX_OUTPUT_BYTES) { "tmux output exceeded its limit." }
+                drainTmuxInput(
+                    stdout,
+                    output,
+                    scratch,
+                    retain = true,
+                    maximumOutputBytes = limits.maximumOutputBytes,
+                )
+                check(output.size() <= limits.maximumOutputBytes) { "tmux output exceeded its limit." }
                 return TmuxExecOutput(output.toByteArray(), channel.exitStatus)
             }
             check(System.nanoTime() < deadline) { "tmux command timed out." }
@@ -462,12 +649,13 @@ private fun drainTmuxInput(
     output: ByteArrayOutputStream,
     scratch: ByteArray,
     retain: Boolean,
+    maximumOutputBytes: Int,
 ) {
     while (input.available() > 0) {
         val count = input.read(scratch, 0, minOf(input.available(), scratch.size))
         if (count <= 0) return
         if (retain) {
-            check(output.size() + count <= TMUX_MAX_OUTPUT_BYTES) {
+            check(output.size() + count <= maximumOutputBytes) {
                 "tmux output exceeded its limit."
             }
             output.write(scratch, 0, count)
@@ -487,6 +675,11 @@ private const val MAX_TMUX_CLIENT_TTY_CHARS = 512
 private const val MAX_TMUX_PREVIEW_SESSIONS = 24
 private const val MAX_TMUX_PREVIEW_LINES = 10
 private const val MAX_TMUX_PREVIEW_COLUMNS = 120
+private const val MAX_TMUX_PANE_COLUMNS = 500
+private const val MAX_TMUX_PANE_ROWS = 16_384
+private const val TMUX_PANE_CAPTURE_FORMAT =
+    "#{session_id}\t#{pane_id}\t#{pane_width}\t#{pane_height}\t" +
+        "#{history_size}\t#{alternate_on}\t#{mouse_any_flag}\t#{pane_in_mode}"
 internal const val TMUX_NEW_SESSION_SELECTION = "__terminal_spike_new_tmux_session__"
 private const val TMUX_PROBE_SCRIPT =
     "TMUX_BIN=\$(command -v tmux 2>/dev/null || true); " +
@@ -516,9 +709,17 @@ internal val TMUX_LIST_COMMAND = "/bin/sh -c ${quotePosixShellArgument(TMUX_PROB
 internal const val MAX_TMUX_SESSIONS = 128
 private const val MAX_TMUX_NAME_CHARS = 256
 private const val MAX_TMUX_EXECUTABLE_PATH_CHARS = 1_024
-private const val TMUX_CHANNEL_CONNECT_TIMEOUT_MILLIS = 5_000
-private const val TMUX_EXEC_TIMEOUT_MILLIS = 5_000L
-private const val TMUX_MAX_OUTPUT_BYTES = 64 * 1024
 private const val TMUX_READ_BUFFER_BYTES = 2 * 1024
 private const val TMUX_POLL_MILLIS = 10L
 private val TMUX_SESSION_ID = Regex("\\$[0-9]+")
+private val TMUX_PANE_ID = Regex("%[0-9]+")
+private val DEFAULT_TMUX_EXEC_LIMITS = TmuxExecLimits(
+    channelConnectTimeoutMillis = 5_000,
+    totalTimeoutMillis = 5_000L,
+    maximumOutputBytes = 64 * 1024,
+)
+internal val TMUX_HISTORY_EXEC_LIMITS = TmuxExecLimits(
+    channelConnectTimeoutMillis = 10_000,
+    totalTimeoutMillis = 30_000L,
+    maximumOutputBytes = TmuxPaneCapture.MAX_CAPTURE_BYTES,
+)

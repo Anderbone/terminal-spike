@@ -15,8 +15,10 @@ import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityKeyState
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityProvider
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityUnavailableException
 import com.yanjiyu.terminalspike.terminal.TerminalController
+import com.yanjiyu.terminalspike.terminal.TmuxLocalHistorySnapshot
 import com.yanjiyu.terminalspike.terminal.TerminalRemoteClipboardDecision
 import com.yanjiyu.terminalspike.terminal.decideRemoteClipboardRequest
+import com.yanjiyu.terminalspike.terminal.parseTmuxHistoryCapture
 import com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine
 import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
@@ -24,6 +26,10 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -726,11 +732,16 @@ internal class SshSessionRepository(
     fun switchTmuxSession(
         sessionId: Long,
         tmuxSessionId: String,
-    ): Boolean = synchronized(lock) {
-        runtimes[sessionId]
-            ?.takeUnless(SshSessionRuntime::terminated)
-            ?.connection
-    }?.switchTmuxSession(tmuxSessionId) ?: false
+    ): Boolean {
+        val runtime = synchronized(lock) {
+            runtimes[sessionId]?.takeUnless(SshSessionRuntime::terminated)
+        } ?: return false
+        if (runtime.connection?.switchTmuxSession(tmuxSessionId) != true) return false
+
+        runtime.terminal.controller?.beginManagedTmuxSession()
+        runtime.terminal.refreshTmuxHistory()
+        return true
+    }
 
     fun disconnect(sessionId: Long) {
         val termination = terminateOne(sessionId, ConnectionState.Disconnected) ?: return
@@ -1047,6 +1058,9 @@ internal class SshSessionRepository(
                 onTerminalNotification = { message ->
                     emitTerminalProgramNotification(runtime, connection, message)
                 },
+                onTerminalBell = {
+                    emitTerminalProgramNotification(runtime, connection, message = "")
+                },
             )
             val terminalTitle = sanitizeTerminalTitle(
                 runtime.terminal.terminalTitle,
@@ -1282,6 +1296,7 @@ internal class SshSessionRepository(
         }
         queueRecentSessionPersistence(runtime, publishedState)
         if (state is ConnectionState.Connected) {
+            runtime.terminal.refreshTmuxHistory()
             dispatchNetworkHintToRuntime(runtime, connection, networkAvailability.state.value)
         }
         if (scheduleReconnect) launchReconnectWaiter(runtime)
@@ -1998,7 +2013,20 @@ internal interface SshSessionTerminal {
         accept(bytes, sendResponse, onRemoteClipboardRequest)
     }
 
+    fun accept(
+        bytes: ByteArray,
+        sendResponse: (ByteArray) -> Unit,
+        onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
+        onTerminalNotification: (String) -> Unit,
+        onTerminalBell: () -> Unit,
+    ) {
+        accept(bytes, sendResponse, onRemoteClipboardRequest, onTerminalNotification)
+    }
+
     fun detach() = Unit
+
+    /** Starts one coalesced off-main refresh when this terminal owns a confirmed tmux transport. */
+    fun refreshTmuxHistory() = Unit
 
     fun stopAndClear()
 }
@@ -2022,6 +2050,20 @@ private class DefaultSshSessionTerminal(
         columns = controller.terminalColumns,
         rows = controller.terminalRows,
     )
+    private val tmuxHistoryExecutor = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "terminal-tmux-history").apply { isDaemon = true }
+    }
+    private val tmuxHistoryLock = Any()
+    private var attachedConnection: Connection? = null
+    private var tmuxCaptureGeneration = 0L
+    private var tmuxCaptureInFlight = false
+    private var tmuxCaptureAgain = false
+    private var tmuxCaptureAgainIncludeHistory = false
+    private var tmuxMetadataRefresh: ScheduledFuture<*>? = null
+    private var tmuxMetadataStaleStartedAtNanos = 0L
+    private var tmuxOutputRevision = 0L
+    private var tmuxHistoryBootstrapRequested = false
+    private var stopped = false
     private var moshDisplayHistory: MoshDisplayHistory? = null
 
     @Volatile
@@ -2036,6 +2078,17 @@ private class DefaultSshSessionTerminal(
     }
 
     override fun attach(connection: Connection, onInputAccepted: () -> Unit) {
+        synchronized(tmuxHistoryLock) {
+            attachedConnection = connection
+            tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
+            tmuxCaptureAgain = false
+            tmuxCaptureAgainIncludeHistory = false
+            tmuxMetadataRefresh?.cancel(false)
+            tmuxMetadataRefresh = null
+            tmuxMetadataStaleStartedAtNanos = 0L
+            tmuxOutputRevision = tmuxOutputRevision.nextPositiveGeneration()
+            tmuxHistoryBootstrapRequested = false
+        }
         moshDisplayHistory = if (connection is MoshConnection) MoshDisplayHistory() else null
         controller.setInputSink(
             sink = connection,
@@ -2046,6 +2099,8 @@ private class DefaultSshSessionTerminal(
                 moshDisplayHistory?.reset(update)
                 controller.updateTerminalFrame(update)
             },
+            isTmuxSession = { connection.isTmuxSession },
+            requestTmuxHistoryRefresh = ::requestTmuxHistoryCapture,
         )
     }
 
@@ -2058,7 +2113,13 @@ private class DefaultSshSessionTerminal(
         sendResponse: (ByteArray) -> Unit,
         onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
     ) {
-        accept(bytes, sendResponse, onRemoteClipboardRequest, onTerminalNotification = {})
+        accept(
+            bytes,
+            sendResponse,
+            onRemoteClipboardRequest,
+            onTerminalNotification = {},
+            onTerminalBell = {},
+        )
     }
 
     override fun accept(
@@ -2067,25 +2128,190 @@ private class DefaultSshSessionTerminal(
         onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
         onTerminalNotification: (String) -> Unit,
     ) {
+        accept(
+            bytes,
+            sendResponse,
+            onRemoteClipboardRequest,
+            onTerminalNotification,
+            onTerminalBell = {},
+        )
+    }
+
+    override fun accept(
+        bytes: ByteArray,
+        sendResponse: (ByteArray) -> Unit,
+        onRemoteClipboardRequest: (TerminalRemoteClipboardRequest) -> Unit,
+        onTerminalNotification: (String) -> Unit,
+        onTerminalBell: () -> Unit,
+    ) {
+        noteTmuxOutputStarted()
         val parsedUpdate = engine.accept(bytes)
         val update = moshDisplayHistory?.retainDisplayedRows(parsedUpdate) ?: parsedUpdate
         update.responses.forEach(sendResponse)
         terminalTitle = update.terminalTitle
         update.remoteClipboardRequests.forEach(onRemoteClipboardRequest)
         update.terminalNotifications.forEach(onTerminalNotification)
+        if (update.bellCount > 0) onTerminalBell()
         controller.updateTerminalFrame(update)
+        scheduleTmuxMetadataRefreshAfterOutput()
+        val refreshAfterEnteringTmux = synchronized(tmuxHistoryLock) {
+            val current = attachedConnection
+            if (
+                current?.isTmuxSession == true && !tmuxHistoryBootstrapRequested
+            ) {
+                tmuxHistoryBootstrapRequested = true
+                true
+            } else {
+                false
+            }
+        }
+        if (refreshAfterEnteringTmux) refreshTmuxHistory()
     }
 
     override fun detach() {
+        synchronized(tmuxHistoryLock) {
+            attachedConnection = null
+            tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
+            tmuxCaptureAgain = false
+            tmuxCaptureAgainIncludeHistory = false
+            tmuxMetadataRefresh?.cancel(false)
+            tmuxMetadataRefresh = null
+            tmuxMetadataStaleStartedAtNanos = 0L
+            tmuxOutputRevision = tmuxOutputRevision.nextPositiveGeneration()
+            tmuxHistoryBootstrapRequested = false
+        }
         moshDisplayHistory = null
         controller.resetInputSink()
     }
 
+    override fun refreshTmuxHistory() {
+        requestTmuxHistoryCapture(includeHistory = true)
+    }
+
+    private fun requestTmuxHistoryCapture(includeHistory: Boolean) {
+        val request = synchronized(tmuxHistoryLock) {
+            val connection = attachedConnection
+                ?.takeIf { !stopped && it.isTmuxSession && controller.isTmuxSession() }
+                ?: return
+            if (tmuxCaptureInFlight) {
+                tmuxCaptureAgain = true
+                tmuxCaptureAgainIncludeHistory =
+                    tmuxCaptureAgainIncludeHistory || includeHistory
+                return
+            }
+            tmuxCaptureInFlight = true
+            TmuxCaptureRequest(
+                connection = connection,
+                generation = tmuxCaptureGeneration,
+                outputRevision = tmuxOutputRevision,
+                includeHistory = includeHistory,
+            )
+        }
+        try {
+            tmuxHistoryExecutor.execute { captureTmuxHistory(request) }
+        } catch (_: RejectedExecutionException) {
+            synchronized(tmuxHistoryLock) {
+                if (request.generation == tmuxCaptureGeneration) tmuxCaptureInFlight = false
+            }
+        }
+    }
+
+    private fun captureTmuxHistory(request: TmuxCaptureRequest) {
+        val snapshot = runCatching {
+            request.connection.captureTmuxPane(request.includeHistory)
+                ?.let(::parseTmuxHistoryCapture)
+        }.getOrNull()
+        var acceptedSnapshot: TmuxLocalHistorySnapshot? = null
+        val repeatCaptureWithHistory = synchronized(tmuxHistoryLock) {
+            val stillCurrent = !stopped && attachedConnection === request.connection &&
+                tmuxCaptureGeneration == request.generation
+            if (stillCurrent) {
+                acceptedSnapshot = snapshot?.copy(
+                    interactionMetadataFresh = request.outputRevision == tmuxOutputRevision,
+                )
+            }
+            tmuxCaptureInFlight = false
+            val repeat = !stopped && tmuxCaptureAgain &&
+                attachedConnection?.isTmuxSession == true
+            val repeatWithHistory = repeat && tmuxCaptureAgainIncludeHistory
+            tmuxCaptureAgain = false
+            tmuxCaptureAgainIncludeHistory = false
+            if (repeat) repeatWithHistory else null
+        }
+        acceptedSnapshot?.let(controller::stageTmuxHistory)
+        repeatCaptureWithHistory?.let(::requestTmuxHistoryCapture)
+    }
+
+    private fun noteTmuxOutputStarted() {
+        if (!controller.isTmuxSession()) return
+        val tmuxOutput = synchronized(tmuxHistoryLock) {
+            if (stopped || attachedConnection?.isTmuxSession != true) return@synchronized false
+            tmuxOutputRevision = tmuxOutputRevision.nextPositiveGeneration()
+            true
+        }
+        if (tmuxOutput) controller.markTmuxInteractionMetadataStale()
+    }
+
+    private fun scheduleTmuxMetadataRefreshAfterOutput() {
+        synchronized(tmuxHistoryLock) {
+            val connection = attachedConnection
+                ?.takeIf { !stopped && it.isTmuxSession && controller.isTmuxSession() }
+                ?: return
+            val generation = tmuxCaptureGeneration
+            val nowNanos = System.nanoTime()
+            if (tmuxMetadataStaleStartedAtNanos == 0L) {
+                tmuxMetadataStaleStartedAtNanos = nowNanos
+            }
+            val quietDeadline = nowNanos +
+                TimeUnit.MILLISECONDS.toNanos(TMUX_METADATA_REFRESH_QUIET_MILLIS)
+            val maximumDeadline = tmuxMetadataStaleStartedAtNanos +
+                TimeUnit.MILLISECONDS.toNanos(TMUX_METADATA_REFRESH_MAX_WAIT_MILLIS)
+            val delayNanos = (minOf(quietDeadline, maximumDeadline) - nowNanos).coerceAtLeast(0L)
+            tmuxMetadataRefresh?.cancel(false)
+            tmuxMetadataRefresh = try {
+                tmuxHistoryExecutor.schedule(
+                    { runTmuxMetadataRefresh(connection, generation) },
+                    delayNanos,
+                    TimeUnit.NANOSECONDS,
+                )
+            } catch (_: RejectedExecutionException) {
+                null
+            }
+        }
+    }
+
+    private fun runTmuxMetadataRefresh(connection: Connection, generation: Long) {
+        val current = synchronized(tmuxHistoryLock) {
+            if (
+                stopped || tmuxCaptureGeneration != generation ||
+                attachedConnection !== connection
+            ) {
+                false
+            } else {
+                tmuxMetadataRefresh = null
+                tmuxMetadataStaleStartedAtNanos = 0L
+                true
+            }
+        }
+        if (current) {
+            requestTmuxHistoryCapture(includeHistory = !controller.hasTmuxLocalHistory())
+        }
+    }
+
     override fun stopAndClear() {
         detach()
+        synchronized(tmuxHistoryLock) { stopped = true }
+        tmuxHistoryExecutor.shutdownNow()
         controller.stop()
         controller.clear()
     }
+
+    private data class TmuxCaptureRequest(
+        val connection: Connection,
+        val generation: Long,
+        val outputRevision: Long,
+        val includeHistory: Boolean,
+    )
 }
 
 private class SshSessionRuntime(
@@ -2312,6 +2538,8 @@ private const val MAX_RECONNECT_ATTEMPTS = 100
 private const val DEFAULT_RECONNECT_INITIAL_DELAY_MILLIS = 1_000L
 private const val DEFAULT_RECONNECT_MAXIMUM_DELAY_MILLIS = 30_000L
 private const val DEFAULT_RECONNECT_STABLE_WINDOW_MILLIS = 30_000L
+private const val TMUX_METADATA_REFRESH_QUIET_MILLIS = 120L
+private const val TMUX_METADATA_REFRESH_MAX_WAIT_MILLIS = 1_000L
 private const val MAX_RECONNECT_EXPONENT = 62
 private const val FRESH_AUTHENTICATION_REQUIRED_MESSAGE =
     "Connection lost. Reconnect manually to start a new shell."

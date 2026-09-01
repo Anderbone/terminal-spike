@@ -110,7 +110,6 @@ internal fun ConnectionsHeader(
         )
     }
     val backDescription = stringResource(R.string.connections_back)
-    val screenDescription = stringResource(R.string.connections_screen_description)
     val searchDescription = stringResource(selectedTab.searchLabelResId)
     val clearSearchDescription = stringResource(R.string.connections_clear_search)
     val hostControlsDescription = stringResource(
@@ -163,7 +162,6 @@ internal fun ConnectionsHeader(
                         text = stringResource(R.string.connections_title),
                         modifier = Modifier.semantics {
                             heading()
-                            contentDescription = screenDescription
                         },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,

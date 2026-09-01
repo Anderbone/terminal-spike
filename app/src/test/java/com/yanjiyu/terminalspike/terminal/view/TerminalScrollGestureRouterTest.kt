@@ -95,4 +95,62 @@ class TerminalScrollGestureRouterTest {
         assertEquals(0, accumulator.consume(distanceY = 100f, stepPx = 0f))
         assertEquals(-1, accumulator.consume(distanceY = -10f, stepPx = 10f))
     }
+
+    @Test
+    fun autoRoutesConfirmedTmuxToLocalPixelHistoryDespiteOuterMouseMode() {
+        val router = TerminalScrollGestureRouter()
+
+        router.onGestureStart()
+
+        assertEquals(
+            TerminalScrollDestination.LOCAL_SCROLLBACK,
+            router.destination(
+                remoteMouseTrackingEnabled = true,
+                confirmedTmuxSession = true,
+                tmuxLocalScrollAvailable = true,
+            ),
+        )
+        assertEquals(
+            TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_READY,
+            router.decision(
+                remoteMouseTrackingEnabled = true,
+                confirmedTmuxSession = true,
+                tmuxLocalScrollAvailable = true,
+            ).reason,
+        )
+    }
+
+    @Test
+    fun pendingTmuxNeverFallsBackToRemoteAndCanBecomeLocalWithinGesture() {
+        val router = TerminalScrollGestureRouter()
+        router.onGestureStart()
+
+        assertEquals(
+            TerminalScrollDestination.NONE,
+            router.destination(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = false),
+        )
+        assertEquals(
+            TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_PENDING,
+            router.decision(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = false).reason,
+        )
+        assertEquals(
+            TerminalScrollDestination.LOCAL_SCROLLBACK,
+            router.destination(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = true),
+        )
+        assertEquals(
+            TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_READY,
+            router.decision(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = false).reason,
+        )
+    }
+
+    @Test
+    fun explicitRemoteModeStillReachesTmuxCopyModeAndInnerMouseApplications() {
+        val router = TerminalScrollGestureRouter(touchMode = TouchScrollMode.REMOTE_MOUSE)
+        router.onGestureStart()
+
+        assertEquals(
+            TerminalScrollDestination.REMOTE_MOUSE,
+            router.destination(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = true),
+        )
+    }
 }

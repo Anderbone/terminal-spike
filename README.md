@@ -141,6 +141,17 @@ Non-secret profiles, identity metadata, snippets, themes, and keyboard layouts l
 
 Active transports are owned by the user-started foreground session service rather than by an Activity. Its low-noise notification exposes safe open/disconnect actions and privacy-aware content. Navigating away or recreating the Activity does not implicitly disconnect a session, but Android may still terminate the process; the app does not claim to resurrect a lost live socket after process death.
 
+Connected terminal tabs also accept bounded task-attention events. OSC 9 retains its message on direct SSH, while a text-mode BEL produces a generic **Terminal task complete** notification and survives both tmux and Mosh. BEL used only as an OSC terminator is not an alert. Tapping the notification opens its originating app tab; closing or disconnecting that tab ends its notification path. Because BEL is a general terminal signal, any program that emits one can use this channel. For Codex turn completion across SSH, tmux, and Mosh, configure Codex before starting it:
+
+```toml
+[tui]
+notifications = ["agent-turn-complete"]
+notification_method = "bel"
+notification_condition = "always"
+```
+
+Codex reads this configuration at process startup. Android notification permission and the **Terminal task completion** notification channel must remain enabled on the phone.
+
 ## Wireless development install
 
 After pairing a phone through Android's Wireless debugging screen, list exact ADB targets and install only to the chosen wireless serial:
@@ -204,8 +215,8 @@ recording requirements.
 - The upstream Mosh transport retains authenticated UDP roaming and port-hopping behavior. The main app now publishes generation-scoped Android network hints to the active Mosh transport; real Wi-Fi/cellular/VPN transition acceptance remains open. IPv6 link-local hosts containing a zone identifier such as `%wlan0` are not supported; use a globally routable IPv6 address/name or IPv4.
 - Public distribution of the Mosh-compatible extension is blocked by ADR-003 until licensing, Corresponding Source/installation-information, signing, and name-use review is complete.
 - The bounded VT engine supports primary/alternate screens, cursor addressing, scroll regions, insert/delete/erase operations, xterm colours, application cursor keys, bracketed paste, focus reporting, wheel mouse reporting, resize, OSC 8 links, policy-gated OSC 52 clipboard requests, and common terminal queries. It is not yet a byte-for-byte xterm clone; every DEC private mode and full conformance fixtures remain.
-- Alternate-screen programs such as tmux retain a separate bounded local scroll history. When a remote program enables xterm mouse tracking, touch scrolling sends standard legacy or SGR wheel reports instead.
-- For tmux-managed history, enable its mouse option once with `tmux set -g mouse on` (and add `set -g mouse on` to `~/.tmux.conf` to persist it). This also makes history from before the current app connection available through tmux copy mode.
+- App-selected tmux sessions seed a separate bounded local model from tmux's physical pane history and keep it synchronized with live rows. Drag and fling use the same pixel viewport as an ordinary terminal. Tmux copy mode and inner applications that actually enable terminal mouse tracking continue receiving remote mouse input; an alternate screen alone, including a Codex-style UI, no longer forces row-wheel scrolling.
+- For manually launched tmux and explicit remote-mouse mode, enable its mouse option once with `tmux set -g mouse on` (and add `set -g mouse on` to `~/.tmux.conf` to persist it).
 - The engine tracks combining and common wide/emoji code points as terminal cells, while the renderer still estimates the physical cell width from a monospace `M`. Bidi layout and every grapheme/emoji sequence are not exact.
 - Long lines are clipped. Terminal selection/copy, safe OSC 8 link actions, private SAF-imported fonts, and the release-cleared Symbols Nerd Font Mono fallback are present; full row-by-row accessibility exploration remains open.
 - Direct terminal input sends committed text immediately and deliberately suppresses correction and local rendering of in-progress composition. The separate bounded input page provides normal IME composition, correction, and selection before an explicit paste.

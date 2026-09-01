@@ -31,6 +31,18 @@ class ShellNavigationPolicyTest {
     }
 
     @Test
+    fun notificationOpenSelectsTerminalWithoutHidingSessionOrAccessoryBars() {
+        val navigation = notificationTerminalNavigation(
+            source = AppRoute.SETTINGS,
+            currentOwner = TerminalOwner.WORKSPACE,
+        )
+
+        assertEquals(AppRoute.TERMINAL_DETAIL, navigation.destination)
+        assertEquals(TerminalOwner.SETTINGS, navigation.terminalOwner)
+        assertNull(navigation.focusSessionId)
+    }
+
+    @Test
     fun developerTerminalReturnsToSettingsOwner() {
         val owner = terminalOwnerForEntry(AppRoute.SETTINGS, TerminalOwner.WORKSPACE)
 

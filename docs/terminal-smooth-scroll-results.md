@@ -12,10 +12,11 @@ inside a strict 16 MiB transfer budget. In `Auto`, that history stays in the loc
 and fling, with no SSH writes or tmux redraw round trip. Ordinary shells and unrelated mouse-aware
 applications keep their previous routing.
 
-The capture is conditional on tmux's reported `history_size`. Alternate-screen applications such
-as Codex may own substantial internal history while tmux itself has zero history. Those sessions
-stay on remote mouse input, preventing one incidental redraw screen from becoming a false local
-ceiling. A genuine tmux history hands back to remote input when its local edge is reached.
+The capture follows tmux's reported `history_size` and, while a non-mouse alternate screen is
+active, appends tmux's saved primary-screen grid. Alternate-screen state by itself does not imply
+that the pane owns mouse input. Remote routing now requires tmux copy mode or tmux's
+`mouse_any_flag`, so Codex-style alternate screens retain local pixel scrolling while Vim/htop
+configurations that enable mouse tracking still receive their intended events.
 
 ## 1. Cause of the line-by-line feeling
 
@@ -31,8 +32,9 @@ Canvas was smooth, but this default tmux path did not use it.
 - Added a bounded, one-shot `capture-pane` snapshot for tmux sessions selected in the app. SSH and
   Mosh transfer it exactly once before terminal bytes are read; the controller stages it until tmux
   enters its alternate screen.
-- Query `history_size` before capture and keep alternate-screen programs remote when tmux has no
-  actual history, while allowing local-to-remote handoff at the edge of a real tmux snapshot.
+- Query `history_size`, `alternate_on`, `mouse_any_flag`, and `pane_in_mode` before capture. A
+  non-mouse alternate screen contributes its saved primary grid; genuine application mouse mode
+  and tmux copy mode remain remote.
 - Changed `TerminalScrollGestureRouter` to prefer cached tmux history in `Auto` and latch the
   decision until the gesture ends. Other mouse-aware programs retain remote scrolling.
 - Passed local-history availability from `FastTerminalView` for drag and fling.

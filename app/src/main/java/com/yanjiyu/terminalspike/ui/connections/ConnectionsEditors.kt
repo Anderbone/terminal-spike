@@ -100,7 +100,6 @@ internal fun HostEditorDialog(
     var errors by remember { mutableStateOf(HostEditorErrors()) }
     var advancedExpanded by remember { mutableStateOf(false) }
     var discardConfirmation by remember { mutableStateOf(false) }
-    var deleteConfirmation by remember { mutableStateOf(false) }
     var openMoshStatusAfterDiscard by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveFailure by remember { mutableStateOf<UiText?>(null) }
@@ -810,9 +809,19 @@ internal fun HostEditorDialog(
                 }
 
                 testResult?.let { result -> HostConnectionTestSummary(result) }
+            }
+        },
+        confirmButton = {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 if (onDelete != null) {
                     TextButton(
-                        onClick = { deleteConfirmation = true },
+                        onClick = {
+                            cancelOwnedTest()
+                            secretState.wipe()
+                            transientSecretWasEntered = false
+                            onDelete()
+                            onDismiss()
+                        },
                         enabled = !testing && !saving,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -824,89 +833,53 @@ internal fun HostEditorDialog(
                         Text(stringResource(R.string.connections_delete_host))
                     }
                 }
-            }
-        },
-        confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                if (onTest != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    if (onTest != null) {
+                        TextButton(
+                            onClick = ::toggleConnectionTest,
+                            enabled = !saving,
+                            modifier = Modifier.testTag(HostEditorTestConnectionTestTag),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (testing) {
+                                        R.string.host_editor_cancel_test
+                                    } else {
+                                        R.string.host_editor_test_connection
+                                    },
+                                ),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
                     TextButton(
-                        onClick = ::toggleConnectionTest,
+                        onClick = ::requestDismiss,
                         enabled = !saving,
-                        modifier = Modifier.testTag(HostEditorTestConnectionTestTag),
                         contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(
+                        onClick = ::saveHost,
+                        enabled = !testing && !saving,
+                        modifier = Modifier.testTag(HostEditorSaveTestTag),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
                     ) {
                         Text(
                             stringResource(
-                                if (testing) {
-                                    R.string.host_editor_cancel_test
-                                } else {
-                                    R.string.host_editor_test_connection
-                                },
+                                if (saving) R.string.host_editor_saving else R.string.host_editor_save,
                             ),
                         )
                     }
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(
-                    onClick = ::requestDismiss,
-                    enabled = !saving,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
-                Button(
-                    onClick = ::saveHost,
-                    enabled = !testing && !saving,
-                    modifier = Modifier.testTag(HostEditorSaveTestTag),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                ) {
-                    Text(
-                        stringResource(
-                            if (saving) R.string.host_editor_saving else R.string.host_editor_save,
-                        ),
-                    )
                 }
             }
         },
         dismissButton = {},
     )
-
-    if (deleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { deleteConfirmation = false },
-            title = {
-                Text(stringResource(R.string.connections_delete_title, initial.displayName))
-            },
-            text = { Text(stringResource(R.string.connections_delete_host_detail)) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        cancelOwnedTest()
-                        secretState.wipe()
-                        transientSecretWasEntered = false
-                        deleteConfirmation = false
-                        onDelete?.invoke()
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                    modifier = Modifier.testTag(HostEditorConfirmDeleteTestTag),
-                ) {
-                    Text(stringResource(R.string.connections_delete_host))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteConfirmation = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
 
     when (val discovery = nearbySshDiscoveryState) {
         is NearbySshDiscoveryState.Searching -> if (

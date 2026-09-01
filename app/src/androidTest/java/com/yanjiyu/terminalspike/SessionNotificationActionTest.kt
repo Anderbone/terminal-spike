@@ -71,6 +71,24 @@ class SessionNotificationActionTest {
     }
 
     @Test
+    fun terminalBellNotificationUsesGenericTaskText() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val notification = SessionNotificationFactory(context).buildTerminalProgramNotification(
+            event = TerminalProgramNotificationEvent(
+                sessionId = 42L,
+                sessionTitle = "Terminal Spike dev",
+                message = "",
+            ),
+            privacyEnabled = false,
+        )
+
+        assertEquals(
+            context.getString(R.string.terminal_program_notification_text),
+            notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+    }
+
+    @Test
     fun currentCountConfirmationChangesNothingUntilExplicitChoice() {
         var confirms = 0
         var dismisses = 0

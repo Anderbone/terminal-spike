@@ -16,6 +16,137 @@ import org.junit.Test
 
 class TmuxSessionSelectorTest {
     @Test
+    fun paneHistoryCaptureTargetsPhysicalRowsWithoutJoiningThem() {
+        val metadataCommands = mutableListOf<String>()
+        val historyCommands = mutableListOf<String>()
+        val capture = captureTmuxPane(
+            metadataRunner = { command ->
+                metadataCommands += command
+                TmuxExecOutput("\$7\t%9\t80\t24\t3\t0\t0\t0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = { command ->
+                historyCommands += command
+                TmuxExecOutput("one\ntwo\nthree\n".encodeToByteArray(), 0)
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+            authoritative = true,
+        )
+
+        requireNotNull(capture)
+        assertEquals(3, capture.historyRows)
+        assertEquals("%9", capture.paneId)
+        assertTrue(capture.authoritative)
+        assertTrue(metadataCommands.single().contains("display-message -p -t '\$7'"))
+        assertEquals(
+            "'/usr/bin/tmux' capture-pane -p -e -N -t '%9' -S '-3' -E -1",
+            historyCommands.single(),
+        )
+        assertFalse(historyCommands.single().contains(" -J "))
+    }
+
+    @Test
+    fun paneAlternateApplicationWithoutMouseTrackingKeepsHistoryLocal() {
+        val historyCommands = mutableListOf<String>()
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7\t%9\t80\t1\t1\t1\t0\t0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = { command ->
+                historyCommands += command
+                when {
+                    " -a " in command -> TmuxExecOutput("saved primary\n".encodeToByteArray(), 0)
+                    else -> TmuxExecOutput("history\n".encodeToByteArray(), 0)
+                }
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+        )
+
+        requireNotNull(capture)
+        assertTrue(capture.alternateScreenActive)
+        assertFalse(capture.mouseTrackingActive)
+        assertEquals(2, capture.historyRows)
+        assertEquals("history\nsaved primary\n", capture.content.toString(Charsets.UTF_8))
+        assertEquals(2, historyCommands.size)
+        assertTrue(historyCommands.last().contains("capture-pane -p -e -N -a -t '%9'"))
+    }
+
+    @Test
+    fun paneApplicationMouseTrackingStillCapturesPersistentHistoryForLocalViewport() {
+        var historyRan = false
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7\t%9\t80\t24\t300\t0\t1\t0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = {
+                historyRan = true
+                TmuxExecOutput("history\n".encodeToByteArray(), 0)
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+        )
+
+        requireNotNull(capture)
+        assertFalse(capture.alternateScreenActive)
+        assertTrue(capture.mouseTrackingActive)
+        assertEquals(300, capture.historyRows)
+        assertEquals("history\n", capture.content.toString(Charsets.UTF_8))
+        assertTrue(historyRan)
+    }
+
+    @Test
+    fun paneAlternateApplicationWithMouseTrackingAlsoCapturesSavedPrimaryRows() {
+        val historyCommands = mutableListOf<String>()
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7\t%9\t80\t1\t1\t1\t1\t0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = { command ->
+                historyCommands += command
+                if (" -a " in command) {
+                    TmuxExecOutput("saved primary\n".encodeToByteArray(), 0)
+                } else {
+                    TmuxExecOutput("history\n".encodeToByteArray(), 0)
+                }
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+        )
+
+        requireNotNull(capture)
+        assertTrue(capture.alternateScreenActive)
+        assertTrue(capture.mouseTrackingActive)
+        assertEquals(2, capture.historyRows)
+        assertEquals("history\nsaved primary\n", capture.content.toString(Charsets.UTF_8))
+        assertEquals(2, historyCommands.size)
+        assertTrue(historyCommands.last().contains("capture-pane -p -e -N -a -t '%9'"))
+    }
+
+    @Test
+    fun lightweightPaneProbeDoesNotRecaptureExistingSafeHistory() {
+        var historyRan = false
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7\t%9\t80\t24\t5000\t0\t0\t0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = {
+                historyRan = true
+                TmuxExecOutput(byteArrayOf(), 0)
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+            includeHistory = false,
+        )
+
+        requireNotNull(capture)
+        assertFalse(capture.historyIncluded)
+        assertEquals(5_000, capture.historyRows)
+        assertTrue(capture.content.isEmpty())
+        assertFalse(historyRan)
+    }
+
+    @Test
     fun activeSessionSwitchUsesSideChannelAndTargetsItsMostRecentClient() {
         val commands = mutableListOf<String>()
         val runner = TmuxCommandRunner { command ->
@@ -238,6 +369,60 @@ class TmuxSessionSelectorTest {
         assertEquals(
             "'/usr/local/bin/tmux' new-session",
             tmuxStartupCommand(requireNotNull(selected.get())),
+        )
+    }
+
+    @Test
+    fun newSessionResolutionDoesNotGuessAnExistingAttachedSessionBeforeCreation() {
+        val existingSessionIds = setOf("\$1", "\$42")
+        val runner = TmuxCommandRunner { command ->
+            assertEquals(TMUX_LIST_COMMAND, command)
+            TmuxExecOutput(
+                (
+                    "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
+                        "\$1\tdev\t1\t1\t10\n" +
+                        "\$42\tdownload\t1\t2\t20\n"
+                    ).encodeToByteArray(),
+                0,
+            )
+        }
+
+        assertNull(resolveNewTmuxSessionId(runner, existingSessionIds))
+    }
+
+    @Test
+    fun newSessionResolutionAcceptsOnlyOneUnambiguousNewSessionId() {
+        fun runnerWith(vararg sessionLines: String) = TmuxCommandRunner { command ->
+            assertEquals(TMUX_LIST_COMMAND, command)
+            TmuxExecOutput(
+                (
+                    "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
+                        sessionLines.joinToString(separator = "\n", postfix = "\n")
+                    ).encodeToByteArray(),
+                0,
+            )
+        }
+
+        assertEquals(
+            "\$45",
+            resolveNewTmuxSessionId(
+                runnerWith(
+                    "\$1\tdev\t1\t1\t10",
+                    "\$42\tdownload\t1\t2\t20",
+                    "\$45\t45\t1\t1\t30",
+                ),
+                existingSessionIds = setOf("\$1", "\$42"),
+            ),
+        )
+        assertNull(
+            resolveNewTmuxSessionId(
+                runnerWith(
+                    "\$1\tdev\t1\t1\t10",
+                    "\$45\t45\t1\t1\t30",
+                    "\$46\t46\t1\t1\t31",
+                ),
+                existingSessionIds = setOf("\$1"),
+            ),
         )
     }
 

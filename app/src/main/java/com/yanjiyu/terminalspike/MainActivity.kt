@@ -307,7 +307,7 @@ class MainActivity : ComponentActivity() {
             ACTION_OPEN_TERMINAL_SESSION -> source
                 .getLongExtra(EXTRA_TERMINAL_SESSION_ID, -1L)
                 .takeIf { it >= 0L }
-                ?.let { openTerminalSessionRequested.value = it }
+                ?.let(::openTerminalSession)
             else -> return
         }
         setIntent(
@@ -316,6 +316,10 @@ class MainActivity : ComponentActivity() {
                 removeExtra(EXTRA_TERMINAL_SESSION_ID)
             },
         )
+    }
+
+    internal fun openTerminalSession(sessionId: Long) {
+        if (sessionId >= 0L) openTerminalSessionRequested.value = sessionId
     }
 
     private fun applyWindowSecurity() {

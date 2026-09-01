@@ -193,15 +193,7 @@ internal fun ConnectionsScreen(
     val pendingEditor = pendingEditorToken?.let(::decodePendingConnectionsEditor)
     val readyEditorCatalog = (state.loadState as? ConnectionsLoadState.Ready)?.editorCatalog
     val editorCatalog = readyEditorCatalog ?: ConnectionsEditorCatalog()
-    val displayedState = if (displayedTab == ConnectionsTab.HOSTS) {
-        state.copy(
-            selectedTab = ConnectionsTab.HOSTS,
-            searchQuery = "",
-            hostFilters = HostFilters(),
-        )
-    } else {
-        state.copy(selectedTab = displayedTab)
-    }
+    val displayedState = state.copy(selectedTab = displayedTab)
 
     LaunchedEffect(initialHostEditorId) {
         if (initialHostEditorId != null) {
@@ -272,7 +264,7 @@ internal fun ConnectionsScreen(
                         } ?: callbacks.onAddSnippet,
                     ),
                     showTitle = true,
-                    showSearch = displayedTab != ConnectionsTab.HOSTS,
+                    showSearch = true,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -444,8 +436,14 @@ internal fun ConnectionsScreen(
                             pendingEditorToken = null
                         },
                         onDelete = editor.persistentId?.let { persistentId ->
-                            callbacks.onDeleteHost?.let { deleteHost ->
-                                { deleteHost(persistentId) }
+                            callbacks.onDeleteHost?.let {
+                                {
+                                    pendingDeletion = PendingCatalogDeletion.Host(
+                                        id = persistentId,
+                                        name = initial.displayName,
+                                    )
+                                    pendingEditorToken = null
+                                }
                             }
                         },
                         onSave = { submission ->
@@ -572,6 +570,11 @@ private fun CatalogDeletionConfirmationDialog(
             } else {
                 Button(
                     onClick = onConfirm,
+                    modifier = if (deletion is PendingCatalogDeletion.Host) {
+                        Modifier.testTag(HostEditorConfirmDeleteTestTag)
+                    } else {
+                        Modifier
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,

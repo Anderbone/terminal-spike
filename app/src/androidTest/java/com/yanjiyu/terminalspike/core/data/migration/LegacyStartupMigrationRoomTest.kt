@@ -188,7 +188,7 @@ class LegacyStartupMigrationRoomTest {
                 database.keyboardProfileDao().findWithKeys(LegacyIds.defaultKeyboardProfile),
             )
             assertEquals(2, defaultKeyboard.profile.rowCount)
-            assertEquals(18, defaultKeyboard.keys.size)
+            assertEquals(TerminalExtraKey.DEFAULT_ORDER.size, defaultKeyboard.keys.size)
 
             val afterRestart = coordinator().migrate()
 

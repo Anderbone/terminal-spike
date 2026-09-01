@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
 import com.yanjiyu.terminalspike.core.model.CursorStyle
+import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.performance.FrameTimingSnapshot
 import com.yanjiyu.terminalspike.performance.PerformanceSnapshot
 import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
@@ -16,6 +17,7 @@ import com.yanjiyu.terminalspike.terminal.selection.TerminalLineAnchor
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLineSpace
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectableLine
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionSource
+import java.util.ArrayDeque
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
 import com.yanjiyu.terminalspike.terminal.view.TerminalMouseSequences
@@ -82,11 +84,14 @@ class TerminalController(
     private val outputQueue = BoundedBatchQueue<TerminalLine>(MAX_PENDING_LINES)
     private val primaryTerminalScrollbackQueue = BoundedBatchQueue<TerminalLine>(MAX_PENDING_LINES)
     private val alternateTerminalScrollbackQueue = BoundedBatchQueue<TerminalLine>(MAX_PENDING_LINES)
+    private val tmuxTerminalScrollbackQueue = BoundedBatchQueue<TerminalLine>(MAX_PENDING_LINES)
     private val alternateScrollback = TerminalBuffer(MAX_ALTERNATE_SCROLLBACK_LINES)
+    private var tmuxScrollback: TerminalBuffer? = null
     private var pendingScreen: List<TerminalLine>? = null
     private var pendingLiveLine: TerminalLine? = null
     private var hasPendingLiveLine = false
     private var pendingTerminalFrame: TerminalFrameUpdate? = null
+    private val pendingTmuxHistorySnapshots = ArrayDeque<TmuxLocalHistorySnapshot>()
     private var frameScheduled = false
     private var acceptingOutput = false
     private var paused = false
@@ -98,6 +103,25 @@ class TerminalController(
     private var liveLine: TerminalLine? = null
     private var terminalScreen: List<TerminalLine>? = null
     private var terminalScreenIsAlternate = false
+    private var tmuxHistoryActive = false
+    /**
+     * The outer VT screen mode in which the managed tmux client was first observed.
+     *
+     * SSH tmux clients normally enter the outer alternate screen, while a resumed Mosh tmux
+     * client can remain on the outer primary screen. Only the former may use an alternate-to-
+     * primary transition as evidence that the client exited tmux.
+     */
+    private var tmuxOuterScreenIsAlternate: Boolean? = null
+    @Volatile
+    private var tmuxOuterTerminalExited = false
+    private var tmuxHistoryMetadataKnown = false
+    @Volatile
+    private var tmuxInteractionMetadataFresh = false
+    private var tmuxRemoteMousePassthrough = true
+    private var tmuxInnerMouseTracking = false
+    private var tmuxPaneInMode = false
+    private var tmuxHistoryPaneId: String? = null
+    private var tmuxHistoryTruncatedBefore = false
     private var terminalCursor = TerminalCursor()
     @Volatile
     private var terminalModes = TerminalModes()
@@ -118,6 +142,12 @@ class TerminalController(
 
     @Volatile
     private var inputAcceptedListener: (() -> Unit)? = null
+
+    @Volatile
+    private var tmuxSessionProvider: (() -> Boolean)? = null
+
+    @Volatile
+    private var tmuxHistoryRefreshListener: ((Boolean) -> Unit)? = null
 
     @Volatile
     var terminalColumns: Int = DEFAULT_TERMINAL_COLUMNS
@@ -189,6 +219,73 @@ class TerminalController(
 
     fun isMouseTrackingEnabled(): Boolean = terminalModes.mouseTracking
 
+    fun isTmuxSession(): Boolean =
+        !tmuxOuterTerminalExited && tmuxSessionProvider?.invoke() == true
+
+    fun isTmuxLocalScrollAvailable(): Boolean =
+        isTmuxSession() && tmuxHistoryActive &&
+            tmuxHistoryMetadataKnown && (tmuxScrollback?.lineCount() ?: 0) > 0
+
+    internal fun tmuxScrollDiagnostic(): String {
+        val confirmed = isTmuxSession()
+        return synchronized(queueLock) {
+            "confirmed=$confirmed, outerAlternate=$terminalScreenIsAlternate, " +
+                "historyActive=$tmuxHistoryActive, metadataKnown=$tmuxHistoryMetadataKnown, " +
+                "metadataFresh=$tmuxInteractionMetadataFresh, " +
+                "remoteMousePassthrough=$tmuxRemoteMousePassthrough, " +
+                "mouseAny=$tmuxInnerMouseTracking, paneInMode=$tmuxPaneInMode, " +
+                "historyLines=${tmuxScrollback?.lineCount() ?: 0}, pane=$tmuxHistoryPaneId, " +
+                "pendingSnapshots=${pendingTmuxHistorySnapshots.size}, " +
+                "outerExited=$tmuxOuterTerminalExited"
+        }
+    }
+
+    internal fun hasTmuxLocalHistory(): Boolean = synchronized(queueLock) {
+        tmuxHistoryMetadataKnown && (tmuxScrollback?.lineCount() ?: 0) > 0
+    }
+
+    internal fun markTmuxInteractionMetadataStale() {
+        synchronized(queueLock) { tmuxInteractionMetadataFresh = false }
+    }
+
+    /** Schedules one off-main probe; established history avoids another full transfer. */
+    fun requestTmuxHistoryRefresh() {
+        if (isTmuxSession()) {
+            tmuxHistoryRefreshListener?.invoke(!hasTmuxLocalHistory())
+        }
+    }
+
+    /** Re-arms managed history when the selector attaches tmux after an earlier outer-screen exit. */
+    internal fun beginManagedTmuxSession() {
+        synchronized(queueLock) {
+            if (tmuxOuterTerminalExited) {
+                tmuxHistoryActive = false
+                tmuxOuterScreenIsAlternate = null
+                tmuxHistoryMetadataKnown = false
+                tmuxInteractionMetadataFresh = false
+                tmuxRemoteMousePassthrough = true
+                tmuxInnerMouseTracking = false
+                tmuxPaneInMode = false
+                tmuxTerminalScrollbackQueue.clear()
+                pendingTmuxHistorySnapshots.clear()
+            }
+            tmuxOuterTerminalExited = false
+        }
+    }
+
+    internal fun stageTmuxHistory(snapshot: TmuxLocalHistorySnapshot) {
+        if (tmuxOuterTerminalExited || tmuxSessionProvider?.invoke() != true) return
+        val shouldSchedule = synchronized(queueLock) {
+            if (tmuxOuterTerminalExited) return@synchronized false
+            if (pendingTmuxHistorySnapshots.size == MAX_PENDING_TMUX_SNAPSHOTS) {
+                pendingTmuxHistorySnapshots.removeFirst()
+            }
+            pendingTmuxHistorySnapshots.addLast(snapshot)
+            true
+        }
+        if (shouldSchedule) scheduleFrame()
+    }
+
     fun updateRendererProfile(profile: TerminalRendererProfile) {
         if (rendererProfile == profile) return
         rendererProfile = profile
@@ -206,16 +303,24 @@ class TerminalController(
         sink: TerminalInputSink,
         onInputAccepted: () -> Unit = {},
         onResize: (Int, Int) -> Unit,
+        isTmuxSession: () -> Boolean = { false },
+        requestTmuxHistoryRefresh: (Boolean) -> Unit = {},
     ) {
         inputSink = sink
         terminalSizeListener = onResize
         inputAcceptedListener = onInputAccepted
+        tmuxSessionProvider = isTmuxSession
+        tmuxHistoryRefreshListener = requestTmuxHistoryRefresh
+        tmuxOuterTerminalExited = false
+        tmuxOuterScreenIsAlternate = null
     }
 
     fun resetInputSink() {
         inputSink = defaultInputSink
         terminalSizeListener = null
         inputAcceptedListener = null
+        tmuxSessionProvider = null
+        tmuxHistoryRefreshListener = null
     }
 
     private fun trySendUserInput(bytes: ByteArray, applyDirectSendPolicy: Boolean): Boolean {
@@ -251,7 +356,25 @@ class TerminalController(
     }
 
     fun updateTerminalFrame(frame: TerminalFrameUpdate) {
+        val configuredTmux = tmuxSessionProvider?.invoke() == true
         synchronized(queueLock) {
+            val exitingManagedTmux = configuredTmux &&
+                tmuxOuterScreenIsAlternate != false && !frame.alternateScreen &&
+                tmuxHistoryActive &&
+                (terminalScreenIsAlternate || pendingTerminalFrame?.alternateScreen == true)
+            if (exitingManagedTmux) {
+                tmuxOuterTerminalExited = true
+                tmuxHistoryMetadataKnown = false
+                tmuxInteractionMetadataFresh = false
+                tmuxRemoteMousePassthrough = true
+                tmuxInnerMouseTracking = false
+                tmuxPaneInMode = false
+                tmuxTerminalScrollbackQueue.clear()
+                pendingTmuxHistorySnapshots.clear()
+            }
+            val managedTmuxFrame = configuredTmux &&
+                !tmuxOuterTerminalExited
+            if (frame.alternateScreen && !configuredTmux) tmuxHistoryActive = false
             // Input protocol modes must take effect as soon as the parser observes them. Waiting for
             // the next render frame can encode a keypad press with the preceding DECKPAM state.
             terminalModes = frame.modes
@@ -261,6 +384,10 @@ class TerminalController(
                 alternateTerminalScrollbackQueue.addAll(frame.completedScrollback)
             } else if (!frame.alternateScreen) {
                 primaryTerminalScrollbackQueue.addAll(frame.completedScrollback)
+            }
+            if (managedTmuxFrame) {
+                tmuxHistoryActive = true
+                tmuxTerminalScrollbackQueue.addAll(frame.completedScrollback)
             }
             val earlierFrame = pendingTerminalFrame
             val coalescedBellCount = (
@@ -303,10 +430,12 @@ class TerminalController(
             outputQueue.clear()
             primaryTerminalScrollbackQueue.clear()
             alternateTerminalScrollbackQueue.clear()
+            tmuxTerminalScrollbackQueue.clear()
             pendingScreen = null
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
+            pendingTmuxHistorySnapshots.clear()
         }
         publishPerformance(visibleLines = viewport.visibleRows(0).count)
     }
@@ -316,15 +445,29 @@ class TerminalController(
             outputQueue.clear()
             primaryTerminalScrollbackQueue.clear()
             alternateTerminalScrollbackQueue.clear()
+            tmuxTerminalScrollbackQueue.clear()
             pendingScreen = null
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
+            pendingTmuxHistorySnapshots.clear()
             buffer.clear()
             alternateScrollback.clear()
+            tmuxScrollback?.clear()
+            tmuxScrollback = null
             liveLine = null
             terminalScreen = null
             terminalScreenIsAlternate = false
+            tmuxHistoryActive = false
+            tmuxOuterScreenIsAlternate = null
+            tmuxOuterTerminalExited = false
+            tmuxHistoryMetadataKnown = false
+            tmuxInteractionMetadataFresh = false
+            tmuxRemoteMousePassthrough = true
+            tmuxInnerMouseTracking = false
+            tmuxPaneInMode = false
+            tmuxHistoryPaneId = null
+            tmuxHistoryTruncatedBefore = false
             terminalCursor = TerminalCursor()
             terminalModes = TerminalModes()
             alternateLines = emptyList()
@@ -342,8 +485,19 @@ class TerminalController(
             outputQueue.clear()
             primaryTerminalScrollbackQueue.clear()
             alternateTerminalScrollbackQueue.clear()
+            tmuxTerminalScrollbackQueue.clear()
             buffer.clear()
             alternateScrollback.clear()
+            tmuxScrollback?.clear()
+            tmuxScrollback = null
+            pendingTmuxHistorySnapshots.clear()
+            tmuxHistoryMetadataKnown = false
+            tmuxInteractionMetadataFresh = false
+            tmuxRemoteMousePassthrough = true
+            tmuxInnerMouseTracking = false
+            tmuxPaneInMode = false
+            tmuxHistoryPaneId = null
+            tmuxHistoryTruncatedBefore = false
             bumpSelectionContentRevision()
         }
         viewport.updateContent(lineCount(), oldestLineId())
@@ -365,7 +519,7 @@ class TerminalController(
             sourceId = contentSourceId,
             revision = selectionContentRevision,
             rows = rows,
-            truncatedBefore = first > 0,
+            truncatedBefore = first > 0 || (tmuxHistoryActive && tmuxHistoryTruncatedBefore),
         )
     }
 
@@ -426,6 +580,7 @@ class TerminalController(
     fun lineCount(): Int {
         val screen = terminalScreen
         return when {
+            screen != null && tmuxHistoryActive -> tmuxScrollbackOrCreate().lineCount() + screen.size
             screen != null && terminalScreenIsAlternate -> alternateScrollback.lineCount() + screen.size
             screen != null -> buffer.lineCount() + screen.size
             alternateScreen -> alternateLines.size
@@ -436,8 +591,12 @@ class TerminalController(
     fun lineAt(index: Int): TerminalLine? {
         val screen = terminalScreen
         return when {
-            screen != null && terminalScreenIsAlternate ->
-                alternateScrollback.lineAt(index) ?: screen.getOrNull(index - alternateScrollback.lineCount())
+            screen != null && tmuxHistoryActive -> tmuxScrollbackOrCreate().let { history ->
+                history.lineAt(index) ?: screen.getOrNull(index - history.lineCount())
+            }
+            screen != null && terminalScreenIsAlternate -> alternateScrollback.let { history ->
+                history.lineAt(index) ?: screen.getOrNull(index - history.lineCount())
+            }
             screen != null -> buffer.lineAt(index) ?: screen.getOrNull(index - buffer.lineCount())
             alternateScreen -> alternateLines.getOrNull(index)
             else -> buffer.lineAt(index) ?: liveLine?.takeIf { index == buffer.lineCount() }
@@ -454,6 +613,14 @@ class TerminalController(
     override fun selectionLineAt(index: Int): TerminalSelectableLine? {
         val line = lineAt(index) ?: return null
         val anchor = when {
+            terminalScreen != null && tmuxHistoryActive -> {
+                val historyCount = tmuxScrollbackOrCreate().lineCount()
+                if (index < historyCount && line.id >= 0L) {
+                    TerminalLineAnchor(TerminalLineSpace.ALTERNATE_HISTORY, line.id)
+                } else {
+                    volatileSelectionAnchor(index)
+                }
+            }
             terminalScreen != null && terminalScreenIsAlternate -> {
                 val historyCount = alternateScrollback.lineCount()
                 if (index < historyCount && line.id >= 0L) {
@@ -480,7 +647,11 @@ class TerminalController(
 
     override fun selectionIndexOf(anchor: TerminalLineAnchor): Int? = when (anchor.space) {
         TerminalLineSpace.PRIMARY_HISTORY -> {
-            val primaryVisible = if (terminalScreen != null) !terminalScreenIsAlternate else !alternateScreen
+            val primaryVisible = if (terminalScreen != null) {
+                !tmuxHistoryActive && !terminalScreenIsAlternate
+            } else {
+                !alternateScreen
+            }
             if (!primaryVisible) {
                 null
             } else {
@@ -488,10 +659,10 @@ class TerminalController(
             }
         }
         TerminalLineSpace.ALTERNATE_HISTORY -> {
-            if (terminalScreen == null || !terminalScreenIsAlternate) {
+            if (terminalScreen == null || !tmuxHistoryActive && !terminalScreenIsAlternate) {
                 null
             } else {
-                alternateScrollback.indexOfId(anchor.id)
+                activeAlternateScrollback().indexOfId(anchor.id)
             }
         }
         TerminalLineSpace.VOLATILE_SCREEN -> {
@@ -506,14 +677,24 @@ class TerminalController(
     }
 
     fun oldestLineId(): Long? = when {
-        terminalScreenIsAlternate -> alternateScrollback.oldestLineId()
+        tmuxHistoryActive -> tmuxScrollbackOrCreate().oldestLineId()
+        terminalScreenIsAlternate -> activeAlternateScrollback().oldestLineId()
         alternateScreen -> null
         else -> buffer.oldestLineId()
     }
 
     fun pendingLineCount(): Int = synchronized(queueLock) {
-        outputQueue.size + primaryTerminalScrollbackQueue.size + alternateTerminalScrollbackQueue.size
+        outputQueue.size + primaryTerminalScrollbackQueue.size + alternateTerminalScrollbackQueue.size +
+            tmuxTerminalScrollbackQueue.size
     }
+
+    private fun activeAlternateScrollback(): TerminalBuffer =
+        if (tmuxHistoryActive) tmuxScrollbackOrCreate() else alternateScrollback
+
+    private fun tmuxScrollbackOrCreate(): TerminalBuffer =
+        tmuxScrollback ?: TerminalBuffer(ModelLimits.MAX_SCROLLBACK_LINES).also {
+            tmuxScrollback = it
+        }
 
     override fun jumpToBottom() {
         viewport.jumpToBottom()
@@ -576,12 +757,19 @@ class TerminalController(
         var contentChange = TerminalContentChange.NONE
         var terminalScreenModeChanged = false
         var bellEvent: TerminalBellEvent? = null
+        var requestTmuxHistoryBootstrap = false
+        var restoreTmuxViewportY: Float? = null
+        var tmuxSnapshotRequiresLiveBottom = false
         val hasMore = synchronized(queueLock) {
             val previousTerminalScreen = terminalScreen
             val previousCursor = cursor
             val batch = outputQueue.drain(MAX_LINES_PER_FRAME)
             val primaryTerminalScrollback = primaryTerminalScrollbackQueue.drain(MAX_LINES_PER_FRAME)
             val alternateTerminalLines = alternateTerminalScrollbackQueue.drain(MAX_LINES_PER_FRAME)
+            val tmuxTerminalLines = tmuxTerminalScrollbackQueue.drain(MAX_LINES_PER_FRAME)
+            val tmuxHistorySnapshots = List(pendingTmuxHistorySnapshots.size) {
+                pendingTmuxHistorySnapshots.removeFirst()
+            }
             val screen = pendingScreen
             pendingScreen = null
             val nextLiveLine = pendingLiveLine
@@ -597,9 +785,46 @@ class TerminalController(
             terminalScreenModeChanged =
                 terminalFrame != null && terminalFrame.alternateScreen != terminalScreenIsAlternate
             val enteringAlternate = terminalFrame?.alternateScreen == true && !terminalScreenIsAlternate
-            if (enteringAlternate) alternateScrollback.clear()
+            if (enteringAlternate) {
+                alternateScrollback.clear()
+                if (tmuxOuterScreenIsAlternate != false) {
+                    tmuxScrollback?.clear()
+                    tmuxHistoryPaneId = null
+                    tmuxHistoryMetadataKnown = false
+                    tmuxInteractionMetadataFresh = false
+                    tmuxRemoteMousePassthrough = true
+                    tmuxInnerMouseTracking = false
+                    tmuxPaneInMode = false
+                    tmuxHistoryTruncatedBefore = false
+                }
+            }
+            tmuxHistorySnapshots.forEach { snapshot ->
+                when (applyTmuxHistorySnapshot(snapshot, preserveViewport = !enteringAlternate)) {
+                    TmuxViewportDirective.NONE -> Unit
+                    TmuxViewportDirective.RESTORE_READER_POSITION -> {
+                        if (restoreTmuxViewportY == null) {
+                            restoreTmuxViewportY = viewport.scrollY
+                        }
+                    }
+                    TmuxViewportDirective.LIVE_BOTTOM -> tmuxSnapshotRequiresLiveBottom = true
+                }
+            }
+            requestTmuxHistoryBootstrap = tmuxHistorySnapshots.lastOrNull()?.let { latest ->
+                !latest.historyIncluded &&
+                    (
+                        !tmuxHistoryMetadataKnown ||
+                            (tmuxScrollback?.lineCount() ?: 0) != latest.remoteHistoryRows
+                    )
+            } == true
             if (alternateTerminalLines.isNotEmpty() && rendererProfile.preserveAlternateScreenHistory) {
                 alternateScrollback.append(alternateTerminalLines)
+            }
+            if (
+                tmuxTerminalLines.isNotEmpty() && tmuxHistoryActive &&
+                tmuxHistoryMetadataKnown && !tmuxRemoteMousePassthrough
+            ) {
+                tmuxScrollbackOrCreate().append(tmuxTerminalLines)
+                tmuxInteractionMetadataFresh = false
             }
             if (screen != null) alternateLines = screen
             if (updateLiveLine) {
@@ -626,13 +851,26 @@ class TerminalController(
                     )
                 }
             }
+            if (tmuxHistorySnapshots.isNotEmpty() && tmuxOuterScreenIsAlternate == null) {
+                tmuxOuterScreenIsAlternate = terminalScreen?.let { terminalScreenIsAlternate }
+            }
+            if (tmuxOuterTerminalExited && !terminalScreenIsAlternate) {
+                tmuxHistoryActive = false
+                tmuxScrollback?.clear()
+                tmuxScrollback = null
+                tmuxHistoryPaneId = null
+                tmuxHistoryTruncatedBefore = false
+            }
             contentChanged =
                 batch.isNotEmpty() || primaryTerminalScrollback.isNotEmpty() ||
-                alternateTerminalLines.isNotEmpty() || screen != null ||
+                alternateTerminalLines.isNotEmpty() || tmuxTerminalLines.isNotEmpty() ||
+                tmuxHistorySnapshots.isNotEmpty() || screen != null ||
                 updateLiveLine || terminalFrame != null
             if (terminalScreen != null && contentChanged) {
                 cursor = terminalCursor.copy(
-                    row = if (terminalScreenIsAlternate) {
+                    row = if (tmuxHistoryActive) {
+                        tmuxScrollbackOrCreate().lineCount() + terminalCursor.row
+                    } else if (terminalScreenIsAlternate) {
                         alternateScrollback.lineCount() + terminalCursor.row
                     } else {
                         buffer.lineCount() + terminalCursor.row
@@ -643,7 +881,8 @@ class TerminalController(
 
             val structuralChange =
                 batch.isNotEmpty() || primaryTerminalScrollback.isNotEmpty() ||
-                    alternateTerminalLines.isNotEmpty() || screen != null || updateLiveLine ||
+                    alternateTerminalLines.isNotEmpty() || tmuxTerminalLines.isNotEmpty() ||
+                    tmuxHistorySnapshots.isNotEmpty() || screen != null || updateLiveLine ||
                     terminalScreenModeChanged ||
                     terminalFrame != null && (
                         previousTerminalScreen == null ||
@@ -663,13 +902,67 @@ class TerminalController(
             }
 
             !outputQueue.isEmpty || !primaryTerminalScrollbackQueue.isEmpty ||
-                !alternateTerminalScrollbackQueue.isEmpty || pendingScreen != null ||
+                !alternateTerminalScrollbackQueue.isEmpty || !tmuxTerminalScrollbackQueue.isEmpty ||
+                pendingTmuxHistorySnapshots.isNotEmpty() ||
+                pendingScreen != null ||
                 hasPendingLiveLine || pendingTerminalFrame != null
         }
         if (terminalScreenModeChanged) viewport.jumpToBottom()
         if (contentChanged) notifyContentChanged(contentChange)
+        when {
+            tmuxSnapshotRequiresLiveBottom -> viewport.jumpToBottom()
+            rendererProfile.keepViewportPositionOnOutput -> {
+                restoreTmuxViewportY?.let(viewport::scrollTo)
+            }
+        }
         bellEvent?.let { event -> bellListeners.forEach { listener -> listener.onTerminalBell(event) } }
+        if (requestTmuxHistoryBootstrap) tmuxHistoryRefreshListener?.invoke(true)
         if (hasMore) scheduleFrame()
+    }
+
+    private fun applyTmuxHistorySnapshot(
+        snapshot: TmuxLocalHistorySnapshot,
+        preserveViewport: Boolean,
+    ): TmuxViewportDirective {
+        val history = tmuxScrollbackOrCreate()
+        val paneChanged = tmuxHistoryPaneId != null && tmuxHistoryPaneId != snapshot.paneId
+        val replaceHistory = snapshot.historyIncluded && (
+            snapshot.authoritative || paneChanged || !tmuxHistoryMetadataKnown ||
+                history.lineCount() != snapshot.remoteHistoryRows
+        )
+        val viewportDirective = when {
+            paneChanged -> TmuxViewportDirective.LIVE_BOTTOM
+            replaceHistory && preserveViewport && !viewport.autoFollow ->
+                TmuxViewportDirective.RESTORE_READER_POSITION
+            else -> TmuxViewportDirective.NONE
+        }
+        if (paneChanged && !snapshot.historyIncluded) {
+            history.clear()
+            tmuxHistoryMetadataKnown = false
+        } else if (replaceHistory) {
+            history.clear()
+            if (snapshot.lines.isNotEmpty()) {
+                history.append(snapshot.lines)
+            }
+            tmuxHistoryMetadataKnown = true
+        }
+        tmuxHistoryActive = true
+        val historyMatchesRemote = tmuxHistoryMetadataKnown &&
+            history.lineCount() == snapshot.remoteHistoryRows
+        tmuxInteractionMetadataFresh = snapshot.interactionMetadataFresh &&
+            historyMatchesRemote
+        tmuxRemoteMousePassthrough = snapshot.remoteMousePassthrough
+        tmuxInnerMouseTracking = snapshot.mouseTrackingActive
+        tmuxPaneInMode = snapshot.paneInMode
+        tmuxHistoryPaneId = snapshot.paneId
+        if (snapshot.historyIncluded) tmuxHistoryTruncatedBefore = snapshot.truncatedBefore
+        return viewportDirective
+    }
+
+    private enum class TmuxViewportDirective {
+        NONE,
+        RESTORE_READER_POSITION,
+        LIVE_BOTTOM,
     }
 
     private fun notifyContentChanged(change: TerminalContentChange = TerminalContentChange.FULL) {
@@ -688,7 +981,9 @@ class TerminalController(
         previousCursor: TerminalCursor,
         currentCursor: TerminalCursor,
     ): IntArray {
-        val historyRows = if (frame.alternateScreen) {
+        val historyRows = if (tmuxHistoryActive) {
+            tmuxScrollbackOrCreate().lineCount()
+        } else if (frame.alternateScreen) {
             alternateScrollback.lineCount()
         } else {
             buffer.lineCount()
@@ -772,6 +1067,7 @@ class TerminalController(
         private const val DEFAULT_TERMINAL_ROWS = 24
         private const val MAX_PENDING_LINES = 20_000
         private const val MAX_ALTERNATE_SCROLLBACK_LINES = 20_000
+        private const val MAX_PENDING_TMUX_SNAPSHOTS = 8
         private const val MAX_LINES_PER_FRAME = 2_000
         private const val BYTES_PER_MEGABYTE = 1024.0 * 1024.0
         private val CSI_ARROW_UP = byteArrayOf(0x1b, 0x5b, 0x41)

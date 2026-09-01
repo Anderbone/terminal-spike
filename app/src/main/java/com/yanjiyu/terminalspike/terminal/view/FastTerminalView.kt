@@ -58,6 +58,18 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
 
+/** Bounded, text-free evidence for the most recent tmux touch gesture. */
+internal data class TmuxScrollGestureDiagnostic(
+    val gestureId: Long,
+    val destination: TerminalScrollDestination?,
+    val reason: TerminalScrollDecisionReason?,
+    val firstReason: TerminalScrollDecisionReason?,
+    val controllerStateAtDecision: String?,
+    val scrollYAtDecision: Float?,
+    val localScrollUpdates: Int,
+    val remoteWheelReports: Int,
+)
+
 class FastTerminalView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -82,7 +94,17 @@ class FastTerminalView @JvmOverloads constructor(
     private var baselineOffsetPx = 1f
     private val scrollGestureRouter = TerminalScrollGestureRouter()
     private val mouseWheelAccumulator = TerminalMouseWheelAccumulator(MAX_MOUSE_WHEEL_STEPS_PER_EVENT)
+    private var tmuxHistoryRefreshRequestedForGesture = false
     private var flingDestination = TerminalScrollDestination.NONE
+    private var tmuxGestureId = 0L
+    private var tmuxGestureDecision: TerminalScrollDecision? = null
+    private var tmuxGestureFirstReason: TerminalScrollDecisionReason? = null
+    private var tmuxGestureControllerStateAtDecision: String? = null
+    private var tmuxGestureScrollYAtDecision: Float? = null
+    private var tmuxGestureLocalScrollUpdates = 0
+    private var tmuxGestureRemoteWheelReports = 0
+    private var tmuxGestureActive = false
+    private var pendingTmuxScrollDistanceY = 0f
     private val selection = TerminalSelectionModel()
     private var terminalController: TerminalController? = null
     private var terminalTheme: TerminalTheme = TerminalThemes.current
@@ -249,6 +271,7 @@ class FastTerminalView @JvmOverloads constructor(
         val previousScrollY = controller.viewport.scrollY
         applyRendererProfile(controller.rendererProfile)
         controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+        applyPendingTmuxScrollIfReady(controller)
         var overlayChanged = false
         if (selection.hasSelection && !selection.validate(controller)) {
             selectionActionMode?.finish()
@@ -649,6 +672,8 @@ class FastTerminalView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 mouseWheelAccumulator.reset()
+                tmuxHistoryRefreshRequestedForGesture = false
+                beginTmuxGestureDiagnostic()
                 pinchZoomConsumed = false
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
@@ -671,6 +696,8 @@ class FastTerminalView @JvmOverloads constructor(
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             if (event.actionMasked == MotionEvent.ACTION_UP) gestureActions.onTouchUp()
             scrollGestureRouter.onGestureEnd()
+            tmuxGestureActive = false
+            pendingTmuxScrollDistanceY = 0f
             pinchZoomConsumed = false
             parent?.requestDisallowInterceptTouchEvent(false)
         }
@@ -1244,6 +1271,69 @@ class FastTerminalView @JvmOverloads constructor(
         stopActiveFling()
     }
 
+    internal fun tmuxScrollGestureDiagnostic(): TmuxScrollGestureDiagnostic =
+        TmuxScrollGestureDiagnostic(
+            gestureId = tmuxGestureId,
+            destination = tmuxGestureDecision?.destination,
+            reason = tmuxGestureDecision?.reason,
+            firstReason = tmuxGestureFirstReason,
+            controllerStateAtDecision = tmuxGestureControllerStateAtDecision,
+            scrollYAtDecision = tmuxGestureScrollYAtDecision,
+            localScrollUpdates = tmuxGestureLocalScrollUpdates,
+            remoteWheelReports = tmuxGestureRemoteWheelReports,
+        )
+
+    private fun beginTmuxGestureDiagnostic() {
+        tmuxGestureId += 1L
+        tmuxGestureDecision = null
+        tmuxGestureFirstReason = null
+        tmuxGestureControllerStateAtDecision = null
+        tmuxGestureScrollYAtDecision = null
+        tmuxGestureLocalScrollUpdates = 0
+        tmuxGestureRemoteWheelReports = 0
+        tmuxGestureActive = true
+        pendingTmuxScrollDistanceY = 0f
+    }
+
+    private fun recordTmuxGestureDecision(
+        controller: TerminalController,
+        decision: TerminalScrollDecision,
+    ) {
+        if (!controller.isTmuxSession()) return
+        if (tmuxGestureFirstReason == null) {
+            tmuxGestureFirstReason = decision.reason
+            tmuxGestureControllerStateAtDecision = controller.tmuxScrollDiagnostic()
+            tmuxGestureScrollYAtDecision = controller.viewport.scrollY
+        }
+        if (
+            tmuxGestureDecision == null ||
+            tmuxGestureDecision?.destination == TerminalScrollDestination.NONE &&
+            decision.destination != TerminalScrollDestination.NONE
+        ) {
+            tmuxGestureDecision = decision
+        }
+    }
+
+    private fun applyPendingTmuxScrollIfReady(controller: TerminalController) {
+        if (
+            !tmuxGestureActive || pendingTmuxScrollDistanceY == 0f ||
+            !controller.isTmuxLocalScrollAvailable()
+        ) {
+            return
+        }
+        val decision = scrollGestureRouter.decision(
+            remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
+            confirmedTmuxSession = true,
+            tmuxLocalScrollAvailable = true,
+        )
+        recordTmuxGestureDecision(controller, decision)
+        if (decision.destination != TerminalScrollDestination.LOCAL_SCROLLBACK) return
+        val distanceY = pendingTmuxScrollDistanceY
+        pendingTmuxScrollDistanceY = 0f
+        tmuxGestureLocalScrollUpdates += 1
+        scrollViewportBy(distanceY)
+    }
+
     private fun scrollViewportBy(distanceY: Float) {
         val controller = terminalController ?: return
         val previous = controller.viewport.autoFollow
@@ -1298,22 +1388,49 @@ class FastTerminalView @JvmOverloads constructor(
         val controller = terminalController ?: return
         if (pinchZoomConsumed) return
         scrollGestureRouter.observePointerCount(pointerCount)
-        when (scrollGestureRouter.destination(controller.isMouseTrackingEnabled())) {
+        if (controller.isTmuxSession() && !tmuxHistoryRefreshRequestedForGesture) {
+            tmuxHistoryRefreshRequestedForGesture = true
+            controller.requestTmuxHistoryRefresh()
+        }
+        val decision = scrollGestureRouter.decision(
+            remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
+            confirmedTmuxSession = controller.isTmuxSession(),
+            tmuxLocalScrollAvailable = controller.isTmuxLocalScrollAvailable(),
+        )
+        recordTmuxGestureDecision(controller, decision)
+        when (decision.destination) {
             TerminalScrollDestination.LOCAL_SCROLLBACK -> {
                 mouseWheelAccumulator.reset()
-                scrollViewportBy(distanceY)
+                if (controller.isTmuxSession()) tmuxGestureLocalScrollUpdates += 1
+                val pendingDistance = pendingTmuxScrollDistanceY
+                pendingTmuxScrollDistanceY = 0f
+                scrollViewportBy(distanceY + pendingDistance)
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
                 sendRemoteMouseWheel(distanceY, x, y)
             }
-            TerminalScrollDestination.NONE -> mouseWheelAccumulator.reset()
+            TerminalScrollDestination.NONE -> {
+                mouseWheelAccumulator.reset()
+                if (
+                    controller.isTmuxSession() &&
+                    decision.reason == TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_PENDING
+                ) {
+                    pendingTmuxScrollDistanceY += distanceY
+                }
+            }
         }
     }
 
     private fun startFling(velocityY: Float, x: Float, y: Float) {
         val controller = terminalController ?: return
         if (pinchZoomConsumed) return
-        flingDestination = scrollGestureRouter.destination(controller.isMouseTrackingEnabled())
+        val decision = scrollGestureRouter.decision(
+            remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
+            confirmedTmuxSession = controller.isTmuxSession(),
+            tmuxLocalScrollAvailable = controller.isTmuxLocalScrollAvailable(),
+        )
+        recordTmuxGestureDecision(controller, decision)
+        flingDestination = decision.destination
         when (flingDestination) {
             TerminalScrollDestination.LOCAL_SCROLLBACK -> scroller.fling(
                 0,
@@ -1345,11 +1462,12 @@ class FastTerminalView @JvmOverloads constructor(
             stepPx = lineHeightPx * MOUSE_WHEEL_LINES_PER_STEP,
         )
         repeat(abs(wheelSteps)) {
-            controller.sendMouseWheel(
+            val sent = controller.sendMouseWheel(
                 up = wheelSteps < 0,
                 column = ((x - horizontalPaddingPx) / cellWidthPx).toInt(),
                 row = ((y - verticalPaddingPx) / lineHeightPx).toInt(),
             )
+            if (sent && controller.isTmuxSession()) tmuxGestureRemoteWheelReports += 1
         }
     }
 

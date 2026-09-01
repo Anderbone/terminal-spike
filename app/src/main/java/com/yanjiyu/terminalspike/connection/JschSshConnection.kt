@@ -39,9 +39,67 @@ class JschSshConnection(
     private var startupInputGate: StartupFirstInputGate? = null
     private var tmuxSelector: TmuxSessionSelector? = null
     private var attachedTmuxSessionId: String? = null
+    private var startedInTmux = false
+    private var tmuxExecutable: String? = null
+    private var tmuxSessionsBeforeStart: Set<String> = emptySet()
+    private var cachedTmuxPaneCapture: TmuxPaneCapture? = null
+    private var tmuxLiveHistoryRefreshPending = false
     private val imageUploadLock = Any()
     private var requestedColumns = DEFAULT_TERMINAL_COLUMNS
     private var requestedRows = DEFAULT_TERMINAL_ROWS
+
+    override val isTmuxSession: Boolean
+        get() = synchronized(lock) { startedInTmux || attachedTmuxSessionId != null }
+
+    override fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? {
+        if (includeHistory) {
+            synchronized(lock) {
+                cachedTmuxPaneCapture?.let { cached ->
+                    cachedTmuxPaneCapture = null
+                    return cached
+                }
+            }
+        }
+        val context = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected }
+                ?: return null
+            val executable = tmuxExecutable ?: return null
+            TmuxCaptureContext(
+                session = session,
+                executable = executable,
+                sessionId = attachedTmuxSessionId,
+                sessionsBeforeStart = tmuxSessionsBeforeStart,
+                authoritative = tmuxLiveHistoryRefreshPending,
+            )
+        }
+        val metadataRunner = JschTmuxCommandRunner(context.session)
+        val targetSessionId = context.sessionId ?: resolveNewTmuxSessionId(
+            metadataRunner,
+            context.sessionsBeforeStart,
+        ) ?: return null
+        synchronized(lock) {
+            if (authenticatedSession?.session !== context.session || !running) return null
+            if (attachedTmuxSessionId == null) attachedTmuxSessionId = targetSessionId
+        }
+        val capture = captureTmuxPane(
+            metadataRunner = metadataRunner,
+            historyRunner = JschTmuxCommandRunner(context.session, TMUX_HISTORY_EXEC_LIMITS),
+            executable = context.executable,
+            sessionId = targetSessionId,
+            authoritative = context.authoritative && includeHistory,
+            includeHistory = includeHistory,
+        ) ?: return null
+        return synchronized(lock) {
+            capture.takeIf {
+                authenticatedSession?.session === context.session && running &&
+                    attachedTmuxSessionId == targetSessionId
+            }?.also {
+                if (context.authoritative && includeHistory) {
+                    tmuxLiveHistoryRefreshPending = false
+                }
+            }
+        }
+    }
 
     override fun uploadPastedImage(fileName: String, source: InputStream): String {
         val session = synchronized(lock) {
@@ -105,8 +163,23 @@ class JschSshConnection(
             }
             synchronized(lock) { tmuxSelector = null }
             if (!isActive(attempt)) return
+            val initialTmuxCapture = (tmuxChoice as? TmuxStartupChoice.Attach)?.let { choice ->
+                captureTmuxPane(
+                    metadataRunner = JschTmuxCommandRunner(newSession),
+                    historyRunner = JschTmuxCommandRunner(newSession, TMUX_HISTORY_EXEC_LIMITS),
+                    executable = choice.executable,
+                    sessionId = choice.sessionId,
+                    authoritative = true,
+                )
+            }
             synchronized(lock) {
                 attachedTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId
+                startedInTmux = tmuxChoice != null
+                tmuxExecutable = tmuxChoice?.executable
+                tmuxSessionsBeforeStart =
+                    (tmuxChoice as? TmuxStartupChoice.NewSession)?.existingSessionIds.orEmpty()
+                cachedTmuxPaneCapture = initialTmuxCapture
+                tmuxLiveHistoryRefreshPending = tmuxChoice != null
             }
             val tmuxStartupCommand = tmuxChoice?.let(::tmuxStartupCommand)
 
@@ -304,13 +377,15 @@ class JschSshConnection(
     }
 
     override fun switchTmuxSession(sessionId: String): Boolean {
-        val (session, sourceSessionId) = synchronized(lock) {
+        val (session, sourceSessionId, knownExecutable) = synchronized(lock) {
             val connected = authenticatedSession?.session?.takeIf { running && it.isConnected }
-            connected to attachedTmuxSessionId
+            Triple(connected, attachedTmuxSessionId, tmuxExecutable)
         }
         if (session == null) return false
+        val runner = JschTmuxCommandRunner(session)
+        val executable = knownExecutable ?: queryTmuxExecutable(runner)
         val switched = when (val result = switchOrAttachTmuxSession(
-            JschTmuxCommandRunner(session),
+            runner,
             sessionId,
             sourceSessionId,
         )) {
@@ -319,7 +394,14 @@ class JschSshConnection(
                 trySend((result.command + '\r').encodeToByteArray())
             TmuxSessionSwitchResult.Failed -> false
         }
-        if (switched) synchronized(lock) { attachedTmuxSessionId = sessionId }
+        if (switched) synchronized(lock) {
+            attachedTmuxSessionId = sessionId
+            startedInTmux = true
+            tmuxExecutable = executable
+            tmuxSessionsBeforeStart = emptySet()
+            cachedTmuxPaneCapture = null
+            tmuxLiveHistoryRefreshPending = true
+        }
         return switched
     }
 
@@ -403,6 +485,11 @@ class JschSshConnection(
             tmuxSelector?.cancel()
             tmuxSelector = null
             attachedTmuxSessionId = null
+            startedInTmux = false
+            tmuxExecutable = null
+            tmuxSessionsBeforeStart = emptySet()
+            cachedTmuxPaneCapture = null
+            tmuxLiveHistoryRefreshPending = false
             writer = null
             startupInputGate = null
             output = null
@@ -592,6 +679,14 @@ private data class ConnectionResources(
     val output: OutputStream?,
     val shell: ChannelShell?,
     val authenticatedSession: AuthenticatedJschSession?,
+)
+
+private data class TmuxCaptureContext(
+    val session: Session,
+    val executable: String,
+    val sessionId: String?,
+    val sessionsBeforeStart: Set<String>,
+    val authoritative: Boolean,
 )
 
 private class JschShellPtyTarget(

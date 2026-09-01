@@ -153,18 +153,20 @@ fun SessionChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                IconButton(
-                    onClick = onNavigateBack,
-                    modifier = Modifier
-                        .size(MaterialTheme.iconMetrics.minimumTouchTarget)
-                        .testTag(TerminalChromeBackTestTag),
-                ) {
-                    ConnectionsGlyphIcon(
-                        glyph = ConnectionsGlyph.BACK,
+                if (visibleSessions.isEmpty()) {
+                    IconButton(
+                        onClick = onNavigateBack,
                         modifier = Modifier
-                            .size(MaterialTheme.iconMetrics.standard)
-                            .semantics { contentDescription = backDescription },
-                    )
+                            .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                            .testTag(TerminalChromeBackTestTag),
+                    ) {
+                        ConnectionsGlyphIcon(
+                            glyph = ConnectionsGlyph.BACK,
+                            modifier = Modifier
+                                .size(MaterialTheme.iconMetrics.standard)
+                                .semantics { contentDescription = backDescription },
+                        )
+                    }
                 }
                 if (visibleSessions.isEmpty()) {
                     Text(
@@ -235,7 +237,7 @@ fun SessionChrome(
                     )
                 }
             }
-            if (!notice.isNullOrBlank()) {
+            if (visibleSessions.isEmpty() && !notice.isNullOrBlank()) {
                 Text(
                     text = notice,
                     modifier = Modifier.padding(

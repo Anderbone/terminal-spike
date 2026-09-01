@@ -12,11 +12,21 @@ Generated output is already batched off the main thread. A bounded queue prevent
 
 Drag and fling update a floating-point pixel offset in `TerminalViewport`; row calculation happens only for drawing. Touch-down immediately stops a fling. Bounds are clamped, so overscroll cannot expose invalid content. If the viewport is at bottom, appends follow. Any upward pixel movement disables follow until the exact bottom is reached or Jump to bottom is used.
 
-When a remote full-screen app such as tmux owns xterm mouse tracking, the same native
-`OverScroller` continues a released flick and converts its frame-to-frame pixel delta into bounded
-wheel reports. It does not allocate Compose state or queue an unbounded burst: reports remain
-thresholded by terminal line height and capped per display frame. The remote application still
-redraws in terminal rows, so this provides touch inertia rather than claiming sub-cell tmux output.
+Remote mouse wheel reports remain thresholded by terminal line height and capped at one report per
+touch event. Remote fling stays disabled because flooding a mouse-aware terminal application can
+discard intermediate redraws. A confirmed app-selected tmux pane instead captures its physical
+history rows through the existing authenticated side channel, parses them off the Android main
+thread, and renders them through the same floating-point `TerminalViewport` and `OverScroller` as
+ordinary local history. The touch and animation paths only change the pixel offset and draw visible
+rows plus overscan; they do not send wheel events, run tmux commands, or rebuild history.
+
+Full history transfer is limited to bootstrap or a detected pane/count mismatch. Output and
+vertical-gesture boundaries otherwise use a lightweight, coalesced metadata probe, with a bounded
+maximum interval for continuously updating full-screen apps. Neither probe runs for each
+`ACTION_MOVE` or animation frame. tmux copy mode and pane applications with tmux's
+`mouse_any_flag` keep remote mouse routing. An alternate screen without application mouse tracking
+keeps local pixel scrolling and includes tmux's saved primary-screen rows in the captured history.
+The ordinary non-tmux local and remote-mouse branches retain their existing behavior.
 
 ## Platform graphics data
 

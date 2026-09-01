@@ -36,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -472,10 +473,16 @@ private fun WorkspaceHostRow(
     onEdit: (Long) -> Unit,
 ) {
     val connectDescription = stringResource(R.string.workspace_connect_to_host, host.friendlyName)
+    val editDescription = stringResource(R.string.workspace_edit_host, host.friendlyName)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("workspace-pinned-host-${host.profileId}")
+            .clickable(
+                enabled = host.canConnect,
+                role = Role.Button,
+                onClickLabel = connectDescription,
+            ) { onConnect(host.profileId) }
             .padding(
                 horizontal = MaterialTheme.spacing.small,
                 vertical = MaterialTheme.spacing.small,
@@ -485,10 +492,6 @@ private fun WorkspaceHostRow(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .clickable(
-                    role = Role.Button,
-                    onClickLabel = stringResource(R.string.workspace_edit_host, host.friendlyName),
-                ) { onEdit(host.profileId) }
                 .padding(vertical = MaterialTheme.spacing.extraSmall),
         ) {
             Text(
@@ -498,14 +501,16 @@ private fun WorkspaceHostRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = host.endpoint,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
             WorkspaceProtocolBadge(host.protocol)
+        }
+        IconButton(
+            onClick = { onEdit(host.profileId) },
+            modifier = Modifier.semantics { contentDescription = editDescription },
+        ) {
+            ConnectionsGlyphIcon(
+                glyph = ConnectionsGlyph.MORE,
+                modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+            )
         }
         TextButton(
             onClick = { onConnect(host.profileId) },

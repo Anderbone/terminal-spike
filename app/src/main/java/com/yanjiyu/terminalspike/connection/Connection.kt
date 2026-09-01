@@ -8,6 +8,16 @@ import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.io.InputStream
 
 interface Connection : TerminalInputSink {
+    /** True only while this transport is attached to tmux through the app-owned session flow. */
+    val isTmuxSession: Boolean
+        get() = false
+
+    /**
+     * Captures the confirmed app-owned tmux pane through its authenticated side channel.
+     * Implementations may block; callers must invoke this away from the Android main thread.
+     */
+    fun captureTmuxPane(includeHistory: Boolean = true): TmuxPaneCapture? = null
+
     /** Returns false when the bounded transport queue cannot accept the complete input batch. */
     override fun trySend(bytes: ByteArray): Boolean
 
@@ -55,6 +65,43 @@ interface Connection : TerminalInputSink {
     fun cancelPendingPrompts()
 
     fun close()
+}
+
+/** Bounded physical tmux history rows plus the metadata needed to parse them safely. */
+class TmuxPaneCapture(
+    val sessionId: String,
+    val paneId: String,
+    val columns: Int,
+    val rows: Int,
+    val historyRows: Int,
+    val alternateScreenActive: Boolean,
+    /** True only when the pane application enabled a terminal mouse-tracking mode. */
+    val mouseTrackingActive: Boolean,
+    val paneInMode: Boolean,
+    /** False for a lightweight mode/freshness probe that deliberately omits pane history bytes. */
+    val historyIncluded: Boolean,
+    val truncatedBefore: Boolean,
+    val authoritative: Boolean,
+    content: ByteArray,
+) {
+    val content: ByteArray = content
+
+    init {
+        require(sessionId.isTmuxSessionId())
+        require(paneId.matches(Regex("%[0-9]+")))
+        require(columns in 1..MAX_CAPTURE_COLUMNS)
+        require(rows in 1..MAX_CAPTURE_ROWS)
+        require(historyRows in 0..ModelLimits.MAX_SCROLLBACK_LINES)
+        require(this.content.size <= MAX_CAPTURE_BYTES)
+        require(historyIncluded || this.content.isEmpty())
+        require(historyRows > 0 || this.content.isEmpty())
+    }
+
+    companion object {
+        const val MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+        private const val MAX_CAPTURE_COLUMNS = 500
+        private const val MAX_CAPTURE_ROWS = 16_384
+    }
 }
 
 /** Optional SFTP side channel provided by a live SSH transport. */

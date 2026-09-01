@@ -26,6 +26,468 @@ class TerminalControllerWorkflowTest {
         assertHistoryReachable(alternate = true)
     }
 
+    @Test
+    fun confirmedTmuxHistoryUsesTheFloatViewportAndRetainsLiveOutputWhileReading() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 512), scheduler).apply {
+            viewport.updateGeometry(heightPx = 50, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        val history = List(200) { index -> TerminalLine.plain("TMUX_%03d".format(index + 1)) }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = history,
+                remoteHistoryRows = history.size,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(
+            frame(
+                screen = List(5) { index -> TerminalLine.plain("live-$index") },
+                alternate = true,
+            ),
+        )
+        scheduler.drainAll()
+        controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        assertEquals(205, controller.lineCount())
+        assertEquals("TMUX_001", controller.lineAt(0)?.text)
+        assertEquals("live-4", controller.lineAt(204)?.text)
+
+        controller.markTmuxInteractionMetadataStale()
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = emptyList(),
+                remoteHistoryRows = history.size,
+                remoteMousePassthrough = false,
+                historyIncluded = false,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        assertEquals("TMUX_001", controller.lineAt(0)?.text)
+
+        controller.viewport.scrollBy(-17.4f)
+        val fractionalScrollY = controller.viewport.scrollY
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(2.6f, fractionalScrollY % 10f, 0.001f)
+
+        controller.updateTerminalFrame(
+            frame(
+                completed = listOf(TerminalLine.plain("new-history")),
+                screen = List(5) { index -> TerminalLine.plain("new-live-$index") },
+                alternate = true,
+            ),
+        )
+        scheduler.drainAll()
+        controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+        assertEquals(fractionalScrollY, controller.viewport.scrollY, 0.001f)
+        assertEquals("new-history", controller.lineAt(200)?.text)
+        controller.jumpToBottom()
+        assertTrue(controller.viewport.autoFollow)
+        assertEquals(controller.viewport.maximumScrollY, controller.viewport.scrollY, 0.001f)
+        assertEquals("new-live-4", controller.lineAt(controller.lineCount() - 1)?.text)
+    }
+
+    @Test
+    fun confirmedTmuxPrimaryScreenHistoryUsesTheFloatViewport() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 512), scheduler).apply {
+            viewport.updateGeometry(heightPx = 50, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        val history = List(200) { index -> TerminalLine.plain("TMUX_PRIMARY_%03d".format(index + 1)) }
+
+        controller.updateTerminalFrame(
+            frame(
+                screen = List(5) { index -> TerminalLine.plain("live-primary-$index") },
+                alternate = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$40",
+                paneId = "%50",
+                lines = history,
+                remoteHistoryRows = history.size,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+        assertTrue(controller.tmuxScrollDiagnostic(), controller.isTmuxLocalScrollAvailable())
+        assertEquals(205, controller.lineCount())
+        assertEquals("TMUX_PRIMARY_001", controller.lineAt(0)?.text)
+        assertEquals("live-primary-4", controller.lineAt(204)?.text)
+
+        controller.viewport.scrollBy(-17.4f)
+        val fractionalScrollY = controller.viewport.scrollY
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(2.6f, fractionalScrollY % 10f, 0.001f)
+
+        controller.updateTerminalFrame(
+            frame(
+                completed = listOf(TerminalLine.plain("new-primary-history")),
+                screen = List(5) { index -> TerminalLine.plain("new-live-primary-$index") },
+                alternate = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+        assertTrue(controller.tmuxScrollDiagnostic(), controller.isTmuxLocalScrollAvailable())
+        assertEquals(fractionalScrollY, controller.viewport.scrollY, 0.001f)
+        assertEquals("new-primary-history", controller.lineAt(200)?.text)
+        assertEquals("new-live-primary-4", controller.lineAt(controller.lineCount() - 1)?.text)
+    }
+
+    @Test
+    fun tmuxMouseMetadataKeepsCapturedHistoryLocalWithoutPollutingItWithScreenRows() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("shell-history")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = emptyList(),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = true,
+                historyIncluded = false,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.updateTerminalFrame(
+            frame(
+                completed = listOf(TerminalLine.plain("vim-screen-row")),
+                alternate = true,
+            ),
+        )
+        scheduler.drainAll()
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(
+                    TerminalLine.plain("shell-history"),
+                    TerminalLine.plain("after-vim"),
+                ),
+                remoteHistoryRows = 2,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        assertEquals(listOf("shell-history", "after-vim", "prompt"),
+            (0 until controller.lineCount()).mapNotNull { controller.lineAt(it)?.text })
+        assertFalse((0 until controller.lineCount()).any {
+            controller.lineAt(it)?.text == "vim-screen-row"
+        })
+    }
+
+    @Test
+    fun tmuxMetadataCountMismatchRequestsOneFullHistoryRepair() {
+        val scheduler = ManualFrameScheduler()
+        val fullHistoryRequests = mutableListOf<Boolean>()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+                requestTmuxHistoryRefresh = fullHistoryRequests::add,
+            )
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("one")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = emptyList(),
+                remoteHistoryRows = 2,
+                remoteMousePassthrough = false,
+                historyIncluded = false,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        assertEquals(listOf(true), fullHistoryRequests)
+    }
+
+    @Test
+    fun tmuxRepairPreservesFractionalReaderPositionAndPaneChangeReturnsLive() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            viewport.updateGeometry(heightPx = 50, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.addListener {
+            controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+        }
+        val history = List(100) { index -> TerminalLine.plain("history-$index") }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = history,
+                remoteHistoryRows = history.size,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+        controller.viewport.scrollTo(217.4f)
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = history + TerminalLine.plain("repaired-tail"),
+                remoteHistoryRows = history.size + 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(217.4f, controller.viewport.scrollY, 0.001f)
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%3",
+                lines = listOf(TerminalLine.plain("other-pane")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertTrue(controller.viewport.autoFollow)
+        assertEquals(controller.viewport.maximumScrollY, controller.viewport.scrollY, 0.001f)
+    }
+
+    @Test
+    fun captureOvertakenByTerminalOutputKeepsKnownHistoryLocalWhileMetadataRefreshes() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("captured-before-redraw")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+                interactionMetadataFresh = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+        assertTrue(controller.hasTmuxLocalHistory())
+    }
+
+    @Test
+    fun leavingAppSelectedTmuxCannotMisclassifyALaterShellApplication() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("tmux-history")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+        assertTrue(controller.isTmuxLocalScrollAvailable())
+
+        controller.updateTerminalFrame(frame(alternate = false))
+        assertFalse(controller.isTmuxSession())
+        scheduler.drainAll()
+
+        controller.updateTerminalFrame(
+            frame(
+                completed = listOf(TerminalLine.plain("later-vim-row")),
+                alternate = true,
+            ),
+        )
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("stale-tmux-history")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertFalse(controller.isTmuxSession())
+        assertFalse(controller.isTmuxLocalScrollAvailable())
+        assertTrue((0 until controller.lineCount()).any {
+            controller.lineAt(it)?.text == "later-vim-row"
+        })
+        assertFalse((0 until controller.lineCount()).any {
+            controller.lineAt(it)?.text == "stale-tmux-history"
+        })
+    }
+
+    @Test
+    fun selectingTmuxAgainAfterOuterExitRearmsPrimaryScreenHistory() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("old-tmux-history")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(frame(alternate = true))
+        scheduler.drainAll()
+        controller.updateTerminalFrame(frame(alternate = false))
+        scheduler.drainAll()
+        assertFalse(controller.isTmuxSession())
+
+        controller.beginManagedTmuxSession()
+        controller.updateTerminalFrame(frame(alternate = false))
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$40",
+                paneId = "%50",
+                lines = listOf(TerminalLine.plain("resumed-primary-history")),
+                remoteHistoryRows = 1,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertTrue(controller.tmuxScrollDiagnostic(), controller.isTmuxLocalScrollAvailable())
+        assertEquals("resumed-primary-history", controller.lineAt(0)?.text)
+    }
+
     private fun assertHistoryReachable(alternate: Boolean) {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(capacity = 512), scheduler)

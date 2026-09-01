@@ -41,10 +41,11 @@ TMUX_HISTORY
   -> LIVE
 ```
 
-The capture contains tmux history and the visible pane as one point-in-time view. It is bounded by
-the configured local terminal capacity, 200,000 rows, and a 16 MiB side-channel transfer budget.
-Capture never runs in `ACTION_MOVE`, never writes a wheel event to the pane, and never blocks the UI
-thread. A capture failure leaves the terminal in live mode.
+The capture contains tmux history and, for an alternate screen without application mouse tracking,
+tmux's saved primary-screen grid. It is bounded by the configured local terminal capacity, 200,000
+rows, and a 16 MiB side-channel transfer budget. Capture never runs in `ACTION_MOVE`, never writes a
+wheel event to the pane, and never blocks the UI thread. Tmux copy mode or `mouse_any_flag` keeps
+the gesture remote; a capture failure leaves the terminal in live mode.
 
 The snapshot and live screen are mutually exclusive presentation modes. Live output is never
 appended to the snapshot, and returning to live makes no attempt to fill, merge, or prove continuity

@@ -767,6 +767,7 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.SESSIONS_BACKGROUND,
     SettingsCategory.NOTIFICATIONS,
     SettingsCategory.BACKUP_RESTORE,
+    SettingsCategory.SECURITY,
     SettingsCategory.MOSH,
     SettingsCategory.ABOUT,
     SettingsCategory.DEVELOPER,

@@ -61,7 +61,7 @@ class SettingsModelsTest {
             listOf(SettingsCategory.DEVELOPER),
             settingsCategoriesForSearch("renderer diagnostics", includeDeveloper = true),
         )
-        assertFalse(SettingsCategory.SECURITY in settingsCategoriesForSearch("", includeDeveloper = true))
+        assertTrue(SettingsCategory.SECURITY in settingsCategoriesForSearch("", includeDeveloper = true))
         assertTrue(SettingsCategory.SSH_KEYS in settingsCategoriesForSearch("", includeDeveloper = true))
         assertTrue(SettingsCategory.SNIPPETS in settingsCategoriesForSearch("", includeDeveloper = true))
     }

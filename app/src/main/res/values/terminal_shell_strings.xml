@@ -179,7 +179,7 @@
     <string name="terminal_key_control_l">Control L</string>
     <string name="terminal_key_control_u">Control U</string>
     <string name="terminal_key_control_k">Control K</string>
-    <string name="terminal_key_hide_keyboard">Show or hide software keyboard</string>
+    <string name="terminal_key_hide_keyboard">Hide software keyboard</string>
     <string name="terminal_key_tmux_prefix_label">tmux</string>
     <string name="terminal_key_tmux_prefix_description">Send configured tmux prefix</string>
     <string name="terminal_key_paste_label">PASTE</string>

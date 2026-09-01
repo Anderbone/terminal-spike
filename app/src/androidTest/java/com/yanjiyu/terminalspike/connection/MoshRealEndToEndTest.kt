@@ -33,9 +33,14 @@ class MoshRealEndToEndTest {
         val host = arguments.getString(ARG_HOST).orEmpty()
         val username = arguments.getString(ARG_USERNAME).orEmpty()
         val password = arguments.getString(ARG_PASSWORD).orEmpty()
+        val privateKeyBytes = arguments.getString(ARG_PRIVATE_KEY_BASE64)
+            ?.takeIf(String::isNotBlank)
+            ?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
         assumeTrue(
-            "Pass $ARG_HOST, $ARG_USERNAME and $ARG_PASSWORD to run the real Mosh fixture.",
-            host.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
+            "Pass $ARG_HOST, $ARG_USERNAME and either $ARG_PASSWORD or " +
+                "$ARG_PRIVATE_KEY_BASE64 to run the real Mosh fixture.",
+            host.isNotBlank() && username.isNotBlank() &&
+                (password.isNotEmpty() || privateKeyBytes != null),
         )
         val sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT
         val udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST
@@ -52,7 +57,13 @@ class MoshRealEndToEndTest {
                     host = host,
                     port = sshPort,
                     username = username,
-                    authentication = SshAuthentication.Password(password.encodeToByteArray()),
+                    authentication = privateKeyBytes?.let { keyBytes ->
+                        SshAuthentication.PrivateKey(
+                            identityName = "real-mosh-e2e",
+                            loadKey = { keyBytes.copyOf() },
+                            passphrase = null,
+                        )
+                    } ?: SshAuthentication.Password(password.encodeToByteArray()),
                 ),
                 udpPortRange = MoshPortRange(udpFirst, udpLast),
             ),
@@ -153,6 +164,7 @@ class MoshRealEndToEndTest {
                 latestScreen.any { it.text.trimEnd() == lastExpectedRow() },
             )
         } finally {
+            privateKeyBytes?.fill(0)
             connection.close()
             states.close()
             output.close()
@@ -167,6 +179,7 @@ class MoshRealEndToEndTest {
         const val ARG_SSH_PORT = "moshE2eSshPort"
         const val ARG_USERNAME = "moshE2eUsername"
         const val ARG_PASSWORD = "moshE2ePassword"
+        const val ARG_PRIVATE_KEY_BASE64 = "moshE2ePrivateKeyBase64"
         const val ARG_UDP_FIRST = "moshE2eUdpFirst"
         const val ARG_UDP_LAST = "moshE2eUdpLast"
         const val DEFAULT_SSH_PORT = 22
@@ -179,9 +192,9 @@ class MoshRealEndToEndTest {
         const val OUTPUT_ROW_COUNT = 200
         const val MAX_OBSERVED_RANGES = 16
         const val COMMAND =
-            "i=1; while [ \"\$i\" -le $OUTPUT_ROW_COUNT ]; do " +
-                "printf 'MOSH_SCROLL_%03d\\n' \"\$i\"; sleep 0.03; i=\$((i+1)); done; " +
-                "printf 'MOSH_SCROLL_%s\\n' DONE\n"
+            "awk 'BEGIN { for (i = 1; i <= $OUTPUT_ROW_COUNT; i++) { " +
+                "printf \"MOSH_SCROLL_%03d\\n\", i; system(\"sleep 0.03\") } " +
+                "print \"MOSH_SCROLL_\" \"DONE\" }'\n"
         const val MARKER = "MOSH_SCROLL_DONE"
 
         fun firstExpectedRow(): String = "MOSH_SCROLL_001"

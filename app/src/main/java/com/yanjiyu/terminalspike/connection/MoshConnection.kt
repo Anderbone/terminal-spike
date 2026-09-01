@@ -63,6 +63,13 @@ internal class MoshConnection(
     private val lock = Any()
     private var activeAttempt: ActiveMoshConnection? = null
 
+    override val isTmuxSession: Boolean
+        get() = synchronized(lock) { activeAttempt?.sshSideChannel?.isTmuxSession == true }
+
+    override fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? = synchronized(lock) {
+        activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+    }?.captureTmuxPane(includeHistory)
+
     init {
         require(writerCapacity > 0) { "Mosh writer capacity must be positive." }
         require(writerPollMillis > 0L) { "Mosh writer poll interval must be positive." }

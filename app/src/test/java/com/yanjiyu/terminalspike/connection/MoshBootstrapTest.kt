@@ -242,6 +242,31 @@ class MoshBootstrapTest {
     }
 
     @Test
+    fun bootstrapResultReportsOnlyExplicitTmuxStartupAsTmux() {
+        val shell = MoshBootstrapResult(
+            addressFamily = MoshAddressFamily.IPV4,
+            addressBytes = byteArrayOf(127, 0, 0, 1),
+            udpPort = 60_001,
+            sessionKey = VALID_KEY.encodeToByteArray(),
+        )
+        val tmux = MoshBootstrapResult(
+            addressFamily = MoshAddressFamily.IPV4,
+            addressBytes = byteArrayOf(127, 0, 0, 1),
+            udpPort = 60_001,
+            sessionKey = VALID_KEY.encodeToByteArray(),
+            startedInTmux = true,
+        )
+
+        try {
+            assertFalse(shell.isTmuxSession)
+            assertTrue(tmux.isTmuxSession)
+        } finally {
+            shell.close()
+            tmux.close()
+        }
+    }
+
+    @Test
     fun awaitingHostApprovalCanBeAnsweredWhileBootstrapIsRunning() {
         val directory = Files.createTempDirectory("mosh-bootstrap-host-key-test").toFile()
         try {

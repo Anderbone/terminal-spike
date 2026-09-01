@@ -198,6 +198,23 @@ internal fun terminalOwnerForEntry(
     AppRoute.WORKSPACE -> TerminalOwner.WORKSPACE
 }
 
+internal data class NotificationTerminalNavigation(
+    val destination: AppRoute,
+    val terminalOwner: TerminalOwner,
+    val focusSessionId: Long?,
+)
+
+internal fun notificationTerminalNavigation(
+    source: AppRoute,
+    currentOwner: TerminalOwner,
+): NotificationTerminalNavigation = NotificationTerminalNavigation(
+    destination = AppRoute.TERMINAL_DETAIL,
+    terminalOwner = terminalOwnerForEntry(source, currentOwner),
+    // Notification taps select the originating terminal without entering the user-only
+    // fullscreen focus mode, which intentionally hides the session and accessory bars.
+    focusSessionId = null,
+)
+
 internal fun catalogReturnDestinationForEntry(source: AppRoute): AppRoute = when (source) {
     AppRoute.CONNECTIONS -> AppRoute.WORKSPACE
     else -> source
@@ -937,9 +954,10 @@ fun TerminalSpikeScreen(
         if (state.sessions.none { it.id == sessionId }) return@LaunchedEffect
         viewModel.selectSession(sessionId)
         rendererLabVisible = false
-        terminalOwner = terminalOwnerForEntry(destination, terminalOwner)
-        destination = AppRoute.TERMINAL_DETAIL
-        focusSessionId = sessionId
+        val navigation = notificationTerminalNavigation(destination, terminalOwner)
+        terminalOwner = navigation.terminalOwner
+        destination = navigation.destination
+        focusSessionId = navigation.focusSessionId
         onOpenTerminalSessionConsumed()
     }
 

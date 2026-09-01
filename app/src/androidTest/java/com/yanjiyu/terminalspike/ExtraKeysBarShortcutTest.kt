@@ -58,7 +58,7 @@ class ExtraKeysBarShortcutTest {
         composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Control modifier").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Terminal key PGUP").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Show or hide software keyboard").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
 
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.CTRL_C, activated) }
         assertFirstPageIsTenByTwo()
