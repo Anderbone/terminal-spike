@@ -268,6 +268,26 @@ class FastTerminalSelectionInteractionTest {
     }
 
     @Test
+    fun tappingCodexParenthesizedPlainUrlOpensItDirectly() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val controller = TerminalController().apply {
+                    buffer.append(TerminalLine.plain("• Google (https://www.google.com)"))
+                }
+                val requests = mutableListOf<TerminalLinkActionRequest>()
+                val view = attachTerminalView(activity, controller).apply {
+                    setLinkActionCallback { request -> requests += request }
+                }
+
+                tapCell(view, column = 20)
+
+                assertEquals(listOf("https://www.google.com"), requests.map { it.target.uri })
+                assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+            }
+        }
+    }
+
+    @Test
     fun longPressingSafeLinkShowsOpenActionAndDispatchesToBrowserCallback() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
@@ -422,9 +442,13 @@ class FastTerminalSelectionInteractionTest {
     }
 
     private fun tapFirstCell(view: FastTerminalView) {
+        tapCell(view, column = 0)
+    }
+
+    private fun tapCell(view: FastTerminalView, column: Int) {
         val now = SystemClock.uptimeMillis()
         val density = view.resources.displayMetrics.density
-        val x = 8f * density + 2f
+        val x = 8f * density + 9f * density * column + 2f
         val y = 5f * density + 4f
         val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
         try {

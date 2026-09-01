@@ -52,6 +52,42 @@ class TerminalLinkInteractionTest {
     }
 
     @Test
+    fun codexParenthesizedPlainUrlExcludesTheOpeningDelimiter() {
+        val selectable = TerminalSelectableLine(
+            anchor,
+            TerminalLine.plain("• Google (https://www.google.com)"),
+        )
+
+        val target = TerminalLinkResolver.find(
+            selectable,
+            column = 20,
+            osc8Enabled = false,
+            plainTextUrlsEnabled = true,
+        )
+
+        assertEquals("https://www.google.com", target?.uri)
+        assertEquals(10, target?.startColumn)
+        assertEquals(32, target?.endColumn)
+    }
+
+    @Test
+    fun plainUrlKeepsParenthesesInsideItsPath() {
+        val selectable = TerminalSelectableLine(
+            anchor,
+            TerminalLine.plain("See https://example.test/a(b)c"),
+        )
+
+        val target = TerminalLinkResolver.find(
+            selectable,
+            column = 27,
+            osc8Enabled = false,
+            plainTextUrlsEnabled = true,
+        )
+
+        assertEquals("https://example.test/a(b)c", target?.uri)
+    }
+
+    @Test
     fun openingPolicyAllowsOnlyAbsoluteHttpAndHttpsHosts() {
         assertTrue(TerminalLinkPolicy.canOpen("https://example.test/a"))
         assertTrue(TerminalLinkPolicy.canOpen("http://127.0.0.1:8080"))

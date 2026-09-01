@@ -242,7 +242,7 @@ object TerminalLinkResolver {
         var end = pivot + 1
         while (
             start > 0 && pivot - start < MAX_PLAIN_URL_SCAN &&
-            !isUrlBoundary(text[start - 1])
+            !isUrlLeadingBoundary(text, start - 1)
         ) {
             start -= 1
         }
@@ -331,6 +331,16 @@ object TerminalLinkResolver {
 
     private fun isUrlBoundary(character: Char): Boolean =
         character.isWhitespace() || character.isISOControl() || character in URL_BOUNDARIES
+
+    private fun isUrlLeadingBoundary(text: CharSequence, index: Int): Boolean {
+        val character = text[index]
+        return isUrlBoundary(character) ||
+            character == '(' && text.hasHttpSchemeAt(index + 1)
+    }
+
+    private fun CharSequence.hasHttpSchemeAt(index: Int): Boolean =
+        regionMatches(index, "http://", 0, 7, ignoreCase = true) ||
+            regionMatches(index, "https://", 0, 8, ignoreCase = true)
 
     private const val MAX_PLAIN_URL_SCAN = 1_024
     private const val MAX_WRAPPED_LINK_ROWS = 4_096

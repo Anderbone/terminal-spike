@@ -80,6 +80,8 @@ assigned a public semantic version to this release candidate.
 
 ### Fixed
 
+- Made Codex-style parenthesized links such as `Google (https://www.google.com)` tappable and
+  selectable without treating the opening parenthesis as part of the URL.
 - Restored whole-link Open/Copy actions for URLs that span terminal soft wraps, including tmux
   history rows, while keeping hard-ended rows separate.
 - Migrated the released 20-key default deck that combined the tmux switcher with Paste so its
