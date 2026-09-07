@@ -18,4 +18,4 @@ rootProject.name = "TerminalSpike"
 include(":app")
 include(":benchmark")
 include(":mosh-api")
-include(":mosh-extension")
+include(":mosh-core")

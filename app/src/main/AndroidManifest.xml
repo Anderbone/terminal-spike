@@ -10,10 +10,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="com.yanjiyu.terminalspike.permission.BIND_MOSH_EXTENSION" />
 
     <queries>
-        <package android:name="com.yanjiyu.terminalspike.mosh" />
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>

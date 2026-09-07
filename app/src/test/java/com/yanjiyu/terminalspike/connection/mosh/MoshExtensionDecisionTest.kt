@@ -9,16 +9,13 @@ import org.junit.Test
 class MoshExtensionDecisionTest {
     @Test
     fun packageServiceActionAndPermissionRemainExact() {
-        assertEquals("com.yanjiyu.terminalspike.mosh", MoshExtensionContract.PACKAGE_NAME)
+        assertEquals("com.yanjiyu.terminalspike", MoshExtensionContract.PACKAGE_NAME)
         assertEquals(
             "com.yanjiyu.terminalspike.mosh.MoshExtensionService",
             MoshExtensionContract.SERVICE_CLASS_NAME,
         )
         assertEquals("com.yanjiyu.terminalspike.mosh.BIND", MoshExtensionContract.BIND_ACTION)
-        assertEquals(
-            "com.yanjiyu.terminalspike.permission.BIND_MOSH_EXTENSION",
-            MoshExtensionContract.BIND_PERMISSION,
-        )
+
     }
 
     @Test
@@ -35,40 +32,12 @@ class MoshExtensionDecisionTest {
     }
 
     @Test
-    fun exactExportedPermissionProtectedServiceIsRequired() {
-        assertUntrusted(
-            trustedFacts(servicePresent = false),
-            MoshExtensionTrustReason.SERVICE_MISSING,
-        )
-        assertUntrusted(
-            trustedFacts(serviceExported = false),
-            MoshExtensionTrustReason.SERVICE_NOT_EXPORTED,
-        )
-        assertUntrusted(
-            trustedFacts(servicePermission = "android.permission.INTERNET"),
-            MoshExtensionTrustReason.SERVICE_PERMISSION_MISMATCH,
-        )
-        assertUntrusted(
-            trustedFacts(bindPermissionSignatureProtected = false),
-            MoshExtensionTrustReason.BIND_PERMISSION_NOT_SIGNATURE_PROTECTED,
-        )
-    }
-
-    @Test
-    fun discoveryRequiresPackageManagersRotationAwareSignatureMatch() {
-        assertUntrusted(
-            trustedFacts(packageManagerSignatureMatch = false),
-            MoshExtensionTrustReason.SIGNER_MISMATCH,
-        )
-        assertUntrusted(
-            trustedFacts(packageManagerSignatureMatch = null),
-            MoshExtensionTrustReason.SIGNER_INFORMATION_MISSING,
-        )
-        assertTrue(
-            MoshExtensionDecision.discover(
-                trustedFacts(packageManagerSignatureMatch = true),
-            ) is MoshDiscoveryDecision.Trusted,
-        )
+    fun discoveryRequiresPrivateSameUidServiceInTheBrokerProcess() {
+        assertUntrusted(trustedFacts(servicePresent = false), MoshExtensionTrustReason.SERVICE_MISSING)
+        assertUntrusted(trustedFacts(serviceExported = true), MoshExtensionTrustReason.SERVICE_EXPORTED)
+        assertUntrusted(trustedFacts(sameApplicationUid = false), MoshExtensionTrustReason.UID_MISMATCH)
+        assertUntrusted(trustedFacts(separateBrokerProcess = false), MoshExtensionTrustReason.SERVICE_PROCESS_MISMATCH)
+        assertTrue(MoshExtensionDecision.discover(trustedFacts()) is MoshDiscoveryDecision.Trusted)
     }
 
     @Test
@@ -133,18 +102,16 @@ class MoshExtensionDecisionTest {
         applicationEnabled: Boolean = true,
         servicePresent: Boolean = true,
         serviceEnabled: Boolean = true,
-        serviceExported: Boolean = true,
-        servicePermission: String? = MoshExtensionContract.BIND_PERMISSION,
-        bindPermissionSignatureProtected: Boolean = true,
-        packageManagerSignatureMatch: Boolean? = true,
+        serviceExported: Boolean = false,
+        sameApplicationUid: Boolean = true,
+        separateBrokerProcess: Boolean = true,
     ) = MoshInstalledPackageFacts(
         version = MoshExtensionVersion(12, "1.2.0"),
         applicationEnabled = applicationEnabled,
         servicePresent = servicePresent,
         serviceEnabled = serviceEnabled,
         serviceExported = serviceExported,
-        servicePermission = servicePermission,
-        bindPermissionSignatureProtected = bindPermissionSignatureProtected,
-        packageManagerSignatureMatch = packageManagerSignatureMatch,
+        sameApplicationUid = sameApplicationUid,
+        separateBrokerProcess = separateBrokerProcess,
     )
 }

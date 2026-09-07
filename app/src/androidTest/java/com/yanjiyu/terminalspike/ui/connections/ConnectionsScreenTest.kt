@@ -224,7 +224,7 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
         composeRule.onNodeWithText("Edit").performClick()
         composeRule.onNodeWithTag(HostEditorNameTestTag).performTextInput(" changed")
-        composeRule.onNodeWithText("View Mosh extension status").performScrollTo().performClick()
+        composeRule.onNodeWithText("View Mosh transport status").performScrollTo().performClick()
 
         composeRule.onNodeWithText("Discard host changes?").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, statusOpenCount) }

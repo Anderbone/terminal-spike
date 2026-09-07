@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.content.pm.PermissionInfo
 import android.os.Build
 
 internal interface MoshExtensionPlatform {
@@ -48,18 +47,8 @@ internal class AndroidMoshExtensionPlatform(
                     info.enabled && componentEnabled(MoshExtensionContract.component)
                 } ?: false,
                 serviceExported = serviceInfo?.exported == true,
-                servicePermission = serviceInfo?.permission,
-                bindPermissionSignatureProtected = bindPermissionIsSignatureProtected(),
-                packageManagerSignatureMatch = when (
-                    packageManager.checkSignatures(
-                        applicationContext.packageName,
-                        MoshExtensionContract.PACKAGE_NAME,
-                    )
-                ) {
-                    PackageManager.SIGNATURE_MATCH -> true
-                    PackageManager.SIGNATURE_UNKNOWN_PACKAGE -> null
-                    else -> false
-                },
+                sameApplicationUid = serviceInfo?.applicationInfo?.uid == applicationContext.applicationInfo.uid,
+                separateBrokerProcess = serviceInfo?.processName == "${applicationContext.packageName}:mosh_broker",
             )
             MoshExtensionDecision.discover(facts)
         } catch (_: PackageManager.NameNotFoundException) {
@@ -122,18 +111,6 @@ internal class AndroidMoshExtensionPlatform(
         PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED,
         -> false
         else -> true
-    }
-
-    @Suppress("DEPRECATION")
-    private fun bindPermissionIsSignatureProtected(): Boolean {
-        val permission = try {
-            packageManager.getPermissionInfo(MoshExtensionContract.BIND_PERMISSION, 0)
-        } catch (_: PackageManager.NameNotFoundException) {
-            return false
-        }
-        val baseProtection = permission.protectionLevel and PermissionInfo.PROTECTION_MASK_BASE
-        return permission.packageName == MoshExtensionContract.PACKAGE_NAME &&
-            baseProtection == PermissionInfo.PROTECTION_SIGNATURE
     }
 
     @Suppress("DEPRECATION")

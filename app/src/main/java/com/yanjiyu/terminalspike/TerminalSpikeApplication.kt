@@ -9,6 +9,14 @@ class TerminalSpikeApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Native transport services run in private processes. They must not initialize the
+        // workspace, credential store, startup migrations or another Mosh client.
+        val processName = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            getProcessName()
+        } else {
+            java.io.File("/proc/self/cmdline").readText().substringBefore('\u0000')
+        }
+        if (processName != packageName) return
         container = AppContainer(this)
         container.resolveStartup()
         if (BuildConfig.DEBUG) {

@@ -574,7 +574,7 @@ Local release-like evidence, distinct from production signing and public-release
 | Gate | Result |
 |---|---|
 | Signing scope | Existing Android debug keystore only; not a production signing identity |
-| Release-like build | `:app:assembleRelease :app:bundleRelease :mosh-extension:assembleRelease` passed with `BUILD SUCCESSFUL` in 1 min 28 s; 159 tasks |
+| Release-like build | `:app:assembleRelease :app:bundleRelease :mosh-core:assembleRelease` passed with `BUILD SUCCESSFUL` in 1 min 28 s; 159 tasks |
 | App release APK | SHA-256 `29f64e9b6ac233a8546f5ae934962212804d8a62e6a7004657cc47d307990b1b` |
 | Mosh extension release APK | SHA-256 `206c74610de6cc808dcccae8e14d32dedc8e99efea2e32a85f60b004174c4c49` |
 | App release AAB | SHA-256 `27ae1393b34ed1a42edc031352229ef3106049adbe0ce033c893f7519355f61f` |

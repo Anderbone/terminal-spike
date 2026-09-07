@@ -15,7 +15,7 @@ SDK paths, secrets, signing material, APKs, build output and machine-specific fi
 Before submitting a change, use the README's toolchain and run:
 
 ```bash
-mosh-extension/scripts/verify-sources.sh
+mosh-core/scripts/verify-sources.sh
 ./gradlew --dependency-verification=strict test lint assembleDebug assembleRelease
 ```
 

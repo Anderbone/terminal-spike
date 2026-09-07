@@ -44,7 +44,7 @@
     <string name="notice_keyboard_runtime_unavailable">The active keyboard profile uses input settings unavailable in this runtime.</string>
     <string name="notice_saved_host_unavailable">That saved host is no longer available.</string>
     <string name="notice_saved_host_unsupported">That saved host uses a protocol or authentication method unavailable here.</string>
-    <string name="notice_mosh_extension_unavailable">Mosh is unavailable until the separate extension is installed, verified, and ready. SSH remains available.</string>
+    <string name="notice_mosh_extension_unavailable">The built-in Mosh transport is not ready. SSH remains available.</string>
     <string name="notice_session_limit">Close a session before opening another.</string>
     <string name="notice_settings_available_again">Encrypted local data is available again.</string>
     <string name="notice_settings_locked_preserved">Saved connections and settings could not be unlocked. The encrypted data was preserved for recovery.</string>
@@ -95,7 +95,7 @@
     <string name="notice_snippet_sent">Sent %1$s.</string>
     <string name="notice_terminal_input_queue_busy">The terminal input queue is busy.</string>
     <string name="notice_keyboard_profile_unavailable">The selected keyboard profile is unavailable in this runtime.</string>
-    <string name="notice_mosh_connect_ssh_instead">Mosh is unavailable. Choose Connect with SSH or review extension status.</string>
+    <string name="notice_mosh_connect_ssh_instead">Mosh is unavailable. Choose Connect with SSH or review Mosh status.</string>
     <string name="notice_secret_prepare_failed">The connection secret could not be prepared.</string>
     <string name="notice_host_start_failed">Could not start that host.</string>
     <string name="notice_settings_still_unavailable">Encrypted local data is still unavailable.</string>

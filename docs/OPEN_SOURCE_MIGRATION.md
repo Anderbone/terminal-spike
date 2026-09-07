@@ -2,6 +2,10 @@
 
 Updated: 2026-09-07
 
+The initial source-only consolidation below is historical. The owner subsequently requested
+one APK: [ADR-005](ADR-005-BUNDLED-MOSH.md) supersedes the retained two-APK scope. Mosh is now
+the internal `mosh-core` library, bundled in the main application.
+
 ## Repository comparison
 
 At the initial inspection, `Anderbone/terminal-spike` was private. Its inspected baseline
@@ -101,6 +105,6 @@ performed and no device tests were run for this source-only change.
   run; previous hosted emulator failures are not represented as resolved by this documentation
   and licensing change.
 
-The owner requested one repository. Single-APK integration was an additional proposal, not an
-accepted packaging change; [ADR-004](ADR-004-OPEN-SOURCE-APP.md) records that distinction. This
-consolidation retains two APKs and independent Play versioning.
+At this initial cutover, the owner had requested one repository; [ADR-004](ADR-004-OPEN-SOURCE-APP.md)
+therefore retained two APKs and independent Play versioning. The later explicit one-APK request
+and implementation are recorded in [ADR-005](ADR-005-BUNDLED-MOSH.md).

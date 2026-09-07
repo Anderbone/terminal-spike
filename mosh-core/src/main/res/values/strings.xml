@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<resources>
+    <string name="mosh_session_notification_channel">Mosh sessions</string>
+    <string name="mosh_session_notification_title">Mosh session active</string>
+    <string name="mosh_session_notification_body">Terminal Spike is connected through Mosh.</string>
+</resources>

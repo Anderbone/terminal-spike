@@ -1,4 +1,7 @@
 status: implemented-acceptance-pending
+
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
 created_at: 2026-08-08T10:42:15.487Z
 updated_at: 2026-08-10
 done_at: none

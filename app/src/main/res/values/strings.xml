@@ -88,8 +88,8 @@
     <string name="settings_category_backup_restore_summary">One complete portable backup file</string>
     <string name="settings_category_security">Security</string>
     <string name="settings_category_security_summary">Known hosts, credentials and privacy controls</string>
-    <string name="settings_category_mosh">Mosh Extension</string>
-    <string name="settings_category_mosh_summary">Installed extension, trust and protocol status</string>
+    <string name="settings_category_mosh">Mosh</string>
+    <string name="settings_category_mosh_summary">Built-in transport and connection status</string>
     <string name="settings_category_about">About</string>
     <string name="settings_category_about_summary">Version, local-first privacy and notices</string>
     <string name="settings_category_developer">Developer</string>

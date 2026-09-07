@@ -2,19 +2,19 @@
 
 Terminal Spike is an open-source, local-first native Android SSH terminal release candidate. It opens on a device-only workspace for active sessions, saved connections, identities, snippets, trusted host keys, and terminal configuration. A dedicated Compose application shell surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
 
-Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, protected private-key material, SFTP file management, a customizable extra-key bar, bounded VT/xterm screen semantics, and simultaneous remote-session tabs are implemented. Live SSH and Mosh terminals can paste a phone clipboard image into tools such as Codex: the app streams the image over the session's authenticated SSH side channel to a private cache directory on the connected host and bracket-pastes its remote path. Genuine Mosh 1.4.0 transport is available through an optional, separately installed GPL extension; the main APK contains only the permissive IPC API and continues to provide SSH when the extension is absent. The Mosh extension advertises and enforces its capacity of ten process-isolated concurrent transports independently. There is no sync, analytics, advertising, bundled AI, or subscription code.
+Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, protected private-key material, SFTP file management, a customizable extra-key bar, bounded VT/xterm screen semantics, and simultaneous remote-session tabs are implemented. Live SSH and Mosh terminals can paste a phone clipboard image into tools such as Codex: the app streams the image over the session's authenticated SSH side channel to a private cache directory on the connected host and bracket-pastes its remote path. Genuine Mosh 1.4.0 transport is built into the same APK. Ten private worker processes isolate concurrent native transports. There is no sync, analytics, advertising, bundled AI, or subscription code.
 
 ## Source and licence
 
 This is the canonical repository for the main Android app, Mosh API, native Mosh implementation,
 tests and build tooling. Development and issues for the former standalone Mosh repository move
-here. Both Android packages are built from this checkout; Mosh currently remains a separately
-installed APK. Repository consolidation does not change existing installations or Play releases.
+here. One APK is built from this checkout: `com.yanjiyu.terminalspike`, including SSH and Mosh.
+No companion installation is required. Existing standalone extensions are no longer selected.
 
 Project-owned code is **GPL-3.0-or-later**, with no warranty. `mosh-api` retains Apache-2.0;
 third-party code, fonts and artwork retain their component licences. See [LICENSE](LICENSE),
 [LICENSING.md](LICENSING.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the
-[Mosh notices](mosh-extension/THIRD_PARTY_NOTICES.md). Mosh is a registered trademark;
+[Mosh notices](mosh-core/THIRD_PARTY_NOTICES.md). Mosh is a registered trademark;
 Terminal Spike is not affiliated with or endorsed by the Mosh project.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for changes and [SECURITY.md](SECURITY.md) for vulnerability
@@ -28,7 +28,7 @@ older release and architecture records below describe their original verificatio
 - Android SDK Platform 37
 - Android SDK Build Tools 36.0.0 or newer stable build tools supported by AGP 9.3.1
 - Optional: an API 26+ device or emulator for installation and the instrumentation smoke test
-- Optional Mosh extension build: Android NDK r29 revision `29.0.14206865` plus the host tools listed in [mosh-extension/BUILDING.md](mosh-extension/BUILDING.md)
+- Native Mosh build: Android NDK r29 revision `29.0.14206865` plus the host tools listed in [mosh-core/BUILDING.md](mosh-core/BUILDING.md)
 
 The Gradle wrapper downloads Gradle 9.5.0. SDK paths belong in an ignored `local.properties` file or the normal `ANDROID_HOME`/`ANDROID_SDK_ROOT` environment variables; no SDK path is committed.
 
@@ -42,12 +42,15 @@ From a shell:
 ./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest
 ```
 
+The following release-manifest block and historical signing/emulator evidence describe the
+pre-bundling release. See ADR-005 for the single-APK verification record.
+
 <!-- release-evidence-current:start -->
 Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` failures/errors); Mosh API JVM `11` tests (`11` passed, `0` skipped, `0` failures/errors); Mosh extension JVM `8` tests (`8` passed, `0` skipped, `0` failures/errors); old-phone Android app `332` tests (`307` passed, `25` skipped, `0` failures/errors). The source and artifact hashes and any pending external gates are recorded in `build/release-evidence/candidate-manifest.json`.
 <!-- release-evidence-current:end -->
 
 The complete local gate covers debug and release lint/build, release APK/AAB packaging,
-Android-test APKs, dual-ABI extension outputs, and benchmark assembly. The exact hashes become
+Android-test APKs, dual-ABI built-in Mosh, and benchmark assembly. The exact hashes become
 authoritative only in the generated candidate manifest after the final source freeze.
 
 Clean process-isolated emulator suites also passed under a checked-in exact test contract. API 26
@@ -83,7 +86,7 @@ TERMINAL_SPIKE_RELEASE_KEY_PASSWORD='...' \
 Equivalent Gradle properties are `terminalSpike.releaseStoreFile`, `terminalSpike.releaseStorePassword`, `terminalSpike.releaseKeyAlias`, and `terminalSpike.releaseKeyPassword`. A partial signing configuration fails instead of silently producing an unsigned artifact. Release packaging also fails if R8 removes or renames any JSch implementation covered by the reflection keep policy, or if packaged third-party notices differ from the canonical notice file.
 
 A separate local release-like smoke gate used the existing Android debug keystore, not production
-signing. `:app:assembleRelease :app:bundleRelease :mosh-extension:assembleRelease` completed with
+signing. `:app:assembleRelease :app:bundleRelease :mosh-core:assembleRelease` completed with
 `BUILD SUCCESSFUL` in 1 min 28 s with 159 tasks. SHA-256 values were app release APK
 `29f64e9b6ac233a8546f5ae934962212804d8a62e6a7004657cc47d307990b1b`, extension release APK
 `206c74610de6cc808dcccae8e14d32dedc8e99efea2e32a85f60b004174c4c49`, and app AAB
@@ -137,33 +140,39 @@ scripts/run-real-mosh-device-tests.sh \
   --trusted-lan
 ```
 
-Set `JAVA_HOME` to the compatible JDK listed above. This command installs the local debug Mosh
-extension only on the authorized old phone; it does not authorize public extension distribution.
+Set `JAVA_HOME` to the compatible JDK listed above. This command installs the single debug app and test utilities only on the authorized old phone.
 
-## Optional Mosh-compatible extension
+## Built-in Mosh
 
-Mosh is not bundled into the main application. `mosh-api` is a project-owned Apache-2.0 AIDL contract, while `mosh-extension` is a distinct `com.yanjiyu.terminalspike.mosh` APK containing the pinned upstream Mosh client and its GPL/native materials. The main app performs the same strict SSH host-key verification and password/private-key authentication used for SSH, starts `mosh-server`, then transfers only bounded session metadata, the numeric UDP endpoint, and a one-shot ephemeral Mosh key to the verified extension. Terminal bytes travel through bounded file-descriptor pipes rather than Binder calls.
+`mosh-core` is an internal Android library containing the pinned native transport and private
+broker/worker services. `mosh-api` is the Apache-2.0 AIDL contract between those processes.
+The main app verifies the SSH host and authenticates, starts `mosh-server`, and hands the broker
+only a bounded numeric UDP endpoint, dimensions, options and a one-shot session key. Terminal
+bytes use bounded file-descriptor pipes. The broker and workers have no separate launcher,
+application ID, signing configuration or Play version.
 
-The version 1 extension contract does not negotiate a per-profile `TERM` value or arbitrary startup input. Mosh uses its supported fixed `xterm-256color` type; a different SSH `TERM` selection and any saved SSH startup command are not sent through the bootstrap command or extension IPC, and the main app surfaces that limitation when it applies.
+Build and install the single app using the commands above. The app includes `arm64-v8a` and
+`x86_64` native libraries; release APK/AAB checks enforce their presence and native notices.
+See [ADR-005](docs/ADR-005-BUNDLED-MOSH.md), [native build details](mosh-core/BUILDING.md) and
+[the dependency inventory](mosh-core/DEPENDENCIES.md). Existing legacy extensions may remain
+installed, but this app binds only its private built-in transport.
 
-Build the local/debug extension independently:
+The server still needs `mosh-server`, reachable over SSH plus its selected UDP port/range.
+Mosh uses `xterm-256color`; SSH-only TERM overrides and startup commands are not forwarded.
+
+After committing a reviewed source revision, create a complete deterministic source archive:
 
 ```bash
-mosh-extension/scripts/verify-sources.sh
-./gradlew :mosh-api:test :mosh-api:lint \
-  :mosh-extension:test :mosh-extension:lint \
-  :mosh-extension:assembleDebug :mosh-extension:assembleRelease
+scripts/create-source-bundle.sh
 ```
 
-The guarded main-app installer deliberately does not install the separately packaged Mosh
-extension. Extension installation remains a separately reviewed local-development operation under
-the repository device and licensing rules.
-
-The native build uses pinned official sources and produces `arm64-v8a` and `x86_64` clients. See [the extension build guide](mosh-extension/BUILDING.md), [the protocol boundary](docs/mosh-extension-protocol.md), and [ADR-003](docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md). The latest controlled-server evidence is the old-phone five-method password class and separate private-key run described above. This validates only that controlled local environment; the user's own saved Mosh server still needs an unlocked manual retest, and no behavior on an arbitrary external server is inferred. Source publication is authorized by [ADR-004](docs/ADR-004-OPEN-SOURCE-APP.md). New binary distribution and production signing still require the release review described in ADR-003 and the publishing guide.
+This includes the entire app, native sources, patches, notices and build scripts. Use your own
+Android debug key or external release key to build a modified app; no separate matching signer
+is required. The historical standalone source releases remain in the archived old repository.
 
 ## Try a remote shell
 
-1. From **Connections**, add or choose a saved host. Choose **SSH**, or choose **Mosh** when Settings reports that the separately installed extension is verified and available.
+1. From **Connections**, add or choose a saved host. Choose **SSH** or the built-in **Mosh** transport.
 2. Enter a host, port, and username, then use a password or an imported private key. Password saving is off by default; opt in with **Save password on this device** while also saving the host. Key passphrases remain one-time only.
 3. On first contact, compare the displayed SHA-256 fingerprint with a trusted fingerprint from the server administrator, then tap **Trust and connect**. Mosh uses this strict SSH step to authenticate and start `mosh-server`, then switches the terminal transport to the server's UDP port.
 4. Tap the terminal to open the keyboard. The workspace resizes above the IME; hiding the keyboard restores the full terminal height. PTY resize is settled at the end of the keyboard animation to avoid repeated remote redraws. The default live deck is exactly 20 buttons in two rows of ten, with an image button immediately left of **Home** for selecting up to 20 photos, direct **^C** and **^W** chords, and a stacked-window key in the former Alt slot that opens the active tmux-session switcher; customize it from **Settings → Keyboard**. Selected images and multi-image clipboard content are uploaded and inserted in order so compatible terminal tools can show several attachments in the current input. Long-press terminal output to select it; the keyboard hides so the local **Copy** and **Select all** toolbar and drag handles remain visible. Swipe the input strip to its left page for a normal editable field with correction and selection, then tap **Send** to paste the exact staged text without Enter. A successful paste clears the visible field as before, while a one-tap undo action can restore the last sent draft if a remote full-screen app had moved its own input focus. Swipe back to restore immediate terminal input with correction, completion, and suggestions disabled. The compact strip has no permanent Raw/Text selector labels; the same default mode can also be chosen in Settings.
@@ -276,9 +285,9 @@ recording requirements.
 - SSH supports password, private-key, and bounded keyboard-interactive authentication, typed host-key trust/replacement, configurable TERM/startup commands, keepalives, and bounded fresh-shell reconnect. Saved secrets are device-bound and remain accessible to anyone who can unlock both the device and app. Agent forwarding is not implemented.
 - Local profiles and snippets are device-local conveniences, not a credential vault. The Keystore-backed encryption protects the file at rest but cannot protect data from a compromised or unlocked device running the app.
 - No optional cryptographic provider is bundled. SSH algorithm availability therefore depends on Android's installed JCA providers; the client does not re-enable obsolete RSA/SHA-1 algorithms.
-- Mosh requires the separate extension, a reachable `mosh-server`, and its selected UDP port/range through the server and network firewall. SSH remains independently usable without the extension.
+- Mosh is built in and requires a reachable `mosh-server` and its selected UDP port/range through the server and network firewall. SSH remains available independently.
 - The upstream Mosh transport retains authenticated UDP roaming and port-hopping behavior. The main app now publishes generation-scoped Android network hints to the active Mosh transport; real Wi-Fi/cellular/VPN transition acceptance remains open. IPv6 link-local hosts containing a zone identifier such as `%wlan0` are not supported; use a globally routable IPv6 address/name or IPv4.
-- Public distribution of the Mosh-compatible extension is blocked by ADR-003 until licensing, Corresponding Source/installation-information, signing, and name-use review is complete.
+- The source and single-APK architecture are GPL-3.0-or-later under ADR-005. A new Play upload is a separate release operation.
 - The bounded VT engine supports primary/alternate screens, cursor addressing, scroll regions, insert/delete/erase operations, xterm colours, application cursor keys, bracketed paste, focus reporting, wheel mouse reporting, resize, OSC 8 links, policy-gated OSC 52 clipboard requests, and common terminal queries. It is not yet a byte-for-byte xterm clone; every DEC private mode and full conformance fixtures remain.
 - App-selected tmux sessions seed a separate bounded local model from tmux's physical pane history and keep it synchronized with live rows. In Auto, vertical drag and fling use the same pixel viewport as an ordinary terminal, including when tmux was already in copy mode; Auto never sends a fallback wheel or exits that remote mode. Choose explicit Remote mouse to drive tmux copy mode or a mouse-aware inner application. Its optional two-finger override keeps a local-history escape path. An alternate screen alone, including a Codex-style UI, never forces row-wheel scrolling.
 - For manually launched tmux and explicit remote-mouse mode, enable its mouse option once with `tmux set -g mouse on` (and add `set -g mouse on` to `~/.tmux.conf` to persist it).

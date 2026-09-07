@@ -143,16 +143,9 @@ private fun MoshExtensionVersion.toUiDetail(): MoshExtensionUiDetail = MoshExten
 private fun MoshExtensionTrustReason.summaryText(): UiText = uiText(
     when (this) {
         MoshExtensionTrustReason.SERVICE_MISSING -> R.string.mosh_summary_untrusted_service_missing
-        MoshExtensionTrustReason.SERVICE_NOT_EXPORTED ->
-            R.string.mosh_summary_untrusted_service_not_exported
-        MoshExtensionTrustReason.SERVICE_PERMISSION_MISMATCH ->
-            R.string.mosh_summary_untrusted_permission_mismatch
-        MoshExtensionTrustReason.BIND_PERMISSION_NOT_SIGNATURE_PROTECTED ->
-            R.string.mosh_summary_untrusted_permission_unprotected
-        MoshExtensionTrustReason.SIGNER_INFORMATION_MISSING ->
-            R.string.mosh_summary_untrusted_signer_missing
-        MoshExtensionTrustReason.SIGNER_MISMATCH ->
-            R.string.mosh_summary_untrusted_signer_mismatch
+        MoshExtensionTrustReason.SERVICE_EXPORTED -> R.string.mosh_summary_untrusted_service_not_exported
+        MoshExtensionTrustReason.UID_MISMATCH -> R.string.mosh_summary_untrusted_signer_mismatch
+        MoshExtensionTrustReason.SERVICE_PROCESS_MISMATCH -> R.string.mosh_summary_untrusted_permission_mismatch
     },
 )
 

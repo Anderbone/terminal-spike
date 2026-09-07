@@ -112,7 +112,7 @@ class MoshConnectionTest {
         assertEquals(0, states.count { it is ConnectionState.Disconnected })
         assertEquals(1, states.count { it is ConnectionState.Failed })
         assertEquals(
-            "Mosh extension stopped unexpectedly.",
+            "Mosh transport stopped unexpectedly.",
             (states.last() as ConnectionState.Failed).message,
         )
     }
@@ -263,7 +263,7 @@ class MoshConnectionTest {
         assertEquals(0, bootstrap.calls)
         assertTrue(password.all { it == 0.toByte() })
         assertEquals(
-            "Mosh extension is not installed.",
+            "The built-in Mosh transport is unavailable.",
             (states.last() as ConnectionState.Failed).message,
         )
         assertEquals(
@@ -338,7 +338,7 @@ class MoshConnectionTest {
         assertTrue(bootstrap.lastReturnedKey!!.all { it == 0.toByte() })
         assertEquals(0, extension.stopCalls.size)
         assertEquals(
-            "Mosh extension failed while starting the session.",
+            "Mosh transport failed while starting the session.",
             (states.last() as ConnectionState.Failed).message,
         )
         assertEquals(

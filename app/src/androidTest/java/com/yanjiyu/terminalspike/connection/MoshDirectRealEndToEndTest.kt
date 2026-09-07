@@ -46,7 +46,7 @@ class MoshDirectRealEndToEndTest {
         val client = application.container.moshExtension
         val extensionStatus = client.connect()
         assertTrue(
-            "The installed Mosh extension was not available: ${extensionStatus::class.simpleName}",
+            "The installed Mosh transport was not available: ${extensionStatus::class.simpleName}",
             extensionStatus is MoshExtensionStatus.Available,
         )
         val extension = AndroidMoshConnectionExtension(client)

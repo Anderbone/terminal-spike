@@ -1,4 +1,7 @@
 ---
+
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
 status: active
 updated_at: 2026-09-07
 starting_baseline_commit: 765380e
@@ -156,9 +159,9 @@ recorded immediately after them and in `IMPLEMENTATION_STATUS.md`:
 ```bash
 ./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest
 ./gradlew :mosh-api:test :mosh-api:lint :mosh-api:assemble
-./gradlew :mosh-extension:test :mosh-extension:lint \
-  :mosh-extension:assembleDebug :mosh-extension:assembleRelease \
-  :mosh-extension:assembleDebugAndroidTest
+./gradlew :mosh-core:test :mosh-core:lint \
+  :mosh-core:assembleDebug :mosh-core:assembleRelease \
+  :mosh-core:assembleDebugAndroidTest
 ./gradlew :app:verifyReleasePackaging :app:verifyReleaseBundlePackaging :benchmark:assemble
 ```
 
@@ -196,7 +199,7 @@ behavior on an arbitrary external server is claimed.
 ## Local release-like evidence
 
 An additional local acceptance gate used the existing Android debug keystore only; it was not
-production signing. `:app:assembleRelease :app:bundleRelease :mosh-extension:assembleRelease`
+production signing. `:app:assembleRelease :app:bundleRelease :mosh-core:assembleRelease`
 completed with `BUILD SUCCESSFUL` in 1 min 28 s with 159 tasks. The artifacts were:
 
 - app release APK SHA-256

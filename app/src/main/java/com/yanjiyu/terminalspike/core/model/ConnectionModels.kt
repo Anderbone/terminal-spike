@@ -1,6 +1,6 @@
 package com.yanjiyu.terminalspike.core.model
 
-/** Inclusive UDP port range requested from a separately installed Mosh extension. */
+/** Inclusive UDP port range requested from a separately installed Mosh transport. */
 data class MoshPortRange(
     val first: Int,
     val last: Int,

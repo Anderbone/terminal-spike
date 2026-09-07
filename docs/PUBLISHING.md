@@ -1,5 +1,8 @@
 # Publishing checklist
 
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+
 The source tree is release-candidate quality, but it is not yet authorized for public production
 distribution. Complete every applicable item below for each separately published package.
 

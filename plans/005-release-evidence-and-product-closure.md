@@ -222,9 +222,9 @@ Full source gate after implementation:
 ```bash
 ./gradlew --no-daemon --max-workers=1 -Pkotlin.incremental=false \
   :mosh-api:testDebugUnitTest :mosh-api:lintDebug :mosh-api:assembleDebug \
-  :mosh-extension:testDebugUnitTest :mosh-extension:lintDebug :mosh-extension:lintRelease \
-  :mosh-extension:assembleDebug :mosh-extension:assembleRelease \
-  :mosh-extension:assembleDebugAndroidTest \
+  :mosh-core:testDebugUnitTest :mosh-core:lintDebug :mosh-core:lintRelease \
+  :mosh-core:assembleDebug :mosh-core:assembleRelease \
+  :mosh-core:assembleDebugAndroidTest \
   :app:testDebugUnitTest :app:lintDebug :app:lintRelease \
   :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest \
   :benchmark:assemble
@@ -553,11 +553,11 @@ export TERMINAL_SPIKE_RELEASE_STORE_PASSWORD="$release_password"
 export TERMINAL_SPIKE_RELEASE_KEY_ALIAS='terminal-spike-release-like'
 export TERMINAL_SPIKE_RELEASE_KEY_PASSWORD="$release_password"
 ./gradlew --no-daemon --max-workers=1 \
-  :app:assembleRelease :app:bundleRelease :mosh-extension:assembleRelease
+  :app:assembleRelease :app:bundleRelease :mosh-core:assembleRelease
 
 app_release_apk='app/build/outputs/apk/release/app-release.apk'
 app_release_aab='app/build/outputs/bundle/release/app-release.aab'
-extension_release_apk='mosh-extension/build/outputs/apk/release/mosh-extension-release.apk'
+extension_release_apk='mosh-core/build/outputs/apk/release/mosh-extension-release.apk'
 test -f "$app_release_apk"
 test -f "$app_release_aab"
 test -f "$extension_release_apk"
@@ -670,9 +670,9 @@ date +%s > build/release-evidence/final-gate-start.epoch
 ./gradlew --no-daemon --max-workers=1 --rerun-tasks \
   -Pkotlin.incremental=false \
   :mosh-api:testDebugUnitTest :mosh-api:lintDebug :mosh-api:assembleDebug \
-  :mosh-extension:testDebugUnitTest :mosh-extension:lintDebug \
-  :mosh-extension:lintRelease :mosh-extension:assembleDebug \
-  :mosh-extension:assembleRelease :mosh-extension:assembleDebugAndroidTest \
+  :mosh-core:testDebugUnitTest :mosh-core:lintDebug \
+  :mosh-core:lintRelease :mosh-core:assembleDebug \
+  :mosh-core:assembleRelease :mosh-core:assembleDebugAndroidTest \
   :app:testDebugUnitTest :app:lintDebug :app:lintRelease \
   :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest \
   :benchmark:assemble
@@ -684,13 +684,13 @@ Run exact machine-verifiable closure checks:
 set -euo pipefail
 ./gradlew --no-daemon --max-workers=1 \
   :app:verifyReleasePackaging :app:verifyReleaseBundlePackaging
-mosh-extension/scripts/verify-sources.sh
+mosh-core/scripts/verify-sources.sh
 source_bundle_a=$(mktemp -d "${TMPDIR:-/tmp}/terminal-spike-source-a.XXXXXX")
 source_bundle_b=$(mktemp -d "${TMPDIR:-/tmp}/terminal-spike-source-b.XXXXXX")
 trap 'rm -rf "$source_bundle_a" "$source_bundle_b"' EXIT
-mosh-extension/scripts/create-source-bundle.sh "$source_bundle_a"
-mosh-extension/scripts/create-source-bundle.sh "$source_bundle_b"
-source_archive='terminal-spike-mosh-extension-source-1.0.0.tar.gz'
+scripts/create-source-bundle.sh "$source_bundle_a"
+scripts/create-source-bundle.sh "$source_bundle_b"
+source_archive="terminal-spike-source-$(git rev-parse HEAD).tar.gz"
 cmp "$source_bundle_a/$source_archive" "$source_bundle_b/$source_archive"
 (cd "$source_bundle_a" && sha256sum --check "$source_archive.sha256")
 (cd "$source_bundle_b" && sha256sum --check "$source_archive.sha256")
@@ -716,7 +716,7 @@ serials = [
 ]
 connected_files = []
 for serial in serials:
-    for module in ("app", "mosh-extension"):
+    for module in ("app", "mosh-core"):
         path = Path("build/release-evidence/connected") / serial / f"{module}.xml"
         if not path.is_file() or path.stat().st_mtime_ns < start_ns:
             raise SystemExit(f"Missing fresh {module} report for {serial}")
@@ -741,7 +741,7 @@ print("PASS", len(files), "reports", totals)
 PY
 
 mkdir -p build/release-evidence
-find app/build/outputs mosh-api/build/outputs mosh-extension/build/outputs \
+find app/build/outputs mosh-api/build/outputs mosh-core/build/outputs \
   -type f \( -name '*.apk' -o -name '*.aab' -o -name '*.aar' \
   -o -name 'baseline-prof.txt' -o -name '*NOTICE*' \) -print0 \
   | sort -z | xargs -0 -r sha256sum \
@@ -770,7 +770,7 @@ cmp build/release-evidence/source-manifest.final.sha256 \
 ```
 
 The task names above are registered in `app/build.gradle.kts`; the source scripts
-are checked in under `mosh-extension/scripts/`. A missing task/script is a source
+are checked in under `mosh-core/scripts/`. A missing task/script is a source
 or checkout defect and must fail the gate, not trigger a guessed substitute. The
 XML parser must be run after both unit and connected gates; its output, the
 artifact hash file, signature verification output, device matrix, and final

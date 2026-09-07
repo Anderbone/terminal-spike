@@ -174,6 +174,21 @@ class MoshRealEndToEndTest {
                 controller.viewport.scrollY < initialScrollY,
             )
 
+            // ACTION_UP starts a native fling. Measure a resting reader before recreation,
+            // otherwise animation frames between this snapshot and detach change the anchor.
+            // This wait happens only after the first-gesture route and movement assertions.
+            withTimeout(10_000L) {
+                var previousY = Float.NaN
+                var stableSince = SystemClock.uptimeMillis()
+                while (true) {
+                    var currentY = Float.NaN
+                    scenario.onActivity { currentY = controller.viewport.scrollY }
+                    if (currentY != previousY) stableSince = SystemClock.uptimeMillis()
+                    if (SystemClock.uptimeMillis() - stableSince >= 300L) break
+                    previousY = currentY
+                    delay(25L)
+                }
+            }
             val visibleBeforeRecreate = controller.viewport.visibleRows(overscan = 0)
             val anchorBeforeRecreate = controller.selectionLineAt(visibleBeforeRecreate.first)?.anchor
                 ?: throw AssertionError("The Mosh/tmux reader had no stable top anchor.")
@@ -613,7 +628,7 @@ class MoshRealEndToEndTest {
             val failure = awaitFailure(first.states)
             assertTrue(
                 "Real worker death must be reported as an extension failure, not a clean EOF: ${failure.message}",
-                failure.message == "Mosh extension stopped unexpectedly.",
+                failure.message == "Mosh transport stopped unexpectedly.",
             )
             withTimeout(CLOSE_TIMEOUT_MILLIS) { first.job.await() }
 
@@ -649,12 +664,12 @@ class MoshRealEndToEndTest {
                     client.status.first { it is com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus.Available }
                 }
             }
-            val brokerPid = awaitProcessPid(MOSH_EXTENSION_PACKAGE)
+            val brokerPid = awaitProcessPid("$MOSH_EXTENSION_PACKAGE:mosh_broker")
             killExtensionProcess(brokerPid)
             val failure = awaitFailure(first.states)
             assertTrue(
                 "Real broker death must be reported as a bounded extension failure: ${failure.message}",
-                failure.message == "Mosh extension stopped unexpectedly.",
+                failure.message == "Mosh transport stopped unexpectedly.",
             )
             withTimeout(CLOSE_TIMEOUT_MILLIS) { first.job.await() }
             observedError.await()
@@ -889,7 +904,7 @@ class MoshRealEndToEndTest {
         const val TMUX_PREFIX_CONTROL_BYTE: Byte = 0x02
         const val TMUX_COPY_MODE_KEY = '['
         const val TMUX_ENABLE_MOUSE_COMMAND = "tmux set-option -g mouse on"
-        const val MOSH_EXTENSION_PACKAGE = "com.yanjiyu.terminalspike.mosh"
+        const val MOSH_EXTENSION_PACKAGE = "com.yanjiyu.terminalspike"
         const val TMUX_RECREATE_ROW_COUNT = 500
         const val TMUX_RECREATE_PREFIX = "MOSH_TMUX_RECREATE_"
         const val TMUX_RECREATE_DONE_MARKER = "MOSH_TMUX_RECREATE_DONE"

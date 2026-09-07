@@ -53,12 +53,12 @@ jobs:
           :mosh-api:testDebugUnitTest
           :mosh-api:lintDebug
           :mosh-api:assembleDebug
-          :mosh-extension:testDebugUnitTest
-          :mosh-extension:lintDebug
-          :mosh-extension:lintRelease
-          :mosh-extension:assembleDebug
-          :mosh-extension:assembleRelease
-          :mosh-extension:assembleDebugAndroidTest
+          :mosh-core:testDebugUnitTest
+          :mosh-core:lintDebug
+          :mosh-core:lintRelease
+          :mosh-core:assembleDebug
+          :mosh-core:assembleRelease
+          :mosh-core:assembleDebugAndroidTest
           :app:testDebugUnitTest
           :app:lintDebug
           :app:lintRelease

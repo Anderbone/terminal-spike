@@ -9,7 +9,6 @@ output_dir="$project_dir/build/real-mosh-device-results"
 fixture_dir="$project_dir/integration-tests/openssh"
 app_apk="$project_dir/app/build/outputs/apk/debug/app-debug.apk"
 test_apk="$project_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-extension_apk="$project_dir/mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk"
 orchestrator_apk="$project_dir/app/build/outputs/runtime-test-utils/orchestrator-1.6.1.apk"
 test_services_apk="$project_dir/app/build/outputs/runtime-test-utils/test-services-1.6.0.apk"
 private_key_file="$fixture_dir/.state/client/id_ed25519"
@@ -74,7 +73,7 @@ fi
     echo "Android platform-tools not found. Put adb on PATH or configure the SDK." >&2
     exit 3
 }
-for required_tool in docker timeout base64 python3; do
+for required_tool in docker timeout base64 python3 sha256sum; do
     command -v "$required_tool" >/dev/null || {
         echo "Required tool is missing: $required_tool" >&2
         exit 3
@@ -111,6 +110,24 @@ verify_old_phone() {
     }
 }
 
+verify_installed_apk() {
+    local package_name="$1" artifact="$2" installed_path expected actual
+    verify_old_phone
+    installed_path="$("$adb_bin" -s "$serial" shell pm path "$package_name" | tr -d '\r')"
+    installed_path="${installed_path#package:}"
+    [[ "$installed_path" =~ ^/data/app/[A-Za-z0-9_./=+~-]+/base.apk$ ]] || {
+        echo "Could not resolve one installed APK for $package_name." >&2
+        return 5
+    }
+    expected="$(sha256sum "$artifact" | awk '{print $1}')"
+    actual="$("$adb_bin" -s "$serial" shell sha256sum "$installed_path" | awk '{print $1}')"
+    [[ "$expected" == "$actual" ]] || {
+        echo "Installed APK changed or differs from the tested build: $package_name." >&2
+        return 5
+    }
+    echo "APK_PROVENANCE package=$package_name sha256=$expected"
+}
+
 cleanup() {
     if [[ "$fixture_started" == true ]]; then
         docker compose --project-directory "$fixture_dir" -f "$fixture_dir/compose.yaml" down \
@@ -128,10 +145,9 @@ trap 'exit 143' TERM
 
 verify_old_phone
 cd "$project_dir"
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:stageRuntimeTestUtilities \
-    :mosh-extension:assembleDebug
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:stageRuntimeTestUtilities
 
-for artifact in "$app_apk" "$test_apk" "$extension_apk" "$orchestrator_apk" "$test_services_apk"; do
+for artifact in "$app_apk" "$test_apk" "$orchestrator_apk" "$test_services_apk"; do
     [[ -f "$artifact" ]] || { echo "Required APK is missing: $artifact" >&2; exit 3; }
 done
 
@@ -168,7 +184,6 @@ install_apk() {
 
 install_apk "$app_apk"
 install_apk "$test_apk"
-install_apk "$extension_apk"
 install_apk "$orchestrator_apk" true
 install_apk "$test_services_apk" true
 
@@ -215,6 +230,8 @@ run_acceptance() {
     local public_result="$output_dir/instrumentation-real-mosh-$label.txt"
     local report="$output_dir/TEST-real-mosh-$label.xml"
 
+    verify_installed_apk com.yanjiyu.terminalspike "$app_apk"
+    verify_installed_apk com.yanjiyu.terminalspike.test "$test_apk"
     verify_old_phone
     "$adb_bin" -s "$serial" logcat -c >/dev/null 2>&1 || true
     set +e
@@ -226,6 +243,8 @@ run_acceptance() {
     "$adb_bin" -s "$serial" logcat -d | \
         python3 "$project_dir/scripts/redact-android-test-log.py" \
         >"$output_dir/logcat-real-mosh-$label.txt"
+    verify_installed_apk com.yanjiyu.terminalspike "$app_apk"
+    verify_installed_apk com.yanjiyu.terminalspike.test "$test_apk"
     [[ $status -eq 0 ]] || {
         echo "Real-Mosh instrumentation command failed for $label." >&2
         return "$status"

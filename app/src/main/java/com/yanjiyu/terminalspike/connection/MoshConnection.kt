@@ -133,7 +133,7 @@ internal class MoshConnection(
                 } catch (_: ConnectionCallbackException) {
                     failTerminal(attempt, "Mosh connection callback failed.")
                 } catch (_: Exception) {
-                    failTransport(attempt, "Mosh extension event channel failed.")
+                    failTransport(attempt, "Mosh transport event channel failed.")
                 }
             }
             val startResult = try {
@@ -398,7 +398,7 @@ internal class MoshConnection(
                 ) { closeResources(attempt) }
             }
             MoshSessionState.ERROR -> failConnection(attempt, moshErrorFailure(event.errorCode))
-            else -> failTerminal(attempt, "Mosh extension returned an invalid session state.")
+            else -> failTerminal(attempt, "Mosh transport returned an invalid session state.")
         }
     }
 
@@ -561,7 +561,7 @@ internal class MoshConnection(
             } catch (_: CancellationException) {
                 return
             } catch (_: Exception) {
-                failTerminal(attempt, "Mosh extension could not resize the session.")
+                failTerminal(attempt, "Mosh transport could not resize the session.")
                 return
             }
             when (result) {
@@ -944,43 +944,43 @@ private fun moshFallbackFailure(
 
 private fun MoshExtensionStatus.failureOrNull(): ConnectionState.Failed? = when (this) {
     is MoshExtensionStatus.Available -> null
-    MoshExtensionStatus.Absent -> moshFallbackFailure("Mosh extension is not installed.", MoshFallbackFailure.EXTENSION)
-    is MoshExtensionStatus.Disabled -> moshFallbackFailure("Mosh extension is disabled.", MoshFallbackFailure.EXTENSION)
+    MoshExtensionStatus.Absent -> moshFallbackFailure("The built-in Mosh transport is unavailable.", MoshFallbackFailure.EXTENSION)
+    is MoshExtensionStatus.Disabled -> moshFallbackFailure("Mosh transport is disabled.", MoshFallbackFailure.EXTENSION)
     is MoshExtensionStatus.Untrusted ->
-        ConnectionState.Failed("Mosh extension signature could not be trusted.")
+        ConnectionState.Failed("The built-in Mosh transport failed its safety checks.")
     is MoshExtensionStatus.Incompatible ->
-        moshFallbackFailure("Mosh extension is incompatible with this app.", MoshFallbackFailure.EXTENSION)
-    MoshExtensionStatus.Checking -> moshFallbackFailure("Mosh extension is not ready.", MoshFallbackFailure.EXTENSION)
+        moshFallbackFailure("Mosh transport is incompatible with this app.", MoshFallbackFailure.EXTENSION)
+    MoshExtensionStatus.Checking -> moshFallbackFailure("Mosh transport is not ready.", MoshFallbackFailure.EXTENSION)
     is MoshExtensionStatus.Error -> when (reason) {
         com.yanjiyu.terminalspike.connection.mosh.MoshExtensionError.CLIENT_CLOSED ->
-            ConnectionState.Failed("Mosh extension client is closed.")
-        else -> moshFallbackFailure("Mosh extension is unavailable.", MoshFallbackFailure.EXTENSION)
+            ConnectionState.Failed("Mosh transport client is closed.")
+        else -> moshFallbackFailure("Mosh transport is unavailable.", MoshFallbackFailure.EXTENSION)
     }
 }
 
 private fun MoshClientFailure.connectionFailure(): ConnectionState.Failed = when (this) {
     MoshClientFailure.EXTENSION_UNAVAILABLE ->
-        moshFallbackFailure("Mosh extension became unavailable.", MoshFallbackFailure.EXTENSION, transient = true)
+        moshFallbackFailure("Mosh transport became unavailable.", MoshFallbackFailure.EXTENSION, transient = true)
     MoshClientFailure.INVALID_REQUEST ->
-        ConnectionState.Failed("Mosh extension rejected the session request.")
+        ConnectionState.Failed("Mosh transport rejected the session request.")
     MoshClientFailure.CAPABILITY_MISMATCH ->
-        moshFallbackFailure("Mosh extension does not support this session.", MoshFallbackFailure.EXTENSION)
+        moshFallbackFailure("Mosh transport does not support this session.", MoshFallbackFailure.EXTENSION)
     MoshClientFailure.INVALID_EXTENSION_RESPONSE ->
-        ConnectionState.Failed("Mosh extension returned an invalid response.")
+        ConnectionState.Failed("Mosh transport returned an invalid response.")
     MoshClientFailure.REMOTE_FAILURE ->
-        moshFallbackFailure("Mosh extension failed while starting the session.", MoshFallbackFailure.EXTENSION, transient = true)
-    MoshClientFailure.CLIENT_CLOSED -> ConnectionState.Failed("Mosh extension client is closed.")
+        moshFallbackFailure("Mosh transport failed while starting the session.", MoshFallbackFailure.EXTENSION, transient = true)
+    MoshClientFailure.CLIENT_CLOSED -> ConnectionState.Failed("Mosh transport client is closed.")
 }
 
 private fun MoshClientFailure.resizeFailure(): ConnectionState.Failed = when (this) {
     MoshClientFailure.EXTENSION_UNAVAILABLE,
     MoshClientFailure.REMOTE_FAILURE,
-    -> transientTransportFailure("Mosh extension connection was lost while resizing.")
+    -> transientTransportFailure("Mosh transport connection was lost while resizing.")
     MoshClientFailure.INVALID_REQUEST,
     MoshClientFailure.CAPABILITY_MISMATCH,
     MoshClientFailure.INVALID_EXTENSION_RESPONSE,
     MoshClientFailure.CLIENT_CLOSED,
-    -> ConnectionState.Failed("Mosh extension could not resize the session.")
+    -> ConnectionState.Failed("Mosh transport could not resize the session.")
 }
 
 internal fun MoshBootstrapException.safeConnectionFailure(): ConnectionState.Failed = when (failure) {
@@ -1012,28 +1012,28 @@ internal fun MoshBootstrapException.safeConnectionFailure(): ConnectionState.Fai
 }
 
 internal fun moshErrorFailure(errorCode: Int): ConnectionState.Failed = when (errorCode) {
-    MoshErrorCode.EXTENSION_ABSENT -> moshFallbackFailure("Mosh extension is unavailable.", MoshFallbackFailure.EXTENSION)
+    MoshErrorCode.EXTENSION_ABSENT -> moshFallbackFailure("Mosh transport is unavailable.", MoshFallbackFailure.EXTENSION)
     MoshErrorCode.EXTENSION_INCOMPATIBLE ->
-        moshFallbackFailure("Mosh extension is incompatible with this app.", MoshFallbackFailure.EXTENSION)
+        moshFallbackFailure("Mosh transport is incompatible with this app.", MoshFallbackFailure.EXTENSION)
     MoshErrorCode.EXTENSION_UNTRUSTED ->
-        ConnectionState.Failed("Mosh extension signature could not be trusted.")
+        ConnectionState.Failed("The built-in Mosh transport failed its safety checks.")
     MoshErrorCode.INVALID_REQUEST ->
-        ConnectionState.Failed("Mosh extension rejected the session request.")
+        ConnectionState.Failed("Mosh transport rejected the session request.")
     MoshErrorCode.KEY_READ_FAILED ->
-        ConnectionState.Failed("Mosh extension could not read its session key.")
+        ConnectionState.Failed("Mosh transport could not read its session key.")
     MoshErrorCode.UDP_TIMEOUT_OR_FIREWALL ->
         moshFallbackFailure("Mosh could not reach the server over UDP.", MoshFallbackFailure.UDP, transient = true)
     MoshErrorCode.LOCALE_UNSUPPORTED ->
         ConnectionState.Failed("Mosh server does not support the selected locale.")
     MoshErrorCode.NATIVE_INITIALIZATION_FAILED ->
-        ConnectionState.Failed("Mosh extension could not initialize its transport.")
+        ConnectionState.Failed("Mosh transport could not initialize its transport.")
     MoshErrorCode.EXTENSION_DIED ->
-        moshFallbackFailure("Mosh extension stopped unexpectedly.", MoshFallbackFailure.EXTENSION, transient = true)
+        moshFallbackFailure("Mosh transport stopped unexpectedly.", MoshFallbackFailure.EXTENSION, transient = true)
     MoshErrorCode.CANCELLED -> ConnectionState.Failed("Mosh session was cancelled.")
     MoshErrorCode.INTERNAL_REDACTED,
     MoshErrorCode.NONE,
-    -> ConnectionState.Failed("Mosh extension failed.")
-    else -> ConnectionState.Failed("Mosh extension returned an invalid error code.")
+    -> ConnectionState.Failed("Mosh transport failed.")
+    else -> ConnectionState.Failed("Mosh transport returned an invalid error code.")
 }
 
 internal fun moshDisconnectState(disconnectReason: Int): ConnectionState = when (disconnectReason) {
@@ -1042,10 +1042,10 @@ internal fun moshDisconnectState(disconnectReason: Int): ConnectionState = when 
         transientTransportFailure("Mosh transport was lost.")
     MoshDisconnectReason.REMOTE_CLOSED -> ConnectionState.Failed("Mosh session ended remotely.")
     MoshDisconnectReason.EXTENSION_FAILED ->
-        ConnectionState.Failed("Mosh extension stopped the session unexpectedly.")
+        ConnectionState.Failed("Mosh transport stopped the session unexpectedly.")
     MoshDisconnectReason.SESSION_REPLACED -> ConnectionState.Failed("Mosh session was replaced.")
     MoshDisconnectReason.NONE -> ConnectionState.Failed("Mosh session ended without a reason.")
-    else -> ConnectionState.Failed("Mosh extension returned an invalid disconnect reason.")
+    else -> ConnectionState.Failed("Mosh transport returned an invalid disconnect reason.")
 }
 
 private fun MoshSessionEvent.toTransportEvent(): MoshTransportEvent = MoshTransportEvent(

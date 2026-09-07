@@ -165,10 +165,6 @@ abstract class VerifyReleasePackaging : DefaultTask() {
             "com.yanjiyu.terminalspike.performance.TerminalBenchmarkActivity",
             "com.yanjiyu.terminalspike.terminal.benchmark.",
             "com.yanjiyu.terminalspike.mosh.MoshExtensionActivity",
-            "com.yanjiyu.terminalspike.mosh.MoshExtensionService",
-            "com.yanjiyu.terminalspike.mosh.MoshNativeBridge",
-            "com.yanjiyu.terminalspike.mosh.MoshWorkerService",
-            "com.yanjiyu.terminalspike.mosh.internal.",
         )
         private val FORBIDDEN_TERMINAL_MAPPING_MEMBERS = listOf("PerformanceOverlay(", "isBenchmark(")
         private val FORBIDDEN_TERMINAL_TEXT = listOf(
@@ -196,11 +192,6 @@ abstract class VerifyReleasePackaging : DefaultTask() {
         private val FORBIDDEN_TERMINAL_TOKENS = listOf("Bench")
         private val FORBIDDEN_MOSH_IMPLEMENTATION_DESCRIPTORS = listOf(
             "Lcom/yanjiyu/terminalspike/mosh/MoshExtensionActivity;",
-            "Lcom/yanjiyu/terminalspike/mosh/MoshExtensionService;",
-            "Lcom/yanjiyu/terminalspike/mosh/MoshNativeBridge;",
-            "Lcom/yanjiyu/terminalspike/mosh/MoshWorkerService;",
-            "Lcom/yanjiyu/terminalspike/mosh/internal/",
-            "Java_com_yanjiyu_terminalspike_mosh_MoshNativeBridge",
         )
         private val FORBIDDEN_TEST_CREDENTIAL_TEXT = listOf(
             "terminal-spike-test-only",
@@ -308,6 +299,27 @@ abstract class VerifyReleasePackaging : DefaultTask() {
 
         fun verifyTerminalArchive(archiveFile: File) {
             ZipFile(archiveFile).use { archive ->
+                val prefix = if (archiveFile.extension == "aab") "base/" else ""
+                for (abi in listOf("arm64-v8a", "x86_64")) {
+                    val path = "${prefix}lib/$abi/libmosh_extension.so"
+                    val entry = archive.getEntry(path)
+                        ?: throw GradleException("${archiveFile.name} is missing built-in Mosh for $abi")
+                    val magic = archive.getInputStream(entry).use { it.readNBytes(4) }
+                    if (!magic.contentEquals(byteArrayOf(0x7f, 0x45, 0x4c, 0x46))) {
+                        throw GradleException("$path is not an ELF library")
+                    }
+                }
+                for (notice in listOf(
+                    "mosh/THIRD_PARTY_NOTICES.md", "MOSH-COPYING-GPL-3.0", "MOSH-OPENSSL-EXCEPTION",
+                    "MOSH-AUTHORS", "MOSH-OCB-LICENCE.html", "NETTLE-COPYING-LESSERv3",
+                    "NETTLE-COPYING-GPLv3", "PROTOBUF-LICENSE", "ANDROID-NDK-R29-NOTICE",
+                    "LLVM-TOOLCHAIN-NOTICE",
+                )) {
+                    val entry = archive.getEntry("${prefix}assets/$notice")
+                    if (entry == null || entry.size <= 0) {
+                        throw GradleException("${archiveFile.name} is missing native notice $notice")
+                    }
+                }
                 archive.entries().asSequence()
                     .filterNot { entry -> entry.isDirectory }
                     .forEach { entry ->
@@ -367,6 +379,9 @@ abstract class VerifyReleasePackaging : DefaultTask() {
         }
 
         private fun isForbiddenMoshNativeEntry(entryName: String): Boolean {
+            if (entryName.removePrefix("base/") in setOf(
+                    "lib/arm64-v8a/libmosh_extension.so", "lib/x86_64/libmosh_extension.so",
+                )) return false
             val fileName = entryName.substringAfterLast('/').lowercase()
             if (
                 fileName.substringAfterLast('.', missingDelimiterValue = "") !in
@@ -620,6 +635,7 @@ extensions.configure<ApplicationExtension>("android") {
 
     defaultConfig {
         applicationId = "com.yanjiyu.terminalspike"
+        ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         minSdk = 26
         targetSdk = 37
         versionCode = 6
@@ -713,6 +729,7 @@ protobuf {
 dependencies {
     baselineProfile(project(":benchmark"))
     implementation(project(":mosh-api"))
+    implementation(project(":mosh-core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

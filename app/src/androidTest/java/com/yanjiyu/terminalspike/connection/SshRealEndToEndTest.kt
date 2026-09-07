@@ -1848,7 +1848,7 @@ class SshRealEndToEndTest {
             false
         }
         assertFalse(
-            "The Mosh extension must be absent for this release-isolation proof.",
+            "The Mosh transport must be absent for this release-isolation proof.",
             extensionInstalled,
         )
     }

@@ -34,12 +34,11 @@ class RealMoshDeviceRunnerTest(unittest.TestCase):
             self.root / "gradlew",
             r'''printf 'gradle %s\n' "$*" >> "$FAKE_COMMAND_LOG"
 mkdir -p app/build/outputs/apk/debug app/build/outputs/apk/androidTest/debug
-mkdir -p app/build/outputs/runtime-test-utils mosh-extension/build/outputs/apk/debug
+mkdir -p app/build/outputs/runtime-test-utils
 : > app/build/outputs/apk/debug/app-debug.apk
 : > app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 : > app/build/outputs/runtime-test-utils/orchestrator-1.6.1.apk
 : > app/build/outputs/runtime-test-utils/test-services-1.6.0.apk
-: > mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk
 ''',
         )
         self.write_tool(
@@ -65,9 +64,18 @@ case "$*" in
     ;;
   *" get-state") printf 'device\n' ;;
   *"shell getprop ro.product.model") printf '%s\n' "${FAKE_PROP_MODEL:-SM-S911B}" ;;
+  *"shell pm path "*) printf 'package:/data/app/%s/base.apk\n' "${@: -1}" ;;
+  *"shell sha256sum "*)
+    if [[ "${FAKE_APK_CHANGED:-0}" == 1 || ( "${FAKE_AFTER_TEST_CHANGED:-0}" == 1 && -f "$FAKE_COMMAND_LOG.instrumented" ) ]]; then
+      printf 'changed  base.apk\n'
+    else
+      printf 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  base.apk\n'
+    fi
+    ;;
   *" install "*) [[ "${FAKE_INSTALL_FAIL:-0}" != "1" ]] ;;
   *"toybox nc -z"*) [[ "${FAKE_REACHABLE:-1}" == "1" ]] ;;
   *"ShellMain am instrument"*)
+    touch "$FAKE_COMMAND_LOG.instrumented"
     [[ "${FAKE_INSTRUMENTATION_EXIT:-0}" == "0" ]] || exit "$FAKE_INSTRUMENTATION_EXIT"
     printf 'privateKeyBase64 fixture-private-key\npassword=terminal-spike-test-only\n'
     if [[ "$*" == *"#realServerCarriesInteractiveTerminalBytesThroughTheExtension"* ]]; then
@@ -148,13 +156,14 @@ esac
         scoped = [line for line in adb if line != "adb devices -l"]
         self.assertTrue(scoped)
         self.assertTrue(all(line.startswith(f"adb -s {self.serial} ") for line in scoped))
-        self.assertEqual(5, sum(" install " in f" {line} " for line in adb))
+        self.assertEqual(4, sum(" install " in f" {line} " for line in adb))
         instrumentation = [line for line in adb if "ShellMain am instrument" in line]
         self.assertEqual(2, len(instrumentation))
         self.assertIn("MoshRealEndToEndTest", instrumentation[0])
         self.assertNotIn("#realServer", instrumentation[0])
         self.assertIn("#realServerCarriesInteractiveTerminalBytesThroughTheExtension", instrumentation[1])
-        self.assertGreaterEqual(adb.count("adb devices -l"), 9)
+        self.assertGreaterEqual(adb.count("adb devices -l"), 8)
+        self.assertFalse(any("mosh-extension-debug.apk" in line for line in adb))
         self.assertLess(commands.index("docker compose --project-directory " + str(self.fixture) + " -f " + str(self.fixture / "compose.yaml") + " down"), commands.index("smoke bind=192.168.5.10 verify=192.168.5.10"))
         self.assertEqual(2, sum(line.endswith(" down") for line in commands if line.startswith("docker ")))
         self.assertTrue((self.output / "TEST-real-mosh-password.xml").is_file())
@@ -164,6 +173,19 @@ esac
         self.assertNotIn("terminal-spike-test-only", public_text)
         self.assertNotIn("192.168.5.", public_text)
         self.assertEqual([], list(self.tmp.glob("terminal-spike-real-mosh.*")))
+
+    def test_rejects_apk_replacement_before_or_during_the_test(self) -> None:
+        for variable in ("FAKE_APK_CHANGED", "FAKE_AFTER_TEST_CHANGED"):
+            with self.subTest(variable=variable):
+                env = self.env.copy()
+                env[variable] = "1"
+                result = self.run_runner(env=env)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("Installed APK changed", result.stderr)
+                self.assertEqual([], list(self.output.glob("TEST-*.xml")))
+                self.log.unlink(missing_ok=True)
+                Path(str(self.log) + ".instrumented").unlink(missing_ok=True)
+                shutil.rmtree(self.output, ignore_errors=True)
 
     def test_rejects_unsafe_arguments_before_external_actions(self) -> None:
         cases = (

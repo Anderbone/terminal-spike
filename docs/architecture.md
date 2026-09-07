@@ -13,7 +13,7 @@ dependencies: none
 
 ## Goal
 
-Record the implemented production structure for a local-first SSH terminal with an optional separately installed Mosh transport. The bounded VT engine and custom Android Canvas renderer remain intact while product data, credentials, navigation, and live session ownership use process-durable boundaries.
+Record the implemented production structure for a local-first SSH terminal with an built-in Mosh transport. The bounded VT engine and custom Android Canvas renderer remain intact while product data, credentials, navigation, and live session ownership use process-durable boundaries.
 
 `docs/ARCHITECTURE.md` is the concise implemented overview. This lowercase document is authoritative for the detailed production and migration boundaries requested by the completion brief.
 
@@ -34,11 +34,12 @@ app (com.yanjiyu.terminalspike)
 mosh-api (com.yanjiyu.terminalspike.mosh.api)
 └── permissive AIDL, parcelables, capabilities and error codes only
 
-mosh-extension (com.yanjiyu.terminalspike.mosh)
-└── separate Android application/APK, service, JNI/native client and GPL materials
+mosh-core (com.yanjiyu.terminalspike.mosh)
+└── internal Android library, private broker/worker processes, JNI client and GPL materials
 ```
 
-No GPL Mosh implementation, native object, resource, or implementation dependency may appear in the main app's packaged dependency graph. `mosh-api` is deliberately small, project-owned, and permissively licensed for both applications.
+The GPL-3.0-or-later main APK includes `mosh-core` under ADR-005. `mosh-api` remains the small
+Apache-2.0 contract between its private processes. Only the main process initializes `AppContainer`.
 
 ### Implemented Mosh slice
 

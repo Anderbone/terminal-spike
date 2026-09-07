@@ -1,5 +1,8 @@
 # ADR-004: One public repository for Terminal Spike and Mosh
 
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+
 - Date: 2026-09-07
 - Status: Accepted; public repository cutover verified on 2026-09-07
 - Supersedes: ADR-003's private main-source assumption and separate source-maintenance entry point

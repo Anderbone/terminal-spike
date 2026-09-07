@@ -1,5 +1,8 @@
 # Architecture
 
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+
 ## Compose shell
 
 `TerminalSpikeScreen` owns shell routing between exactly Connections, Terminal, and Settings. Connections is the main catalogue for saved hosts, keys, and snippets; Terminal owns active sessions. The Settings destination contains the terminal, keyboard, session, security, backup, Mosh, and About/notices categories. The About surface reads the same canonical third-party notice file that the build packages into each APK's assets. Product-authored UI copy crosses presentation boundaries as resource-backed `UiText`, and Settings landing summaries are projected from committed `SettingsUiState`. Terminal content and scrolling never travel through Compose state. The Activity uses `adjustResize` and the terminal scaffold consumes IME insets so the complete terminal workspace moves above the software keyboard and restores when it closes.

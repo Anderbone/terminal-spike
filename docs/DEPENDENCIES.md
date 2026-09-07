@@ -1,8 +1,9 @@
 # Direct dependencies
 
-All selected versions are stable. No GPL or AGPL dependency is included in the main APK or the
-shared `mosh-api` AAR. The separately installed GPL Mosh extension has its own complete inventory
-in `mosh-extension/DEPENDENCIES.md` and is never linked into either artifact.
+All selected versions are stable. The GPL-3.0-or-later main APK includes the built-in Mosh
+transport through `mosh-core`, authorized by [ADR-005](ADR-005-BUNDLED-MOSH.md). The IPC-only
+`mosh-api` retains Apache-2.0. Exact native sources, checksums and licence obligations are in
+[`mosh-core/DEPENDENCIES.md`](../mosh-core/DEPENDENCIES.md).
 
 The resolved `releaseRuntimeClasspath` was reviewed on 2026-09-02. In addition to the direct dependencies below, it contains AndroidX support modules, the Kotlin standard library, kotlinx-coroutines core, kotlinx-serialization core, JetBrains annotations, JSpecify annotations, and Guava's standalone `listenablefuture` compatibility artefact. Those transitive families are Apache License 2.0 and are covered by the Apache licence reproduced in the packaged notices. Bouncy Castle is a deliberate direct runtime dependency for JSch's Android Ed25519 implementation; JSch's optional JNA, junixsocket, GSSAPI, and logging integrations are not resolved into the release APK. Repeat this review whenever the version catalog or resolved graph changes.
 
@@ -119,3 +120,16 @@ The project-owned `mosh-api` Android library adds no direct runtime dependency. 
 catalogued Android Gradle Plugin, JUnit 4, AndroidX Test Ext JUnit, and AndroidX Test Runner entries
 above for building and verification. Its AIDL, models, and tests are licensed under Apache-2.0 in
 `mosh-api/LICENSE`; it contains no upstream Mosh, GPL/AGPL, or native implementation.
+
+## Built-in native transport
+
+| Direct dependency | Purpose | Source | Licence and notices |
+|---|---|---|---|
+| `mosh-core` (project module) | Private broker, isolated workers and native Mosh transport packaged in the main APK | This repository; `mosh-core/` | GPL-3.0-or-later; include complete source/build instructions and native notices |
+| Mosh 1.4.0 | SSP UDP transport | [Official release](https://github.com/mobile-shell/mosh/releases/tag/mosh-1.4.0); pinned archive in `mosh-core/third_party` | GPL-3.0-or-later with upstream OpenSSL exception; preserve source, authors, exception, OCB notice and modification provenance |
+| GNU Nettle 3.10.2 | AES primitive | [GNU source](https://ftp.gnu.org/gnu/nettle/nettle-3.10.2.tar.gz); pinned archive in `mosh-core/third_party` | LGPL-3.0-or-later OR GPL-2.0-or-later, distributed as part of the GPLv3 work; preserve licences and source |
+| Protocol Buffers C++ 21.12 | Native wire-message runtime | [Official release](https://github.com/protocolbuffers/protobuf/releases/tag/v21.12); pinned archive in `mosh-core/third_party` | BSD-3-Clause; preserve attribution, conditions and disclaimer |
+
+Native notices are packaged under `assets/mosh/THIRD_PARTY_NOTICES.md`; the component licence
+texts and NDK/libc++ notices are also packaged. Main-app notices identify these components.
+The core no longer directly depends on Compose or Activity: its separate launcher has been removed.

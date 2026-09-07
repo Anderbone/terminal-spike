@@ -14,11 +14,9 @@ data class MoshNegotiatedProtocol(
 
 enum class MoshExtensionTrustReason {
     SERVICE_MISSING,
-    SERVICE_NOT_EXPORTED,
-    SERVICE_PERMISSION_MISMATCH,
-    BIND_PERMISSION_NOT_SIGNATURE_PROTECTED,
-    SIGNER_INFORMATION_MISSING,
-    SIGNER_MISMATCH,
+    SERVICE_EXPORTED,
+    UID_MISMATCH,
+    SERVICE_PROCESS_MISMATCH,
 }
 
 enum class MoshExtensionCompatibilityReason {

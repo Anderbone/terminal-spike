@@ -66,7 +66,7 @@ class MoshExtensionSectionTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText("4").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(
-            "Package signature verified against this app before binding.",
+            "The built-in transport passed its safety checks.",
         ).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Free software and source").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("GPL-3.0-or-later", substring = true)
@@ -95,10 +95,10 @@ class MoshExtensionSectionTest {
             }
         }
 
-        composeRule.onNodeWithText("Not installed").assertIsDisplayed()
-        composeRule.onNodeWithText("separately installed, matching companion APK", substring = true)
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("SSH remains available without it", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Unavailable").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "The built-in Mosh transport is unavailable in this installation. SSH remains available.",
+        ).assertIsDisplayed()
         composeRule.onNodeWithText("Retry").performClick()
         composeRule.runOnIdle { assertEquals(1, retryCount) }
 
@@ -106,13 +106,13 @@ class MoshExtensionSectionTest {
             .performScrollTo()
             .performClick()
         composeRule.onNodeWithTag(MoshExtensionInstallationHelpDialogTestTag).assertIsDisplayed()
-        composeRule.onNodeWithText(":mosh-extension:assembleDebug", substring = true)
+        composeRule.onNodeWithText("restart Terminal Spike", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithText("complete corresponding source", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
-        composeRule.onNodeWithText("Retry only asks Android to check again", substring = true)
+        composeRule.onNodeWithText("Retry checks the built-in transport again", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(1, retryCount) }
@@ -152,7 +152,7 @@ class MoshExtensionSectionTest {
             }
         }
 
-        composeRule.onNodeWithText("Extension check failed").assertIsDisplayed()
+        composeRule.onNodeWithText("Mosh check failed").assertIsDisplayed()
         composeRule.onNodeWithTag(MoshExtensionRefreshTestTag).assertDoesNotExist()
         composeRule.onNodeWithTag(MoshExtensionInstallationHelpTestTag).assertDoesNotExist()
     }

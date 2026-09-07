@@ -1,5 +1,8 @@
 # ADR-003: Separate GPL Mosh extension boundary
 
+> The separate-APK packaging described in historical sections is superseded by
+> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+
 > Historical licensing rationale: [ADR-004](ADR-004-OPEN-SOURCE-APP.md) supersedes the private
 > main-source assumption and authorizes consolidated public source. The existing APK/process
 > boundary remains implemented. This repository change does not authorize a new store release.

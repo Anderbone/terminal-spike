@@ -10,10 +10,8 @@ internal data class MoshInstalledPackageFacts(
     val servicePresent: Boolean,
     val serviceEnabled: Boolean,
     val serviceExported: Boolean,
-    val servicePermission: String?,
-    val bindPermissionSignatureProtected: Boolean,
-    /** `null` represents PackageManager.SIGNATURE_UNKNOWN_PACKAGE. */
-    val packageManagerSignatureMatch: Boolean?,
+    val sameApplicationUid: Boolean,
+    val separateBrokerProcess: Boolean,
 )
 
 internal sealed interface MoshDiscoveryDecision {
@@ -43,35 +41,14 @@ internal object MoshExtensionDecision {
                 MoshExtensionTrustReason.SERVICE_MISSING,
             )
         }
-        if (!facts.serviceExported) {
-            return MoshDiscoveryDecision.Untrusted(
-                facts.version,
-                MoshExtensionTrustReason.SERVICE_NOT_EXPORTED,
-            )
+        if (facts.serviceExported) {
+            return MoshDiscoveryDecision.Untrusted(facts.version, MoshExtensionTrustReason.SERVICE_EXPORTED)
         }
-        if (facts.servicePermission != MoshExtensionContract.BIND_PERMISSION) {
-            return MoshDiscoveryDecision.Untrusted(
-                facts.version,
-                MoshExtensionTrustReason.SERVICE_PERMISSION_MISMATCH,
-            )
+        if (!facts.sameApplicationUid) {
+            return MoshDiscoveryDecision.Untrusted(facts.version, MoshExtensionTrustReason.UID_MISMATCH)
         }
-        if (!facts.bindPermissionSignatureProtected) {
-            return MoshDiscoveryDecision.Untrusted(
-                facts.version,
-                MoshExtensionTrustReason.BIND_PERMISSION_NOT_SIGNATURE_PROTECTED,
-            )
-        }
-        if (facts.packageManagerSignatureMatch == null) {
-            return MoshDiscoveryDecision.Untrusted(
-                facts.version,
-                MoshExtensionTrustReason.SIGNER_INFORMATION_MISSING,
-            )
-        }
-        if (!facts.packageManagerSignatureMatch) {
-            return MoshDiscoveryDecision.Untrusted(
-                facts.version,
-                MoshExtensionTrustReason.SIGNER_MISMATCH,
-            )
+        if (!facts.separateBrokerProcess) {
+            return MoshDiscoveryDecision.Untrusted(facts.version, MoshExtensionTrustReason.SERVICE_PROCESS_MISMATCH)
         }
         return MoshDiscoveryDecision.Trusted(facts.version)
     }

@@ -22,7 +22,7 @@ class MoshExtensionPresentationTest {
             MoshExtensionStatus.Checking,
             MoshExtensionStatus.Absent,
             MoshExtensionStatus.Disabled(version),
-            MoshExtensionStatus.Untrusted(version, MoshExtensionTrustReason.SIGNER_MISMATCH),
+            MoshExtensionStatus.Untrusted(version, MoshExtensionTrustReason.UID_MISMATCH),
             MoshExtensionStatus.Incompatible(
                 version,
                 extensionApiVersion = 2,
@@ -111,10 +111,8 @@ class MoshExtensionPresentationTest {
         val expected = listOf(
             R.string.mosh_summary_untrusted_service_missing,
             R.string.mosh_summary_untrusted_service_not_exported,
-            R.string.mosh_summary_untrusted_permission_mismatch,
-            R.string.mosh_summary_untrusted_permission_unprotected,
-            R.string.mosh_summary_untrusted_signer_missing,
             R.string.mosh_summary_untrusted_signer_mismatch,
+            R.string.mosh_summary_untrusted_permission_mismatch,
         )
 
         assertEquals(
