@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.ui.connections
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -29,11 +30,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.SnippetTapAction
 import com.yanjiyu.terminalspike.core.model.Snippet
@@ -237,140 +240,147 @@ internal fun ConnectionsScreen(
             modifier = Modifier.fillMaxSize(),
             safeContentInsets = safeContentInsets,
         ) { contentModifier, navigationExpanded ->
-            Column(
-                modifier = contentModifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .testTag(ConnectionsScreenTestTag)
-                    .semantics { contentDescription = screenDescription },
-            ) {
-                ConnectionsHeader(
-                    selectedTab = displayedTab,
-                    searchQuery = state.searchQuery,
-                    hostSort = state.hostSort,
-                    hostFilters = state.hostFilters,
-                    hostGroups = (state.loadState as? ConnectionsLoadState.Ready)?.hostGroups.orEmpty(),
-                    catalogReady = state.loadState is ConnectionsLoadState.Ready,
-                    onNavigateBack = onNavigateBack,
-                    callbacks = callbacks.copy(
-                        onAddHost = callbacks.onSaveHost?.let {
-                            { pendingEditorToken = PendingConnectionsEditor.Host(null).saveToken() }
-                        } ?: callbacks.onAddHost,
-                        onGenerateKey = callbacks.onGenerateKeyRequest?.let {
-                            { pendingEditorToken = PendingConnectionsEditor.GenerateKey.saveToken() }
-                        } ?: callbacks.onGenerateKey,
-                        onAddSnippet = callbacks.onSaveSnippetModel?.let {
-                            { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
-                        } ?: callbacks.onAddSnippet,
-                    ),
-                    showTitle = true,
-                    showSearch = true,
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    when (val presentation = displayedState.presentation()) {
-                        is ConnectionsPresentationUi.Loading -> ConnectionsLoadingState()
-                        is ConnectionsPresentationUi.Error -> ConnectionsErrorState(
-                            message = presentation.message,
-                            onRetry = callbacks.onRetry,
-                        )
-                        is ConnectionsPresentationUi.Ready -> ConnectionsReadyContent(
-                            rows = presentation.rows,
-                            navigationExpanded = navigationExpanded,
-                            nowEpochMillis = nowEpochMillis,
-                            selectedHostId = selectedHostId,
-                            selectedKeyId = selectedKeyId,
-                            selectedSnippetId = selectedSnippetId,
-                            onSelectHost = { selectedHostId = it },
-                            onSelectKey = { selectedKeyId = it },
-                            onSelectSnippet = { selectedSnippetId = it },
-                            onConnectHost = callbacks.onConnectCatalogHost?.let { connect ->
-                                { id ->
-                                    val seed = editorCatalog.hosts.firstOrNull {
-                                        it.draft.persistentId == id
-                                    }
-                                    val key = seed?.draft?.keyIdentityId?.let { keyId ->
-                                        editorCatalog.keys.firstOrNull { it.persistentId == keyId }
-                                    }
-                                    val requiresSecret = when (seed?.draft?.authenticationMethod) {
-                                        HostAuthenticationMethod.PASSWORD ->
-                                            !seed.savedSecretAvailable
-                                        HostAuthenticationMethod.KEYBOARD_INTERACTIVE -> false
-                                        HostAuthenticationMethod.PRIVATE_KEY ->
-                                            key?.passphraseProtected == true && !seed.savedSecretAvailable
-                                        null -> true
-                                    }
-                                    val moshBlocked = seed?.draft?.protocol ==
-                                        com.yanjiyu.terminalspike.core.model.ConnectionProtocol.MOSH &&
-                                        !moshAvailable
-                                    if (requiresSecret || moshBlocked) {
-                                        pendingEditorToken = PendingConnectionsEditor.ConnectHost(id).saveToken()
-                                    } else {
-                                        connect(HostConnectRequest(id))
-                                    }
-                                }
-                            } ?: callbacks.onConnectHost,
-                            onOpenSftp = callbacks.onOpenSftp,
-                            onEditHost = callbacks.onSaveHost?.let {
-                                { id -> pendingEditorToken = PendingConnectionsEditor.Host(id).saveToken() }
-                            } ?: callbacks.onEditHost,
-                            onDeleteHost = callbacks.onDeleteHost?.let {
-                                { host -> pendingDeletion = PendingCatalogDeletion.Host(host.id, host.displayName) }
-                            },
-                            onCopyPublicKey = callbacks.onCopyPublicKey,
-                            onViewKeyFingerprint = if (editorCatalog.keys.isNotEmpty()) {
-                                { id ->
-                                    pendingEditorToken = PendingConnectionsEditor.KeyFingerprint(id).saveToken()
-                                }
-                            } else {
-                                callbacks.onViewKeyFingerprint
-                            },
-                            onRenameKey = callbacks.onRenameKeyMetadata?.let {
-                                { id -> pendingEditorToken = PendingConnectionsEditor.RenameKey(id).saveToken() }
-                            } ?: callbacks.onRenameKey,
-                            onDeleteKey = callbacks.onDeleteKey?.let {
-                                { key ->
-                                    val referenceCount = editorCatalog.keys
-                                        .firstOrNull { it.persistentId == key.id }
-                                        ?.referenceCount
-                                        ?: 0
-                                    pendingDeletion = PendingCatalogDeletion.Key(
-                                        id = key.id,
-                                        name = key.name,
-                                        referenceCount = referenceCount,
-                                    )
-                                }
-                            },
-                            onInsertSnippet = callbacks.onInsertSnippet,
-                            onRunSnippet = callbacks.onRunSnippet?.let { requestSnippetRun },
-                            onCopySnippet = callbacks.onCopySnippet,
-                            onEditSnippet = callbacks.onSaveSnippetModel?.let {
-                                { id -> pendingEditorToken = PendingConnectionsEditor.Snippet(id).saveToken() }
-                            } ?: callbacks.onEditSnippet,
-                            onDeleteSnippet = callbacks.onDeleteSnippet?.let {
-                                { snippet ->
-                                    pendingDeletion = PendingCatalogDeletion.Snippet(snippet.id, snippet.name)
-                                }
-                            },
-                            onEmptyAction = when (displayedTab) {
-                                ConnectionsTab.HOSTS -> null
-                                ConnectionsTab.KEYS -> callbacks.onImportKey
-                                    ?: callbacks.onGenerateKeyRequest?.let {
-                                        {
-                                            pendingEditorToken =
-                                                PendingConnectionsEditor.GenerateKey.saveToken()
+            BoxWithConstraints(modifier = contentModifier) {
+                val extraTextScale = (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)
+                val fullHeaderMinimumHeight = CompactConnectionsFullHeaderBaseHeight +
+                    CompactConnectionsFullHeaderTextScaleAllowance * extraTextScale
+                val showFullHeader = maxHeight >= fullHeaderMinimumHeight
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background)
+                        .testTag(ConnectionsScreenTestTag)
+                        .semantics { contentDescription = screenDescription },
+                ) {
+                    ConnectionsHeader(
+                        selectedTab = displayedTab,
+                        searchQuery = state.searchQuery,
+                        hostSort = state.hostSort,
+                        hostFilters = state.hostFilters,
+                        hostGroups = (state.loadState as? ConnectionsLoadState.Ready)?.hostGroups.orEmpty(),
+                        catalogReady = state.loadState is ConnectionsLoadState.Ready,
+                        onNavigateBack = onNavigateBack,
+                        callbacks = callbacks.copy(
+                            onAddHost = callbacks.onSaveHost?.let {
+                                { pendingEditorToken = PendingConnectionsEditor.Host(null).saveToken() }
+                            } ?: callbacks.onAddHost,
+                            onGenerateKey = callbacks.onGenerateKeyRequest?.let {
+                                { pendingEditorToken = PendingConnectionsEditor.GenerateKey.saveToken() }
+                            } ?: callbacks.onGenerateKey,
+                            onAddSnippet = callbacks.onSaveSnippetModel?.let {
+                                { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
+                            } ?: callbacks.onAddSnippet,
+                        ),
+                        showTitle = showFullHeader,
+                        showSearch = showFullHeader,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        when (val presentation = displayedState.presentation()) {
+                            is ConnectionsPresentationUi.Loading -> ConnectionsLoadingState()
+                            is ConnectionsPresentationUi.Error -> ConnectionsErrorState(
+                                message = presentation.message,
+                                onRetry = callbacks.onRetry,
+                            )
+                            is ConnectionsPresentationUi.Ready -> ConnectionsReadyContent(
+                                rows = presentation.rows,
+                                navigationExpanded = navigationExpanded,
+                                nowEpochMillis = nowEpochMillis,
+                                selectedHostId = selectedHostId,
+                                selectedKeyId = selectedKeyId,
+                                selectedSnippetId = selectedSnippetId,
+                                onSelectHost = { selectedHostId = it },
+                                onSelectKey = { selectedKeyId = it },
+                                onSelectSnippet = { selectedSnippetId = it },
+                                onConnectHost = callbacks.onConnectCatalogHost?.let { connect ->
+                                    { id ->
+                                        val seed = editorCatalog.hosts.firstOrNull {
+                                            it.draft.persistentId == id
+                                        }
+                                        val key = seed?.draft?.keyIdentityId?.let { keyId ->
+                                            editorCatalog.keys.firstOrNull { it.persistentId == keyId }
+                                        }
+                                        val requiresSecret = when (seed?.draft?.authenticationMethod) {
+                                            HostAuthenticationMethod.PASSWORD ->
+                                                !seed.savedSecretAvailable
+                                            HostAuthenticationMethod.KEYBOARD_INTERACTIVE -> false
+                                            HostAuthenticationMethod.PRIVATE_KEY ->
+                                                key?.passphraseProtected == true && !seed.savedSecretAvailable
+                                            null -> true
+                                        }
+                                        val moshBlocked = seed?.draft?.protocol ==
+                                            com.yanjiyu.terminalspike.core.model.ConnectionProtocol.MOSH &&
+                                            !moshAvailable
+                                        if (requiresSecret || moshBlocked) {
+                                            pendingEditorToken = PendingConnectionsEditor.ConnectHost(id).saveToken()
+                                        } else {
+                                            connect(HostConnectRequest(id))
                                         }
                                     }
-                                    ?: callbacks.onGenerateKey
-                                ConnectionsTab.SNIPPETS -> callbacks.onSaveSnippetModel?.let {
-                                    { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
-                                } ?: callbacks.onAddSnippet
-                            },
-                            onClearNoResults = {
-                                callbacks.onSearchQueryChanged("")
-                                callbacks.onClearHostFilters()
-                            },
-                        )
+                                } ?: callbacks.onConnectHost,
+                                onOpenSftp = callbacks.onOpenSftp,
+                                onEditHost = callbacks.onSaveHost?.let {
+                                    { id -> pendingEditorToken = PendingConnectionsEditor.Host(id).saveToken() }
+                                } ?: callbacks.onEditHost,
+                                onDeleteHost = callbacks.onDeleteHost?.let {
+                                    { host -> pendingDeletion = PendingCatalogDeletion.Host(host.id, host.displayName) }
+                                },
+                                onCopyPublicKey = callbacks.onCopyPublicKey,
+                                onViewKeyFingerprint = if (editorCatalog.keys.isNotEmpty()) {
+                                    { id ->
+                                        pendingEditorToken = PendingConnectionsEditor.KeyFingerprint(id).saveToken()
+                                    }
+                                } else {
+                                    callbacks.onViewKeyFingerprint
+                                },
+                                onRenameKey = callbacks.onRenameKeyMetadata?.let {
+                                    { id -> pendingEditorToken = PendingConnectionsEditor.RenameKey(id).saveToken() }
+                                } ?: callbacks.onRenameKey,
+                                onDeleteKey = callbacks.onDeleteKey?.let {
+                                    { key ->
+                                        val referenceCount = editorCatalog.keys
+                                            .firstOrNull { it.persistentId == key.id }
+                                            ?.referenceCount
+                                            ?: 0
+                                        pendingDeletion = PendingCatalogDeletion.Key(
+                                            id = key.id,
+                                            name = key.name,
+                                            referenceCount = referenceCount,
+                                        )
+                                    }
+                                },
+                                onInsertSnippet = callbacks.onInsertSnippet,
+                                onRunSnippet = callbacks.onRunSnippet?.let { requestSnippetRun },
+                                onCopySnippet = callbacks.onCopySnippet,
+                                onEditSnippet = callbacks.onSaveSnippetModel?.let {
+                                    { id -> pendingEditorToken = PendingConnectionsEditor.Snippet(id).saveToken() }
+                                } ?: callbacks.onEditSnippet,
+                                onDeleteSnippet = callbacks.onDeleteSnippet?.let {
+                                    { snippet ->
+                                        pendingDeletion = PendingCatalogDeletion.Snippet(snippet.id, snippet.name)
+                                    }
+                                },
+                                onEmptyAction = when (displayedTab) {
+                                    ConnectionsTab.HOSTS -> null
+                                    ConnectionsTab.KEYS -> callbacks.onImportKey
+                                        ?: callbacks.onGenerateKeyRequest?.let {
+                                            {
+                                                pendingEditorToken =
+                                                    PendingConnectionsEditor.GenerateKey.saveToken()
+                                            }
+                                        }
+                                        ?: callbacks.onGenerateKey
+                                    ConnectionsTab.SNIPPETS -> callbacks.onSaveSnippetModel?.let {
+                                        { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
+                                    } ?: callbacks.onAddSnippet
+                                },
+                                onClearNoResults = {
+                                    callbacks.onSearchQueryChanged("")
+                                    callbacks.onClearHostFilters()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -612,6 +622,9 @@ private fun SnippetExecutionConfirmationDialog(
         },
     )
 }
+
+private val CompactConnectionsFullHeaderBaseHeight = 320.dp
+private val CompactConnectionsFullHeaderTextScaleAllowance = 80.dp
 
 private val SnippetRowUi.requiresExecutionConfirmation: Boolean
     get() = ('\n' in command || '\r' in command) &&

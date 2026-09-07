@@ -42,7 +42,7 @@ class TerminalClipboardToken internal constructor(internal val value: String)
  * clipboard back: newer Android versions may restrict that read while the floating selection
  * toolbar temporarily owns window focus.
  */
-class TerminalClipboardWriter(
+internal class TerminalClipboardWriter(
     context: Context,
     private val clearScheduler: TerminalClipboardClearScheduler? = null,
 ) : TerminalClipboardClearTarget {
@@ -74,25 +74,30 @@ class TerminalClipboardWriter(
         return token
     }
 
-    override fun clearIfCurrent(token: TerminalClipboardToken): Boolean {
-        val owner = activity.get() ?: return false
+    override fun tryClearIfCurrent(token: TerminalClipboardToken): TerminalClipboardClearResult {
+        val owner = activity.get() ?: return TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE
         if (
             (owner as? LifecycleOwner)?.lifecycle?.currentState
                 ?.isAtLeast(Lifecycle.State.RESUMED) != true ||
             !owner.hasWindowFocus()
         ) {
-            return false
+            return TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE
         }
-        val manager = clipboard ?: return false
+        val manager = clipboard ?: return TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE
         val currentToken = manager.primaryClip?.description?.extras?.getString(CLIP_TOKEN_EXTRA)
-        if (currentToken != token.value) return false
+        if (currentToken != token.value) return TerminalClipboardClearResult.NO_LONGER_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             manager.clearPrimaryClip()
         } else {
             manager.setPrimaryClip(ClipData.newPlainText("", ""))
         }
-        return true
+        return TerminalClipboardClearResult.CLEARED
     }
+
+    internal fun clearIfCurrent(token: TerminalClipboardToken): Boolean =
+        tryClearIfCurrent(token) == TerminalClipboardClearResult.CLEARED
+
+    internal fun retryExpiredClear() = clearScheduler?.retryExpiredClear(this)
 
     private companion object {
         const val CLIP_TOKEN_EXTRA =

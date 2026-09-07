@@ -89,6 +89,42 @@ class SessionNotificationActionTest {
     }
 
     @Test
+    fun terminalProgramNotificationStripsControlsAndBidiFormatting() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val notification = SessionNotificationFactory(context).buildTerminalProgramNotification(
+            event = TerminalProgramNotificationEvent(
+                sessionId = 42L,
+                sessionTitle = "Terminal Spike dev",
+                message = "Build\t\u202Egpj.exe\u202C\u2066\u2069\n done\u0007",
+            ),
+            privacyEnabled = false,
+        )
+
+        assertEquals(
+            "Build gpj.exe done",
+            notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+    }
+
+    @Test
+    fun terminalProgramNotificationFallsBackWhenMessageIsOnlyUnsafeFormatting() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val notification = SessionNotificationFactory(context).buildTerminalProgramNotification(
+            event = TerminalProgramNotificationEvent(
+                sessionId = 42L,
+                sessionTitle = "Terminal Spike dev",
+                message = "\u0000\u001B\u202E\u2069",
+            ),
+            privacyEnabled = false,
+        )
+
+        assertEquals(
+            context.getString(R.string.terminal_program_notification_text),
+            notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+    }
+
+    @Test
     fun currentCountConfirmationChangesNothingUntilExplicitChoice() {
         var confirms = 0
         var dismisses = 0

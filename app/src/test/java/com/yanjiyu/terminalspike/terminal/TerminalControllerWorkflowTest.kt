@@ -17,6 +17,212 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun maximumTmuxSnapshotIsPreparedAcrossBoundedFramesAndPublishedAtomically() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        val frameWork = mutableListOf<Int>()
+        controller.observeTmuxReconciliationWork(frameWork::add)
+        val history = List(20_480) { index ->
+            TerminalLine.plain("maximum-tmux-row-$index")
+        }
+
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))))
+        scheduler.drainAll()
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = history,
+                remoteHistoryRows = history.size,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+
+        scheduler.runNext()
+
+        assertTrue(scheduler.hasPendingFrames())
+        assertEquals(listOf("live"), controller.transcriptSnapshot().rows.map { it.line.text })
+
+        scheduler.drainAll()
+
+        assertEquals(history.size + 1, controller.lineCount())
+        assertEquals("maximum-tmux-row-0", controller.lineAt(0)?.text)
+        assertEquals("maximum-tmux-row-20479", controller.lineAt(history.lastIndex)?.text)
+        assertEquals("live", controller.lineAt(history.size)?.text)
+        assertTrue(frameWork.size > 1)
+        assertEquals(history.size, frameWork.sum())
+        assertTrue(frameWork.all {
+            it in 1..TerminalController.MAX_TMUX_RECONCILIATION_ROW_WORK_PER_FRAME
+        })
+    }
+
+    @Test
+    fun newerTmuxSnapshotCancelsPartialPreparationBeforeItCanPublishStaleRows() {
+        val scheduler = ManualFrameScheduler()
+        val publishedFirstRows = mutableListOf<String?>()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+            addListener {
+                publishedFirstRows += lineAt(0)?.text
+            }
+        }
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))))
+        scheduler.drainAll()
+        val stale = List(8_000) { TerminalLine.plain("stale-$it") }
+        val current = List(8_000) { TerminalLine.plain("current-$it") }
+
+        controller.stageTmuxHistory(tmuxSnapshot(stale, remoteRows = stale.size))
+        scheduler.runNext()
+        controller.stageTmuxHistory(tmuxSnapshot(current, remoteRows = current.size))
+        scheduler.drainAll()
+
+        assertFalse(publishedFirstRows.contains("stale-0"))
+        assertEquals("current-0", controller.lineAt(0)?.text)
+        assertEquals("current-7999", controller.lineAt(current.lastIndex)?.text)
+    }
+
+    @Test
+    fun clearCancelsPartialTmuxPreparationWithoutPublishingItsRows() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        val history = List(8_000) { TerminalLine.plain("cancelled-$it") }
+        controller.stageTmuxHistory(tmuxSnapshot(history, remoteRows = history.size))
+        scheduler.runNext()
+
+        controller.clear()
+        scheduler.drainAll()
+
+        assertEquals(0, controller.lineCount())
+        assertFalse(controller.isTmuxLocalScrollAvailable())
+    }
+
+    @Test
+    fun detachCancelsPartialTmuxPreparationWithoutReplacingTheVisibleTranscript() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+        }
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("visible"))))
+        scheduler.drainAll()
+        val history = List(8_000) { TerminalLine.plain("detached-$it") }
+        controller.stageTmuxHistory(tmuxSnapshot(history, remoteRows = history.size))
+        scheduler.runNext()
+
+        controller.resetInputSink()
+        scheduler.drainAll()
+
+        assertEquals(listOf("visible"), controller.transcriptSnapshot().rows.map { it.line.text })
+        assertFalse(controller.isTmuxSession())
+    }
+
+    @Test
+    fun largeCoordinateResetStaysAtomicAndWithinTheRowWorkBudget() {
+        val scheduler = ManualFrameScheduler()
+        val frameWork = mutableListOf<Int>()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+            observeTmuxReconciliationWork(frameWork::add)
+        }
+        val oldEpoch = List(8_000) { TerminalLine.plain("old-$it") }
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))))
+        controller.stageTmuxHistory(tmuxSnapshot(oldEpoch, remoteRows = oldEpoch.size))
+        scheduler.drainAll()
+        frameWork.clear()
+        val nextEpoch = oldEpoch.takeLast(1_000) +
+            List(3_000) { TerminalLine.plain("new-$it") }
+        controller.stageTmuxHistory(tmuxSnapshot(nextEpoch, remoteRows = nextEpoch.size))
+
+        scheduler.runNext()
+
+        assertEquals("old-0", controller.lineAt(0)?.text)
+        assertEquals(8_001, controller.lineCount())
+        scheduler.drainAll()
+
+        assertEquals(11_001, controller.lineCount())
+        assertEquals("old-0", controller.lineAt(0)?.text)
+        assertEquals("old-7999", controller.lineAt(7_999)?.text)
+        assertEquals("new-0", controller.lineAt(8_000)?.text)
+        assertEquals("new-2999", controller.lineAt(10_999)?.text)
+        assertTrue(frameWork.size > 1)
+        assertTrue(frameWork.all {
+            it in 1..TerminalController.MAX_TMUX_RECONCILIATION_ROW_WORK_PER_FRAME
+        })
+    }
+
+    @Test
+    fun fullOlderPageIsPreparedAtomicallyWithinTheRowWorkBudget() {
+        val scheduler = ManualFrameScheduler()
+        val frameWork = mutableListOf<Int>()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+            observeTmuxReconciliationWork(frameWork::add)
+        }
+        val newestPage = (4_096 until 8_192).map { TerminalLine.plain("row-$it") }
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))))
+        controller.stageTmuxHistory(
+            tmuxSnapshot(newestPage, remoteRows = 8_192).copy(
+                capturedStartRow = 4_096,
+                truncatedBefore = true,
+            ),
+        )
+        scheduler.drainAll()
+        frameWork.clear()
+        val olderPage = (0..4_096).map { TerminalLine.plain("row-$it") }
+        controller.stageTmuxHistory(
+            tmuxSnapshot(olderPage, remoteRows = 8_192).copy(
+                capturedStartRow = 0,
+                olderPage = true,
+                authoritative = false,
+            ),
+        )
+
+        scheduler.runNext()
+
+        assertEquals(4_097, controller.lineCount())
+        assertEquals("row-4096", controller.lineAt(0)?.text)
+        scheduler.drainAll()
+
+        assertEquals(8_193, controller.lineCount())
+        assertEquals("row-0", controller.lineAt(0)?.text)
+        assertEquals("row-8191", controller.lineAt(8_191)?.text)
+        assertTrue(frameWork.size > 1)
+        assertTrue(frameWork.all {
+            it in 1..TerminalController.MAX_TMUX_RECONCILIATION_ROW_WORK_PER_FRAME
+        })
+    }
+
+    @Test
     fun primaryHistoryExposesOldestMiddleAndNewestRowsThroughTheViewport() {
         assertHistoryReachable(alternate = false)
     }
@@ -348,6 +554,267 @@ class TerminalControllerWorkflowTest {
 
         assertTrue(controller.viewport.autoFollow)
         assertEquals(controller.viewport.maximumScrollY, controller.viewport.scrollY, 0.001f)
+    }
+
+    @Test
+    fun tmuxOlderPagePrependsInOrderAndPreservesExactVisiblePixelAnchor() {
+        val scheduler = ManualFrameScheduler()
+        val pageRequests = mutableListOf<com.yanjiyu.terminalspike.connection.TmuxHistoryPageRequest>()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            viewport.updateGeometry(heightPx = 20, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+                requestOlderTmuxHistory = pageRequests::add,
+            )
+            addListener {
+                viewport.updateContent(lineCount(), oldestLineId())
+            }
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (4..7).map { TerminalLine.plain("row-$it") },
+                remoteHistoryRows = 8,
+                capturedStartRow = 4,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = true,
+            ),
+        )
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live")), alternate = true))
+        scheduler.drainAll()
+        controller.viewport.scrollTo(5.5f)
+
+        controller.requestOlderTmuxHistoryIfNeeded()
+        assertEquals(listOf(4), pageRequests.map { it.beforeRow })
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (0..3).map { TerminalLine.plain("row-$it") } + TerminalLine.plain("shifted"),
+                remoteHistoryRows = 8,
+                capturedStartRow = 0,
+                olderPage = true,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        assertEquals(listOf("row-4", "row-5", "row-6", "row-7", "live"), controller.transcriptSnapshot().rows.map { it.line.text })
+        assertEquals(5.5f, controller.viewport.scrollY, 0.001f)
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (0..4).map { TerminalLine.plain("row-$it") },
+                remoteHistoryRows = 8,
+                capturedStartRow = 0,
+                olderPage = true,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertEquals((0..7).map { "row-$it" } + "live", controller.transcriptSnapshot().rows.map { it.line.text })
+        assertEquals(45.5f, controller.viewport.scrollY, 0.001f)
+        controller.requestOlderTmuxHistoryIfNeeded()
+        assertEquals(1, pageRequests.size)
+    }
+
+    @Test
+    fun boundedTmuxRefreshRetainsPagedPrefixAndExactReaderAnchorWhileOutputGrows() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            viewport.updateGeometry(heightPx = 20, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+            addListener {
+                viewport.updateContent(lineCount(), oldestLineId())
+            }
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (4..7).map { TerminalLine.plain("row-$it") },
+                remoteHistoryRows = 8,
+                capturedStartRow = 4,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = true,
+            ),
+        )
+        controller.updateTerminalFrame(
+            frame(screen = listOf(TerminalLine.plain("live")), alternate = true),
+        )
+        scheduler.drainAll()
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (0..4).map { TerminalLine.plain("row-$it") },
+                remoteHistoryRows = 8,
+                capturedStartRow = 0,
+                olderPage = true,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = false,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.viewport.scrollTo(25.5f)
+        val readerAnchor = requireNotNull(controller.selectionLineAt(2)).anchor
+
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(
+                    TerminalLine.plain("row-5"),
+                    TerminalLine.plain("row-6"),
+                    TerminalLine.plain("updated-row-7"),
+                    TerminalLine.plain("row-8"),
+                ),
+                remoteHistoryRows = 9,
+                capturedStartRow = 5,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = true,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertEquals(
+            (0..6).map { "row-$it" } + listOf("updated-row-7", "row-8", "live"),
+            controller.transcriptSnapshot().rows.map { it.line.text },
+        )
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(25.5f, controller.viewport.scrollY, 0.001f)
+        assertEquals(readerAnchor, requireNotNull(controller.selectionLineAt(2)).anchor)
+    }
+
+    @Test
+    fun tmuxHistoryCoordinateResetKeepsOwnedTranscriptAndExactReaderAnchor() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            viewport.updateGeometry(heightPx = 20, newLineHeightPx = 10f)
+            setInputSink(
+                sink = RecordingInputSink(),
+                onResize = { _, _ -> },
+                isTmuxSession = { true },
+            )
+            addListener {
+                viewport.updateContent(lineCount(), oldestLineId())
+            }
+        }
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = (0..7).map { TerminalLine.plain("row-$it") },
+                remoteHistoryRows = 8,
+                capturedStartRow = 0,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        controller.updateTerminalFrame(
+            frame(screen = listOf(TerminalLine.plain("live")), alternate = true),
+        )
+        scheduler.drainAll()
+        controller.viewport.scrollTo(25.5f)
+        val readerAnchor = requireNotNull(controller.selectionLineAt(2)).anchor
+
+        // tmux can reset its history coordinates after an inner full-screen program exits. The
+        // overlapping rows identify the new epoch without surrendering app-owned transcript rows.
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(
+                    TerminalLine.plain("row-6"),
+                    TerminalLine.plain("row-7"),
+                    TerminalLine.plain("row-8"),
+                    TerminalLine.plain("row-9"),
+                ),
+                remoteHistoryRows = 4,
+                capturedStartRow = 0,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertEquals(
+            (0..9).map { "row-$it" } + "live",
+            controller.transcriptSnapshot().rows.map { it.line.text },
+        )
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(25.5f, controller.viewport.scrollY, 0.001f)
+        assertEquals(readerAnchor, requireNotNull(controller.selectionLineAt(2)).anchor)
+
+        // A reset without an overlap still archives the old epoch, and the next bounded refresh
+        // must reconcile against only the current epoch rather than the archived prefix.
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(TerminalLine.plain("fresh-0"), TerminalLine.plain("fresh-1")),
+                remoteHistoryRows = 2,
+                capturedStartRow = 0,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+        controller.stageTmuxHistory(
+            TmuxLocalHistorySnapshot(
+                sessionId = "\$1",
+                paneId = "%2",
+                lines = listOf(
+                    TerminalLine.plain("fresh-0"),
+                    TerminalLine.plain("fresh-1"),
+                    TerminalLine.plain("fresh-2"),
+                ),
+                remoteHistoryRows = 3,
+                capturedStartRow = 0,
+                remoteMousePassthrough = false,
+                historyIncluded = true,
+                authoritative = true,
+                truncatedBefore = false,
+            ),
+        )
+        scheduler.drainAll()
+
+        assertEquals(
+            (0..9).map { "row-$it" } + listOf("fresh-0", "fresh-1", "fresh-2", "live"),
+            controller.transcriptSnapshot().rows.map { it.line.text },
+        )
+        assertFalse(controller.viewport.autoFollow)
+        assertEquals(25.5f, controller.viewport.scrollY, 0.001f)
+        assertEquals(readerAnchor, requireNotNull(controller.selectionLineAt(2)).anchor)
     }
 
     @Test
@@ -841,6 +1308,21 @@ class TerminalControllerWorkflowTest {
         dirtyRows = dirtyRows,
     )
 
+    private fun tmuxSnapshot(
+        lines: List<TerminalLine>,
+        remoteRows: Int,
+        paneId: String = "%2",
+    ) = TmuxLocalHistorySnapshot(
+        sessionId = "\$1",
+        paneId = paneId,
+        lines = lines,
+        remoteHistoryRows = remoteRows,
+        remoteMousePassthrough = false,
+        historyIncluded = true,
+        authoritative = true,
+        truncatedBefore = false,
+    )
+
     private class RecordingInputSink : TerminalInputSink {
         val received = mutableListOf<ByteArray>()
 
@@ -854,6 +1336,12 @@ class TerminalControllerWorkflowTest {
 
         override fun postFrame(callback: Choreographer.FrameCallback) {
             callbacks.addLast(callback)
+        }
+
+        fun hasPendingFrames(): Boolean = callbacks.isNotEmpty()
+
+        fun runNext(frameTimeNanos: Long = 1L) {
+            callbacks.removeFirst().doFrame(frameTimeNanos)
         }
 
         fun drainAll() {

@@ -149,7 +149,16 @@ class AppContainer internal constructor(
     internal val backupTransfers: BackupTransferCoordinator by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
-        BackupTransferCoordinator(backupSnapshots, backupArchives)
+        BackupTransferCoordinator(
+            snapshots = backupSnapshots,
+            archives = backupArchives,
+            beforeExport = {
+                authoritativeData.awaitReady()
+                check(startLegacyMigrationForCutover().await().isCutoverReady()) {
+                    "Legacy migration did not reach an authoritative backup state."
+                }
+            },
+        )
     }
 
     internal val backupImports: BackupImportCoordinator by lazy(

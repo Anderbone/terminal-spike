@@ -51,7 +51,15 @@ The optional transport now follows these concrete boundaries:
 5. The separate extension broker assigns each session to one of ten private worker processes. Each worker owns one pinned upstream Mosh 1.4.0 transport/terminal engine compiled for `arm64-v8a` or `x86_64`, avoiding unsupported cross-session sharing of upstream process globals.
 6. Settings observes the real extension client and shows exact package/trust/API/capability state. When Mosh is unavailable, saved profiles remain intact and SSH stays available as an explicit manual fallback.
 
-This slice is implemented and buildable. The latest recorded controlled-server runs completed password-authenticated SSH bootstrap and real UDP terminal input/output on both authorized Android 16 phones. The application-owned session repository now publishes bounded Android connectivity generations to live Mosh sessions. Private-key device bootstrap, simultaneous live sessions, resize, failure injection, extension-absence SSH, and observed network-transition/roaming acceptance remain open. The host model still cannot represent link-local IPv6 zone identifiers; the native Mosh protocol retains its authenticated UDP roaming and port-hopping behavior.
+This slice is implemented and buildable. The latest controlled-server run on the exact
+model-checked old `SM-S911B` completed password and private-key SSH bootstrap, real UDP terminal
+I/O, four simultaneous sessions, independent resize/close, isolated-worker death with slot reuse,
+and broker death with automatic client rebind and fresh traffic. The application-owned session
+repository publishes bounded Android connectivity generations to live Mosh sessions, and a
+disposable-AVD gate proves extension-absent SSH. Observed network-transition/roaming acceptance and
+the user's external server remain open. The host model still cannot represent link-local IPv6 zone
+identifiers; the native Mosh protocol retains its authenticated UDP roaming and port-hopping
+behavior.
 
 ## Runtime ownership
 
@@ -72,9 +80,9 @@ AppContainer.SshSessionRepository ── application-process scope
 
 The application-owned repository owns transports, parser instances, controllers, session metadata, retry jobs, connectivity observation, and the Mosh binding. `SessionForegroundService` observes that same repository, owns the foreground notification and optional CPU-awake lease, handles notification actions, and fails active sessions if its required service lifetime is lost. Activities and ViewModels own presentation state and short-lived commands only. Neither a screen nor navigation owns a raw socket.
 
-The ownership cutover is implemented for SSH and Mosh. Activity or ViewModel recreation reattaches to process-owned snapshots and controllers; it does not recreate or own the connection. Remaining notification, battery, process-death, and multi-device walkthroughs are acceptance gaps rather than an ownership defect.
+The ownership cutover is implemented for SSH and Mosh. Activity or ViewModel recreation reattaches to process-owned snapshots and controllers; it does not recreate or own the connection. A disposable API 35 external gate now proves real SSH across ordinary backgrounding, reversible deep-idle/standby/data-saver pressure, exact app-PID death, honest empty-session restart state, clean service/notification teardown, retained non-secret host/recent metadata, session-only password re-prompt, and a fresh real SSH shell. OEM battery modes, long soak, and multi-device walkthroughs remain acceptance gaps rather than ownership defects.
 
-The service starts only after a visible, user-initiated connect action. It stops when no session is connecting, connected, reconnecting, or awaiting an explicit trust/authentication decision. Activity recreation reattaches to repository state. Process death does not claim to preserve live SSH/Mosh sockets; persisted recent-session metadata can offer an honest reconnect.
+The service starts only after a visible, user-initiated connect action. It stops when no session is connecting, connected, reconnecting, or awaiting an explicit trust/authentication decision. Activity recreation reattaches to repository state. Process death does not preserve or claim to preserve live SSH/Mosh sockets; the external gate proves the old PID, service, and notification disappear, then persisted recent-session and saved-host metadata offer an honest password-prompted reconnect in a distinct process.
 
 ## Foreground-service decision
 

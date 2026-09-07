@@ -2059,6 +2059,7 @@ private class DefaultSshSessionTerminal(
     private var tmuxCaptureInFlight = false
     private var tmuxCaptureAgain = false
     private var tmuxCaptureAgainIncludeHistory = false
+    private var tmuxPageCaptureInFlightBefore: Int? = null
     private var tmuxMetadataRefresh: ScheduledFuture<*>? = null
     private var tmuxMetadataStaleStartedAtNanos = 0L
     private var tmuxOutputRevision = 0L
@@ -2083,6 +2084,7 @@ private class DefaultSshSessionTerminal(
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
             tmuxCaptureAgainIncludeHistory = false
+            tmuxPageCaptureInFlightBefore = null
             tmuxMetadataRefresh?.cancel(false)
             tmuxMetadataRefresh = null
             tmuxMetadataStaleStartedAtNanos = 0L
@@ -2101,6 +2103,7 @@ private class DefaultSshSessionTerminal(
             },
             isTmuxSession = { connection.isTmuxSession },
             requestTmuxHistoryRefresh = ::requestTmuxHistoryCapture,
+            requestOlderTmuxHistory = ::requestOlderTmuxHistory,
         )
     }
 
@@ -2174,6 +2177,7 @@ private class DefaultSshSessionTerminal(
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
             tmuxCaptureAgainIncludeHistory = false
+            tmuxPageCaptureInFlightBefore = null
             tmuxMetadataRefresh?.cancel(false)
             tmuxMetadataRefresh = null
             tmuxMetadataStaleStartedAtNanos = 0L
@@ -2240,6 +2244,46 @@ private class DefaultSshSessionTerminal(
         }
         acceptedSnapshot?.let(controller::stageTmuxHistory)
         repeatCaptureWithHistory?.let(::requestTmuxHistoryCapture)
+    }
+
+    private fun requestOlderTmuxHistory(page: TmuxHistoryPageRequest) {
+        val request = synchronized(tmuxHistoryLock) {
+            val connection = attachedConnection
+                ?.takeIf { !stopped && it.isTmuxSession && controller.isTmuxSession() }
+                ?: return
+            if (tmuxPageCaptureInFlightBefore == page.beforeRow) return
+            if (tmuxPageCaptureInFlightBefore != null) return
+            tmuxPageCaptureInFlightBefore = page.beforeRow
+            TmuxPageCaptureRequest(connection, tmuxCaptureGeneration, page)
+        }
+        try {
+            tmuxHistoryExecutor.execute { captureOlderTmuxHistory(request) }
+        } catch (_: RejectedExecutionException) {
+            synchronized(tmuxHistoryLock) {
+                if (request.generation == tmuxCaptureGeneration) {
+                    tmuxPageCaptureInFlightBefore = null
+                }
+            }
+        }
+    }
+
+    private fun captureOlderTmuxHistory(request: TmuxPageCaptureRequest) {
+        val snapshot = runCatching {
+            request.connection.captureTmuxHistoryPage(request.page)
+                ?.let(::parseTmuxHistoryCapture)
+        }.getOrNull()
+        val accepted = synchronized(tmuxHistoryLock) {
+            val stillCurrent = !stopped && attachedConnection === request.connection &&
+                tmuxCaptureGeneration == request.generation
+            if (
+                tmuxCaptureGeneration == request.generation &&
+                tmuxPageCaptureInFlightBefore == request.page.beforeRow
+            ) {
+                tmuxPageCaptureInFlightBefore = null
+            }
+            snapshot.takeIf { stillCurrent }
+        }
+        accepted?.let(controller::stageTmuxHistory)
     }
 
     private fun noteTmuxOutputStarted() {
@@ -2311,6 +2355,12 @@ private class DefaultSshSessionTerminal(
         val generation: Long,
         val outputRevision: Long,
         val includeHistory: Boolean,
+    )
+
+    private data class TmuxPageCaptureRequest(
+        val connection: Connection,
+        val generation: Long,
+        val page: TmuxHistoryPageRequest,
     )
 }
 

@@ -31,14 +31,20 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -382,6 +388,9 @@ internal fun SettingsScreen(
     backupState: BackupWorkflowUiState = BackupWorkflowUiState(),
     backupActions: BackupSettingsActions = BackupSettingsActions.NONE,
     savedCredentialClearState: SavedCredentialClearUiState = SavedCredentialClearUiState.Idle,
+    safeContentInsets: WindowInsets = WindowInsets.safeDrawing
+        .only(WindowInsetsSides.Vertical)
+        .union(WindowInsets.displayCutout),
 ) {
     var selectedCategory by rememberSaveable(initialCategory) { mutableStateOf(initialCategory) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -414,6 +423,7 @@ internal fun SettingsScreen(
                 onOpenSettings()
             },
             modifier = Modifier.fillMaxSize(),
+            safeContentInsets = safeContentInsets,
         ) { contentModifier, expanded ->
             Column(modifier = contentModifier.fillMaxSize()) {
                 if (expanded) {

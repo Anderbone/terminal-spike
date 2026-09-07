@@ -1,17 +1,26 @@
 package com.yanjiyu.terminalspike.ui.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -24,6 +33,11 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
+import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
+import com.yanjiyu.terminalspike.ui.ExpandedPrimaryNavigationTestTag
+import com.yanjiyu.terminalspike.ui.ExpandedToolDetailTestTag
+import com.yanjiyu.terminalspike.ui.ExpandedToolSectionListTestTag
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -46,6 +60,8 @@ import com.yanjiyu.terminalspike.core.model.ScrollBehavior
 import com.yanjiyu.terminalspike.core.model.TerminalInputMode
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.ui.toUiState
+import com.yanjiyu.terminalspike.ui.theme.AppThemeMode
+import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -56,6 +72,50 @@ import org.hamcrest.CoreMatchers.equalTo
 class SettingsScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun settingsRetainExpectedSurfacePolarityInLightAndDarkThemes() {
+        val themeMode = mutableStateOf(AppThemeMode.LIGHT)
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                TerminalSpikeTheme(themeMode = themeMode.value, updateSystemBarIcons = false) {
+                    Box(
+                        Modifier
+                            .requiredSize(599.dp, 900.dp)
+                            .background(MaterialTheme.colorScheme.background)
+                            .testTag("settings-visual-root"),
+                    ) {
+                        TestSettingsScreen(Modifier.requiredSize(599.dp, 900.dp))
+                    }
+                }
+            }
+        }
+
+        val light = settingsRootLuminance()
+        composeRule.runOnIdle { themeMode.value = AppThemeMode.DARK }
+        val dark = settingsRootLuminance()
+
+        assertTrue("Expected light Settings background, was $light", light > 0.5f)
+        assertTrue("Expected dark Settings background, was $dark", dark < 0.5f)
+    }
+
+    @Test
+    fun expandedSettingsKeepNavigationCategoryListAndDetailVisible() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
+                    Box(Modifier.requiredSize(700.dp, 900.dp)) {
+                        TestSettingsScreen(Modifier.requiredSize(700.dp, 900.dp))
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(AppearanceSettingsTestTag).assertIsDisplayed()
+    }
 
     @Test
     fun clearingSettingsSearchRestoresTheFullCategoryHierarchy() {
@@ -87,6 +147,45 @@ class SettingsScreenTest {
         composeRule.onNodeWithContentDescription("Clear settings search").performClick()
         composeRule.onNodeWithText("Appearance").assertIsDisplayed()
         composeRule.onNodeWithText("Keyboard").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactSplitScreenAtLargeTextKeepsSettingsHierarchyReachable() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(320.dp, 360.dp)) {
+                        SettingsScreen(
+                            state = completeState(),
+                            initialCategory = null,
+                            knownHosts = emptyList(),
+                            moshExtension = MoshExtensionStatus.Absent.toUiState(),
+                            actions = noOpActions(),
+                            onForgetKnownHost = { _, _ -> },
+                            onRefreshMoshExtension = {},
+                            onOpenRendererLab = {},
+                            onNavigateBack = {},
+                            onOpenWorkspace = {},
+                            onOpenTerminal = {},
+                            onOpenSettings = {},
+                            onDismissMessage = {},
+                            safeContentInsets = WindowInsets(0),
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsSearchTestTag)
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .performScrollToNode(hasText("About"))
+        composeRule.onNodeWithText("About").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("About Terminal Spike")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -569,6 +668,33 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Snippets").performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Manage snippets").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertTrue(snippetsOpened) }
+    }
+
+    private fun settingsRootLuminance(): Float = composeRule.onNodeWithTag("settings-visual-root")
+        .captureToImage()
+        .toPixelMap()[1, 1]
+        .luminance()
+}
+
+@Composable
+private fun TestSettingsScreen(modifier: Modifier = Modifier) {
+    Box(modifier) {
+        SettingsScreen(
+            state = completeState(),
+            initialCategory = null,
+            knownHosts = emptyList(),
+            moshExtension = MoshExtensionStatus.Absent.toUiState(),
+            actions = noOpActions(),
+            onForgetKnownHost = { _, _ -> },
+            onRefreshMoshExtension = {},
+            onOpenRendererLab = {},
+            onNavigateBack = {},
+            onOpenWorkspace = {},
+            onOpenTerminal = {},
+            onOpenSettings = {},
+            onDismissMessage = {},
+            safeContentInsets = WindowInsets(0),
+        )
     }
 }
 

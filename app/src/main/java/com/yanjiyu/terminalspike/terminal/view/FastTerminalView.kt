@@ -271,6 +271,25 @@ class FastTerminalView @JvmOverloads constructor(
         val previousScrollY = controller.viewport.scrollY
         applyRendererProfile(controller.rendererProfile)
         controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+        val prependedPixelHeight = controller.viewport.scrollY - previousScrollY
+        if (
+            prependedPixelHeight > 0f &&
+            flingDestination == TerminalScrollDestination.LOCAL_SCROLLBACK &&
+            !scroller.isFinished
+        ) {
+            val velocity = scroller.currVelocity.toInt().coerceAtLeast(1)
+            val continuingVelocity = if (scroller.finalY < scroller.currY) -velocity else velocity
+            scroller.fling(
+                0,
+                controller.viewport.scrollY.toInt(),
+                0,
+                continuingVelocity,
+                0,
+                0,
+                0,
+                controller.viewport.maximumScrollY.toInt(),
+            )
+        }
         applyPendingTmuxScrollIfReady(controller)
         var overlayChanged = false
         if (selection.hasSelection && !selection.validate(controller)) {
@@ -808,6 +827,7 @@ class FastTerminalView @JvmOverloads constructor(
                 val previous = controller.viewport.autoFollow
                 controller.viewport.scrollTo(scroller.currY.toFloat())
                 controller.reportViewportStateIfChanged(previous)
+                controller.requestOlderTmuxHistoryIfNeeded()
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
                 stopActiveFling()
@@ -1343,6 +1363,7 @@ class FastTerminalView @JvmOverloads constructor(
         val previous = controller.viewport.autoFollow
         controller.viewport.scrollBy(distanceY)
         controller.reportViewportStateIfChanged(previous)
+        controller.requestOlderTmuxHistoryIfNeeded()
         postInvalidateOnAnimation()
     }
 
@@ -1400,6 +1421,7 @@ class FastTerminalView @JvmOverloads constructor(
             remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
             confirmedTmuxSession = controller.isTmuxSession(),
             tmuxLocalScrollAvailable = controller.isTmuxLocalScrollAvailable(),
+            tmuxPaneInMode = controller.isTmuxPaneInMode(),
         )
         recordTmuxGestureDecision(controller, decision)
         when (decision.destination) {
@@ -1417,7 +1439,11 @@ class FastTerminalView @JvmOverloads constructor(
                 mouseWheelAccumulator.reset()
                 if (
                     controller.isTmuxSession() &&
-                    decision.reason == TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_PENDING
+                    (
+                        decision.reason == TerminalScrollDecisionReason.AUTO_TMUX_LOCAL_PENDING ||
+                            decision.reason ==
+                            TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_PENDING
+                    )
                 ) {
                     pendingTmuxScrollDistanceY += distanceY
                 }
@@ -1432,6 +1458,7 @@ class FastTerminalView @JvmOverloads constructor(
             remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
             confirmedTmuxSession = controller.isTmuxSession(),
             tmuxLocalScrollAvailable = controller.isTmuxLocalScrollAvailable(),
+            tmuxPaneInMode = controller.isTmuxPaneInMode(),
         )
         recordTmuxGestureDecision(controller, decision)
         flingDestination = decision.destination

@@ -27,7 +27,9 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import com.yanjiyu.terminalspike.connection.Connection
 import com.yanjiyu.terminalspike.connection.ConnectionState
@@ -452,10 +454,12 @@ class SshTrustAuthenticationFlowTest {
             }
             onView(withTagValue(equalTo("${KeyboardInteractiveFieldTestTagPrefix}1")))
                 .perform(replaceText("must-be-dropped"))
+            closeSoftKeyboard()
 
             composeRule.activityRule.scenario.recreate()
             composeRule.waitForIdle()
             onView(withTagValue(equalTo("${KeyboardInteractiveFieldTestTagPrefix}1")))
+                .inRoot(isDialog())
                 .perform(replaceText("fresh-response"))
             composeRule.onNodeWithText("Continue").performClick()
 

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -315,13 +316,18 @@ class SessionDestructiveConfirmationTest {
             }
         }
 
-        val forget = composeRule.onNodeWithText("Forget")
-        forget.performClick()
+        composeRule.onNodeWithText("Forget")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeRule.onNodeWithText("Forget saved password?").assertIsDisplayed()
         composeRule.runOnIdle { assertNull(forgottenProfileId) }
         composeRule.onNodeWithText("Cancel").performClick()
 
-        forget.performClick()
+        composeRule.onNodeWithText("Forget")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeRule.onNodeWithText("Forget password").performClick()
         composeRule.runOnIdle { assertEquals(4L, forgottenProfileId) }
     }

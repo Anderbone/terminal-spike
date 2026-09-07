@@ -19,6 +19,7 @@ import com.yanjiyu.terminalspike.ui.AppLockGateTestTag
 import com.yanjiyu.terminalspike.ui.AppLockReviewResetTestTag
 import com.yanjiyu.terminalspike.ui.AppLockRetryTestTag
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,10 +32,14 @@ class AppLockRuntimeTest {
     @Test
     fun biometricPromptPermissionIsDeclared() {
         val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val requestedPermissions = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+            .requestedPermissions
+            .orEmpty()
 
-        assertEquals(
-            PackageManager.PERMISSION_GRANTED,
-            context.packageManager.checkPermission(Manifest.permission.USE_BIOMETRIC, context.packageName),
+        assertTrue(
+            "The packaged manifest must declare USE_BIOMETRIC on every supported API.",
+            Manifest.permission.USE_BIOMETRIC in requestedPermissions,
         )
     }
 

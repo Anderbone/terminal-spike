@@ -1,0 +1,93 @@
+{
+  "artifacts": [
+    {
+      "id": "app-release-apk",
+      "metadata": "build/release-evidence/app-release-like.metadata.json",
+      "package": "com.yanjiyu.terminalspike",
+      "path": "build/release-evidence/app-release-like.apk",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "signer_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "version_code": 5,
+      "version_name": "0.0.2"
+    },
+    {
+      "id": "app-release-aab",
+      "metadata": "build/release-evidence/app-release-like-aab.metadata.json",
+      "package": "com.yanjiyu.terminalspike",
+      "path": "build/release-evidence/app-release-like.aab",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "signer_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "version_code": 5,
+      "version_name": "0.0.2"
+    }
+  ],
+  "devices": [
+    {
+      "api": 36,
+      "id": "authorized-old-phone",
+      "model": "SM-S911B",
+      "scenarios": [
+        {
+          "id": "full-app-suite",
+          "result": "passed"
+        },
+        {
+          "id": "terminal-macrobenchmark",
+          "result": "passed"
+        }
+      ],
+      "transport": "usb"
+    }
+  ],
+  "fresh_after": "build/release-evidence/final-gate-start.epoch",
+  "hosted_runs": [],
+  "pending": [
+    {
+      "category": "hosted_ci",
+      "id": "first-hosted-ci-run",
+      "reason": "Requires an authorized commit and push."
+    },
+    {
+      "category": "signing",
+      "id": "production-signing",
+      "reason": "Requires operator-authorized production signing material."
+    }
+  ],
+  "schema": 1,
+  "source": {
+    "commit": "REPLACE_WITH_FULL_GIT_COMMIT",
+    "dirty": true,
+    "manifest": "build/release-evidence/source-manifest.final.sha256",
+    "test_contract": "scripts/android-test-contract.json"
+  },
+  "test_suites": [
+    {
+      "expected": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 971
+      },
+      "id": "app-jvm",
+      "kind": "jvm",
+      "label": "app JVM",
+      "reports": [
+        "app/build/test-results/testDebugUnitTest/TEST-*.xml"
+      ]
+    },
+    {
+      "expected": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 25,
+        "tests": 332
+      },
+      "id": "old-phone-app",
+      "kind": "android",
+      "label": "old-phone Android app",
+      "reports": [
+        "build/release-evidence/connected/authorized-old-phone/app.xml"
+      ]
+    }
+  ]
+}

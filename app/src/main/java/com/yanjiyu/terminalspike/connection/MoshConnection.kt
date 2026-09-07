@@ -30,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
@@ -69,6 +70,11 @@ internal class MoshConnection(
     override fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? = synchronized(lock) {
         activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
     }?.captureTmuxPane(includeHistory)
+
+    override fun captureTmuxHistoryPage(request: TmuxHistoryPageRequest): TmuxPaneCapture? =
+        synchronized(lock) {
+            activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+        }?.captureTmuxHistoryPage(request)
 
     init {
         require(writerCapacity > 0) { "Mosh writer capacity must be positive." }
@@ -420,7 +426,16 @@ internal class MoshConnection(
         if (publish) attempt.states.publish(ConnectionState.Connected)
     }
 
-    private fun publishEofIfNeeded(attempt: ActiveMoshConnection) {
+    private suspend fun publishEofIfNeeded(attempt: ActiveMoshConnection) {
+        // The isolated worker owns the terminal pipe while the broker owns lifecycle callbacks.
+        // Process death can therefore close the pipe just before the broker reports EXTENSION_DIED.
+        // Give that authoritative terminal event a small bounded window to win the race; a truly
+        // eventless clean EOF still becomes Disconnected below.
+        withTimeoutOrNull(EOF_EVENT_GRACE_MILLIS) {
+            while (isCurrent(attempt) && !attempt.terminal && !attempt.explicitCloseRequested) {
+                delay(EOF_EVENT_POLL_MILLIS)
+            }
+        }
         val publish = synchronized(lock) {
             if (activeAttempt !== attempt || attempt.terminal) {
                 false
@@ -600,6 +615,8 @@ internal class MoshConnection(
         const val DEFAULT_WRITER_POLL_MILLIS = 250L
         const val READ_BUFFER_BYTES = 8 * 1024
         const val STOP_TIMEOUT_MILLIS = 2_000L
+        const val EOF_EVENT_GRACE_MILLIS = 1_000L
+        const val EOF_EVENT_POLL_MILLIS = 10L
     }
 }
 

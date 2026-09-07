@@ -5,8 +5,10 @@
 > explicitly deferred product requirements and the release acceptance gate.
 > Never rewrite a failing test merely to reduce counts; diagnose product versus
 > synchronization/fixture defects with evidence. After all code gates pass,
-> follow `AGENTS.md`: resolve every connected authorized phone from fresh
-> `adb devices -l`, install/launch exact artifacts on each serial, and verify
+> follow the current `AGENTS.md` device policy and Plan 008's guarded entrypoint.
+> Tests may run only on the exact model-verified old `SM-S911B`; never test the
+> Wi-Fi `SM-F976B`. Install the final main debug APK on the fold only after the
+> whole requested feature is finished or the user explicitly asks, then verify
 > MainActivity foreground. Update `plans/README.md` with exact results.
 >
 > **Drift check (run first)**: the original hashes in `plans/README.md` are
@@ -24,15 +26,28 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
-- **Depends on**: Plans 001, 002, 003, and 004
+- **Depends on**: Plans 001-004 and 006-018
 - **Category**: tests / release / performance / accessibility / licensing / docs
 - **Planned at**: commit `ff8435bc100f381f6925202259017e7834f7233d`, 2026-08-09
-- **Execution status**: IN PROGRESS, 2026-08-10 — reviewed release assets, the
-  pinned local OpenSSH fixture, and the disposable release-test AVD are present.
-  A new final frozen source/build/install gate is still required after the last
-  source and documentation edits. The locked/dozing Wi-Fi full app suite plus
-  manual accessibility, device, backup, Mosh, and performance matrices remain
-  open. Production signing and public Mosh approval are separate external gates.
+- **Execution status**: IN PROGRESS, reconciled 2026-09-07 after the final frozen-source and
+  default old-phone gates — the production-signed `0.0.3 (6)` source gate passed all 485 tasks in
+  6m03s with app JVM `971/0/0/0`,
+  Mosh API `11/0/0/0`, and
+  extension `8/0/0/0`; all 95 host-script tests also pass. The latest process-isolated
+  old-phone app evidence matches its current 332-method contract (`307` passes, `25` approved
+  API-36 skips, zero failures/errors). Seven physical terminal journeys, the guarded
+  actual-Codex 3/3 matrix, and the fixed real-Mosh 5+1 matrix are green on the exact
+  model-verified `SM-S911B`. Plan 018's maximum 20,480-row tmux reconciliation is now
+  hard-capped at 2,000 comparison/rebuild rows per display callback and publishes atomically.
+  Plans 009, 012, and 013 are locally green but cannot obtain their first hosted conclusions
+  until an authorized commit/push; the repository currently has no hosted workflow runs.
+  Plan 017 is locally complete except completed public-Internet SSH while Android 17 local-network
+  permission is denied, which remains external evidence. Locally actionable closure is now the
+  deterministic candidate manifest/document reconciliation, an explicit disposition of
+  the diagnosed physical primary-navigation frame miss, and the
+  physical TalkBack/hardware-keyboard/OEM observations after the old phone passed IME, landscape,
+  maximum-text, and split-screen checks. Final fold/user acceptance, production signing/Play, and
+  public Mosh approval remain distinct final or external gates.
 - **Post-Plan-004 baseline**: HEAD
   `ff8435bc100f381f6925202259017e7834f7233d`; content manifest excluding
   plans/build/IDE output
@@ -40,22 +55,21 @@
 
 ## Why this matters
 
-The original red connected reports and the later 227-test baseline are
-historical. The latest recorded frozen gate has green JVM/lint/build/package
-evidence, a USB app runner report of 249 tests with no failures (with the credentialed
-real-server fixture assumption-skipped without runtime arguments), and
-focused Mosh API `5/5` plus extension `3/3` device contracts on both USB and
-Wi-Fi. The locked/dozing Wi-Fi phone still lacks a green full-app UI suite and
-unobscured foreground proof.
+The original red connected reports and early 227/249-test baselines are
+historical. Current evidence in `IMPLEMENTATION_STATUS.md` has green
+JVM/lint/build/package results, exact 332-method old-phone membership, and a
+seven-test credentialed SSH/Mosh/SFTP matrix on the exact model-checked old
+phone. Current policy deliberately excludes the connected fold from tests.
 
 Custom themes, reviewed bundled fonts and symbol fallback, current-value
 Settings summaries, a resource-backed UI-text boundary, dirty-row rendering,
 Android Mosh network hints, the pinned local OpenSSH fixture, generated Baseline
 and Startup Profiles, and the disposable release-test AVD are now implemented.
-The recorded release-like run used an existing debug identity, not production
-signing, and did not prove real SSH with the extension absent. Manual device,
-accessibility, backup/provider, Mosh lifecycle, and performance matrices remain
-open, as do the external production-signing and public-Mosh decisions.
+The release-like run used a local acceptance identity rather than production
+signing and proved extension-absent SSH plus same-certificate data retention.
+Manual accessibility, OEM battery behavior, wider real-session performance, tmux mouse/copy-mode
+scenarios, and observed Mosh roaming remain open, as do the external
+production-signing and public-Mosh decisions.
 
 This plan closes those gaps in a controlled order: characterize current truth,
 finish release-scope assets/settings, measure before optimizing the renderer,
@@ -64,43 +78,94 @@ test/install matrix and reconcile documentation to only that evidence.
 
 ## Current state
 
-- Latest recorded frozen source gate: app JVM `783/0/0/0`, Mosh API
-  `11/0/0/0`, and extension `8/0/0/0` tests/failures/errors/skipped, with
-  debug/release lint, builds, package verification, Android-test APKs, dual-ABI
-  extension outputs, and benchmark assembly green.
-- Latest recorded connected evidence: the USB app runner reported 249 tests with no failures;
-  the credentialed real-server fixture remains assumption-skipped. Focused Mosh API
-  `5/5` and extension `3/3` on both USB and Wi-Fi. Both latest debug APKs
-  installed by exact serial on both phones. USB foreground proof passed; the
-  locked/dozing Wi-Fi full app suite and unobscured foreground proof did not.
-- Connected Baseline/Startup Profile generation and 12 benchmark tests passed on
-  USB API 36. Input-to-render, tap-to-Connecting, refresh/power/thermal, memory,
-  resize, and simultaneous live-session evidence remain open.
+- Latest local source gate: app JVM `971/0/0/0`, Mosh API `11/0/0/0`, and
+  extension `8/0/0/0` tests/failures/errors/skipped. After adding the clean-install backup
+  gate and CI job, the forced Plan 005 command passed all 451 tasks in 6m19s; all 95
+  host-script tests pass. The preceding Plan 018 gate recorded 475 tasks.
+- Latest physical default-runtime evidence: the exact 332-method contract passed on the
+  model-checked Android 16 `SM-S911B` with 307 executed passes and 25 approved API-36 skips.
+  The disposable-host-only export, standard clean-install restore, and full clean-install restore
+  methods are intentionally skipped by the default runner and pass in their dedicated API 35
+  clean-install gate.
+  The preceding clean AVD matrix remains historical evidence: 316-method full suites on APIs 26
+  and 35 and focused 33-test boundary suites on APIs 28, 29, 32, and 33. Stable API 37 now passes
+  its exact 42-method boundary plus the separate 2/2 denied/granted LAN gate. Plan 009 has wired
+  these gates into CI and awaits its first hosted run.
+- The separately enabled real-Mosh acceptance repeated 5 password/lifecycle plus 1 private-key
+  test without failures or skips. The guarded actual-Codex matrix passed 3/3 with app-selected
+  tmux local routing, zero remote wheels, ordered 5,000-row paging, sub-row drag/fling/catch,
+  reader anchoring, and live-bottom transition.
+- The deterministic seven-test network matrix passed password/imported-key SSH,
+  tmux, 5,000-row paging, two SFTP paths, and real UDP Mosh on the old phone.
+  Plans 006-007 address newly audited SFTP state/path/bounds/atomicity risks
+  before that E2E becomes a CI requirement.
+- Baseline/Startup Profile generation and the earlier 12-test connected API-36
+  Macrobenchmark suite remain valid historical evidence. Input-to-render,
+  tap-to-Connecting, refresh/power/thermal, memory, resize, and simultaneous-session
+  measurements are useful future diagnostics but are not release blockers without a reported
+  defect. The measured primary-navigation P95 remains a documented shell-performance limitation. The exact old-phone
+  navigation rerun after correcting UIAutomator to click each described node's nearest clickable
+  ancestor removed all 20 non-clickable warnings and measured CPU P50/P90/P95/P99
+  `7.93/22.13/22.66/24.32 ms`; because the app UI was unchanged and the earlier shader outlier did
+  not recur, this is harness-correctness evidence rather than a product-performance closure.
 - Engine dirty rows now cross `TerminalController` and invalidate exact visible
   row rectangles in `FastTerminalView`; full invalidation remains for structural
-  changes. Device before/after performance acceptance is still required.
+  changes. All seven physical terminal journeys are green, including live tmux
+  reconciliation at CPU-frame P50/P90/P95/P99 `2.2/3.6/4.8/5.8 ms`. The separate
+  Connections-to-Settings journey reproduced at `29.35 ms` CPU P95. Perfetto attributes repeatable
+  slow frames to initial Settings category-list composition/layout, with one additional 26.29 ms
+  rounded-rectangle shader cache miss. Lifting the shared navigation shell above the route content
+  would be a broad pre-release rewrite; defer it unless user acceptance shows a material problem.
 - Four reviewed monospace families plus Symbols Nerd Font Mono are bundled,
   checksum-pinned, and covered by the canonical notices. Custom font import
   rejects proportional fonts. UUID-backed custom themes round-trip through Room,
   backup, Settings, and renderer paths.
-- Product-authored copy now uses a resource-backed `UiText` boundary; live
+- Product-authored copy uses a resource-backed `UiText` boundary; live
   Settings landing summaries project committed `SettingsUiState`. A reviewed
-  direct-literal allow-list and Spanish locale smoke exist. Manual TalkBack,
-  large-text, OEM, and full locale/adaptive matrices remain open.
-- The pinned `integration-tests/openssh` fixture exists and supports disposable
-  password/key and host-key-mismatch flows. Clean-install backup/provider and
-  release-like extension-absent real-SSH acceptance remain open.
+  direct-literal allow-list and Spanish locale smoke exist. Automated light/dark,
+  expanded, compact 200%-text, and 48dp contracts now exist. The exact old phone additionally
+  passed Samsung IME entry, physical landscape, maximum `font_scale=2.0`, and real Samsung
+  split screen with positive-area controls. TalkBack binds and sees the labelled semantic tree,
+  but physical focus-order traversal and OEM battery observation remain open.
+- The pinned `integration-tests/openssh` fixture supports disposable password,
+  key, host-key-mismatch, SFTP, tmux, and Mosh flows. Same-install opaque
+  DocumentsProvider backup integration and release-like extension-absent SSH are green. A dedicated
+  API 35 AVD gate exported Standard and Full archives, rejected plaintext secret leakage, crossed
+  two uninstall/reinstall boundaries, restored Standard metadata with the expected unavailable
+  secret placeholder, and restored the Full portable secret under a fresh Android Keystore.
 - The API 35 `terminal-spike-release-test` AVD accepted matching release-like app
   and extension APKs signed with the existing Android debug identity. This is
-  not production signing and did not prove store readiness, same-certificate
-  data retention with real SSH, or extension-absent SSH.
-- Latest-build controlled-server password-auth Mosh E2E passed on both Android
-  16 phones, and Android connectivity generations are wired to live sessions.
-  Private-key bootstrap, multi-session, resize/death, observed transitions and
-  roaming, extension-absent SSH, and the user's saved-server retest remain open.
+  not production signing and does not prove store readiness, but same-certificate
+  data retention with real SSH and extension absence passed.
+- A newer ephemeral-key `0.0.2` release-like run follows the current Connections host editor and
+  tmux chooser. It passed clean install, real extension-absent SSH, same-certificate update, process
+  restart, non-secret host retention with password re-prompt, and a second real SSH marker. The
+  runner now re-verifies the named AVD around destructive operations and always tears down its
+  fixture. APK/AAB signatures verified and the app/extension APK signers matched.
+- Current controlled-server Mosh E2E passed password and private-key bootstrap,
+  200-row terminal reconstruction, four simultaneous sessions with independent
+  resize/close, worker death/slot reuse, and broker death/rebind on the authorized
+  old Android 16 phone. Android connectivity generations are wired to live sessions.
+  Observed transitions/roaming and the user's saved-server retest remain open.
+- The fixed real-Mosh old-phone entrypoint now resets and tears down the disposable fixture, binds
+  SSH and UDP to one acknowledged LAN IPv4 address, re-verifies the exact `SM-S911B` before every
+  install/test launch, rejects skips and incomplete result sets, and emits only sanitized evidence.
+  Its current run passed the required password/lifecycle class 5/5 and private-key method 1/1.
 - ADR-003 explicitly blocks public Mosh extension distribution pending external
   GPL/signing/installation-information/name review. Local/debug evaluation and
   an SSH-only main-app release are separate decisions.
+- Repository-owned `source-manifest.py`, candidate-manifest generation, documentation
+  verification, and strict input/artifact-metadata templates now exist. Five focused tests prove
+  deterministic byte-identical JSON plus rejection of stale, contradictory, failing, duplicate,
+  tampered, path-escaping, and privacy-leaking evidence. The release-facing documents now contain
+  one mechanically checked 971/11/8/332 evidence block, historical competing totals are explicitly
+  dated, and the checked-in input example matches 332 methods with 25 reviewed skips. All 95
+  host-script tests pass. The resulting source-manifest identity is
+  `0744cfcdd34b1da0431c923fa05e9c7d1bcb86bface6a19f4081d9ec036bb9f8` after the
+  focused adaptive-evidence reconciliation.
+  The deterministic final candidate JSON is generated and documentation-verified. It records the
+  remaining manual, hosted, network, signing/store, and public-Mosh gates explicitly instead of
+  fabricating conclusions for unavailable evidence.
 
 ## Commands you will need
 
@@ -178,31 +243,10 @@ Performance gates:
 ./gradlew --no-daemon --max-workers=1 :benchmark:pixel6Api35BenchmarkAndroidTest
 ```
 
-Device discovery/install is always resolved fresh without a remembered serial.
-This is an update install on user phones; clean-install tests run only on a
-disposable emulator/test profile unless the operator explicitly authorizes data
-erasure:
-
-```bash
-set -euo pipefail
-adb devices -l
-readarray -t terminal_targets < <(adb devices -l | awk 'NR > 1 && $2 == "device" { print $1 }')
-if ((${#terminal_targets[@]} == 0)); then
-  echo 'No authorized Android debugging phone; installation skipped.'
-  exit 0
-fi
-for serial in "${terminal_targets[@]}"; do
-  adb -s "$serial" install -r app/build/outputs/apk/debug/app-debug.apk
-  adb -s "$serial" install -r mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk
-  adb -s "$serial" shell am start -W -n com.yanjiyu.terminalspike/.MainActivity
-  adb -s "$serial" shell dumpsys activity activities |
-    rg 'topResumedActivity.*com\.yanjiyu\.terminalspike/.MainActivity'
-done
-```
-
-Expected: every authorized `device` target installs successfully and output
-contains `topResumedActivity` for `com.yanjiyu.terminalspike/.MainActivity`.
-Report offline/unauthorized targets without pretending they were tested.
+Physical-device commands in the original plan are superseded by Plan 008. Do
+not enumerate every connected device into an install/test loop. Use its guarded
+mode so each operation rechecks the exact serial and model immediately before
+acting. Clean-install tests remain limited to disposable emulators/test users.
 
 ## Scope
 
@@ -320,7 +364,7 @@ round-trips and applies live without recreating sessions.
 Extract all production user-visible text, content descriptions, state
 descriptions, plurals, and error templates from Kotlin into resources. Keep
 non-user internal protocol tokens in code. Add a pseudolocale/non-default-locale
-smoke that traverses Workspace, Terminal actions, Connections editors, Settings,
+smoke that traverses Connections, Terminal actions, Connections editors, Settings,
 backup, security, and Mosh status.
 
 Derive Settings landing summaries from current `SettingsUiState` (theme/font,
@@ -328,7 +372,7 @@ scrollback/TERM, keyboard preset/layout, session/background policy, security,
 backup status) rather than static prose. Preserve search aliases in localized
 resources or a locale-aware index.
 
-Audit TalkBack focus order, roles/actions/state descriptions, 44dp targets,
+Audit TalkBack focus order, roles/actions/state descriptions, 48dp targets,
 contrast, 2× font scale, IME, portrait/landscape, split-window, gesture and
 three-button navigation, and expanded list/detail. Keep the terminal Canvas as
 one bounded semantic surface plus selection/action semantics; do not create a
@@ -366,8 +410,8 @@ reports the measured delta without overclaiming GPU latency.
 is not a Plan 005 blocker. `integration-tests/openssh/Dockerfile` pins Alpine
 3.24.1 by OCI digest and OpenSSH 10.3p1-r0; its documented local fixture creates
 ignored disposable keys, supports password/key smoke and host-key rotation, and
-is outside Android source sets. App-level release-like SSH and clean-install
-backup/provider acceptance remain open.
+is outside Android source sets. App-level release-like SSH and disposable-AVD
+clean-install backup/provider acceptance are now green.
 
 The implemented fixture lives under `integration-tests/openssh/` and documents
 its lifecycle and safe LAN opt-in. Its current executable smoke contract is:
@@ -398,8 +442,8 @@ Replace crash recovery, and restart. Repeat with Drive only when an account is
 available; report external skip explicitly.
 
 **Verify**: Compose server tests are reproducible from README commands; release
-leak scan finds no fixture material; clean-install tests pass on an emulator and
-at least one available phone.
+leak scan finds no fixture material; clean-install tests pass on a disposable emulator.
+A physical-phone clean install is destructive and requires explicit data-loss approval.
 
 ### Step 6: Complete Mosh and service acceptance
 
@@ -425,60 +469,11 @@ Do not claim public distribution or proactive roaming beyond observed evidence.
 
 ### Step 7: Run the full connected-device and adaptive matrix
 
-Resolve `adb devices -l` immediately before testing. Use this fail-fast full-suite
-loop; it preserves user data with update installs and reports non-`device` rows
-separately. Each module result is copied immediately after its run to a
-serial-keyed ignored evidence path, so a later target cannot overwrite it and a
-historical XML cannot satisfy the gate:
-
-```bash
-set -euo pipefail
-adb devices -l
-readarray -t terminal_targets < <(adb devices -l | awk 'NR > 1 && $2 == "device" { print $1 }')
-mkdir -p build/release-evidence/connected
-for serial in "${terminal_targets[@]}"; do
-  [[ "$serial" =~ ^[A-Za-z0-9._:-]+$ ]]
-done
-for serial in "${terminal_targets[@]}"; do echo "$serial"; done \
-  > build/release-evidence/authorized-serials.txt
-if ((${#terminal_targets[@]} == 0)); then
-  echo 'No authorized Android debugging phone; connected gate skipped.'
-else
-  for serial in "${terminal_targets[@]}"; do
-    evidence_dir="build/release-evidence/connected/$serial"
-    mkdir -p "$evidence_dir"
-    adb -s "$serial" install -r app/build/outputs/apk/debug/app-debug.apk
-    adb -s "$serial" install -r mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk
-
-    app_marker="$evidence_dir/app-start.marker"
-    touch "$app_marker"
-    ANDROID_SERIAL="$serial" ./gradlew --no-daemon --max-workers=1 \
-      :app:connectedDebugAndroidTest
-    readarray -d '' app_reports < <(find \
-      app/build/outputs/androidTest-results/connected/debug -type f \
-      -name 'TEST-*.xml' -newer "$app_marker" -print0)
-    ((${#app_reports[@]} == 1))
-    cp -- "${app_reports[0]}" "$evidence_dir/app.xml"
-    python3 scripts/assert-test-report.py "$evidence_dir/app.xml"
-
-    extension_marker="$evidence_dir/mosh-extension-start.marker"
-    touch "$extension_marker"
-    ANDROID_SERIAL="$serial" ./gradlew --no-daemon --max-workers=1 \
-      :mosh-extension:connectedDebugAndroidTest
-    readarray -d '' extension_reports < <(find \
-      mosh-extension/build/outputs/androidTest-results/connected/debug -type f \
-      -name 'TEST-*.xml' -newer "$extension_marker" -print0)
-    ((${#extension_reports[@]} == 1))
-    cp -- "${extension_reports[0]}" "$evidence_dir/mosh-extension.xml"
-    python3 scripts/assert-test-report.py "$evidence_dir/mosh-extension.xml"
-
-    adb -s "$serial" shell am start -W \
-      -n com.yanjiyu.terminalspike/.MainActivity
-    adb -s "$serial" shell dumpsys activity activities |
-      rg 'topResumedActivity.*com\.yanjiyu\.terminalspike/.MainActivity'
-  done
-fi
-```
+Resolve `adb devices -l` immediately before testing, then invoke only Plan 008's
+guarded old-phone mode. Copy each report immediately to a serial-keyed ignored
+evidence directory and validate it with `scripts/assert-test-report.py`; a
+historical XML cannot satisfy the gate. Never select the fold or another
+connected phone for tests.
 
 Add `scripts/assert-test-report.py` before this step. It accepts exactly one XML
 path, requires a `testsuite`/`testsuites` root, integer `tests > 0`, and zero
@@ -487,18 +482,18 @@ privacy-safe count line, and exits nonzero for a missing/malformed/empty/failing
 report. Unit-test it with pass, failure, error, empty, malformed, and aggregate
 fixtures.
 
-For each exact authorized serial:
+For the exact authorized old-phone serial:
 
 1. keep the device unlocked and dismiss only known system prompts through
    deterministic platform/UI automation;
-2. update-install current app and extension APKs; Gradle installs matching test
-   APKs for the selected serial;
+2. model-check `SM-S911B`, then update-install only the artifacts required by the
+   selected old-phone gate;
 3. run the full app and extension connected suites with `ANDROID_SERIAL` set to
    exactly that serial;
 4. parse XML and require zero failures/errors; document intentional skips;
-5. install the final debug APK again, launch MainActivity, and verify it is
-   top-resumed;
-6. exercise two open tabs, navigation away/back, 9×2 deck, one-tap saved host,
+5. install the final main debug APK again on that old phone, launch MainActivity,
+   and verify it is top-resumed;
+6. exercise two open tabs, navigation away/back, 10×2 deck, one-tap saved host,
    double-tap duplicate, backup recovery, app lock, and Mosh status.
 
 Run destructive clean-install/restore only on an explicitly disposable managed
@@ -509,8 +504,13 @@ Add managed devices for API 33–36 and tablet/foldable/split-window configurati
 where the SDK supports them. Record gesture/three-button modes, font scale,
 TalkBack, rotation, notification denial, and battery restrictions.
 
-**Verify**: every authorized target has a zero-failure XML and foreground proof.
-Offline/unauthorized targets are reported, never silently excluded.
+After the whole requested feature is complete, use Plan 008's explicit final-fold
+mode to install and launch the latest main debug APK once on `SM-F976B`; do not
+run tests or install the Mosh extension there. Report unavailable/unauthorized
+targets rather than silently excluding them.
+
+**Verify**: the old phone has a zero-failure XML and foreground proof, and any
+allowed final fold install has foreground proof but no test report.
 
 ### Step 8: Produce release-like/signed artifacts and reconcile docs
 
@@ -521,10 +521,11 @@ same-certificate update installs plus extension-absent SSH. Use the production i
 operator supplies/authorizes it; never record its values.
 
 **Current status**: the named API 35 `terminal-spike-release-test` AVD is
-provisioned, so its former unavailability is not a blocker. Matching
-release-like APKs signed with the existing Android debug identity installed and
-launched there. Production signing, real extension-absent SSH, and the complete
-same-certificate data-retention flow remain unproved.
+provisioned, so its former unavailability is not a blocker. A fresh ephemeral
+acceptance identity produced and signer-matched the minified APK/AAB, and real
+extension-absent SSH passed before and after same-certificate reinstall with
+non-secret data retention and password re-prompt. This is not production signing
+or a genuine prior-version upgrade; both remain external/not-applicable as described below.
 
 The executable release-like signing gate uses an ephemeral local acceptance
 identity outside the repository, not production signing. Run only against a
@@ -572,8 +573,9 @@ extension_cert=$($apksigner verify --verbose --print-certs "$extension_release_a
   | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
 test -n "$app_cert"
 test "$app_cert" = "$extension_cert"
-"$JAVA_HOME/bin/jarsigner" -verify -strict -verbose -certs "$app_release_aab" \
-  > build/release-evidence/app-release-aab-signature.txt
+"$JAVA_HOME/bin/jarsigner" -verify "$app_release_aab" \
+  > build/release-evidence/app-release-aab-signature.txt 2>&1
+grep -Fxq 'jar verified.' build/release-evidence/app-release-aab-signature.txt
 aapt="$(dirname "$apksigner")/aapt"
 test -x "$aapt"
 $aapt dump badging "$app_release_apk" \
@@ -774,6 +776,50 @@ XML parser must be run after both unit and connected gates; its output, the
 artifact hash file, signature verification output, device matrix, and final
 manifest comparison form the durable release-evidence report.
 
+As part of this final step, add one repository-owned release-evidence manifest
+generator and focused tests under `scripts/`. It must produce deterministic,
+sanitized JSON in `build/release-evidence/candidate-manifest.json` containing:
+
+- commit ID, dirty/source-manifest identity, and test-contract SHA-256;
+- exact JVM and Android method/pass/failure/error/approved-skip counts by suite;
+- artifact paths, package/version identities, signer fingerprints, and SHA-256;
+- device model, API, transport class, scenario, and result without publishing raw
+  serials, credentials, private paths, host addresses, or terminal contents;
+- hosted workflow/run URLs and conclusions when an authorized hosted run exists;
+- explicit `pending` entries for external/manual gates rather than absent fields.
+
+The generator must fail on missing, stale, contradictory, duplicate, or failing
+inputs. Add a documentation check that either derives duplicated current totals
+from this manifest or rejects mismatched “current” totals in `README.md`,
+`docs/PUBLISHING.md`, `docs/NEXT_STEPS.md`, and `IMPLEMENTATION_STATUS.md`.
+Historical totals may remain only when clearly labelled historical. Attach the
+JSON beside release artifacts; do not treat prose or an unhashed local build
+directory as the authoritative candidate record.
+
+**Verify**:
+
+```bash
+python3 -m unittest discover -s scripts/tests -p 'test_*release*evidence*.py'
+python3 scripts/create-release-evidence-manifest.py \
+  --evidence-dir build/release-evidence \
+  --output build/release-evidence/candidate-manifest.json
+python3 -m json.tool build/release-evidence/candidate-manifest.json >/dev/null
+python3 scripts/verify-release-documentation.py \
+  --manifest build/release-evidence/candidate-manifest.json
+```
+
+Expected: every command exits 0, rerunning the generator without changing an
+input produces byte-identical JSON, and the documentation verifier accepts no
+stale current totals.
+
+**Implementation status (2026-09-07)**: the three commands and shared standard-library helper are
+implemented, with `scripts/release-evidence-inputs.example.json` and
+`scripts/release-artifact-metadata.example.json` documenting the strict input contracts. The
+focused five-test suite and all 95 host-script tests pass. The actual candidate manifest is
+generated from the final frozen evidence, and its exact marker block is mechanically consistent
+across all four release-facing documents. Unavailable external/manual gates remain explicit
+pending entries rather than synthesized passes.
+
 ## Test plan
 
 - Preserve every existing unit, Room, migration, renderer, workload, smoke, and
@@ -787,34 +833,43 @@ manifest comparison form the durable release-evidence report.
 
 ## Done criteria
 
-- [x] The final frozen JVM, lintDebug/lintRelease, debug/release, Android-test
-      assembly, Mosh API/extension, and benchmark gate exits 0 after the last
-      source edit.
-- [ ] Full connected app suite has zero failures/errors on every currently
-      connected authorized phone. USB is green; the locked/dozing Wi-Fi full app
-      suite is environment-blocked, while its focused Mosh contracts passed.
-- [ ] Final debug app and extension are installed on every authorized target and
-      MainActivity is verified unobscured foreground. Installs passed on both;
-      USB foreground passed and Wi-Fi remained behind keyguard/notification shade.
-- [x] Default deck remains 18 keys at 9×2; primary navigation/chrome match later
+- [x] After the remaining Plan 005 source edits, the final frozen JVM,
+      lintDebug/lintRelease, debug/release, Android-test assembly, Mosh API/extension,
+      and benchmark gate exits 0. The pre-closure Plan 018 source passed 475 tasks.
+- [x] After that same freeze, the full default connected app suite matches the exact
+      contract with no failures/errors on the model-checked old `SM-S911B`; the current
+      pre-closure evidence is 332 methods, 307 passes, and 25 approved skips.
+- [x] The final frozen main debug APK is installed and foregrounded on the old phone;
+      the current pre-closure APK has already passed this check.
+- [ ] Only when the whole requested feature is complete, install/foreground the final main debug
+      APK once on the fold for user acceptance. No tests or extension install may target the fold.
+- [x] Default deck remains 20 keys at 10×2; primary navigation/chrome match later
       user requirements.
 - [x] Custom themes and all release-required font/fallback assets are live,
       migrated/backed up, and licence-cleared.
 - [x] Resource-backed localization and Settings live summaries are implemented
-      and covered by focused tests; the manual accessibility/adaptive matrix is
-      still unproved.
-- [ ] Performance journeys, generated Baseline Profile, and privacy-safe
-      before/after evidence exist; renderer digests remain exact.
-- [ ] Reproducible local SSH and clean-install backup/provider tests pass.
-- [ ] Mosh/service lifecycle matrix is recorded without overclaiming public
+      and covered by focused tests.
+- [ ] The manual accessibility/adaptive matrix is recorded against the final candidate.
+- [x] Current Baseline/Startup Profile generation and all seven physical terminal
+      Macrobenchmark journeys passed with privacy-safe summaries.
+- [x] Record the diagnosed physical primary-navigation miss as an accepted known limitation or
+      fix it only if user acceptance shows a material problem. Do not broaden release scope with
+      speculative real-session measurements; the terminal hot-path journeys remain the performance gate.
+- [x] Reproducible local SSH/SFTP and same-install opaque DocumentsProvider backup tests pass.
+- [x] A disposable clean-install Standard/Full backup export/reinstall/restore gate proves
+      portability after the originating app-private and Keystore state is gone.
+- [x] Mosh/service lifecycle matrix is recorded without overclaiming public
       distribution or roaming.
-- [ ] Release-like signed clean install and same-certificate update/data-retention
+- [x] Release-like signed clean install and same-certificate update/data-retention
       pass; a genuine prior-version upgrade is either proved from a documented
       artifact or explicitly not applicable to this first release. Unavailable
       production signing and public-Mosh approval are recorded distinctly
       without a public-release claim.
-- [ ] README, CHANGELOG, status, architecture, security, backup, performance,
+- [x] README, CHANGELOG, status, architecture, security, backup, performance,
       dependencies, and notices match the final source/artifact hashes.
+- [x] One deterministic sanitized candidate manifest owns the current source,
+      test-contract, artifact, device, hosted-CI, and pending-external-gate facts;
+      duplicated documentation totals are mechanically consistent with it.
 
 Plan status rule: mark `DONE` only when every checkbox above is true for the
 defined local/debug + release-like main-app target. Production signing, a cloud

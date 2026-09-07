@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.ui.connections
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -9,17 +10,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -27,14 +34,17 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
+import com.yanjiyu.terminalspike.TerminalSpikeComponentTestActivity
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.SnippetTapAction
 import com.yanjiyu.terminalspike.core.model.SshKeyOrigin
@@ -53,7 +63,7 @@ import org.hamcrest.Matchers.equalTo
 
 class ConnectionsScreenTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 
     @Test
     fun hostCatalogHeaderKeepsScreenIdentityBesideItsPrimaryAction() {
@@ -67,7 +77,7 @@ class ConnectionsScreenTest {
     }
 
     @Test
-    fun newHostKeepsOnlyEssentialsVisibleAndSavesPasswordByDefault() {
+    fun newHostKeepsOnlyEssentialsVisibleAndRequiresOptInToSavePassword() {
         render(
             state = editorState(),
             callbacks = callbacks(onSaveHost = { Result.success(Unit) }),
@@ -79,7 +89,7 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithTag(HostEditorUsernameTestTag).assertExists()
         composeRule.onNodeWithTag(HostEditorPortTestTag).assertTextContains("22")
         composeRule.onNodeWithTag(HostEditorSecretTestTag).assertExists()
-        composeRule.onNodeWithTag(HostEditorSavePasswordTestTag).assertIsOn()
+        composeRule.onNodeWithTag(HostEditorSavePasswordTestTag).assertIsOff()
         composeRule.onNodeWithTag(HostEditorNameTestTag).assertExists()
         composeRule.onNodeWithText("Protocol").assertExists()
         composeRule.onNodeWithText("Profiles").assertDoesNotExist()
@@ -89,6 +99,22 @@ class ConnectionsScreenTest {
 
         composeRule.onNodeWithText("Profiles").assertExists()
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).assertExists()
+    }
+
+    @Test
+    fun existingEncryptedPasswordIsPresentedAsSavedWithoutExposingItsValue() {
+        render(
+            state = editorState(savedSecretAvailable = true),
+            callbacks = callbacks(onSaveHost = { Result.success(Unit) }),
+        )
+
+        composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
+        composeRule.onNodeWithText("Edit").performClick()
+
+        composeRule.onNodeWithTag(HostEditorSavePasswordTestTag).assertIsOn()
+        composeRule.onNodeWithTag(HostEditorSecretTestTag).assertExists()
+        composeRule.onNodeWithText("Leave blank to retain the encrypted saved password.")
+            .assertExists()
     }
 
     @Test
@@ -312,6 +338,9 @@ class ConnectionsScreenTest {
             state = editorState(),
             callbacks = callbacks(
                 onSaveHost = { Result.success(Unit) },
+                onResolveHostEditorDraft = { _, initial ->
+                    initial.copy(username = "keep-user")
+                },
                 nearbySshDiscoveryControllerFactory = NearbySshDiscoveryControllerFactory {
                     discovery
                 },
@@ -319,7 +348,6 @@ class ConnectionsScreenTest {
         )
 
         composeRule.onNodeWithContentDescription("Add host").performClick()
-        composeRule.onNodeWithTag(HostEditorUsernameTestTag).performTextInput("keep-user")
         composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performScrollTo().performClick()
         composeRule.onNodeWithTag(NearbySshDiscoveryDialogTestTag).assertIsDisplayed()
@@ -390,13 +418,15 @@ class ConnectionsScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(GenerateKeyNameTestTag).performTextInput("Deploy key")
+        setTextWithoutOpeningIme(GenerateKeyNameTestTag, "Deploy key")
         onView(withTagValue(equalTo(GenerateKeyPassphraseTestTag)))
             .perform(replaceText("retry-passphrase"))
         onView(withTagValue(equalTo(GenerateKeyConfirmPassphraseTestTag)))
             .perform(replaceText("retry-passphrase"))
+        closeSoftKeyboard()
         composeRule.onNodeWithTag(GenerateKeySubmitTestTag).performClick()
         composeRule.onNodeWithText("Could not generate this SSH key", substring = true)
+            .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithTag(GenerateKeySubmitTestTag).performClick()
         composeRule.runOnIdle { assertEquals(1, attempts) }
@@ -564,6 +594,43 @@ class ConnectionsScreenTest {
     }
 
     @Test
+    fun compactSplitScreenAtLargeTextKeepsHostActionsReachableAndTouchSized() {
+        render(
+            state = populatedState(),
+            width = 320.dp,
+            height = 360.dp,
+            fontScale = 2f,
+        )
+
+        composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Search hosts").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Add host")
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(ConnectionsCompactListTestTag)
+            .performScrollToNode(hasContentDescription("Connect to Production"))
+        composeRule.onNodeWithContentDescription("Connect to Production")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("Host actions for Production")
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun compactSplitScreenAtStandardTextKeepsSearchAvailable() {
+        render(
+            state = populatedState(),
+            width = 320.dp,
+            height = 480.dp,
+        )
+
+        composeRule.onNodeWithContentDescription("Search hosts").assertIsDisplayed()
+    }
+
+    @Test
     fun expandedHostRowConnectsInOneTapWhileDetailsRemainSeparate() {
         var connectionCount = 0
         render(
@@ -622,6 +689,7 @@ class ConnectionsScreenTest {
         height: Dp = 900.dp,
         fontScale: Float = 1f,
         themeMode: AppThemeMode = AppThemeMode.LIGHT,
+        safeContentInsets: WindowInsets = WindowInsets(0),
     ) {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
@@ -639,6 +707,7 @@ class ConnectionsScreenTest {
                             onOpenTerminal = onOpenTerminal,
                             onOpenSettings = {},
                             modifier = Modifier.requiredSize(width, height),
+                            safeContentInsets = safeContentInsets,
                             nowEpochMillis = 200_000L,
                         )
                     }
@@ -677,6 +746,7 @@ class ConnectionsScreenTest {
         onRunSnippet: ((String) -> Unit)? = {},
         onSaveHost: (suspend (HostEditorSubmission) -> Result<Unit>)? = null,
         onOpenMoshStatus: (() -> Unit)? = null,
+        onResolveHostEditorDraft: ((String, HostEditorDraft) -> HostEditorDraft)? = null,
         nearbySshDiscoveryControllerFactory: NearbySshDiscoveryControllerFactory? = null,
     ) = ConnectionsCallbacks(
         onTabSelected = {},
@@ -703,9 +773,19 @@ class ConnectionsScreenTest {
         onEditSnippet = {},
         onDeleteSnippet = {},
         onSaveHost = onSaveHost,
+        onResolveHostEditorDraft = onResolveHostEditorDraft,
         onOpenMoshStatus = onOpenMoshStatus,
         nearbySshDiscoveryControllerFactory = nearbySshDiscoveryControllerFactory,
     )
+
+    private fun setTextWithoutOpeningIme(testTag: String, text: String) {
+        val action = composeRule.onNodeWithTag(testTag)
+            .fetchSemanticsNode()
+            .config[SemanticsActions.SetText]
+        composeRule.runOnIdle {
+            assertTrue(action.action?.invoke(AnnotatedString(text)) == true)
+        }
+    }
 
     private fun editorState(
         protocol: ConnectionProtocol = ConnectionProtocol.SSH,

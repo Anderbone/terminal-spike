@@ -18,6 +18,9 @@ interface Connection : TerminalInputSink {
      */
     fun captureTmuxPane(includeHistory: Boolean = true): TmuxPaneCapture? = null
 
+    /** Captures the bounded history page immediately before [request.beforeRow]. */
+    fun captureTmuxHistoryPage(request: TmuxHistoryPageRequest): TmuxPaneCapture? = null
+
     /** Returns false when the bounded transport queue cannot accept the complete input batch. */
     override fun trySend(bytes: ByteArray): Boolean
 
@@ -67,13 +70,35 @@ interface Connection : TerminalInputSink {
     fun close()
 }
 
+/** Stable coordinates for an older-page request against one exact tmux pane snapshot. */
+data class TmuxHistoryPageRequest(
+    val paneId: String,
+    val beforeRow: Int,
+    val remoteHistoryRows: Int,
+) {
+    init {
+        require(paneId.matches(Regex("%[0-9]+")))
+        require(beforeRow > 0)
+        require(remoteHistoryRows >= beforeRow)
+    }
+}
+
 /** Bounded physical tmux history rows plus the metadata needed to parse them safely. */
 class TmuxPaneCapture(
     val sessionId: String,
     val paneId: String,
     val columns: Int,
     val rows: Int,
+    /** Number of rows carried in [content], rather than tmux's complete retained history. */
     val historyRows: Int,
+    /** Complete retained history coordinate at capture time, including a saved primary grid. */
+    val remoteHistoryRows: Int = historyRows,
+    /** Absolute row coordinate of the first row carried in [content]. */
+    val capturedStartRow: Int = 0,
+    /** Earliest row this bounded local cache is allowed to request. */
+    val oldestAvailableRow: Int = 0,
+    /** True only for a disjoint page intended to be prepended to an existing cache. */
+    val olderPage: Boolean = false,
     val alternateScreenActive: Boolean,
     /** True only when the pane application enabled a terminal mouse-tracking mode. */
     val mouseTrackingActive: Boolean,
@@ -92,6 +117,9 @@ class TmuxPaneCapture(
         require(columns in 1..MAX_CAPTURE_COLUMNS)
         require(rows in 1..MAX_CAPTURE_ROWS)
         require(historyRows in 0..ModelLimits.MAX_SCROLLBACK_LINES)
+        require(remoteHistoryRows >= historyRows)
+        require(oldestAvailableRow in 0..capturedStartRow)
+        require(capturedStartRow <= remoteHistoryRows - historyRows)
         require(this.content.size <= MAX_CAPTURE_BYTES)
         require(historyIncluded || this.content.isEmpty())
         require(historyRows > 0 || this.content.isEmpty())

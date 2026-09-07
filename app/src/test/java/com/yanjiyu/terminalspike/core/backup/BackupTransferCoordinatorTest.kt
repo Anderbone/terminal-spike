@@ -99,6 +99,35 @@ class BackupTransferCoordinatorTest {
     }
 
     @Test
+    fun exportWaitsForCatalogReadinessBeforeReadingSnapshot() = runTest {
+        val directory = Files.createTempDirectory("backup-transfer-readiness").toFile()
+        try {
+            val events = mutableListOf<String>()
+            val coordinator = BackupTransferCoordinator(
+                snapshots = BackupSnapshotProvider { mode ->
+                    events += "snapshot"
+                    BackupPayloadSnapshot(mode)
+                },
+                archives = BackupArchiveCodec(EncryptedFileBackupStagingFactory(directory)),
+                kdfIterations = BackupKdfIterationsProvider { BackupEnvelopeFormat.MIN_KDF_ITERATIONS },
+                ioDispatcher = Dispatchers.Unconfined,
+                beforeExport = { events += "ready" },
+            )
+
+            coordinator.export(
+                BackupMode.STANDARD,
+                ByteArrayOutputStream(),
+                "readiness proof".toCharArray(),
+                metadata(),
+            )
+
+            assertEquals(listOf("ready", "snapshot"), events)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun documentContractUsesProductSpecificPortableNames() {
         assertEquals(".terminalspike-backup", BackupDocumentContract.FILE_EXTENSION)
         assertEquals(

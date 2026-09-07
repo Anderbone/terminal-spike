@@ -139,7 +139,9 @@ internal fun ConnectionsHeader(
                 onNavigateBack?.let { navigateBack ->
                     IconButton(
                         onClick = navigateBack,
-                        modifier = Modifier.semantics { contentDescription = backDescription },
+                        modifier = Modifier
+                            .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                            .semantics { contentDescription = backDescription },
                     ) {
                         ConnectionsGlyphIcon(
                             ConnectionsGlyph.BACK,
@@ -207,9 +209,11 @@ internal fun ConnectionsHeader(
                         {
                             IconButton(
                                 onClick = { callbacks.onSearchQueryChanged("") },
-                                modifier = Modifier.semantics {
-                                    contentDescription = clearSearchDescription
-                                },
+                                modifier = Modifier
+                                    .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                                    .semantics {
+                                        contentDescription = clearSearchDescription
+                                    },
                             ) {
                                 ConnectionsGlyphIcon(
                                     glyph = ConnectionsGlyph.CLOSE,
@@ -295,9 +299,11 @@ private fun ConnectionsAddButton(actions: List<CatalogAddAction>) {
             onClick = {
                 if (actions.size == 1) actions.single().onClick() else expanded = true
             },
-            modifier = Modifier.semantics {
-                contentDescription = buttonDescription
-            },
+            modifier = Modifier
+                .heightIn(min = MaterialTheme.iconMetrics.minimumTouchTarget)
+                .semantics {
+                    contentDescription = buttonDescription
+                },
             contentPadding = PaddingValues(horizontal = MaterialTheme.spacing.medium),
         ) {
             ConnectionsGlyphIcon(
@@ -998,9 +1004,11 @@ private fun HostCatalogRow(
             onShowDetails?.let { showDetails ->
                 IconButton(
                     onClick = showDetails,
-                    modifier = Modifier.semantics {
-                        contentDescription = detailsDescription
-                    },
+                    modifier = Modifier
+                        .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                        .semantics {
+                            contentDescription = detailsDescription
+                        },
                 ) {
                     ConnectionsGlyphIcon(
                         glyph = ConnectionsGlyph.INFO,
@@ -1341,7 +1349,9 @@ private fun CatalogOverflowMenu(description: String, actions: List<CatalogMenuAc
     Box {
         IconButton(
             onClick = { expanded = true },
-            modifier = Modifier.semantics { contentDescription = description },
+            modifier = Modifier
+                .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                .semantics { contentDescription = description },
         ) {
             ConnectionsGlyphIcon(
                 glyph = ConnectionsGlyph.MORE,

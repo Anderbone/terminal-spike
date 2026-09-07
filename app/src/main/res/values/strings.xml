@@ -198,7 +198,7 @@
     <string name="settings_negotiated_automatically">Automatic</string>
     <string name="settings_scrolling_heading">Scrolling</string>
     <string name="settings_touch_mode">Touch-scroll mode</string>
-    <string name="settings_touch_mode_summary">Auto keeps shell history local and sends wheel events only when a remote app owns the mouse.</string>
+    <string name="settings_touch_mode_summary">Auto keeps shell and app-selected tmux history local. Choose Remote mouse for an inner app or tmux copy mode.</string>
     <string name="settings_touch_auto">Auto</string>
     <string name="settings_touch_local">Local scrollback</string>
     <string name="settings_touch_remote">Remote mouse</string>

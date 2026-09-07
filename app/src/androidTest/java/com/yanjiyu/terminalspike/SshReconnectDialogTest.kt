@@ -1,15 +1,20 @@
 package com.yanjiyu.terminalspike
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
@@ -30,7 +35,7 @@ import org.hamcrest.Matchers.equalTo
 
 class SshReconnectDialogTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 
     @Test
     fun unsavedReconnectPrefillsEndpointButRequiresFreshAuthentication() {
@@ -144,7 +149,12 @@ class SshReconnectDialogTest {
 
     @Test
     fun verifiedMoshSubmitsTypedRangeAndExecutableOptions() {
-        val seed = SshConnectionSeed("mobile.example", 22, "operator")
+        val seed = SshConnectionSeed(
+            host = "mobile.example",
+            port = 22,
+            username = "operator",
+            connectionOptions = RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH),
+        )
         var submission: DialogSubmission? = null
         setDialog(
             seed = seed,
@@ -153,13 +163,13 @@ class SshReconnectDialogTest {
             onConnect = { submission = it },
         )
 
-        composeRule.onNodeWithText("Mosh").assertIsEnabled().performClick()
-        composeRule.onNodeWithText("UDP port or range (optional)")
-            .performTextInput("60000:60010")
-        composeRule.onNodeWithText("Server executable")
-            .performTextReplacement("/usr/local/bin/mosh-server")
+        composeRule.onNodeWithText("Mosh").assertIsEnabled()
+        setTextWithoutOpeningIme("UDP port or range (optional)", "60000:60010")
+        setTextWithoutOpeningIme("Server executable", "/usr/local/bin/mosh-server")
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
         onView(withTagValue(equalTo(SshConnectPasswordTestTag)))
             .perform(replaceText("fresh credential"))
+        closeSoftKeyboard()
         composeRule.onNodeWithText("Connect").assertIsEnabled().performClick()
 
         composeRule.runOnIdle {
@@ -168,6 +178,15 @@ class SshReconnectDialogTest {
             assertEquals(60_000, options?.moshPortRange?.first)
             assertEquals(60_010, options?.moshPortRange?.last)
             assertEquals("/usr/local/bin/mosh-server", options?.moshServerCommand)
+        }
+    }
+
+    private fun setTextWithoutOpeningIme(label: String, text: String) {
+        val action = composeRule.onNodeWithText(label)
+            .fetchSemanticsNode()
+            .config[SemanticsActions.SetText]
+        composeRule.runOnIdle {
+            check(action.action?.invoke(AnnotatedString(text)) == true)
         }
     }
 
@@ -180,9 +199,15 @@ class SshReconnectDialogTest {
             onConnect = { submission = it },
         )
 
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
         onView(withTagValue(equalTo(SshConnectPasswordTestTag)))
             .perform(replaceText("saved credential"))
-        composeRule.onNodeWithText("Save password on this device").performClick()
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Save password on this device")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeRule.onNodeWithText("Connect").assertIsEnabled().performClick()
 
         composeRule.runOnIdle {

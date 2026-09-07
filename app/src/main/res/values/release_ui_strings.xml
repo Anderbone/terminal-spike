@@ -92,7 +92,6 @@
     <string name="terminal_buffered_input_placeholder">Type a command…</string>
     <string name="terminal_send">Send</string>
     <string name="terminal_restore_last_sent_input">Restore last sent input</string>
-    <string name="terminal_buffered_input_pasted_recoverable">Pasted. Tap undo here if it went to the wrong prompt.</string>
     <string name="terminal_multiline_paste_title">Paste multiple lines?</string>
     <string name="terminal_multiline_paste_message">This will paste the complete multiline draft into the current terminal. No extra Enter key will be added.</string>
     <string name="terminal_paste">Paste</string>

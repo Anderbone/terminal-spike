@@ -70,6 +70,19 @@ class TerminalViewportTest {
     }
 
     @Test
+    fun prependPreservesTheExactFractionalPixelAnchor() {
+        val viewport = TerminalViewport()
+        viewport.updateGeometry(100, 10f)
+        viewport.updateContent(20, 100L)
+        viewport.scrollTo(25.5f)
+
+        viewport.updateContent(24, 96L)
+
+        assertEquals(65.5f, viewport.scrollY)
+        assertFalse(viewport.autoFollow)
+    }
+
+    @Test
     fun resizeKeepsBottomWhenFollowing() {
         val viewport = TerminalViewport()
         viewport.updateGeometry(100, 10f)

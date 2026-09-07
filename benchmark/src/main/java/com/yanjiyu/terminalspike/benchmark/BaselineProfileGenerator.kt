@@ -28,6 +28,6 @@ class BaselineProfileGenerator {
     ) {
         startActivityAndWait()
         device.openSettings()
-        device.openWorkspace()
+        device.openConnections()
     }
 }

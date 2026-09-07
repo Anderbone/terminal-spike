@@ -24,6 +24,7 @@ import com.yanjiyu.terminalspike.connection.SshSessionSnapshot
 import com.yanjiyu.terminalspike.connection.TerminalProgramNotificationEvent
 import com.yanjiyu.terminalspike.connection.requiresForegroundService
 import com.yanjiyu.terminalspike.core.data.settings.AppSettingsSerializer
+import com.yanjiyu.terminalspike.terminal.model.sanitizeUntrustedDisplayText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -502,10 +503,10 @@ internal class SessionNotificationFactory(
         privacyEnabled: Boolean,
     ): Notification {
         val safeSessionTitle = event.sessionTitle.toNotificationFriendlyName()
-        val safeMessage = event.message
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(MAX_PROGRAM_NOTIFICATION_TEXT_LENGTH)
+        val safeMessage = sanitizeUntrustedDisplayText(
+            event.message,
+            MAX_PROGRAM_NOTIFICATION_TEXT_LENGTH,
+        )
             .ifEmpty { applicationContext.getString(R.string.terminal_program_notification_text) }
         val openSession = PendingIntent.getActivity(
             applicationContext,

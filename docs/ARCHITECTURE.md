@@ -10,6 +10,13 @@
 
 The View is intentionally not a `RecyclerView`, `SurfaceView`, `WebView`, Compose `Text`, or `LazyColumn`. No bitmap of the complete scrollback is retained.
 
+Touch routing is profile-driven and latched per gesture. In Auto, a confirmed app-selected tmux
+session reserves classified vertical scrolling for Android's local pixel viewport; pending history
+buffers that gesture instead of falling back to a remote wheel. A pre-existing tmux copy mode is
+left active but is neither driven nor exited. Explicit Remote mouse is the intentional route to a
+mouse-aware inner application or tmux copy mode, and its optional two-finger override remains
+local. Taps, long-press selection, and link actions do not enter the vertical-scroll router.
+
 ## Terminal model
 
 `TerminalBuffer` is an Android-independent bounded ring: the debug benchmark uses 100,000 lines and remote runtimes use 20,000. Appending over capacity replaces one slot and moves the head; it never copies the complete buffer. IDs are assigned monotonically and are not reused after clear. A `TerminalLine` contains sanitized Unicode and contiguous `TerminalRun` values. `TerminalStyle` represents foreground, background, bold, italic, underline, and inverse attributes.
@@ -27,6 +34,11 @@ Direct input also advertises bounded PNG, JPEG, WebP, and GIF rich content. An a
 ## SSH transport
 
 `Connection` is the transport-neutral lifecycle/input/resize boundary. Transport-specific configuration is owned by the implementation rather than exposed by the interface. `JschSshConnection` is the first implementation and runs blocking network reads away from the main thread. Outgoing keyboard data uses a bounded 256-item single-writer queue so a slow connection cannot block the UI or grow without limit. Result-bearing sends reject a full or stopped queue; legacy direct sends turn rejection into one terminal failure state instead of silently dropping bytes. Writer, reader, EOF, connect, and explicit-close races publish exactly one terminal state. A snippet plus its optional Enter is offered as one batch, so it cannot be split by queue pressure. Sessions use connect/channel timeouts, SSH keepalives, and the selected/default profile's validated `TERM` value for PTY negotiation. A saved startup command is user-authored shell input: it is UTF-8 encoded and queued once, with one terminal Enter, only after each fresh interactive shell reaches Connected. Reconnect and duplicate each create a fresh shell and therefore dispatch their own one-shot input; Test Connection opens the selected PTY but explicitly does not run saved startup input. Password, passphrase, keyboard-interactive response, and queued input byte arrays stay within their bounded owners and are wiped on terminal paths.
+
+For Mosh, terminal bytes and lifecycle events arrive on separate PFD and Binder paths. After a
+terminal-pipe EOF, the connection waits at most one second for an already-concurrent authoritative
+terminal callback so isolated-worker or broker death cannot be mislabeled as a clean disconnect.
+An eventless EOF still resolves to `Disconnected`; explicit close remains immediate and idempotent.
 
 JSch resolves standard authentication, key-exchange, cipher, MAC, hash, signature, compression, and key-decoding implementations from class-name strings. Release R8 rules preserve the supported standard-JCA implementation seam while leaving unbundled Bouncy Castle and GSSAPI integrations shrinkable. The release packaging verifier derives the covered classes from the resolved pinned JSch JAR, requires every one to retain its original mapping name, and verifies the canonical legal notice asset byte-for-byte before `assembleRelease` succeeds.
 

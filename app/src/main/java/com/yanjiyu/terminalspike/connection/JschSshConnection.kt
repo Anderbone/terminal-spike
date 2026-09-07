@@ -101,6 +101,35 @@ class JschSshConnection(
         }
     }
 
+    override fun captureTmuxHistoryPage(request: TmuxHistoryPageRequest): TmuxPaneCapture? {
+        val context = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected }
+                ?: return null
+            val executable = tmuxExecutable ?: return null
+            val sessionId = attachedTmuxSessionId ?: return null
+            TmuxCaptureContext(
+                session = session,
+                executable = executable,
+                sessionId = sessionId,
+                sessionsBeforeStart = emptySet(),
+                authoritative = false,
+            )
+        }
+        val capture = captureTmuxPane(
+            metadataRunner = JschTmuxCommandRunner(context.session),
+            historyRunner = JschTmuxCommandRunner(context.session, TMUX_HISTORY_EXEC_LIMITS),
+            executable = context.executable,
+            sessionId = requireNotNull(context.sessionId),
+            pageRequest = request,
+        ) ?: return null
+        return synchronized(lock) {
+            capture.takeIf {
+                authenticatedSession?.session === context.session && running &&
+                    attachedTmuxSessionId == context.sessionId
+            }
+        }
+    }
+
     override fun uploadPastedImage(fileName: String, source: InputStream): String {
         val session = synchronized(lock) {
             authenticatedSession?.session?.takeIf { it.isConnected }

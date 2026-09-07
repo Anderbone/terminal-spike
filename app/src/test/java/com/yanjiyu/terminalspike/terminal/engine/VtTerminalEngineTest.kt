@@ -71,6 +71,22 @@ class VtTerminalEngineTest {
     }
 
     @Test
+    fun osc9RejectsFormattedControlPayloadAndPreservesVisibleInternationalText() {
+        val engine = VtTerminalEngine(columns = 8, rows = 2)
+
+        val update = engine.accept(
+            buildString {
+                append("\u001B]9;Build  \u202Egpj.exe\u202D\u2066\u2069 done\u0007")
+                append("\u001B]9;\u202E\u2069\u0007")
+                append("\u001B]9;שלום مرحبا\u0007")
+            }.bytes(),
+        )
+
+        assertEquals(listOf("שלום مرحبا"), update.terminalNotifications)
+        assertTrue(update.screen.all { it.text.isEmpty() })
+    }
+
+    @Test
     fun decscusrPublishesStandardShapeAndBlinkIncludingDefaultParameter() {
         val engine = VtTerminalEngine(columns = 8, rows = 2)
 

@@ -115,12 +115,12 @@ class BufferedInputDraftState {
     var value by mutableStateOf(TextFieldValue())
         private set
 
-    private var lastSentValue: TextFieldValue? = null
+    private var lastSentValue by mutableStateOf<TextFieldValue?>(null)
+
+    val canRestoreLastSent: Boolean
+        get() = lastSentValue != null
 
     var validationMessage by mutableStateOf<UiText?>(null)
-        private set
-
-    var deliveryMessage by mutableStateOf<UiText?>(null)
         private set
 
     fun update(nextValue: TextFieldValue, activeSessionId: Long) {
@@ -132,7 +132,6 @@ class BufferedInputDraftState {
             return
         }
         validationMessage = null
-        deliveryMessage = null
         lastSentValue = null
         value = nextValue
     }
@@ -142,7 +141,6 @@ class BufferedInputDraftState {
         value = restored.copy(selection = TextRange(restored.text.length))
         lastSentValue = null
         validationMessage = null
-        deliveryMessage = null
     }
 
     /** Applies caller-targeted edits without pinning the shared draft to one terminal. */
@@ -163,7 +161,6 @@ class BufferedInputDraftState {
         if (accepted) {
             lastSentValue = sentValue
             validationMessage = null
-            deliveryMessage = uiText(R.string.terminal_buffered_input_pasted_recoverable)
         }
     }
 }
@@ -439,7 +436,7 @@ private fun BufferedInputPage(
 ) {
     val draft = draftState.value
     val validationMessage = draftState.validationMessage
-    val deliveryMessage = draftState.deliveryMessage
+    val canRestoreLastSent = draftState.canRestoreLastSent
     val inputDescription = stringResource(R.string.terminal_buffered_input_description)
     val restoreInputDescription = stringResource(R.string.terminal_restore_last_sent_input)
     val focusRequester = remember { FocusRequester() }
@@ -522,14 +519,12 @@ private fun BufferedInputPage(
             minLines = 1,
             maxLines = 3,
             isError = validationMessage != null,
-            supportingText = (
-                validationMessage?.resolve() ?: deliveryMessage?.resolve() ?: voiceStatus
-            )?.let { message ->
+            supportingText = (validationMessage?.resolve() ?: voiceStatus)?.let { message ->
                 { Text(message, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             },
             trailingIcon = {
                 val voiceActive = voicePhase != VoiceInputPhase.IDLE
-                if (deliveryMessage != null) {
+                if (canRestoreLastSent) {
                     IconButton(
                         onClick = draftState::restoreLastSent,
                         modifier = Modifier
@@ -537,7 +532,7 @@ private fun BufferedInputPage(
                             .semantics { contentDescription = restoreInputDescription },
                     ) {
                         ConnectionsGlyphIcon(
-                            glyph = ConnectionsGlyph.BACK,
+                            glyph = ConnectionsGlyph.RESTORE,
                             modifier = Modifier.size(20.dp),
                         )
                     }

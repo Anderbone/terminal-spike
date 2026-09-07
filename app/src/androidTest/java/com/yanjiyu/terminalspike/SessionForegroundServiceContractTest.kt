@@ -8,9 +8,13 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.yanjiyu.terminalspike.connection.SessionForegroundStartResult
+import com.yanjiyu.terminalspike.connection.SessionNotificationVisibility
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -22,6 +26,27 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SessionForegroundServiceContractTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test
+    fun deniedNotificationPermissionStillStartsAndReportsLimitedVisibility() {
+        assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        assumeTrue(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_DENIED,
+        )
+
+        val result = AndroidSessionForegroundStarter(context).startFromVisibleUserAction()
+        assertEquals(
+            SessionForegroundStartResult.Started(
+                SessionNotificationVisibility.LIMITED_BY_PERMISSION,
+            ),
+            result,
+        )
+
+        // The Service runs in this instrumentation process. Give onCreate/onStartCommand time to
+        // promote and stop its idle instance; an uncaught permission failure terminates this test.
+        SystemClock.sleep(500)
+    }
 
     @Test
     fun manifestDeclaresPrivateSpecialUseServiceAndRequiredPermissions() {

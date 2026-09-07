@@ -11,16 +11,28 @@ initial_apk=$2
 update_apk=${3:-$2}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
-sdk_root=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/home/jiyu/Android/Sdk}}
+sdk_root=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
+if [ -z "$sdk_root" ] && [ -f "$project_dir/local.properties" ]; then
+    sdk_root=$(sed -n 's/^sdk\.dir=//p' "$project_dir/local.properties" | tail -n 1)
+fi
 adb_bin=${ADB:-$sdk_root/platform-tools/adb}
 apksigner_bin=${APKSIGNER:-}
-fixture_port=${TERMINAL_SPIKE_SSH_PORT:-22222}
-fixture_user=${TERMINAL_SPIKE_SSH_USER:-terminal}
-fixture_password=${TERMINAL_SPIKE_SSH_PASSWORD:-terminal-spike-test-only}
+fixture_port=22222
+fixture_user=terminal
+fixture_password=terminal-spike-test-only
 app_package=com.yanjiyu.terminalspike
 extension_package=com.yanjiyu.terminalspike.mosh
 activity_component=$app_package/.MainActivity
 expected_avd=terminal-spike-release-test
+fixture_managed=false
+temporary_dir=
+
+case "$serial" in
+    *[!A-Za-z0-9._:-]*|'')
+        printf 'Refusing unsafe emulator serial syntax.\n' >&2
+        exit 64
+        ;;
+esac
 
 log_stage() {
     printf 'RELEASE_APP_UPDATE_SMOKE stage=%s status=%s\n' "$1" "$2"
@@ -36,6 +48,8 @@ for apk in "$initial_apk" "$update_apk"; do
         exit 1
     fi
 done
+initial_apk=$(realpath "$initial_apk")
+update_apk=$(realpath "$update_apk")
 
 if [ -z "$apksigner_bin" ]; then
     build_tools=$sdk_root/build-tools
@@ -44,6 +58,11 @@ if [ -z "$apksigner_bin" ]; then
 fi
 if [ ! -x "$apksigner_bin" ]; then
     printf 'apksigner is unavailable; signature continuity cannot be proved.\n' >&2
+    exit 1
+fi
+aapt_bin=${AAPT:-$(dirname "$apksigner_bin")/aapt}
+if [ ! -x "$aapt_bin" ]; then
+    printf 'aapt is unavailable; package identity cannot be proved.\n' >&2
     exit 1
 fi
 if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
@@ -66,28 +85,59 @@ adb() {
     "$adb_bin" -s "$serial" "$@"
 }
 
-device_state=$($adb_bin devices | awk -v wanted="$serial" '$1 == wanted { print $2 }')
-if [ "$device_state" != device ]; then
-    printf 'Target %s is not a connected authorized device.\n' "$serial" >&2
-    exit 1
-fi
-if [ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" != 1 ]; then
-    printf 'Refusing destructive release smoke on a non-emulator target: %s\n' "$serial" >&2
-    exit 1
-fi
-avd_name=$(adb emu avd name 2>/dev/null | sed -n '1p' | tr -d '\r')
-if [ "$avd_name" != "$expected_avd" ]; then
-    printf 'Refusing destructive release smoke on unexpected AVD %s (wanted %s).\n' \
-        "$avd_name" "$expected_avd" >&2
-    exit 1
-fi
+verify_release_avd() {
+    device_state=$("$adb_bin" devices -l | awk -v wanted="$serial" \
+        '$1 == wanted { state = $2; count += 1 } END { if (count != 1) exit 1; print state }') || {
+        printf 'Target %s is not uniquely present in adb devices -l.\n' "$serial" >&2
+        return 1
+    }
+    if [ "$device_state" != device ]; then
+        printf 'Target %s is not a connected authorized device.\n' "$serial" >&2
+        return 1
+    fi
+    if [ "$(adb get-state 2>/dev/null || true)" != device ]; then
+        printf 'Target %s is offline, unauthorized, or unavailable.\n' "$serial" >&2
+        return 1
+    fi
+    if [ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" != 1 ]; then
+        printf 'Refusing destructive release smoke on a non-emulator target: %s\n' "$serial" >&2
+        return 1
+    fi
+    avd_name=$(adb emu avd name 2>/dev/null | sed -n '1p' | tr -d '\r')
+    if [ "$avd_name" != "$expected_avd" ]; then
+        printf 'Refusing destructive release smoke on unexpected AVD %s (wanted %s).\n' \
+            "$avd_name" "$expected_avd" >&2
+        return 1
+    fi
+}
 
-initial_cert=$($apksigner_bin verify --print-certs "$initial_apk" \
+verify_release_avd
+
+initial_cert=$("$apksigner_bin" verify --print-certs "$initial_apk" \
     | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
-update_cert=$($apksigner_bin verify --print-certs "$update_apk" \
+update_cert=$("$apksigner_bin" verify --print-certs "$update_apk" \
     | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
 if [ -z "$initial_cert" ] || [ "$initial_cert" != "$update_cert" ]; then
     printf 'Initial and update APKs do not have the same signing certificate.\n' >&2
+    exit 1
+fi
+apk_identity() {
+    "$aapt_bin" dump badging "$1" | sed -n \
+        "s/^package: name='\([^']*\)' versionCode='\([0-9][0-9]*\)'.*/\1 \2/p" | head -n 1
+}
+initial_identity=$(apk_identity "$initial_apk")
+update_identity=$(apk_identity "$update_apk")
+initial_package=${initial_identity%% *}
+initial_version=${initial_identity#* }
+update_package=${update_identity%% *}
+update_version=${update_identity#* }
+if [ "$initial_package" != "$app_package" ] || [ "$update_package" != "$app_package" ]; then
+    printf 'Both APKs must be the Terminal Spike main application.\n' >&2
+    exit 1
+fi
+if [ -z "$initial_version" ] || [ -z "$update_version" ] || \
+    [ "$update_version" -lt "$initial_version" ]; then
+    printf 'The update APK must not have a lower version code than the initial APK.\n' >&2
     exit 1
 fi
 log_stage preflight pass
@@ -95,9 +145,21 @@ log_stage preflight pass
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/terminal-spike-release-smoke.XXXXXX")
 ui_xml=$temporary_dir/window.xml
 cleanup() {
-    rm -rf -- "$temporary_dir"
+    if [ "$fixture_managed" = true ]; then
+        docker compose --project-directory "$script_dir" -f "$script_dir/compose.yaml" down \
+            >/dev/null 2>&1 || true
+    fi
+    if [ -n "$temporary_dir" ] && [ -d "$temporary_dir" ] && \
+        [ "$(dirname "$temporary_dir")" = "$(realpath "${TMPDIR:-/tmp}")" ]; then
+        case "$(basename "$temporary_dir")" in
+            terminal-spike-release-smoke.*) rm -rf -- "$temporary_dir" ;;
+        esac
+    fi
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 dump_ui() {
     adb shell uiautomator dump --compressed /sdcard/terminal-spike-window.xml >/dev/null
@@ -191,6 +253,20 @@ wait_for_terminal_ready() {
     terminal_observations=0
     while [ "$attempt" -lt 120 ]; do
         dump_ui
+        if grep -Fq -- "Choose a tmux session" "$ui_xml"; then
+            center=$(node_center text "Open shell" 0 android.widget.TextView)
+            if [ -n "$center" ]; then
+                # This gate is proving the app's direct SSH/update path. Tmux has its own real
+                # acceptance matrix, so choose the explicit non-tmux route here.
+                # shellcheck disable=SC2086
+                adb shell input tap $center
+                log_stage tmux_chooser open_shell
+                terminal_observations=0
+                attempt=$((attempt + 1))
+                sleep 0.25
+                continue
+            fi
+        fi
         if dismiss_notification_rationale_from_dump; then
             wait_for_ui_text "Terminal"
             return 0
@@ -217,11 +293,15 @@ replace_edit_text() {
     # shellcheck disable=SC2086
     adb shell input tap $center
     adb shell input keyevent KEYCODE_MOVE_END
+    delete_keys=
     delete_count=0
     while [ "$delete_count" -lt 128 ]; do
-        adb shell input keyevent KEYCODE_DEL
+        delete_keys="$delete_keys KEYCODE_DEL"
         delete_count=$((delete_count + 1))
     done
+    # Android's input tool accepts multiple key codes, avoiding 128 separate adb round trips.
+    # shellcheck disable=SC2086
+    adb shell input keyevent $delete_keys
     adb shell input text "$value"
     adb shell input keyevent KEYCODE_BACK
     sleep 0.25
@@ -230,17 +310,21 @@ replace_edit_text() {
 launch_app() {
     adb shell am force-stop "$app_package"
     adb shell am start -W -n "$activity_component" >/dev/null
-    wait_for_ui_text "Workspace"
+    wait_for_ui_text "Connections"
 }
 
 connect_new_saved_host() {
-    tap_node text "New connection" 0 android.widget.TextView
-    wait_for_ui_text "New SSH session"
+    tap_node content-desc "Add host" 0 android.view.View
+    wait_for_ui_text "Add host"
     replace_edit_text 0 127.0.0.1
     replace_edit_text 1 "$fixture_user"
     replace_edit_text 2 "$fixture_port"
     replace_edit_text 3 "$fixture_password"
-    tap_node text "Save host details" 0 android.widget.TextView
+    tap_node text "Save" 0 android.widget.TextView
+    wait_for_ui_text "Connections"
+    tap_node content-desc "Connect to 127.0.0.1" 0 android.view.View
+    wait_for_ui_text "Password"
+    replace_edit_text 0 "$fixture_password"
     tap_node text "Connect" 0 android.widget.TextView
     wait_for_ui_text "Trust once"
     tap_node text "Trust and save" 0 android.widget.TextView
@@ -280,9 +364,8 @@ send_marker_and_verify() {
 }
 
 reconnect_saved_host() {
-    wait_for_ui_text "Saved hosts"
-    # The saved card uses its display name, while its unique action remains stable.
-    tap_node text "Connect" 0 android.widget.TextView
+    wait_for_ui_text "Connections"
+    tap_node content-desc "Connect to 127.0.0.1" 0 android.view.View
     # Password storage is deliberately off; the saved non-secret host must reopen the existing
     # authentication prompt after update rather than silently retaining a transient password.
     wait_for_ui_text "Password"
@@ -292,6 +375,8 @@ reconnect_saved_host() {
 }
 
 log_stage fixture start
+docker compose --project-directory "$script_dir" -f "$script_dir/compose.yaml" down
+fixture_managed=true
 "$script_dir/smoke.sh" >/dev/null
 log_stage fixture pass
 adb reverse "tcp:$fixture_port" "tcp:$fixture_port" >/dev/null
@@ -305,7 +390,9 @@ fi
 
 # Destructive operations are guarded above by the exact disposable AVD name.
 log_stage initial_install start
+verify_release_avd
 adb uninstall "$app_package" >/dev/null 2>&1 || true
+verify_release_avd
 adb install "$initial_apk" >/dev/null
 log_stage initial_install pass
 log_stage initial_connection start
@@ -315,6 +402,7 @@ send_marker_and_verify RELEASE_SMOKE_BEFORE_42
 log_stage initial_connection pass
 
 log_stage update_install start
+verify_release_avd
 adb install -r "$update_apk" >/dev/null
 log_stage update_install pass
 log_stage preserved_connection start
@@ -325,5 +413,5 @@ log_stage preserved_connection pass
 
 version_name=$(adb shell dumpsys package "$app_package" \
     | sed -n 's/.*versionName=//p' | head -n 1 | tr -d '\r')
-printf 'RELEASE_APP_UPDATE_SMOKE serial=%s avd=%s version=%s ssh_before=pass ssh_after=pass data=preserved extension=absent certificate=%s\n' \
+printf 'RELEASE_APP_UPDATE_SMOKE serial=%s avd=%s version=%s ssh_before=pass ssh_after=pass data=preserved credential=prompted_after_update extension=absent certificate=%s\n' \
     "$serial" "$avd_name" "$version_name" "$initial_cert"

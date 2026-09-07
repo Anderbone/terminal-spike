@@ -322,7 +322,7 @@ internal fun switchOrAttachTmuxSession(
     val clients = runCatching {
         commandRunner.run(
             "${quotePosixShellArgument(executable)} list-clients -F " +
-                quotePosixShellArgument("#{client_tty}\t#{session_id}\t#{client_activity}"),
+                quotePosixShellArgument("#{client_tty}|#{session_id}|#{client_activity}"),
         ).takeIf { it.exitStatus == 0 }?.stdout
             ?.toString(Charsets.UTF_8)
             ?.lineSequence()
@@ -398,6 +398,7 @@ internal fun captureTmuxPane(
     sessionId: String,
     authoritative: Boolean = false,
     includeHistory: Boolean = true,
+    pageRequest: TmuxHistoryPageRequest? = null,
 ): TmuxPaneCapture? {
     if (!executable.isTmuxExecutablePath() || !sessionId.isTmuxSessionId()) return null
     val metadata = runCatching {
@@ -416,26 +417,49 @@ internal fun captureTmuxPane(
     if (metadata.sessionId != sessionId) return null
 
     val savedPrimaryRows = if (metadata.alternateScreenActive) metadata.rows else 0
-    val capturedHistoryRows = minOf(
-        metadata.historyRows,
-        ModelLimits.MAX_SCROLLBACK_LINES - savedPrimaryRows,
+    val remoteHistoryRows = metadata.historyRows + savedPrimaryRows
+    if (remoteHistoryRows < metadata.historyRows) return null
+    val oldestAvailableRow =
+        (remoteHistoryRows - ModelLimits.MAX_SCROLLBACK_LINES).coerceAtLeast(0)
+    if (pageRequest != null && (
+            pageRequest.paneId != metadata.paneId ||
+                pageRequest.remoteHistoryRows != remoteHistoryRows ||
+                pageRequest.beforeRow !in (oldestAvailableRow + 1)..metadata.historyRows
+            )
+    ) {
+        return null
+    }
+    // Older pages include the first cached row as an overlap sentinel. If tmux discarded rows
+    // while history_size stayed at its limit, the controller rejects the shifted page.
+    val captureEndRow = pageRequest?.beforeRow?.plus(1) ?: metadata.historyRows
+    val capturedStartRow = maxOf(
+        oldestAvailableRow,
+        (pageRequest?.beforeRow ?: captureEndRow) - TMUX_HISTORY_PAGE_ROWS,
     )
-    val capturedRows = capturedHistoryRows + savedPrimaryRows
+    val capturedHistoryRows = captureEndRow - capturedStartRow
+    val includedSavedPrimaryRows = if (pageRequest == null) savedPrimaryRows else 0
+    val capturedRows = capturedHistoryRows + includedSavedPrimaryRows
     val content = if (!includeHistory || capturedRows == 0) {
         byteArrayOf()
     } else {
         val physicalHistory = if (capturedHistoryRows == 0) {
             byteArrayOf()
         } else {
+            val endArgument = if (captureEndRow == metadata.historyRows) {
+                "-1"
+            } else {
+                quotePosixShellArgument("-${metadata.historyRows - captureEndRow + 1}")
+            }
             runCatching {
                 historyRunner.run(
                     "${quotePosixShellArgument(executable)} capture-pane -p -e -J -t " +
                         "${quotePosixShellArgument(metadata.paneId)} -S " +
-                        "${quotePosixShellArgument("-$capturedHistoryRows")} -E -1",
+                        "${quotePosixShellArgument("-${metadata.historyRows - capturedStartRow}")} " +
+                        "-E $endArgument",
                 ).takeIf { it.exitStatus == 0 }?.stdout
             }.getOrNull() ?: return null
         }
-        val savedPrimaryScreen = if (savedPrimaryRows == 0) {
+        val savedPrimaryScreen = if (includedSavedPrimaryRows == 0) {
             byteArrayOf()
         } else {
             runCatching {
@@ -452,17 +476,27 @@ internal fun captureTmuxPane(
     }
     if (content.size > TmuxPaneCapture.MAX_CAPTURE_BYTES) return null
 
+    val publishedHistoryRows = if (includeHistory) {
+        capturedRows
+    } else {
+        minOf(remoteHistoryRows, ModelLimits.MAX_SCROLLBACK_LINES)
+    }
+    val publishedStartRow = if (includeHistory) capturedStartRow else oldestAvailableRow
     return TmuxPaneCapture(
         sessionId = metadata.sessionId,
         paneId = metadata.paneId,
         columns = metadata.columns,
         rows = metadata.rows,
-        historyRows = capturedRows,
+        historyRows = publishedHistoryRows,
+        remoteHistoryRows = remoteHistoryRows,
+        capturedStartRow = publishedStartRow,
+        oldestAvailableRow = oldestAvailableRow,
+        olderPage = pageRequest != null,
         alternateScreenActive = metadata.alternateScreenActive,
         mouseTrackingActive = metadata.mouseTrackingActive,
         paneInMode = metadata.paneInMode,
         historyIncluded = includeHistory,
-        truncatedBefore = metadata.historyRows > capturedHistoryRows,
+        truncatedBefore = capturedStartRow > 0,
         authoritative = authoritative,
         content = content,
     )
@@ -495,7 +529,7 @@ private data class TmuxPaneCaptureMetadata(
 )
 
 private fun parseTmuxPaneCaptureMetadata(line: String): TmuxPaneCaptureMetadata? {
-    val fields = line.split('\t', limit = 8)
+    val fields = line.split(TMUX_FIELD_SEPARATOR, limit = 8)
     if (fields.size != 8) return null
     val sessionId = fields[0].takeIf(String::isTmuxSessionId) ?: return null
     val paneId = fields[1].takeIf { TMUX_PANE_ID.matches(it) } ?: return null
@@ -530,7 +564,7 @@ private data class TmuxClient(
 )
 
 private fun parseTmuxClientLine(line: String): TmuxClient? {
-    val fields = line.split('\t', limit = 3)
+    val fields = line.split(TMUX_FIELD_SEPARATOR, limit = 3)
     if (fields.size != 3) return null
     val tty = fields[0]
     if (tty.length !in 2..MAX_TMUX_CLIENT_TTY_CHARS || !tty.startsWith('/') || tty.any(Char::isISOControl)) {
@@ -542,13 +576,14 @@ private fun parseTmuxClientLine(line: String): TmuxClient? {
 }
 
 internal fun parseTmuxSessionLine(line: String): TmuxSession? {
-    val fields = line.split('\t', limit = 5)
-    if (fields.size != 5 || !fields[0].isTmuxSessionId()) return null
-    val name = fields[1].replace(Regex("[\\p{Cc}\\p{Cf}]"), "").trim().take(MAX_TMUX_NAME_CHARS)
+    val fields = line.split(TMUX_FIELD_SEPARATOR)
+    if (fields.size < 5 || !fields[0].isTmuxSessionId()) return null
+    val name = fields.subList(1, fields.size - 3).joinToString(TMUX_FIELD_SEPARATOR.toString())
+        .replace(Regex("[\\p{Cc}\\p{Cf}]"), "").trim().take(MAX_TMUX_NAME_CHARS)
     if (name.isEmpty()) return null
-    val windows = fields[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
-    val attached = fields[3].toIntOrNull()?.takeIf { it >= 0 } ?: return null
-    val created = fields[4].toLongOrNull()?.takeIf { it >= 0L } ?: return null
+    val windows = fields[fields.size - 3].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+    val attached = fields[fields.size - 2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+    val created = fields.last().toLongOrNull()?.takeIf { it >= 0L } ?: return null
     return TmuxSession(fields[0], name, windows, attached, created)
 }
 
@@ -677,9 +712,10 @@ private const val MAX_TMUX_PREVIEW_LINES = 10
 private const val MAX_TMUX_PREVIEW_COLUMNS = 120
 private const val MAX_TMUX_PANE_COLUMNS = 500
 private const val MAX_TMUX_PANE_ROWS = 16_384
+internal const val TMUX_HISTORY_PAGE_ROWS = 4_096
 private const val TMUX_PANE_CAPTURE_FORMAT =
-    "#{session_id}\t#{pane_id}\t#{pane_width}\t#{pane_height}\t" +
-        "#{history_size}\t#{alternate_on}\t#{mouse_any_flag}\t#{pane_in_mode}"
+    "#{session_id}|#{pane_id}|#{pane_width}|#{pane_height}|" +
+        "#{history_size}|#{alternate_on}|#{mouse_any_flag}|#{pane_in_mode}"
 internal const val TMUX_NEW_SESSION_SELECTION = "__terminal_spike_new_tmux_session__"
 private const val TMUX_PROBE_SCRIPT =
     "TMUX_BIN=\$(command -v tmux 2>/dev/null || true); " +
@@ -703,8 +739,8 @@ private const val TMUX_PROBE_SCRIPT =
         "printf \"%s\\n\" \"\$candidate\"; done | tail -n 1); fi; " +
         "if [ -n \"\$TMUX_BIN\" ] && [ -x \"\$TMUX_BIN\" ]; then " +
         "printf \"$TMUX_AVAILABLE_MARKER\\n%s\\n\" \"\$TMUX_BIN\"; " +
-        "\"\$TMUX_BIN\" list-sessions -F \"#{session_id}\t#{session_name}\t#{session_windows}\t" +
-        "#{session_attached}\t#{session_created}\" 2>/dev/null || true; fi"
+        "\"\$TMUX_BIN\" list-sessions -F \"#{session_id}|#{session_name}|#{session_windows}|" +
+        "#{session_attached}|#{session_created}\" 2>/dev/null || true; fi"
 internal val TMUX_LIST_COMMAND = "/bin/sh -c ${quotePosixShellArgument(TMUX_PROBE_SCRIPT)}"
 internal const val MAX_TMUX_SESSIONS = 128
 private const val MAX_TMUX_NAME_CHARS = 256
@@ -713,6 +749,7 @@ private const val TMUX_READ_BUFFER_BYTES = 2 * 1024
 private const val TMUX_POLL_MILLIS = 10L
 private val TMUX_SESSION_ID = Regex("\\$[0-9]+")
 private val TMUX_PANE_ID = Regex("%[0-9]+")
+private const val TMUX_FIELD_SEPARATOR = '|'
 private val DEFAULT_TMUX_EXEC_LIMITS = TmuxExecLimits(
     channelConnectTimeoutMillis = 5_000,
     totalTimeoutMillis = 5_000L,

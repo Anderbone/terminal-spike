@@ -11,15 +11,21 @@ internal fun UiDevice.openSettings() {
     waitRequiredText("Settings")
 }
 
-internal fun UiDevice.openWorkspace() {
-    clickRequiredDescription("Open local workspace")
+internal fun UiDevice.openConnections() {
+    clickRequiredDescription("Open connections")
     waitRequiredDescription("Open settings")
 }
 
 private fun UiDevice.clickRequiredDescription(description: String) {
     val target = wait(Until.findObject(By.desc(description)), UI_TIMEOUT_MILLIS)
     checkNotNull(target) { "Could not find '$description' in $TARGET_PACKAGE" }
-    target.click()
+    var clickableTarget = target
+    while (!clickableTarget.isClickable) {
+        clickableTarget = checkNotNull(clickableTarget.parent) {
+            "Could not find a clickable ancestor for '$description' in $TARGET_PACKAGE"
+        }
+    }
+    clickableTarget.click()
 }
 
 private fun UiDevice.waitRequiredDescription(description: String) {

@@ -122,6 +122,7 @@ import com.yanjiyu.terminalspike.ui.sftp.SftpSecretKind
 import com.yanjiyu.terminalspike.ui.sftp.SftpSessionController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -144,6 +145,7 @@ import java.io.InputStream
 import java.nio.CharBuffer
 import java.util.Locale
 import java.util.UUID
+import java.net.InetAddress
 
 internal const val LOCAL_TERMINAL_SESSION_ID = 0L
 internal const val WORKSPACE_SSH_SESSION_FALLBACK = "SSH session"
@@ -1509,6 +1511,13 @@ class TerminalSpikeViewModel(
     private val appContainer = (application as TerminalSpikeApplication).container
     private val localAppDataResetter = AndroidLocalAppDataResetter(application)
     private val pendingTranscriptExport = PendingTerminalTranscriptExportOwner()
+    private val localNetworkPendingAction = LocalNetworkPendingActionOwner()
+    private val _localNetworkActionDispatch =
+        MutableStateFlow<LocalNetworkActionDispatch?>(null)
+    internal val localNetworkActionDispatch: StateFlow<LocalNetworkActionDispatch?> =
+        _localNetworkActionDispatch.asStateFlow()
+    private var localNetworkResolutionJob: Job? = null
+    private var nextLocalNetworkDispatchId = 1L
     private val customTerminalFonts = CustomTerminalFontStore(application)
     @Volatile
     private var activeRendererProfile = TerminalRendererProfile()
@@ -2320,6 +2329,12 @@ class TerminalSpikeViewModel(
             ?.snippet
             ?.command
 
+    internal fun connectionsHostName(persistentHostId: String): String? =
+        connectionsCatalogLoad.value?.catalog?.hosts
+            ?.firstOrNull { it.profile.id == persistentHostId }
+            ?.profile
+            ?.hostname
+
     internal fun insertConnectionsSnippet(persistentId: String, targetSessionId: Long): Boolean {
         val presentationId = connectionsCatalogLoad.value
             ?.catalog
@@ -2343,6 +2358,7 @@ class TerminalSpikeViewModel(
             _uiState.update { it.copy(notice = uiText(R.string.notice_terminal_not_connected)) }
             return false
         }
+
         val accepted = controllerFor(targetSessionId)
             .sendPaste(snippet.command, appendEnter = snippet.appendEnter)
         _uiState.update {
@@ -4567,6 +4583,7 @@ class TerminalSpikeViewModel(
     }
 
     override fun onCleared() {
+        cancelLocalNetworkAction()
         sftp.close()
         cancelConnectionsHostTest()
         cancelTerminalTranscriptExport()
@@ -4577,6 +4594,54 @@ class TerminalSpikeViewModel(
         terminalBuildFeature.stop()
         controller.stop()
         super.onCleared()
+    }
+
+    internal fun stageLocalNetworkAction(
+        cancel: () -> Unit,
+        proceed: () -> LocalNetworkActionEffect,
+    ): Boolean = localNetworkPendingAction.stage(cancel = cancel, proceed = proceed)
+
+    internal fun stageLocalNetworkHostnameAction(
+        host: String,
+        cancel: () -> Unit,
+        proceed: () -> LocalNetworkActionEffect,
+    ): Boolean {
+        if (!localNetworkPendingAction.stage(cancel = cancel, proceed = proceed)) return false
+        localNetworkResolutionJob = viewModelScope.launch {
+            val resolvedLocal = withContext(Dispatchers.IO) {
+                resolvedEndpointIsLocalNetwork(host) { endpoint ->
+                    InetAddress.getAllByName(endpoint).mapNotNull(InetAddress::getHostAddress)
+                }
+            }
+            if (!localNetworkPendingAction.hasPendingAction()) return@launch
+            val id = nextLocalNetworkDispatchId++
+            _localNetworkActionDispatch.value = if (resolvedLocal == true) {
+                LocalNetworkActionDispatch.RequestPermission(id)
+            } else {
+                val effect = localNetworkPendingAction.resolve(granted = true) ?: return@launch
+                LocalNetworkActionDispatch.Apply(id, effect)
+            }
+        }
+        return true
+    }
+
+    internal fun consumeLocalNetworkActionDispatch(id: Long): LocalNetworkActionDispatch? {
+        val dispatch = _localNetworkActionDispatch.value?.takeIf { it.id == id } ?: return null
+        _localNetworkActionDispatch.value = null
+        return dispatch
+    }
+
+    internal fun resolveLocalNetworkAction(granted: Boolean): LocalNetworkActionEffect? {
+        _localNetworkActionDispatch.value = null
+        localNetworkResolutionJob = null
+        return localNetworkPendingAction.resolve(granted)
+    }
+
+    internal fun cancelLocalNetworkAction() {
+        localNetworkResolutionJob?.cancel()
+        localNetworkResolutionJob = null
+        _localNetworkActionDispatch.value = null
+        localNetworkPendingAction.cancel()
     }
 
     companion object {

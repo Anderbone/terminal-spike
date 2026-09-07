@@ -25,32 +25,33 @@ From a shell:
 ./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest
 ```
 
-The 2026-08-19 current-source artifact gates completed successfully after the launcher-branding
-refresh. Fresh JUnit totals in tests/failures/errors/skipped order were app JVM `815/0/0/0`,
-`mosh-api` `11/0/0/0`, and Mosh extension `8/0/0/0`. Debug and release lint/build gates,
-release APK/AAB packaging verification, both Android-test APKs, extension native outputs for
-`arm64-v8a` and `x86_64`, and benchmark assembly were green. The resulting debug APK SHA-256 values
-are main app `e6c6098c7421ce4015b30151b92553b281a7990dbc7a2c661609947db25530ec` and Mosh
-extension `2e4b6f2ec1ff92d171885bfefdb2c18ebe88458cce0a17410ee5a00de0f0ad53`.
+<!-- release-evidence-current:start -->
+Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` failures/errors); Mosh API JVM `11` tests (`11` passed, `0` skipped, `0` failures/errors); Mosh extension JVM `8` tests (`8` passed, `0` skipped, `0` failures/errors); old-phone Android app `332` tests (`307` passed, `25` skipped, `0` failures/errors). The source and artifact hashes and any pending external gates are recorded in `build/release-evidence/candidate-manifest.json`.
+<!-- release-evidence-current:end -->
 
-Focused current connected tests passed 2/2 for main launcher/lifecycle behavior and 4/4 for the
-Mosh launcher/native smoke contract on authorized Wi-Fi target
-`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp` (`SM-F976B`). Both final debug APKs then installed
-successfully by exact serial, and the app cold-launched in 716 ms with `MainActivity` reported as
-`topResumedActivity`.
+The complete local gate covers debug and release lint/build, release APK/AAB packaging,
+Android-test APKs, dual-ABI extension outputs, and benchmark assembly. The exact hashes become
+authoritative only in the generated candidate manifest after the final source freeze.
 
-Final exact-serial installs of those version `0.0.1` artifacts succeeded on authorized USB
-`RZCW81JZ9CP` (`SM-S911B`) and Wi-Fi
-`adb-R5GYB530AJJ-GqQiUw._adb-tls-connect._tcp` (`SM-S936U`). On USB, the full app runner
-reported 252 tests with no failures. A separate opt-in test then carried a real command through
-JSch to the disposable OpenSSH server with the Mosh extension absent, and Standard/Full encrypted
-archives round-tripped through an opaque test DocumentsProvider. `mosh-api` connected tests
-passed 5/5 and Mosh extension connected tests passed 3/3 on each phone. The full Wi-Fi app UI suite
-was attempted, but secure keyguard/dozing prevented Compose activities from owning a hierarchy; it
-is environment-blocked, not green. `MainActivity` was verified as `topResumedActivity` and focused
-on USB. On Wi-Fi it was reported as `ResumedActivity`, with the app focused behind
-`NotificationShade`/keyguard, so unobscured
-foreground proof remains incomplete there.
+Clean process-isolated emulator suites also passed under a checked-in exact test contract. API 26
+ran all 316 named tests with 17 approved skips, and API 35 ran all 316 with 13 approved skips.
+Focused 33-test boundary suites passed on APIs 28, 29, and 32 with two approved skips each, and API
+33 with one. The runner rejects missing, added, duplicate, or unexpectedly skipped tests rather
+than accepting aggregate counts alone.
+
+On the exact model-checked, test-authorized old `SM-S911B`, the complete app runner passed its
+contract. A separately enabled real-Mosh matrix passed five password-bootstrap methods plus
+one private-key method against the disposable OpenSSH/Mosh fixture. It proves interactive bytes,
+four simultaneous sessions with independent resize/close, isolated-worker death and slot reuse,
+broker death/rebind, and production app-selected-tmux local scrolling plus reader anchoring across
+Activity recreation. The same physical method proves Auto stays local with zero remote wheels in
+pre-existing tmux copy mode, while explicit Remote mouse drives it. Device tests were not run on
+the `SM_F976B` fold. The old phone also passed real Samsung-IME entry, physical landscape,
+maximum system text (`font_scale=2.0`), and Samsung split-screen checks; its Compose accessibility
+tree remained populated with usable controls in each applicable configuration. Physical TalkBack
+focus-order traversal and OEM battery-mode observation remain manual gates. Real network roaming,
+the user's external server, hosted CI, production signing, and public-extension legal approval
+also remain open.
 
 Release builds remain unsigned unless all four external signing inputs are supplied. Signing material stays outside the repository:
 
@@ -78,21 +79,49 @@ AVD `terminal-spike-release-test`; the app cold-launched in 504 ms and `MainActi
 local acceptance evidence only and does not establish production
 signing, public extension distribution, or store readiness.
 
+The newer current `0.0.2` release-like gate used a fresh ephemeral acceptance key and the named
+disposable API 35 AVD. The release APK/AAB and separate extension APK signatures verified with a
+matching APK signer. The main app then passed clean install → real extension-absent SSH →
+same-certificate `install -r` → process restart → saved-host retention → password re-prompt → real
+SSH again. The re-prompt proves the new-host password remained session-only by default. This is
+still local acceptance signing, not a production or Play-signing claim.
+
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) for the remaining production-signing, Play Console,
 store-listing, manual acceptance, and Mosh legal gates.
 
 Install and launch on a connected device:
 
 ```bash
-adb -s '<exact-adb-serial>' install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s '<exact-adb-serial>' shell am start -n com.yanjiyu.terminalspike/.MainActivity
+scripts/install-wireless.sh --list
+scripts/install-wireless.sh --install-old-phone \
+  '<exact-SM-S911B-adb-serial>' app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Run the device smoke test with:
 
 ```bash
-./gradlew connectedDebugAndroidTest
+scripts/install-wireless.sh --test-old-phone \
+  '<exact-SM-S911B-adb-serial>' :app:connectedDebugAndroidTest
 ```
+
+The helper rechecks the exact serial, authorization state, and `SM-S911B` model immediately before
+the operation. It refuses physical-device test tasks on any other model.
+
+The controlled real-Mosh device matrix has a separate fixed, self-cleaning runner. It requires an
+explicit trusted-LAN acknowledgement, binds both SSH and the bounded UDP range to the supplied host
+IPv4 address, verifies the old-phone identity before every install and test launch, runs the full
+password/lifecycle class plus a private-key round trip, rejects skips, writes sanitized reports,
+and tears the fixture down on success or failure:
+
+```bash
+scripts/run-real-mosh-device-tests.sh \
+  --serial '<exact-SM-S911B-adb-serial>' \
+  --host-address '<development-machine-trusted-LAN-ipv4>' \
+  --trusted-lan
+```
+
+Set `JAVA_HOME` to the compatible JDK listed above. This command installs the local debug Mosh
+extension only on the authorized old phone; it does not authorize public extension distribution.
 
 ## Optional Mosh-compatible extension
 
@@ -107,10 +136,13 @@ mosh-extension/scripts/verify-sources.sh
 ./gradlew :mosh-api:test :mosh-api:lint \
   :mosh-extension:test :mosh-extension:lint \
   :mosh-extension:assembleDebug :mosh-extension:assembleRelease
-adb install -r mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk
 ```
 
-The native build uses pinned official sources and produces `arm64-v8a` and `x86_64` clients. See [the extension build guide](mosh-extension/BUILDING.md), [the protocol boundary](docs/mosh-extension-protocol.md), and [ADR-003](docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md). The latest build passed strengthened password-authenticated Mosh tests against the disposable local server on both authorized Android 16 phones: the harness writes every command byte separately and reconstructs the resulting VT screen, with one Wi-Fi run plus a repeated 5/5 Wi-Fi run and a 1/1 USB run all green. This validates only that controlled local environment; the user's own saved Mosh server still needs an unlocked manual retest, and no behavior on an arbitrary external server is inferred. Local/debug evaluation is approved, but public distribution and production signing remain blocked pending the ADR's specialist GPL, signing, installation-information, and trademark review.
+The guarded main-app installer deliberately does not install the separately packaged Mosh
+extension. Extension installation remains a separately reviewed local-development operation under
+the repository device and licensing rules.
+
+The native build uses pinned official sources and produces `arm64-v8a` and `x86_64` clients. See [the extension build guide](mosh-extension/BUILDING.md), [the protocol boundary](docs/mosh-extension-protocol.md), and [ADR-003](docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md). The latest controlled-server evidence is the old-phone five-method password class and separate private-key run described above. This validates only that controlled local environment; the user's own saved Mosh server still needs an unlocked manual retest, and no behavior on an arbitrary external server is inferred. Local/debug evaluation is approved, but public distribution and production signing remain blocked pending the ADR's specialist GPL, signing, installation-information, and trademark review.
 
 ## Try a remote shell
 
@@ -139,7 +171,7 @@ The phone shell has exactly three primary destinations: **Connections**, **Termi
 
 Non-secret profiles, identity metadata, snippets, themes, and keyboard layouts live in app-private Room/DataStore storage with bounded validation and explicit migrations. Each imported private key and each opt-in password is separately bounded and protected with authenticated encryption under an app-specific Android Keystore key. Password ciphertext is bound to the profile ID, host, port, and username so it cannot silently follow an edited endpoint. Android cloud backup and device-transfer backup are disabled for all app data. Corrupt or undecryptable legacy data is preserved behind fail-closed startup and Settings recovery gates; every such gate offers retry and the same separately confirmed full app-data reset instead of trapping the user behind unreadable local state. Credential reads never create replacement keys for ciphertext whose Android Keystore key is unavailable. There is no account or network sync.
 
-Active transports are owned by the user-started foreground session service rather than by an Activity. Its low-noise notification exposes safe open/disconnect actions and privacy-aware content. Navigating away or recreating the Activity does not implicitly disconnect a session, but Android may still terminate the process; the app does not claim to resurrect a lost live socket after process death.
+Active transports are owned by the user-started foreground session service rather than by an Activity. Its low-noise notification exposes safe open/disconnect actions and privacy-aware content. Navigating away or recreating the Activity does not implicitly disconnect a session, but Android may still terminate the process; the app does not claim to resurrect a lost live socket after process death. A wiped API 35 external acceptance passed real SSH through background, deep-idle, restricted-standby, and Data Saver cases with exact policy restoration, then killed one ownership-verified app PID. The old service/notification cleared, a distinct process showed no live session, one saved host and recent row survived with zero stored session-only secrets, the password was requested again, and real SSH succeeded afterward.
 
 Connected terminal tabs also accept bounded task-attention events. OSC 9 retains its message on direct SSH, while a text-mode BEL produces a generic **Terminal task complete** notification and survives both tmux and Mosh. BEL used only as an OSC terminator is not an alert. Tapping the notification opens its originating app tab; closing or disconnecting that tab ends its notification path. Because BEL is a general terminal signal, any program that emits one can use this channel. For Codex turn completion across SSH, tmux, and Mosh, configure Codex before starting it:
 
@@ -154,14 +186,25 @@ Codex reads this configuration at process startup. Android notification permissi
 
 ## Wireless development install
 
-After pairing a phone through Android's Wireless debugging screen, list exact ADB targets and install only to the chosen wireless serial:
+After pairing a phone through Android's Wireless debugging screen, list exact ADB targets. The
+guarded helper supports tests and main-app installs on the authorized old `SM-S911B`. It also has a
+separate final-install-only mode for `SM-F976B`, which requires an explicit feature-complete
+acknowledgement and can neither update-install nor execute tests:
 
 ```bash
 scripts/install-wireless.sh --list
-scripts/install-wireless.sh '<wireless-adb-serial>'
+scripts/install-wireless.sh --test-old-phone \
+  '<exact-SM-S911B-adb-serial>' :app:connectedDebugAndroidTest
+scripts/install-wireless.sh --install-old-phone \
+  '<exact-SM-S911B-adb-serial>' app/build/outputs/apk/debug/app-debug.apk
+# Only after the entire requested feature is complete:
+scripts/install-wireless.sh --final-fold-install \
+  '<exact-SM-F976B-adb-serial>' app/build/outputs/apk/debug/app-debug.apk --feature-complete
 ```
 
-The script runs unit tests, lint, and a debug build before `adb install -r`, then launches the app. It rejects USB-looking serials to reduce the chance of updating the wrong connected phone.
+Every operation rechecks ADB authorization and `ro.product.model`; every ADB command is pinned with
+`-s`. Both install modes launch the main app and require `MainActivity` to become top-resumed. Build
+and run the host-side verification gates before using an install mode.
 
 ## Debug-only workloads
 
@@ -184,9 +227,14 @@ For a repeatable check:
 5. Reset and collect platform frame data:
 
 ```bash
-adb shell dumpsys gfxinfo com.yanjiyu.terminalspike reset
+old_phone_serial='<exact-SM-S911B-adb-serial>'
+test "$(adb -s "$old_phone_serial" get-state)" = device
+test "$(adb -s "$old_phone_serial" shell getprop ro.product.model | tr -d '\r')" = SM-S911B
+adb -s "$old_phone_serial" shell dumpsys gfxinfo com.yanjiyu.terminalspike reset
 # Exercise one scenario for a fixed period.
-adb shell dumpsys gfxinfo com.yanjiyu.terminalspike
+test "$(adb -s "$old_phone_serial" get-state)" = device
+test "$(adb -s "$old_phone_serial" shell getprop ro.product.model | tr -d '\r')" = SM-S911B
+adb -s "$old_phone_serial" shell dumpsys gfxinfo com.yanjiyu.terminalspike
 ```
 
 Use Android Studio CPU and Memory profilers to inspect `FastTerminalView.onDraw`, workload generation, GC frequency, and main-thread batches. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
@@ -215,7 +263,7 @@ recording requirements.
 - The upstream Mosh transport retains authenticated UDP roaming and port-hopping behavior. The main app now publishes generation-scoped Android network hints to the active Mosh transport; real Wi-Fi/cellular/VPN transition acceptance remains open. IPv6 link-local hosts containing a zone identifier such as `%wlan0` are not supported; use a globally routable IPv6 address/name or IPv4.
 - Public distribution of the Mosh-compatible extension is blocked by ADR-003 until licensing, Corresponding Source/installation-information, signing, and name-use review is complete.
 - The bounded VT engine supports primary/alternate screens, cursor addressing, scroll regions, insert/delete/erase operations, xterm colours, application cursor keys, bracketed paste, focus reporting, wheel mouse reporting, resize, OSC 8 links, policy-gated OSC 52 clipboard requests, and common terminal queries. It is not yet a byte-for-byte xterm clone; every DEC private mode and full conformance fixtures remain.
-- App-selected tmux sessions seed a separate bounded local model from tmux's physical pane history and keep it synchronized with live rows. Drag and fling use the same pixel viewport as an ordinary terminal. Tmux copy mode and inner applications that actually enable terminal mouse tracking continue receiving remote mouse input; an alternate screen alone, including a Codex-style UI, no longer forces row-wheel scrolling.
+- App-selected tmux sessions seed a separate bounded local model from tmux's physical pane history and keep it synchronized with live rows. In Auto, vertical drag and fling use the same pixel viewport as an ordinary terminal, including when tmux was already in copy mode; Auto never sends a fallback wheel or exits that remote mode. Choose explicit Remote mouse to drive tmux copy mode or a mouse-aware inner application. Its optional two-finger override keeps a local-history escape path. An alternate screen alone, including a Codex-style UI, never forces row-wheel scrolling.
 - For manually launched tmux and explicit remote-mouse mode, enable its mouse option once with `tmux set -g mouse on` (and add `set -g mouse on` to `~/.tmux.conf` to persist it).
 - The engine tracks combining and common wide/emoji code points as terminal cells, while the renderer still estimates the physical cell width from a monospace `M`. Bidi layout and every grapheme/emoji sequence are not exact.
 - Long lines are clipped. Terminal selection/copy, safe OSC 8 link actions, private SAF-imported fonts, and the release-cleared Symbols Nerd Font Mono fallback are present; full row-by-row accessibility exploration remains open.

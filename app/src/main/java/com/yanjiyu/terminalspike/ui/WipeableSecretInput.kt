@@ -171,20 +171,26 @@ internal fun WipeableSecretInput(
                 }
             },
             update = { editor ->
-                editor.tag = testTag
-                editor.hint = label
-                editor.isEnabled = enabled
-                editor.filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
-                editor.setTextColor(textColor)
-                editor.setHintTextColor(hintColor)
+                if (editor.tag != testTag) editor.tag = testTag
+                if (editor.hint != label) editor.hint = label
+                if (editor.isEnabled != enabled) editor.isEnabled = enabled
+                val lengthFilter = editor.filters.singleOrNull() as? InputFilter.LengthFilter
+                if (lengthFilter?.max != maxCharacters) {
+                    editor.filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
+                }
+                if (editor.currentTextColor != textColor) editor.setTextColor(textColor)
+                if (editor.currentHintTextColor != hintColor) editor.setHintTextColor(hintColor)
                 val nextInputType = secretInputType(masked)
                 if (editor.inputType != nextInputType) {
                     editor.inputType = nextInputType
                     editor.setSelection(editor.text?.length ?: 0)
                 }
-                editor.imeOptions = imeAction.toEditorInfoAction() or
+                val nextImeOptions = imeAction.toEditorInfoAction() or
                     EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-                editor.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                if (editor.imeOptions != nextImeOptions) editor.imeOptions = nextImeOptions
+                if (editor.importantForAutofill != View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS) {
+                    editor.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                }
                 state.bind(editor, onPresenceChanged)
             },
             modifier = Modifier

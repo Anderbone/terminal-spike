@@ -4,6 +4,9 @@
         <activity
             android:name=".SshTrustAuthenticationTestActivity"
             android:exported="false" />
+        <activity
+            android:name=".TerminalSpikeComponentTestActivity"
+            android:exported="false" />
         <provider
             android:name=".backup.LocalBackupDocumentsProvider"
             android:authorities="com.yanjiyu.terminalspike.test.backup.documents"

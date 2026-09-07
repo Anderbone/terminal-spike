@@ -135,6 +135,32 @@ class SftpRealEndToEndTest {
             client.copy(childPath(folderPath, "source.txt"), folderPath)
             assertTrue(client.list(folderPath).any { it.name == "source copy.txt" })
 
+            client.uploadRecursively(
+                folderPath,
+                InMemoryUploadSource(
+                    rootName = "uploaded-tree",
+                    entries = listOf(
+                        SftpUploadEntry("nested", isDirectory = true),
+                        SftpUploadEntry("nested/payload.txt", isDirectory = false) {
+                            ByteArrayInputStream(payload)
+                        },
+                    ),
+                ),
+            )
+            client.copy(childPath(folderPath, "uploaded-tree"), folderPath)
+            assertTrue(client.list(folderPath).any { it.name == "uploaded-tree copy" })
+
+            val downloadedTree = InMemoryDownloadDestination()
+            client.downloadRecursively(
+                childPath(folderPath, "uploaded-tree copy"),
+                downloadedTree,
+            )
+            assertTrue(downloadedTree.completed)
+            assertArrayEquals(
+                payload,
+                downloadedTree.files.getValue("uploaded-tree copy/nested/payload.txt"),
+            )
+
             client.createDirectory(folderPath, "moved")
             client.move(childPath(folderPath, "source copy.txt"), childPath(folderPath, "moved"))
             val movedPath = childPath(childPath(folderPath, "moved"), "source copy.txt")
@@ -149,5 +175,46 @@ class SftpRealEndToEndTest {
             client.close()
             knownHosts.delete()
         }
+    }
+}
+
+private class InMemoryUploadSource(
+    override val rootName: String,
+    private val entries: List<SftpUploadEntry>,
+) : SftpUploadSource {
+    override suspend fun consume(consumer: suspend (SftpUploadEntry) -> Unit) {
+        entries.forEach { consumer(it) }
+    }
+}
+
+private class InMemoryDownloadDestination : SftpDownloadDestination {
+    val files = mutableMapOf<String, ByteArray>()
+    var completed = false
+        private set
+    private var aborted = false
+
+    override fun createDirectory(relativePath: String) = Unit
+
+    override fun openFile(relativePath: String): SftpPendingDownload {
+        val output = ByteArrayOutputStream()
+        return object : SftpPendingDownload {
+            override val stream = output
+            override fun commit() {
+                files[relativePath] = output.toByteArray()
+            }
+            override fun abort() {
+                files.remove(relativePath)
+            }
+        }
+    }
+
+    override fun complete() {
+        check(!aborted)
+        completed = true
+    }
+
+    override fun abort() {
+        aborted = true
+        files.clear()
     }
 }

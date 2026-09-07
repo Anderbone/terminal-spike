@@ -8,6 +8,7 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalCellWidth
 import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
+import com.yanjiyu.terminalspike.terminal.model.sanitizeUntrustedDisplayText
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import com.yanjiyu.terminalspike.terminal.model.TerminalStyle
@@ -725,8 +726,7 @@ class VtTerminalEngine(
 
     private fun enqueueTerminalNotification(payload: String) {
         if (pendingTerminalNotifications.size >= MAX_TERMINAL_NOTIFICATIONS_PER_ACCEPT) return
-        payload.trim()
-            .take(MAX_TERMINAL_NOTIFICATION_LENGTH)
+        sanitizeUntrustedDisplayText(payload, MAX_TERMINAL_NOTIFICATION_LENGTH)
             .takeIf(String::isNotEmpty)
             ?.let(pendingTerminalNotifications::addLast)
     }

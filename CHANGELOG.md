@@ -3,7 +3,7 @@
 All notable product changes are recorded here. The project is still in development and has not
 assigned a public semantic version to this release candidate.
 
-## Unreleased
+## 0.0.3 (6) — 2026-09-07
 
 ### Added
 
@@ -48,9 +48,32 @@ assigned a public semantic version to this release candidate.
 - Reproducible terminal fixtures, Macrobenchmark/Baseline Profile module, local OpenSSH Docker test
   environment, byte-fragmented real-Mosh command delivery with reconstructed VT-screen assertions,
   and release-packaging integrity checks.
+- Added a fixed real-Mosh old-phone acceptance runner with per-operation serial/model verification,
+  exact-address LAN exposure, deterministic fixture reset/teardown, password/private-key coverage,
+  strict named-result and skip checks, sanitized reports, and tested failure cleanup.
 
 ### Changed
 
+- Reconciled exact old-phone release evidence for Samsung IME input, physical landscape, maximum
+  system text, and real Samsung split screen while retaining physical TalkBack focus traversal as
+  an explicit manual gate.
+- Bounded tmux history comparison and replacement construction to 2,000 rows per display callback,
+  with cancellation of stale preparation and atomic publication of complete history.
+- Android 17 local-network access is now requested only from explicit SSH, Mosh, or SFTP actions
+  whose literal or off-main resolved address is local. One pending action survives Activity
+  recreation without persisting credentials, denial starts no session, public and unresolved-host
+  actions bypass the broad grant, and the system-mediated Nearby SSH picker remains
+  permission-preserving. The API 37 runner also proves process death and denied-state relaunch
+  after permission revocation.
+- Added a stable API 37 real-network gate against the emulator's RFC1918 host gateway: denial must
+  block raw TCP and production SSH before protocol traffic, while a real grant must complete SSH
+  terminal traffic plus SFTP upload, download, and deletion against the identical OpenSSH fixture.
+- New host editors now require an explicit opt-in before storing a password, matching Quick
+  Connect and the documented device-encrypted credential policy. Existing hosts with an available
+  saved password continue to show that state without exposing the value.
+- Updated and hardened the release-like install/update smoke for the current Connections-first UI,
+  strict main-package/version/certificate preflight, repeated named-AVD verification, explicit tmux
+  routing, bounded temporary cleanup, and fixture teardown on every exit.
 - Added native inertial continuation for tmux/remote mouse-mode touch scrolling while keeping wheel
   reports line-height-thresholded and bounded per display frame.
 
@@ -80,6 +103,8 @@ assigned a public semantic version to this release candidate.
 
 ### Fixed
 
+- Prevented an isolated Mosh worker or broker crash from being reported as a clean disconnect when
+  its terminal PFD reaches EOF just before the authoritative Binder lifecycle callback.
 - Made Codex-style parenthesized links such as `Google (https://www.google.com)` tappable and
   selectable without treating the opening parenthesis as part of the URL.
 - Restored whole-link Open/Copy actions for URLs that span terminal soft wraps, including tmux
@@ -109,6 +134,27 @@ assigned a public semantic version to this release candidate.
 
 ### Validation
 
+- The 2026-09-02 full source gate passed 475 Gradle tasks with app JVM `939/0/0/0`, Mosh API
+  `11/0/0/0`, and extension `8/0/0/0`. On the exact model-checked old `SM-S911B`, the full app
+  runner passed `315/0/0/13`; a separately enabled real-Mosh class passed `4/0/0/0`, covering
+  ordered terminal output, four simultaneous resize-isolated sessions, worker death/slot reuse,
+  and broker death/rebind with fresh traffic. A separate private-key bootstrap run passed. The
+  fold was not used for tests.
+- The guarded self-cleaning real-Mosh runner subsequently repeated the required password class
+  `4/0/0/0` and private-key method `1/0/0/0` on the exact model-checked old `SM-S911B`; its
+  disposable fixture was confirmed stopped afterward and its durable reports contained no fixture
+  credential, private key, or LAN address. The unchanged current main APK was then reinstalled and
+  foreground-verified on that old phone; the connected fold was untouched.
+- A fresh ephemeral-key release-like `0.0.2` gate passed on named disposable API 35 AVD
+  `terminal-spike-release-test`: release APK and AAB plus the separately built extension APK were
+  signed and verified, both APK signers matched, a clean main-app install connected through real
+  SSH with the extension absent, same-certificate `install -r` preserved the non-secret host, an
+  actual app restart prompted for the deliberately unsaved password, and the second real SSH
+  marker passed. The disposable fixture was stopped and temporary signing material was removed.
+- After adding the new-host password opt-in regression, the complete current-source old-phone app
+  runner passed `316/0/0/13` (303 executed passes), and the guarded real-Mosh 4+1 matrix passed
+  again with no skips or failures. The final current debug APK was installed and `MainActivity`
+  was verified top-resumed on the same model-checked old phone; the connected fold was untouched.
 - The 2026-08-19 branding gate passed the complete unit, lint, debug/release build,
   Android-test-assembly, release APK/AAB packaging, Mosh native, and benchmark suite (482 Gradle
   tasks). Focused launcher/native device contracts passed 2/2 for the app and 4/4 for the extension

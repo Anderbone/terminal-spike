@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -13,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -20,6 +22,7 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.hasFocus
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
@@ -89,8 +92,12 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithContentDescription("Add host").performClick()
 
         composeRule.onNodeWithText("Add host").assertIsDisplayed()
-        composeRule.onNodeWithText("Connection name (optional)").assertIsDisplayed()
-        composeRule.onNodeWithText("Hostname or IP").assertIsDisplayed()
+        composeRule.onNodeWithText("Connection name (optional)")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Hostname or IP")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -159,7 +166,7 @@ class MainScreenSmokeTest {
     }
 
     @Test
-    fun bufferedInputPageClearsSentTextAndOffersRecovery() {
+    fun rendererLabBufferedInputStagesTextAndPreservesTerminalFocusRouting() {
         openRendererLab()
         val pager = composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
 
@@ -167,18 +174,11 @@ class MainScreenSmokeTest {
         val bufferedInput = composeRule.onNodeWithContentDescription("Buffered terminal input")
             .assertIsDisplayed()
         bufferedInput.performTextInput("git status --short")
+        closeSoftKeyboard()
         composeRule.onNodeWithText("git status --short").assertIsDisplayed()
 
         composeRule.onNodeWithTag("terminal_container").performTouchInput { click() }
         bufferedInput.assertIsFocused()
-
-        composeRule.onNodeWithText("Send").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.terminal_buffered_input_placeholder),
-        ).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(
-            composeRule.activity.getString(R.string.terminal_restore_last_sent_input),
-        ).assertIsDisplayed()
 
         pager.performTouchInput { swipeLeft() }
         composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()

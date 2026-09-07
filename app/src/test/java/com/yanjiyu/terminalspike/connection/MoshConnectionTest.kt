@@ -84,6 +84,40 @@ class MoshConnectionTest {
     }
 
     @Test
+    fun extensionErrorImmediatelyAfterTerminalPipeEofTakesPrecedence() {
+        val bootstrap = FakeConnectionBootstrap()
+        val transport = FakeMoshTerminalTransport()
+        val extension = FakeConnectionExtension(
+            startResult = MoshTransportStartResult.Success(transport),
+        )
+        val connection = connection(bootstrap, extension)
+        val states = Collections.synchronizedList(mutableListOf<ConnectionState>())
+        val worker = connectOnThread(connection, states)
+
+        assertTrue(extension.sessionStarted.await(2, TimeUnit.SECONDS))
+        assertTrue(awaitState(states) { it is ConnectionState.Connected })
+        transport.finishOutput()
+        assertTrue(transport.outputEofObserved.await(2, TimeUnit.SECONDS))
+        extension.events.tryEmit(
+            MoshTransportEvent(
+                state = MoshSessionState.ERROR,
+                disconnectReason = MoshDisconnectReason.NONE,
+                errorCode = MoshErrorCode.EXTENSION_DIED,
+            ),
+        )
+        worker.join(2_000)
+
+        assertFalse(worker.isAlive)
+        assertTrue(transport.closed)
+        assertEquals(0, states.count { it is ConnectionState.Disconnected })
+        assertEquals(1, states.count { it is ConnectionState.Failed })
+        assertEquals(
+            "Mosh extension stopped unexpectedly.",
+            (states.last() as ConnectionState.Failed).message,
+        )
+    }
+
+    @Test
     fun terminalStateCallbackFailureStillClosesMoshPipesAndStopsTheSession() {
         val bootstrap = FakeConnectionBootstrap()
         val transport = FakeMoshTerminalTransport()
@@ -274,8 +308,9 @@ class MoshConnectionTest {
         val worker = connectOnThread(connection, states)
 
         assertTrue(bootstrap.promptPublished.await(2, TimeUnit.SECONDS))
-        val awaiting = states.last { it is ConnectionState.AwaitingApproval } as
-            ConnectionState.AwaitingApproval
+        val awaiting = synchronized(states) {
+            states.last { it is ConnectionState.AwaitingApproval }
+        } as ConnectionState.AwaitingApproval
         assertTrue(awaiting.prompt is KeyboardInteractiveChallenge)
         val response = "123456".toCharArray()
         connection.answerKeyboardInteractiveChallenge(
@@ -741,7 +776,20 @@ private class FakeMoshTerminalTransport(
     override val initialState: Int = MoshSessionState.CONNECTED,
 ) : MoshTerminalTransport {
     private val remoteOutput = PipedOutputStream()
-    override val terminalOutput: InputStream = PipedInputStream(remoteOutput)
+    private val outputDelegate = PipedInputStream(remoteOutput)
+    val outputEofObserved = CountDownLatch(1)
+    override val terminalOutput: InputStream = object : InputStream() {
+        override fun read(): Int = outputDelegate.read().also(::recordEof)
+
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int =
+            outputDelegate.read(bytes, offset, length).also(::recordEof)
+
+        override fun close() = outputDelegate.close()
+
+        private fun recordEof(count: Int) {
+            if (count < 0) outputEofObserved.countDown()
+        }
+    }
     override val terminalInput: OutputStream = input
     @Volatile var closed = false
 

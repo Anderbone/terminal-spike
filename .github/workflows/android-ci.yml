@@ -1,0 +1,463 @@
+name: Android CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "19 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up and validate Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          cache-provider: basic
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-37"
+
+      - name: Verify repository-owned release assets and test tooling
+        run: |
+          scripts/verify-bundled-fonts.sh
+          store-assets/google-play/validate-store-assets.sh
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+
+      - name: Test, lint, and build release surfaces
+        run: >-
+          ./gradlew --dependency-verification=strict
+          --no-daemon --max-workers=2 -Pkotlin.incremental=false
+          :mosh-api:testDebugUnitTest
+          :mosh-api:lintDebug
+          :mosh-api:assembleDebug
+          :mosh-extension:testDebugUnitTest
+          :mosh-extension:lintDebug
+          :mosh-extension:lintRelease
+          :mosh-extension:assembleDebug
+          :mosh-extension:assembleRelease
+          :mosh-extension:assembleDebugAndroidTest
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:lintRelease
+          :app:assembleDebug
+          :app:assembleRelease
+          :app:assembleDebugAndroidTest
+          :app:stageRuntimeTestUtilities
+          :benchmark:assemble
+
+      - name: Stage runtime-test APKs
+        run: |
+          mkdir -p build/ci-apks
+          install -m 0644 app/build/outputs/apk/debug/app-debug.apk build/ci-apks/app-debug.apk
+          install -m 0644 app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk build/ci-apks/app-debug-androidTest.apk
+          install -m 0644 app/build/outputs/runtime-test-utils/orchestrator-1.6.1.apk build/ci-apks/orchestrator-1.6.1.apk
+          install -m 0644 app/build/outputs/runtime-test-utils/test-services-1.6.0.apk build/ci-apks/test-services-1.6.0.apk
+
+      - name: Upload runtime-test APKs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  required-runtime:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 35]
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          cache-provider: basic
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Run the full API ${{ matrix.api }} suite
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api ${{ matrix.api }}
+          --suite full
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --output-dir build/ci-android-results
+
+      - name: Upload sanitized API ${{ matrix.api }} evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-runtime-api-${{ matrix.api }}
+          path: build/ci-android-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  backup-clean-install:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Prove encrypted backup portability across clean installs
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api 35
+          --suite backup-clean-install
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --output-dir build/ci-backup-clean-install-results
+
+      - name: Upload sanitized clean-install backup evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-backup-clean-install-api-35
+          path: build/ci-backup-clean-install-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  boundary-runtime:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [28, 29, 32, 33, 37]
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Run focused API ${{ matrix.api }} boundary tests
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api ${{ matrix.api }}
+          --suite boundary
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --output-dir build/ci-android-results
+
+      - name: Upload sanitized API ${{ matrix.api }} evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-boundary-api-${{ matrix.api }}
+          path: build/ci-android-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  scheduled-runtime:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Run the full API ${{ matrix.api }} suite
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api ${{ matrix.api }}
+          --suite full
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --output-dir build/ci-android-results
+
+      - name: Upload sanitized API ${{ matrix.api }} evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-scheduled-api-${{ matrix.api }}
+          path: build/ci-android-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  openssh-e2e:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Start the loopback-only OpenSSH fixture
+        run: integration-tests/openssh/smoke.sh
+
+      - name: Run required OpenSSH and SFTP tests on API 35
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api 35
+          --suite openssh
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --private-key-file integration-tests/openssh/.state/client/id_ed25519
+          --output-dir build/ci-android-results
+
+      - name: Prove Android 17 denied and granted LAN SSH/SFTP transport
+        run: >-
+          scripts/run-android-emulator-tests.sh
+          --api 37
+          --suite lan-openssh
+          --app-apk build/ci-apks/app-debug.apk
+          --test-apk build/ci-apks/app-debug-androidTest.apk
+          --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
+          --test-services-apk build/ci-apks/test-services-1.6.0.apk
+          --output-dir build/ci-android-results
+
+      - name: Stop the OpenSSH fixture
+        if: always()
+        run: >-
+          docker compose
+          --project-directory integration-tests/openssh
+          -f integration-tests/openssh/compose.yaml
+          down --volumes --remove-orphans
+
+      - name: Upload sanitized OpenSSH evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-openssh-api-35-37
+          path: build/ci-android-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  lifecycle-e2e:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download runtime-test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-test-apks
+          path: build/ci-apks
+
+      - name: Run real-SSH process-death and background-pressure acceptance
+        run: >-
+          scripts/run-app-lifecycle-e2e.py
+          --api 35
+          --app-apk build/ci-apks/app-debug.apk
+          --output-dir build/ci-lifecycle-results
+
+      - name: Upload sanitized lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-lifecycle-api-35
+          path: build/ci-lifecycle-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  release-update-e2e:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up and validate Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          cache-provider: basic
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Build and run ephemeral-signed release update SSH acceptance
+        run: >-
+          scripts/run-release-update-ci-smoke.py
+          --api 35
+          --output-dir build/ci-release-smoke-result
+
+      - name: Stop the OpenSSH fixture again
+        if: always()
+        run: >-
+          docker compose
+          --project-directory integration-tests/openssh
+          -f integration-tests/openssh/compose.yaml
+          down --volumes --remove-orphans
+
+      - name: Upload sanitized release-smoke status only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-release-update-api-35
+          path: build/ci-release-smoke-result/release-smoke-result.txt
+          if-no-files-found: warn
+          retention-days: 14

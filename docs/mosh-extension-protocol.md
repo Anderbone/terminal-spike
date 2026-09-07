@@ -31,7 +31,14 @@ The local/debug architecture in ADR-003 is implemented rather than simulated:
 - The reproducible native build produces `arm64-v8a` and `x86_64` libraries from the checked-in verified Mosh, GNU Nettle, and Protocol Buffers source archives. Debug and unsigned release APKs, local native symbols, packaged notices, and a standalone Corresponding Source archive can be produced independently.
 - Settings presents live Checking, Absent, Disabled, Untrusted, Incompatible, Available, and Error states, including the installed version, negotiated API, capabilities, maximum sessions, and refresh/retry. SSH remains selectable and usable as an explicit fallback; Mosh is never silently relabelled as SSH.
 
-This is not yet a completed release-acceptance claim. The latest recorded controlled-server runs completed strict password-authenticated SSH bootstrap and real UDP terminal input/output on both authorized Android 16 phones. The application-owned session repository now publishes Android connectivity generations through the negotiated hint API. Private-key device bootstrap, resize, simultaneous sessions, extension removal/SSH fallback, observed network transitions/roaming, and broader lifecycle behavior still require device evidence. The locked/dozing Wi-Fi phone also lacks a green full-app UI suite and unobscured foreground proof. Production signing authority has not been supplied; public Mosh distribution remains blocked by ADR-003.
+This is not yet a completed release-acceptance claim. The latest controlled-server run on the only
+currently test-authorized physical target, the exact model-checked old `SM-S911B`, completed strict
+password and private-key SSH bootstrap, real UDP terminal I/O, four simultaneous sessions,
+independent resize/close, isolated-worker death with slot reuse, and broker death with automatic
+rebind and fresh traffic. The application-owned session repository publishes Android connectivity
+generations through the negotiated hint API. Observed network transitions/roaming, the user's
+external server, and manual battery/background behavior still require evidence. Production signing
+authority has not been supplied; public Mosh distribution remains blocked by ADR-003.
 
 ## Verified upstream baseline
 
@@ -149,7 +156,10 @@ Native key handling reads the one-shot key into mutable memory, avoids environme
 - `AppContainer.sshSessionRepository` owns every live SSH and Mosh runtime on the application process scope. Activities and ViewModels observe snapshots and issue commands; they do not own the connection, parser, controller, binding, or retry job.
 - A visible user action must start `SessionForegroundService` before transport startup. The service observes the repository for its ongoing notification, actions, and optional CPU-awake lease; loss of the required service fails active sessions rather than leaving a hidden transport.
 - The extension is bound only while the main client needs it and does not add a duplicate session notification.
-- Binder death closes PFDs and moves the session to Disconnected/Extension failed.
+- Binder or isolated-worker death closes PFDs and moves the session to an extension failure. Since
+  the byte pipe can close just before the Binder callback arrives, EOF gives the authoritative
+  terminal event a bounded one-second precedence window; an eventless EOF remains a clean
+  disconnect.
 - Extension death cannot restore the session because the ephemeral key is intentionally not persisted; retry performs a new strict SSH bootstrap.
 - The API and extension accept bounded connectivity-generation/family/metered hints and contain no account, location, or device identifier. The application repository fans each changed generation only to currently connected Mosh transports, including the current generation after connection.
 - The genuine Mosh transport still performs its protocol-native authenticated UDP roaming and port hopping. What remains missing is real-device transition/roaming acceptance evidence, not Android hint publication or the core roaming algorithm.
@@ -178,11 +188,22 @@ Implemented host/build evidence covers:
 - a ten-worker process-isolation equivalent for concurrent sessions;
 - pinned dual-ABI native builds, source checksums, 16 KiB LOAD alignment, restricted symbols/dependencies, packaged notices, local symbols, and the standalone Corresponding Source archive.
 
+Current controlled-device evidence on the exact model-checked old `SM-S911B` covers a `4/0/0/0`
+real-Mosh class: 200 ordered terminal rows, four simultaneous process-isolated sessions with unique
+live dimensions, closing one session without affecting the other three, killed-worker failure and
+slot reuse, and killed-broker failure, automatic rebind, and fresh terminal traffic. Separate
+password and private-key bootstrap runs passed. The worker-death test first reproduced and then
+verified the fix for the PFD-EOF/Binder-event race. The full default app suite passed
+`315/0/0/13`; the 13 skips are opt-in external-server cases, including these four Mosh tests.
+
 The acceptance gates still open are:
 
-- independently uninstall/update both APKs and verify the main app and real SSH before, during, and after extension absence on every connected target phone;
-- use a controlled real `mosh-server` to verify private-key bootstrap, resize, tmux behavior, cancellation, and failure messages; latest-build password bootstrap plus UDP terminal input/output passed on both current phones, while the user's saved external server still needs an unlocked manual retest;
-- exercise simultaneous live Mosh sessions and worker-process death on devices;
+- preserve the green disposable-AVD extension-absence/update/real-SSH gate; under current device
+  policy, do not install or test the extension on the connected fold, and install the final main
+  debug APK there only after the whole requested feature is complete;
+- use the user's saved external server for an unlocked manual retest; the controlled private-key,
+  resize, concurrent-session, worker-death, and broker-death paths are now green;
 - verify IPv4 and global IPv6 network changes, VPN transitions, UDP firewall/timeout behavior, protocol roaming, and Android background behavior. Link-local IPv6 zone identifiers are excluded; connectivity-hint publication is implemented but its transition behavior is not yet accepted on devices;
-- complete the locked/dozing Wi-Fi full-app suite and unobscured foreground proof, plus the wider manual device matrix;
+- complete the remaining manual behavior matrix on the old phone and the final non-test main-app
+  launch on the fold when the whole requested feature is complete;
 - supply production signing authority and complete the specialist GPL, installation-information, store-linking, and trademark review before any public extension distribution claim.

@@ -12,7 +12,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
 
-/** Debug-only provider proving backup code handles opaque ContentResolver streams. */
+/** Debug-only provider proving sensitive document workflows handle opaque ContentResolver streams. */
 class LocalBackupDocumentsProvider : DocumentsProvider() {
     override fun onCreate(): Boolean {
         storageDirectory().mkdirs()
@@ -26,7 +26,7 @@ class LocalBackupDocumentsProvider : DocumentsProvider() {
                 .add(Root.COLUMN_DOCUMENT_ID, ROOT_DOCUMENT_ID)
                 .add(Root.COLUMN_TITLE, "Terminal Spike test documents")
                 .add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE)
-                .add(Root.COLUMN_MIME_TYPES, BACKUP_MIME_TYPE)
+                .add(Root.COLUMN_MIME_TYPES, "$BACKUP_MIME_TYPE\n$PRIVATE_KEY_MIME_TYPE")
         }
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor =
@@ -53,7 +53,7 @@ class LocalBackupDocumentsProvider : DocumentsProvider() {
         displayName: String,
     ): String {
         require(parentDocumentId == ROOT_DOCUMENT_ID)
-        require(mimeType == BACKUP_MIME_TYPE)
+        require(mimeType == BACKUP_MIME_TYPE || mimeType == PRIVATE_KEY_MIME_TYPE)
         val safeName = displayName.replace(UNSAFE_NAME_CHARACTERS, "_").take(MAX_FILE_NAME_CHARS)
         val id = "${UUID.randomUUID()}-$safeName"
         val file = documentFile(id)
@@ -89,7 +89,14 @@ class LocalBackupDocumentsProvider : DocumentsProvider() {
         newRow()
             .add(Document.COLUMN_DOCUMENT_ID, documentId)
             .add(Document.COLUMN_DISPLAY_NAME, documentId.substringAfter('-'))
-            .add(Document.COLUMN_MIME_TYPE, BACKUP_MIME_TYPE)
+            .add(
+                Document.COLUMN_MIME_TYPE,
+                if (documentId.endsWith(PRIVATE_KEY_FILE_EXTENSION)) {
+                    PRIVATE_KEY_MIME_TYPE
+                } else {
+                    BACKUP_MIME_TYPE
+                },
+            )
             .add(Document.COLUMN_SIZE, file.length())
             .add(Document.COLUMN_LAST_MODIFIED, file.lastModified())
             .add(Document.COLUMN_FLAGS, Document.FLAG_SUPPORTS_DELETE or Document.FLAG_SUPPORTS_WRITE)
@@ -107,6 +114,8 @@ class LocalBackupDocumentsProvider : DocumentsProvider() {
         const val AUTHORITY = "com.yanjiyu.terminalspike.test.backup.documents"
         const val ROOT_DOCUMENT_ID = "root"
         const val BACKUP_MIME_TYPE = BackupDocumentContract.MIME_TYPE
+        const val PRIVATE_KEY_MIME_TYPE = "application/octet-stream"
+        const val PRIVATE_KEY_FILE_EXTENSION = ".key"
         private const val MAX_FILE_NAME_CHARS = 120
         private val UNSAFE_NAME_CHARACTERS = Regex("[^A-Za-z0-9._-]")
         private val DEFAULT_ROOT_PROJECTION = arrayOf(

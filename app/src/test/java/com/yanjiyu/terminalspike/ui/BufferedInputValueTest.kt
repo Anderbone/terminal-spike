@@ -39,12 +39,12 @@ class BufferedInputValueTest {
 
         assertEquals("nihao", dispatched)
         assertEquals(TextFieldValue(), draftState.value)
-        assertNotNull(draftState.deliveryMessage)
+        assertTrue(draftState.canRestoreLastSent)
 
         draftState.restoreLastSent()
 
         assertEquals(TextFieldValue("nihao", selection = TextRange(5)), draftState.value)
-        assertEquals(null, draftState.deliveryMessage)
+        assertFalse(draftState.canRestoreLastSent)
     }
 
     @Test
@@ -97,7 +97,7 @@ class BufferedInputValueTest {
         draftState.restoreLastSent()
 
         assertEquals(TextFieldValue("new words"), draftState.value)
-        assertEquals(null, draftState.deliveryMessage)
+        assertFalse(draftState.canRestoreLastSent)
     }
 
     @Test

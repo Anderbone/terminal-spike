@@ -44,13 +44,23 @@ class TerminalViewport {
         } else {
             0
         }
+        val prependedLines = if (
+            oldestLineId != null &&
+            newOldestLineId != null &&
+            newOldestLineId < oldestLineId!!
+        ) {
+            (oldestLineId!! - newOldestLineId).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        } else {
+            0
+        }
 
         lineCount = newLineCount.coerceAtLeast(0)
         oldestLineId = newOldestLineId
         scrollY = if (autoFollow) {
             maximumScrollY
         } else {
-            (scrollY - removedLines * lineHeightPx).coerceIn(0f, maximumScrollY)
+            (scrollY - removedLines * lineHeightPx + prependedLines * lineHeightPx)
+                .coerceIn(0f, maximumScrollY)
         }
         if (lineCount == 0) {
             autoFollow = true

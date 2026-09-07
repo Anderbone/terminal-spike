@@ -1,0 +1,10 @@
+{
+  "artifact_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "package": "com.yanjiyu.terminalspike",
+  "package_verifier": "aapt2",
+  "schema": 1,
+  "signature_verifier": "apksigner",
+  "signer_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "version_code": 5,
+  "version_name": "0.0.2"
+}

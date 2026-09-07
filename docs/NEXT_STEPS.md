@@ -1,10 +1,107 @@
 ---
 status: active
-updated_at: 2026-08-10
+updated_at: 2026-09-07
 starting_baseline_commit: 765380e
 ---
 
 # Remaining validation and external release gates
+
+## Current release-candidate snapshot (supersedes older evidence below)
+
+<!-- release-evidence-current:start -->
+Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` failures/errors); Mosh API JVM `11` tests (`11` passed, `0` skipped, `0` failures/errors); Mosh extension JVM `8` tests (`8` passed, `0` skipped, `0` failures/errors); old-phone Android app `332` tests (`307` passed, `25` skipped, `0` failures/errors). The source and artifact hashes and any pending external gates are recorded in `build/release-evidence/candidate-manifest.json`.
+<!-- release-evidence-current:end -->
+
+Plan 018 is locally complete: tmux reconciliation is capped at 2,000 comparison/rebuild rows per
+display callback and publishes atomically. The model-verified old-phone run passed all seven
+terminal fixture journeys; the new 20,480-row live-reset journey measured CPU-frame
+P50/P90/P95/P99 2.2/3.6/4.8/5.8 ms. Actual Codex remained local with zero wheels and passed paging,
+sub-row/fling/catch, reader-anchor, and live-bottom assertions; real Mosh passed 5+1. The full local
+gate passed 89 script tests and 475 Gradle tasks. This removes Plan 018 from the remaining source
+work; hosted CI, Android 17 public-Internet evidence, manual product/device matrices, fold/user
+acceptance, signing/Play, and Mosh legal/listing decisions remain.
+The process-isolated old-phone app evidence now passes the expanded exact API-36 contract. Its
+three disposable-host-only backup portability methods remain intentionally skipped in the default
+runner and pass in the dedicated clean-install gate.
+
+The disposable API 35 clean-install backup gate is green and CI-required: encrypted Standard and
+Full exports crossed separate uninstall/reinstall boundaries, prior Room/Keystore state was absent,
+Standard restored the documented non-exported-secret placeholder, and Full restored the portable
+secret under a fresh Keystore. Three exact instrumentation methods passed without skips or failures.
+The post-change forced source gate executed 451/451 tasks in 6m19s with app/Mosh API/Mosh extension
+JVM totals `971/11/8`, zero failures/errors/skips, both app lint variants, debug/release/Android-test
+packages, both Mosh ABIs, and benchmark assembly green. All 95 host-script tests also pass.
+A focused old-phone navigation rerun reproduced CPU P95 `29.35 ms`. Perfetto attributes the
+repeatable Settings-opening cost to initial category-list composition/layout, with one extra
+26.29 ms rounded-rectangle shader cache miss. A harness-correctness follow-up now clicks the
+clickable Material navigation ancestor instead of its described child, eliminating all 20
+UIAutomator non-clickable warnings; the repeat measured P95 was `22.66 ms`. This does not establish
+a product optimization, and Settings first-frame work plus the other real-session measurements
+remain open.
+
+The dated 2026-09-03 source gate was green: app JVM `960/0/0/0`, Mosh API
+`11/0/0/0`, extension `8/0/0/0`, lint, debug/release builds,
+release packaging checks, Android-test APKs, native extension outputs, and benchmark assembly all
+passed. Stable API 37.0 passed exact boundary membership `42/42` with no skips,
+including real permission grant/denial, Activity recreation, public-host bypass,
+and the permission-preserving Nearby system picker. Its external gate also proved
+that revocation terminates the original process and that explicit relaunch stays
+denied. That API 35 full run accounted for all 329 exact methods (`307`
+passed, `22` reviewed skips), including all seven API-37-only permission/network
+methods by exact lower-platform skip identity. The real API 37 LAN gate passed
+2/2: denied permission blocked raw TCP and production SSH before protocol traffic, while a
+grant completed SSH terminal and SFTP upload/download/delete against the same
+RFC1918 OpenSSH endpoint. Arbitrary hostnames are resolved off the UI thread and
+request permission when any answer is local; public answers and resolution
+failure do not trigger a broad prompt. Earlier clean/wiped
+full emulator coverage passed on APIs 26 (`316/0/0/17`) and 35
+(`316/0/0/13`), with focused 33-test boundary coverage on APIs 28, 29, and 32
+(`33/0/0/2` each) and API 33 (`33/0/0/1`), plus deterministic OpenSSH/SFTP coverage on API 35.
+Every full/boundary result passed exact class/method membership and API-specific skip validation.
+Those emulator runs used the preceding 316-method contract; the expanded 318-method contract adds
+the opt-in combined real-mouse-app and Mosh/tmux lifecycle tests and is exact/green on the
+authorized old phone.
+
+An external wiped-API-35 lifecycle runner also passed real SSH before and after exact app-PID
+death. Ordinary backgrounding, deep idle, restricted standby, and Data Saver retained the same
+live PID/service/notification and restored every changed policy. After ownership-verified
+`kill -9`, the process stayed dead until explicit launch, the service/notification were absent,
+one saved host and one recent row remained with zero stored session-only secrets, the new PID was
+distinct and showed no live session, the password was requested again, and real SSH passed.
+
+The minified release/update smoke is now CI-wired through a fresh ephemeral PKCS12 identity. Its
+local CI-equivalent run signer-matched the APK and AAB and passed extension-absent SSH before and
+after same-certificate reinstall with non-secret data retention and password re-prompt. Cleanup
+retained only a sanitized status summary; hosted proof still requires an authorized commit/push.
+
+On the exact model-checked authorized old `SM-S911B`, that dated default runner passed 318 tests:
+303 passed, 15 expected opt-in real-server tests skipped, and none failed. A separately enabled,
+privacy-preserving three-test SSH/Codex/tmux matrix passed direct actual Codex, local pixel scroll
+inside app-selected tmux, and real GNU `less --mouse`, Vim, and htop. Their visible fixture tops
+advanced 1→9, 1→10, and 1→30 respectively; each selected `REMOTE_MOUSE` /
+`EXPLICIT_REMOTE_MOUSE`, sent three wheel reports, and applied zero local scroll updates. The
+separately enabled,
+model-locked real-Mosh gate then passed five password/lifecycle cases and one private-key case with
+no failures or skips, including production Mosh/tmux Activity recreation, reader anchoring, and
+the real pre-existing-copy-mode Auto/Remote policy. A fresh ephemeral-key `0.0.2` release-like AVD gate verified package, version,
+and signature continuity; real extension-absent SSH passed before and after `install -r`, the saved
+non-secret host survived, and the deliberately unsaved password was requested again after process
+restart. New hosts now default password storage off, with focused UI regression coverage. The
+that run's debug APK SHA-256 is
+`0aef8e22429ed88c2e72fb44c8467309873659af006fffb3cddb80b4052af2ec`; it is installed and
+`MainActivity` is top-resumed on the old phone. The final same APK installed successfully on the
+fold without tests; `MainActivity` is the resumed activity, but the dozing locked device's
+`NotificationShade` prevented top-resumed foreground proof.
+
+The source is a strong local release candidate, but the project is not yet authorized for public
+production distribution. Remaining gates are the first hosted CI run after commit/push; observed
+Wi-Fi/cellular/VPN roaming, an external server, and completed SSH through an
+actual public-Internet route while local-network permission is denied; user confirmation of the completed tmux build,
+physical TalkBack focus-order traversal, hardware-keyboard/OEM battery-restriction and extended
+soak checks; production key/Play/store-listing work; and the separate Mosh legal, trademark,
+Corresponding Source, signing, and listing decisions. See [PUBLISHING.md](PUBLISHING.md) for the
+operator checklist. Evidence below predating this snapshot is retained as historical progression,
+not as the current result.
 
 The planned product slices are present in the current source tree. The phone shell uses
 **Connections**, **Terminal**, and **Settings** as its three primary destinations. Connections is
@@ -41,8 +138,8 @@ The current implementation includes:
 
 No GPL/AGPL code is included in the main APK or `mosh-api` AAR. GPL/native Mosh code exists only in
 the optional `com.yanjiyu.terminalspike.mosh` application and its separately inventoried artifact
-and Corresponding Source bundle. SFTP, cloud sync, accounts, analytics, advertising, and remote AI
-remain absent.
+and Corresponding Source bundle. Cloud sync, accounts, analytics, advertising, and remote AI remain
+absent.
 
 The 2026-08-19 launcher/store-branding refresh completed a newer full current-source gate: 482
 Gradle tasks passed across unit tests, lint, debug/release builds, Android-test assembly, release
@@ -65,7 +162,7 @@ recorded immediately after them and in `IMPLEMENTATION_STATUS.md`:
 ./gradlew :app:verifyReleasePackaging :app:verifyReleaseBundlePackaging :benchmark:assemble
 ```
 
-The frozen current-source gates completed successfully. Fresh JUnit totals in
+The frozen 2026-08-10 gates completed successfully. Fresh JUnit totals in
 tests/failures/errors/skipped order were app JVM `785/0/0/0`, `mosh-api`
 `11/0/0/0`, and extension `8/0/0/0`. Debug and release lint/build gates, release APK/AAB packaging
 verification, both Android-test APKs, the `arm64-v8a` and `x86_64` native extension outputs, and
@@ -130,16 +227,19 @@ Those exact-device/manual observations remain open.
 
 ## Manual/device matrix still requiring explicit evidence
 
-- Retry the full Wi-Fi app UI suite with the phone securely unlocked and awake, and obtain
-  unobscured `MainActivity` foreground proof; the keyguard/doze-blocked attempt is not a pass.
-- Password/private-key SSH, first trust, matching reconnect, and changed-key block against the local
-  disposable OpenSSH server.
-- Notification denied, Optimised/Restricted battery modes, process-death limitations, IME/hardware
-  keyboard behavior, accessibility text/TalkBack, orientation, split screen, and available Android
-  13–16 targets.
-- The user's own saved Mosh server while unlocked, followed by private-key bootstrap, resize,
-  simultaneous sessions, extension death/cleanup, and available Wi-Fi/cellular/VPN transition paths.
-  The disposable local server is green; link-local IPv6 zone identifiers remain unsupported.
+- Pre-existing tmux copy mode and Auto-mode vertical-gesture ownership are automated and green:
+  Auto leaves copy mode active while scrolling locally with zero wheels, and explicit Remote drives
+  it. New-output reader anchoring and the transition back to live bottom are also automated. Keep
+  manual exploratory coverage for taps, selection, links, and unusual inner mouse applications;
+  explicit Remote input to real GNU less, Vim, and htop is already automated and green.
+- Physical old-phone checks now prove Samsung IME text entry, landscape, maximum system text at
+  `font_scale=2.0`, and real Samsung split screen with Terminal Spike in a bounded top pane.
+  Automated compact/large-text, navigation-mode, semantics, touch-target, and notification-denied
+  contracts are also green. Physical TalkBack focus-order traversal, hardware-keyboard behavior,
+  OEM Optimised/Restricted battery modes, and extended session soak remain.
+- Exercise the user's own saved Mosh server and available Wi-Fi/cellular/VPN transition paths. The
+  disposable server's password/private-key bootstrap, concurrent resize isolation, worker death,
+  broker death/rebind, and cleanup are green; link-local IPv6 zone identifiers remain unsupported.
 - Backup round trip between two clean app installations and a cloud document provider when one is
   installed.
 
@@ -154,6 +254,9 @@ the independently useful main SSH APK from building or operating without the ext
 
 ## Immediate next action
 
-Retry the environment-blocked Wi-Fi app UI/foreground checks with the device unlocked and awake,
-then complete the user's unlocked saved-server Mosh retest and the open manual/performance
-observations. Continue to use exact serials and update only evidence that was actually observed.
+Freeze the reconciled source, run the complete local and exact-old-phone gates once, generate the
+sanitized candidate manifest, and install/foreground the resulting main debug APK on the fold when
+that device is available. After explicit commit/push authorization, hosted API/runtime/SSH jobs can
+produce their first authoritative run. Physical TalkBack focus order, OEM battery modes, roaming,
+the user's external server, production signing/Play, and public-Mosh review remain separate observed
+or operator-controlled gates; update them only from actual evidence.

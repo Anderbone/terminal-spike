@@ -139,6 +139,7 @@ abstract class VerifyReleasePackaging : DefaultTask() {
             relative.startsWith("jce/") -> true
             relative.startsWith("jbcrypt/") -> true
             relative.startsWith("jzlib/") -> true
+            relative in REFLECTED_BOUNCY_CASTLE_CLASSES -> true
             '/' in relative -> false
             relative.startsWith("DH") -> true
             relative in REFLECTED_ROOT_CLASSES -> true
@@ -240,6 +241,11 @@ abstract class VerifyReleasePackaging : DefaultTask() {
             "UserAuthPassword.class",
             "UserAuthKeyboardInteractive.class",
             "UserAuthPublicKey.class",
+        )
+        private val REFLECTED_BOUNCY_CASTLE_CLASSES = setOf(
+            "bc/KeyPairGenEdDSA.class",
+            "bc/SignatureEdDSA.class",
+            "bc/SignatureEd25519.class",
         )
 
         fun verifyRuntimeComponents(components: Iterable<String>) {
@@ -543,6 +549,7 @@ abstract class VerifyReleaseBundlePackaging : DefaultTask() {
             relative.startsWith("jce/") -> true
             relative.startsWith("jbcrypt/") -> true
             relative.startsWith("jzlib/") -> true
+            relative in REFLECTED_BOUNCY_CASTLE_CLASSES -> true
             '/' in relative -> false
             relative.startsWith("DH") -> true
             relative in REFLECTED_ROOT_CLASSES -> true
@@ -557,6 +564,11 @@ abstract class VerifyReleaseBundlePackaging : DefaultTask() {
             "UserAuthPassword.class",
             "UserAuthKeyboardInteractive.class",
             "UserAuthPublicKey.class",
+        )
+        private val REFLECTED_BOUNCY_CASTLE_CLASSES = setOf(
+            "bc/KeyPairGenEdDSA.class",
+            "bc/SignatureEdDSA.class",
+            "bc/SignatureEd25519.class",
         )
     }
 }
@@ -610,10 +622,11 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "com.yanjiyu.terminalspike"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.0.2"
+        versionCode = 6
+        versionName = "0.0.3"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
     }
 
     val configuredReleaseSigning = releaseSigningValues?.let { values ->
@@ -649,6 +662,7 @@ extensions.configure<ApplicationExtension>("android") {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        execution = "ANDROIDX_TEST_ORCHESTRATOR"
     }
 
     sourceSets {
@@ -710,6 +724,9 @@ dependencies {
     // serializers require the 1.8.1 core ABI in the migration-test APK.
     implementation(platform(libs.kotlinx.serialization.bom))
     implementation(libs.jsch)
+    // Android does not load JSch's Java-15 multi-release Ed25519 signer. JSch's supported
+    // provider path keeps generated and imported Ed25519 identities usable on Android.
+    implementation(libs.bouncycastle.provider)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.kotlin.lite)
@@ -729,6 +746,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestUtil(libs.androidx.test.orchestrator)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
 
@@ -736,9 +755,24 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
+val stageRuntimeTestUtilities by tasks.registering(Copy::class) {
+    group = "verification"
+    description = "Stages Android Test Orchestrator APKs for the hermetic emulator runner."
+    from(configurations.named("androidTestUtil"))
+    into(layout.buildDirectory.dir("outputs/runtime-test-utils"))
+}
+
 baselineProfile {
     automaticGenerationDuringBuild = false
     saveInSrc = true
+}
+
+val verifyBundledFonts by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verifies the exact inventory and SHA-256 of bundled terminal fonts."
+    workingDir(rootProject.projectDir)
+    commandLine(rootProject.file("scripts/verify-bundled-fonts.sh").absolutePath)
+    inputs.dir(layout.projectDirectory.dir("src/main/res/font"))
 }
 
 androidComponents {
@@ -785,6 +819,7 @@ androidComponents {
         val verifyPackaging = tasks.register<VerifyReleasePackaging>(
             "verify${capitalizedVariant}Packaging",
         ) {
+            dependsOn(verifyBundledFonts)
             group = "verification"
             description =
                 "Verifies release isolation, credentials, runtime dependencies, JSch, and notices."
@@ -799,6 +834,7 @@ androidComponents {
         val verifyBundlePackaging = tasks.register<VerifyReleaseBundlePackaging>(
             "verify${capitalizedVariant}BundlePackaging",
         ) {
+            dependsOn(verifyBundledFonts)
             group = "verification"
             description =
                 "Verifies release bundle isolation, credentials, dependencies, JSch, and notices."

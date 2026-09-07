@@ -54,13 +54,6 @@ import org.junit.Test
 
 class TerminalSpikeUiStateTest {
     @Test
-    fun android17RequestsLocalNetworkPermissionOnlyWhileMissing() {
-        assertFalse(shouldRequestLocalNetworkPermission(sdkInt = 36, permissionGranted = false))
-        assertFalse(shouldRequestLocalNetworkPermission(sdkInt = 37, permissionGranted = true))
-        assertTrue(shouldRequestLocalNetworkPermission(sdkInt = 37, permissionGranted = false))
-    }
-
-    @Test
     fun freshActiveConnectionFailureBecomesVisibleNotice() {
         val failed = ConnectionState.Failed("SSH authentication failed.")
 

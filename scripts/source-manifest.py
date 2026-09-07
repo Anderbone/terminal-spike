@@ -1,24 +1,26 @@
-from hashlib import sha256
+#!/usr/bin/env python3
+"""Print the content-sensitive manifest identity for release-relevant source."""
+
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
-from subprocess import check_output
+import sys
 
-def listed(*args: str) -> set[str]:
-    raw = check_output(["git", "ls-files", "-z", *args])
-    return {p.decode() for p in raw.split(b"\0") if p}
+from release_evidence import EvidenceError, calculate_source_manifest
 
-files = listed() | listed("--others", "--exclude-standard")
-excluded_parts = {"build", ".gradle", ".idea", ".kotlin"}
-files = {
-    p for p in files
-    if not p.startswith("plans/")
-    and not (set(Path(p).parts) & excluded_parts)
-}
-manifest = sha256()
-for name in sorted(files):
-    path = Path(name)
-    if not path.is_file():
-        continue
-    manifest.update(name.encode("utf-8"))
-    manifest.update(b"\0")
-    manifest.update(sha256(path.read_bytes()).digest())
-print(manifest.hexdigest())
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    arguments = parser.parse_args(argv)
+    try:
+        print(calculate_source_manifest(arguments.repo_root.resolve()))
+    except EvidenceError as error:
+        print(f"ERROR {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

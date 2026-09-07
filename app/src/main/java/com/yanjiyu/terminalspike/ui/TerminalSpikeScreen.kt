@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.window.BackEvent
 import android.window.OnBackAnimationCallback
@@ -621,6 +622,8 @@ fun TerminalSpikeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val connectionsState by viewModel.connectionsUiState.collectAsStateWithLifecycle()
     val sftpState by viewModel.sftp.state.collectAsStateWithLifecycle()
+    val localNetworkActionDispatch by
+        viewModel.localNetworkActionDispatch.collectAsStateWithLifecycle()
     val activeController = viewModel.controllerFor(state.activeSessionId)
     val performance by activeController.performance.collectAsStateWithLifecycle()
     val terminalBuildKeepsScreenOn by viewModel.terminalBuildFeature.keepScreenOn.collectAsStateWithLifecycle()
@@ -709,23 +712,6 @@ fun TerminalSpikeScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         viewModel.onNotificationPermissionResult(granted)
-    }
-    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (!granted) {
-            screenScope.launch {
-                snackbarHostState.showSnackbar(localNetworkPermissionDeniedMessage)
-            }
-        }
-    }
-    LaunchedEffect(Unit) {
-        val permissionGranted = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL ||
-            rootView.context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (shouldRequestLocalNetworkPermission(Build.VERSION.SDK_INT, permissionGranted)) {
-            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-        }
     }
     val transcriptExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(TERMINAL_TRANSCRIPT_MIME_TYPE),
@@ -943,10 +929,87 @@ fun TerminalSpikeScreen(
         source: AppRoute = destination,
         rendererLab: Boolean = false,
     ) {
-        if (!rendererLab) viewModel.selectLastActiveRemoteSessionForTerminalEntry()
+        if (rendererLab) {
+            state.sessions.firstOrNull(SessionTabUi::isLocalTerminal)?.let { localSession ->
+                viewModel.selectSession(localSession.id)
+            }
+        } else {
+            viewModel.selectLastActiveRemoteSessionForTerminalEntry()
+        }
         rendererLabVisible = rendererLab
         terminalOwner = terminalOwnerForEntry(source, terminalOwner)
         destination = AppRoute.TERMINAL_DETAIL
+    }
+
+    fun applyLocalNetworkActionEffect(effect: LocalNetworkActionEffect?) {
+        effect ?: return
+        if (effect.clearConnectDialog) connectDialogRequest = null
+        if (effect.clearTerminalAuthentication) pendingTerminalAuthenticationHostId = null
+        if (effect.clearWorkspaceAuthentication) pendingWorkspaceAuthenticationHostId = null
+        effect.workspaceAuthenticationHostId?.let {
+            pendingWorkspaceAuthenticationHostId = it
+        }
+        effect.newConnectionProfileId?.let(::showNewConnection)
+        effect.sessionConnection?.let { (sessionId, purpose) ->
+            showSessionConnection(sessionId, purpose)
+        }
+        effect.terminalSource?.let(::showTerminal)
+    }
+
+    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        applyLocalNetworkActionEffect(viewModel.resolveLocalNetworkAction(granted))
+        if (!granted) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(localNetworkPermissionDeniedMessage)
+            }
+        }
+    }
+
+    fun requestLocalNetworkPermission() {
+        runCatching {
+            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        }.onFailure {
+            viewModel.cancelLocalNetworkAction()
+            screenScope.launch {
+                snackbarHostState.showSnackbar(localNetworkPermissionDeniedMessage)
+            }
+        }
+    }
+
+    fun runWithLocalNetworkAccess(
+        host: String,
+        cancel: () -> Unit = {},
+        proceed: () -> LocalNetworkActionEffect,
+    ) {
+        val permissionGranted = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL ||
+            rootView.context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL || permissionGranted) {
+            applyLocalNetworkActionEffect(proceed())
+            return
+        }
+        if (isClearlyLocalNetworkEndpoint(host)) {
+            if (viewModel.stageLocalNetworkAction(cancel = cancel, proceed = proceed)) {
+                requestLocalNetworkPermission()
+            }
+        } else {
+            viewModel.stageLocalNetworkHostnameAction(
+                host = host,
+                cancel = cancel,
+                proceed = proceed,
+            )
+        }
+    }
+
+    LaunchedEffect(localNetworkActionDispatch) {
+        val pending = localNetworkActionDispatch ?: return@LaunchedEffect
+        when (val dispatch = viewModel.consumeLocalNetworkActionDispatch(pending.id)) {
+            is LocalNetworkActionDispatch.RequestPermission -> requestLocalNetworkPermission()
+            is LocalNetworkActionDispatch.Apply -> applyLocalNetworkActionEffect(dispatch.effect)
+            null -> Unit
+        }
     }
 
     LaunchedEffect(openTerminalSessionId, state.sessions) {
@@ -962,25 +1025,34 @@ fun TerminalSpikeScreen(
     }
 
     fun launchWorkspaceProfile(profileId: Long) {
-        when (val launch = viewModel.launchWorkspaceProfile(profileId)) {
-            WorkspaceProfileLaunchResult.Started -> showTerminal(AppRoute.WORKSPACE)
-            is WorkspaceProfileLaunchResult.AuthenticationRequired -> {
-                if (launch.persistentHostId != null) {
-                    pendingWorkspaceAuthenticationHostId = launch.persistentHostId
-                } else {
-                    showNewConnection(launch.profileId)
-                }
+        val host = viewModel.profileById(profileId)?.host ?: return
+        runWithLocalNetworkAccess(host) {
+            when (val launch = viewModel.launchWorkspaceProfile(profileId)) {
+                WorkspaceProfileLaunchResult.Started -> LocalNetworkActionEffect(
+                    terminalSource = AppRoute.WORKSPACE,
+                )
+                is WorkspaceProfileLaunchResult.AuthenticationRequired ->
+                    launch.persistentHostId?.let {
+                        LocalNetworkActionEffect(workspaceAuthenticationHostId = it)
+                    } ?: LocalNetworkActionEffect(newConnectionProfileId = launch.profileId)
+                WorkspaceProfileLaunchResult.Rejected -> LocalNetworkActionEffect()
             }
-            WorkspaceProfileLaunchResult.Rejected -> Unit
         }
     }
 
     fun duplicateTerminalSession(sessionId: Long) {
-        when (viewModel.duplicateSession(sessionId)) {
-            SessionDuplicateResult.Started -> showTerminal()
-            SessionDuplicateResult.AuthenticationRequired ->
-                showSessionConnection(sessionId, SshConnectPurpose.DUPLICATE)
-            SessionDuplicateResult.Rejected -> Unit
+        val host = viewModel.connectionSeedForSession(sessionId)?.host ?: return
+        val terminalSource = destination
+        runWithLocalNetworkAccess(host) {
+            when (viewModel.duplicateSession(sessionId)) {
+                SessionDuplicateResult.Started -> LocalNetworkActionEffect(
+                    terminalSource = terminalSource,
+                )
+                SessionDuplicateResult.AuthenticationRequired -> LocalNetworkActionEffect(
+                    sessionConnection = sessionId to SshConnectPurpose.DUPLICATE,
+                )
+                SessionDuplicateResult.Rejected -> LocalNetworkActionEffect()
+            }
         }
     }
 
@@ -993,17 +1065,34 @@ fun TerminalSpikeScreen(
         )?.let { destination = it }
     }
 
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, viewModel, terminalClipboardWriter) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.onAppVisible(true)
+                Lifecycle.Event.ON_RESUME -> terminalClipboardWriter.retryExpiredClear()
                 Lifecycle.Event.ON_STOP -> viewModel.onAppVisible(false)
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         viewModel.onAppVisible(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            terminalClipboardWriter.retryExpiredClear()
+        }
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(rootView, terminalClipboardWriter) {
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) terminalClipboardWriter.retryExpiredClear()
+        }
+        rootView.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+        if (rootView.hasWindowFocus()) terminalClipboardWriter.retryExpiredClear()
+        onDispose {
+            rootView.viewTreeObserver
+                .takeIf(ViewTreeObserver::isAlive)
+                ?.removeOnWindowFocusChangeListener(focusListener)
+        }
     }
 
     val terminalSurfaceVisible = !state.activeSession.isLocalTerminal ||
@@ -1142,7 +1231,14 @@ fun TerminalSpikeScreen(
                             )
                         },
                         onDeleteHost = viewModel::deleteConnectionsHost,
-                        onOpenSftp = viewModel::openSftp,
+                        onOpenSftp = { hostId ->
+                            viewModel.connectionsHostName(hostId)?.let { host ->
+                                runWithLocalNetworkAccess(host) {
+                                    viewModel.openSftp(hostId)
+                                    LocalNetworkActionEffect()
+                                }
+                            }
+                        },
                         onDeleteKey = viewModel::deleteConnectionsKey,
                         onInsertSnippet = catalogTargetSessionId?.let { targetId ->
                             { id ->
@@ -1177,8 +1273,17 @@ fun TerminalSpikeScreen(
                             viewModel::cancelConnectionsKeyboardInteractive,
                         onCancelHostTest = viewModel::cancelConnectionsHostTest,
                         onConnectCatalogHost = { request ->
-                            if (viewModel.connectConnectionsHost(request)) {
-                                showTerminal(target)
+                            val host = viewModel.connectionsHostName(request.persistentHostId)
+                            if (host == null) {
+                                request.wipe()
+                            } else {
+                                runWithLocalNetworkAccess(host, cancel = request::wipe) {
+                                    LocalNetworkActionEffect(
+                                        terminalSource = target.takeIf {
+                                            viewModel.connectConnectionsHost(request)
+                                        },
+                                    )
+                                }
                             }
                         },
                         onSaveSnippetModel = viewModel::saveConnectionsSnippet,
@@ -1675,7 +1780,11 @@ fun TerminalSpikeScreen(
                 ) {
                     pendingTerminalAuthenticationHostId = hostId
                 } else {
-                    viewModel.connectConnectionsHost(HostConnectRequest(hostId))
+                    val request = HostConnectRequest(hostId)
+                    runWithLocalNetworkAccess(host.draft.hostname, cancel = request::wipe) {
+                        viewModel.connectConnectionsHost(request)
+                        LocalNetworkActionEffect()
+                    }
                 }
             },
         )
@@ -1701,8 +1810,13 @@ fun TerminalSpikeScreen(
                 terminalConnectionCatalog?.keys?.firstOrNull { it.persistentId == keyId }
             }
         val connectTerminalHost: (HostConnectRequest) -> Unit = { request ->
-            viewModel.connectConnectionsHost(request)
-            pendingTerminalAuthenticationHostId = null
+            runWithLocalNetworkAccess(
+                host = terminalAuthenticationHost.draft.hostname,
+                cancel = request::wipe,
+            ) {
+                viewModel.connectConnectionsHost(request)
+                LocalNetworkActionEffect(clearTerminalAuthentication = true)
+            }
         }
         HostAuthenticationPromptDialog(
             host = terminalAuthenticationHost,
@@ -1734,9 +1848,15 @@ fun TerminalSpikeScreen(
                 workspaceEditorCatalog?.keys?.firstOrNull { it.persistentId == keyId }
             }
         val connectWorkspaceHost: (HostConnectRequest) -> Unit = { request ->
-            if (viewModel.connectConnectionsHost(request)) {
-                pendingWorkspaceAuthenticationHostId = null
-                showTerminal(AppRoute.WORKSPACE)
+            runWithLocalNetworkAccess(
+                host = workspaceAuthenticationHost.draft.hostname,
+                cancel = request::wipe,
+            ) {
+                val connected = viewModel.connectConnectionsHost(request)
+                LocalNetworkActionEffect(
+                    terminalSource = AppRoute.WORKSPACE.takeIf { connected },
+                    clearWorkspaceAuthentication = connected,
+                )
             }
         }
         HostAuthenticationPromptDialog(
@@ -1768,22 +1888,33 @@ fun TerminalSpikeScreen(
                     selectedProfileId, savePassword, connectionOptions, sessionName,
                 ->
                 val replacementSessionId = activeConnectDialogRequest.replacementSessionId
-                connectDialogRequest = null
-                showTerminal()
-                viewModel.connectSsh(
-                    host,
-                    port,
-                    username,
-                    password,
-                    identityId,
-                    passphrase,
-                    saveProfile,
-                    selectedProfileId,
-                    savePassword,
-                    replacementSessionId,
-                    connectionOptions,
-                    sessionName,
-                )
+                val terminalSource = destination
+                runWithLocalNetworkAccess(
+                    host = host,
+                    cancel = {
+                        password.fill('\u0000')
+                        passphrase.fill('\u0000')
+                    },
+                ) {
+                    viewModel.connectSsh(
+                        host,
+                        port,
+                        username,
+                        password,
+                        identityId,
+                        passphrase,
+                        saveProfile,
+                        selectedProfileId,
+                        savePassword,
+                        replacementSessionId,
+                        connectionOptions,
+                        sessionName,
+                    )
+                    LocalNetworkActionEffect(
+                        terminalSource = terminalSource,
+                        clearConnectDialog = true,
+                    )
+                }
             },
             onForgetSavedPassword = viewModel::forgetSavedPassword,
             keyboardRuntimeCompatible = state.keyboardRuntimeCompatible,
@@ -1897,11 +2028,6 @@ fun TerminalSpikeScreen(
         )
     }
 }
-
-internal fun shouldRequestLocalNetworkPermission(
-    sdkInt: Int,
-    permissionGranted: Boolean,
-): Boolean = sdkInt >= ANDROID_17_API_LEVEL && !permissionGranted
 
 private const val ANDROID_17_API_LEVEL = 37
 

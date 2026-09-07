@@ -153,4 +153,51 @@ class TerminalScrollGestureRouterTest {
             router.destination(true, confirmedTmuxSession = true, tmuxLocalScrollAvailable = true),
         )
     }
+
+    @Test
+    fun autoKeepsPreExistingTmuxCopyModeLocalWithoutMutatingTheRemoteMode() {
+        val router = TerminalScrollGestureRouter()
+        router.onGestureStart()
+
+        assertEquals(
+            TerminalScrollDecision(
+                TerminalScrollDestination.LOCAL_SCROLLBACK,
+                TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_READY,
+            ),
+            router.decision(
+                remoteMouseTrackingEnabled = true,
+                confirmedTmuxSession = true,
+                tmuxLocalScrollAvailable = true,
+                tmuxPaneInMode = true,
+            ),
+        )
+    }
+
+    @Test
+    fun autoBuffersPreExistingTmuxCopyModeGestureUntilLocalHistoryIsReady() {
+        val router = TerminalScrollGestureRouter()
+        router.onGestureStart()
+
+        assertEquals(
+            TerminalScrollDecision(
+                TerminalScrollDestination.NONE,
+                TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_PENDING,
+            ),
+            router.decision(
+                remoteMouseTrackingEnabled = true,
+                confirmedTmuxSession = true,
+                tmuxLocalScrollAvailable = false,
+                tmuxPaneInMode = true,
+            ),
+        )
+        assertEquals(
+            TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_READY,
+            router.decision(
+                remoteMouseTrackingEnabled = true,
+                confirmedTmuxSession = true,
+                tmuxLocalScrollAvailable = true,
+                tmuxPaneInMode = true,
+            ).reason,
+        )
+    }
 }

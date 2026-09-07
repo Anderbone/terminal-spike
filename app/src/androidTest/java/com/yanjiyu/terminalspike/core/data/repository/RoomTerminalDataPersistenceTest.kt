@@ -136,6 +136,35 @@ class RoomTerminalDataPersistenceTest {
     }
 
     @Test
+    fun terminalAndKeyboardSettingsSurviveDatabaseReopen() = runBlocking {
+        val terminal = requireNotNull(TerminalProfileRepository(database.terminalProfileDao()).get(TERMINAL_PROFILE_ID))
+        val keyboard = requireNotNull(KeyboardProfileRepository(database.keyboardProfileDao()).get(KEYBOARD_PROFILE_ID))
+        assertTrue(
+            TerminalProfileRepository(database.terminalProfileDao()).update(
+                terminal.copy(fontSizeSp = 19f),
+            ),
+        )
+        assertTrue(
+            KeyboardProfileRepository(database.keyboardProfileDao()).update(
+                keyboard.copy(modifierBehavior = ModifierBehavior.ONE_SHOT_WITH_DOUBLE_TAP_LOCK),
+            ),
+        )
+
+        database.close()
+        database = openDatabase()
+
+        assertEquals(
+            19f,
+            TerminalProfileRepository(database.terminalProfileDao()).get(TERMINAL_PROFILE_ID)?.fontSizeSp,
+        )
+        assertEquals(
+            ModifierBehavior.ONE_SHOT_WITH_DOUBLE_TAP_LOCK,
+            KeyboardProfileRepository(database.keyboardProfileDao()).get(KEYBOARD_PROFILE_ID)
+                ?.modifierBehavior,
+        )
+    }
+
+    @Test
     fun unavailableLegacyPasswordRemainsReferencedButIsProjectedAsUnavailable() = runBlocking {
         database.credentialRecordDao().insertSecret(
             EncryptedSecretEntity(

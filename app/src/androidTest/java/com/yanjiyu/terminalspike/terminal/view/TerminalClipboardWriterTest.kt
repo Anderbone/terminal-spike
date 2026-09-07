@@ -23,6 +23,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 @RunWith(AndroidJUnit4::class)
 class TerminalClipboardWriterTest {
@@ -121,6 +125,62 @@ class TerminalClipboardWriterTest {
                 )
                 assertTrue(writer.clearIfCurrent(token))
             }
+        }
+    }
+
+    @Test
+    fun expiredClearRetriesThroughARecreatedResumedActivity() {
+        val schedulerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val scheduler = TerminalClipboardClearScheduler(schedulerScope)
+        scheduler.updateDelaySeconds(1)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                dismissPendingAutofillSavePrompts()
+                val token = scenario.writeAndAwaitClipboardChange(
+                    writerFactory = { activity -> TerminalClipboardWriter(activity, scheduler) },
+                ) { writer ->
+                    writer.write(
+                        TerminalClipboardRequest(
+                            label = "Terminal recreation test",
+                            text = "clear after recreation",
+                            kind = TerminalClipboardContentKind.SELECTION,
+                        ),
+                    )
+                }
+                assertNotNull(token)
+
+                scenario.moveToState(Lifecycle.State.CREATED)
+                Thread.sleep(1_250L)
+                scenario.recreate()
+                scenario.moveToState(Lifecycle.State.RESUMED)
+
+                val cleared = CountDownLatch(1)
+                val clipboard = AtomicReference<ClipboardManager?>(null)
+                val listener = ClipboardManager.OnPrimaryClipChangedListener { cleared.countDown() }
+                scenario.withResumedFocusedActivity { activity ->
+                    val manager = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
+                    clipboard.set(manager)
+                    manager.addPrimaryClipChangedListener(listener)
+                    TerminalClipboardWriter(activity, scheduler).retryExpiredClear()
+                }
+                try {
+                    assertTrue(
+                        "The expired app-owned clip was not cleared after recreation.",
+                        cleared.await(CLIPBOARD_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                    )
+                } finally {
+                    scenario.withResumedFocusedActivity {
+                        clipboard.get()?.removePrimaryClipChangedListener(listener)
+                    }
+                }
+                scenario.withResumedFocusedActivity { activity ->
+                    val manager = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
+                    assertTrue(manager.primaryClip == null || manager.primaryClip!!.itemCount == 0)
+                }
+            }
+        } finally {
+            scheduler.close()
+            schedulerScope.cancel()
         }
     }
 
@@ -243,6 +303,9 @@ class TerminalClipboardWriterTest {
     }
 
     private fun ActivityScenario<MainActivity>.writeAndAwaitClipboardChange(
+        writerFactory: (MainActivity) -> TerminalClipboardWriter = { activity ->
+            TerminalClipboardWriter(activity)
+        },
         write: (TerminalClipboardWriter) -> TerminalClipboardToken?,
     ): TerminalClipboardToken? {
         val changed = CountDownLatch(1)
@@ -252,7 +315,7 @@ class TerminalClipboardWriterTest {
             val manager = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
             clipboard.set(manager)
             manager.addPrimaryClipChangedListener(listener)
-            write(TerminalClipboardWriter(activity))
+            write(writerFactory(activity))
         }
         try {
             assertTrue(

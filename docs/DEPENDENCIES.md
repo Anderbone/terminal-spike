@@ -4,7 +4,7 @@ All selected versions are stable. No GPL or AGPL dependency is included in the m
 shared `mosh-api` AAR. The separately installed GPL Mosh extension has its own complete inventory
 in `mosh-extension/DEPENDENCIES.md` and is never linked into either artifact.
 
-The resolved `releaseRuntimeClasspath` was reviewed on 2026-08-08. In addition to the direct dependencies below, it contains AndroidX support modules, the Kotlin standard library, kotlinx-coroutines core, kotlinx-serialization core, JetBrains annotations, JSpecify annotations, and Guava's standalone `listenablefuture` compatibility artefact. Those transitive families are Apache License 2.0 and are covered by the Apache licence reproduced in the packaged notices. JSch adds no mandatory transitive runtime dependency; its optional Bouncy Castle, JNA, junixsocket, GSSAPI, and logging integrations are not resolved into the release APK. Repeat this review whenever the version catalog or resolved graph changes.
+The resolved `releaseRuntimeClasspath` was reviewed on 2026-09-02. In addition to the direct dependencies below, it contains AndroidX support modules, the Kotlin standard library, kotlinx-coroutines core, kotlinx-serialization core, JetBrains annotations, JSpecify annotations, and Guava's standalone `listenablefuture` compatibility artefact. Those transitive families are Apache License 2.0 and are covered by the Apache licence reproduced in the packaged notices. Bouncy Castle is a deliberate direct runtime dependency for JSch's Android Ed25519 implementation; JSch's optional JNA, junixsocket, GSSAPI, and logging integrations are not resolved into the release APK. Repeat this review whenever the version catalog or resolved graph changes.
 
 | Dependency | Version | Purpose | Licence | Source / obligations |
 |---|---:|---|---|---|
@@ -32,15 +32,43 @@ The resolved `releaseRuntimeClasspath` was reviewed on 2026-08-08. In addition t
 | Protocol Buffer Compiler (`protoc`) | 4.32.1 | Build-time generation of lite application-settings sources | Revised BSD | Protocol Buffers; downloaded for builds, not packaged in the APK; preserve the upstream notice if redistributed |
 | kotlinx-coroutines-android | 1.10.2 | structured workload execution | Apache License 2.0 | [Kotlin coroutines](https://github.com/Kotlin/kotlinx.coroutines); retain licence/notice |
 | kotlinx-coroutines-test | 1.10.2 | deterministic coroutine unit tests | Apache License 2.0 | Kotlin coroutines; test-only |
-| mwiede JSch (`com.github.mwiede:jsch`) | 2.28.3 | Pure-Java SSH2 transport, password/private-key authentication and validation, PTY and SFTP channels, remote file transfer/management, keepalives, and host-key negotiation | Revised BSD (JSch/JZlib portions) and ISC (jBCrypt portion) | [Upstream source and pinned tag](https://github.com/mwiede/jsch/tree/jsch-2.28.3); reproduce the bundled copyright notices, licence conditions, and disclaimers in binary distribution materials. The resolved Android runtime graph adds no mandatory transitive dependency. Optional Bouncy Castle, JNA, junixsocket, and logging integrations are not included. |
+| mwiede JSch (`com.github.mwiede:jsch`) | 2.28.3 | Pure-Java SSH2 transport, password/private-key authentication and validation, PTY and SFTP channels, remote file transfer/management, keepalives, and host-key negotiation | Revised BSD (JSch/JZlib portions) and ISC (jBCrypt portion) | [Upstream source and pinned tag](https://github.com/mwiede/jsch/tree/jsch-2.28.3); reproduce the bundled copyright notices, licence conditions, and disclaimers in binary distribution materials. Optional JNA, junixsocket, GSSAPI, and logging integrations are not included. |
+| Bouncy Castle Provider (`org.bouncycastle:bcprov-jdk18on`) | 1.85 | JSch's supported Ed25519 key-generation and signing implementation on Android, where multi-release Java 15 classes are unavailable | Bouncy Castle Licence (MIT-style) | [Official Java release](https://www.bouncycastle.org/download/bouncy-castle-java/) and [licence](https://www.bouncycastle.org/licence.html); include the copyright and permission notice in distributed binary materials. The complete licence is reproduced in `THIRD_PARTY_NOTICES.md`. |
 | JUnit 4 | 4.13.2 | JVM unit tests | Eclipse Public License 1.0 | [JUnit 4](https://github.com/junit-team/junit4); test-only, preserve licence if redistributed |
 | AndroidX Test Ext JUnit | 1.3.0 | Android JUnit integration | Apache License 2.0 | [AndroidX Test](https://android.googlesource.com/platform/frameworks/testing/); test-only |
 | AndroidX Test Runner | 1.7.0 | Instrumentation test runner | Apache License 2.0 | AndroidX Test; test-only |
+| AndroidX Test Orchestrator | 1.6.1 (with Test Services 1.6.0) | Runs each instrumentation test in an isolated instrumentation process and clears app data between tests | Apache License 2.0 | [AndroidX Test](https://developer.android.com/jetpack/androidx/releases/test); test-only APK tooling, never packaged in the application |
 | Espresso Core | 3.7.0 | Instrumentation synchronization/assertions | Apache License 2.0 | AndroidX Test; test-only |
 | AndroidX Macrobenchmark JUnit4 | 1.4.1 | Cold-start, Baseline Profile, primary-navigation, and test-only terminal-fixture frame measurements | Apache License 2.0 | [AndroidX Benchmark](https://developer.android.com/jetpack/androidx/releases/benchmark); benchmark APK only; not packaged in the main application |
-| AndroidX UI Automator | 2.3.0 | Stable black-box interaction and completion synchronization for Macrobenchmark journeys | Apache License 2.0 | [AndroidX Test](https://android.googlesource.com/platform/frameworks/testing/); benchmark APK only; not packaged in the main application |
+| AndroidX UI Automator | 2.3.0 | Stable black-box interaction and completion synchronization for Macrobenchmark journeys and app instrumentation that crosses into system-owned permission UI | Apache License 2.0 | [AndroidX Test](https://android.googlesource.com/platform/frameworks/testing/); benchmark and test APKs only; not packaged in the main application |
 | Alpine container / OpenSSH server | Alpine 3.24.1 (digest `28bd5fe8…943f8b`) / OpenSSH 10.3p1-r0 | Disposable local password, key-authentication, first-trust, and changed-host-key integration server | Alpine package-specific licences; OpenSSH BSD/ISC | Development-only Docker image defined under `integration-tests/openssh`; downloaded locally and never packaged or redistributed in an APK. Preserve image/package notices if the built image itself is redistributed. |
-| Gradle Wrapper | 9.5.0 | reproducible build bootstrap | Apache License 2.0 | [Gradle](https://github.com/gradle/gradle); wrapper JAR is committed, distribution downloads on demand |
+| Gradle Wrapper | 9.5.0 | reproducible build bootstrap | Apache License 2.0 | [Gradle](https://github.com/gradle/gradle); wrapper JAR is committed, distribution downloads on demand, and `gradle-wrapper.properties` pins the official distribution SHA-256 |
+
+## Build-input provenance and update procedure
+
+The Gradle 9.5.0 binary distribution is pinned to SHA-256
+`553c78f50dafcd54d65b9a444649057857469edf836431389695608536d6b746`. The value was
+retrieved from Gradle's official `gradle-9.5.0-bin.zip.sha256` endpoint and independently
+matched against a complete download from the official distribution URL. A wrapper update must
+repeat both checks and must not change the URL and checksum independently.
+
+`gradle/verification-metadata.xml` contains artifact-level SHA-256 values for every configuration
+used by the app, Mosh API, Mosh extension, lint, tests, release packaging, and benchmark assembly.
+When a dependency or build plugin changes, regenerate the metadata only for the full affected gate,
+review every added component and checksum against the version catalog and resolved graph, then run
+the same gate with `--dependency-verification=strict` from an empty `GRADLE_USER_HOME`. Do not add
+group-wide trusted-artifact rules, ignored artifacts, or private repository details.
+
+Every external GitHub Action in `.github/workflows/android-ci.yml` is pinned to a full commit from
+its official upstream repository, with the reviewed release tag retained in a comment. Action
+updates must resolve and review the new official tag and then replace the commit and comment
+together. These CI-only tools are not distributed in the APK, so their licences do not belong in
+the app's third-party notices.
+
+Release packaging and `check` invoke `scripts/verify-bundled-fonts.sh`; CI also runs that validator,
+the Google Play listing validator, and the repository script tests. Together they guard shipped
+font bytes, store image/metadata constraints, instrumentation result parsing and redaction, device
+targeting, emulator isolation, and immutable workflow references.
 
 ## Bundled terminal palette data
 

@@ -882,7 +882,9 @@ internal fun SshConnectDialog(
             },
             text = {
                 Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                 if (purpose != SshConnectPurpose.NEW) {

@@ -12,6 +12,8 @@ internal enum class TerminalScrollDestination {
 /** Exact reason the first classified move chose its terminal scroll destination. */
 internal enum class TerminalScrollDecisionReason {
     TWO_FINGER_LOCAL_OVERRIDE,
+    AUTO_TMUX_COPY_MODE_LOCAL_READY,
+    AUTO_TMUX_COPY_MODE_LOCAL_PENDING,
     AUTO_TMUX_LOCAL_READY,
     AUTO_TMUX_LOCAL_PENDING,
     AUTO_REMOTE_MOUSE_TRACKING,
@@ -70,16 +72,19 @@ internal class TerminalScrollGestureRouter(
         remoteMouseTrackingEnabled: Boolean,
         confirmedTmuxSession: Boolean = false,
         tmuxLocalScrollAvailable: Boolean = false,
+        tmuxPaneInMode: Boolean = false,
     ): TerminalScrollDestination = decision(
         remoteMouseTrackingEnabled = remoteMouseTrackingEnabled,
         confirmedTmuxSession = confirmedTmuxSession,
         tmuxLocalScrollAvailable = tmuxLocalScrollAvailable,
+        tmuxPaneInMode = tmuxPaneInMode,
     ).destination
 
     fun decision(
         remoteMouseTrackingEnabled: Boolean,
         confirmedTmuxSession: Boolean = false,
         tmuxLocalScrollAvailable: Boolean = false,
+        tmuxPaneInMode: Boolean = false,
     ): TerminalScrollDecision {
         if (localOverrideLatched) {
             return TerminalScrollDecision(
@@ -92,6 +97,15 @@ internal class TerminalScrollGestureRouter(
         }
         val resolved = when (touchMode) {
             TouchScrollMode.AUTO -> when {
+                confirmedTmuxSession && tmuxPaneInMode && tmuxLocalScrollAvailable ->
+                    TerminalScrollDecision(
+                        destination = TerminalScrollDestination.LOCAL_SCROLLBACK,
+                        reason = TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_READY,
+                    )
+                confirmedTmuxSession && tmuxPaneInMode -> TerminalScrollDecision(
+                    destination = TerminalScrollDestination.NONE,
+                    reason = TerminalScrollDecisionReason.AUTO_TMUX_COPY_MODE_LOCAL_PENDING,
+                )
                 confirmedTmuxSession && tmuxLocalScrollAvailable ->
                     TerminalScrollDecision(
                         destination = TerminalScrollDestination.LOCAL_SCROLLBACK,

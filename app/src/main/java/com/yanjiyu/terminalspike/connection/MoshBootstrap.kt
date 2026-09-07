@@ -112,6 +112,22 @@ internal class MoshBootstrapResult(
         }
     }
 
+    fun captureTmuxHistoryPage(request: TmuxHistoryPageRequest): TmuxPaneCapture? {
+        val sideChannel = sshSideChannel ?: return null
+        val executable = synchronized(this) { tmuxExecutable } ?: return null
+        val sessionId = synchronized(this) { attachedTmuxSessionId } ?: return null
+        val capture = captureTmuxPane(
+            metadataRunner = sideChannel.tmuxCommandRunner(),
+            historyRunner = sideChannel.tmuxHistoryCommandRunner(),
+            executable = executable,
+            sessionId = sessionId,
+            pageRequest = request,
+        ) ?: return null
+        return synchronized(this) {
+            capture.takeIf { attachedTmuxSessionId == sessionId }
+        }
+    }
+
     init {
         try {
             require(

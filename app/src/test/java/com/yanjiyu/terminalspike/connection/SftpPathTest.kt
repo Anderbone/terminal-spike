@@ -20,8 +20,19 @@ class SftpPathTest {
     }
 
     @Test
+    fun preservesLiteralBackslashAsPartOfPosixFileName() {
+        assertEquals("/home/a\\b", normalizeAbsolutePath("/home/a\\b"))
+        assertEquals("/home/a\\b", childPath("/home", "a\\b"))
+        assertEquals("/home", parentPath("/home/a\\b"))
+        assertEquals("a\\b", fileName("/home/a\\b"))
+        assertEquals("/home/a\\b", childPath(parentPath("/home/a\\b"), "a\\b"))
+    }
+
+    @Test
     fun rejectsNamesThatCouldChangeDirectories() {
         assertThrows(IllegalArgumentException::class.java) { childPath("/home", "../tmp") }
         assertThrows(IllegalArgumentException::class.java) { childPath("/home", "") }
+        assertThrows(IllegalArgumentException::class.java) { childPath("/home", "a/b") }
+        assertThrows(IllegalArgumentException::class.java) { childPath("/home", "a\u0000b") }
     }
 }

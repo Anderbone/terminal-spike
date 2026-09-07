@@ -312,7 +312,7 @@ internal class SettingsBackupWorkflow(
         requestExportDocument(
             mode = BackupMode.FULL,
             includeCustomFonts = true,
-            passphrase = portableBackupKey(),
+            passphrase = newPortableBackupKey(),
         )
     }
 
@@ -423,7 +423,7 @@ internal class SettingsBackupWorkflow(
                         header = header,
                     )
                 }
-                unlockSelectedBackup(portableBackupKey())
+                unlockSelectedBackup(newPortableBackupKey())
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -640,7 +640,8 @@ internal class SettingsBackupWorkflow(
             BackupMode.FULL -> FULL_MIN_PASSPHRASE_CHARACTERS
         }
 
-        private fun portableBackupKey(): CharArray =
+        /** Returns new mutable ownership for one export/import operation. */
+        internal fun newPortableBackupKey(): CharArray =
             "terminal-spike-portable-backup-v1".toCharArray()
     }
 }

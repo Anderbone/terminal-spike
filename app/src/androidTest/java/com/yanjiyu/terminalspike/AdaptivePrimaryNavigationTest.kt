@@ -11,9 +11,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -57,8 +60,12 @@ class AdaptivePrimaryNavigationTest {
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertDoesNotExist()
         assertExactlyThreeDestinations(CompactPrimaryNavigationTestTag)
-        composeRule.onNodeWithContentDescription("Open connections").assertIsSelected()
-        composeRule.onNodeWithContentDescription("Open terminal").performClick()
+        composeRule.onNodeWithContentDescription("Open connections")
+            .assertIsSelected()
+            .assertHasClickAction()
+        composeRule.onNodeWithContentDescription("Open terminal")
+            .assertHasClickAction()
+            .performClick()
         composeRule.runOnIdle { assertTrue(openedTerminal) }
     }
 
@@ -84,9 +91,41 @@ class AdaptivePrimaryNavigationTest {
         composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertDoesNotExist()
         assertExactlyThreeDestinations(ExpandedPrimaryNavigationTestTag)
-        composeRule.onNodeWithContentDescription("Open settings").assertIsSelected()
-        composeRule.onNodeWithContentDescription("Open connections").performClick()
+        composeRule.onNodeWithContentDescription("Open settings")
+            .assertIsSelected()
+            .assertHasClickAction()
+        composeRule.onNodeWithContentDescription("Open connections")
+            .assertHasClickAction()
+            .performClick()
         composeRule.runOnIdle { assertTrue(openedWorkspace) }
+    }
+
+    @Test
+    fun compactSplitScreenAtLargeTextKeepsEveryPrimaryDestinationTouchSized() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                MaterialTheme {
+                    AdaptivePrimaryNavigation(
+                        selected = AppDestination.WORKSPACE,
+                        onWorkspace = {},
+                        onConnections = {},
+                        onSettings = {},
+                        modifier = Modifier.requiredSize(width = 320.dp, height = 360.dp),
+                        safeContentInsets = WindowInsets(0),
+                    ) { contentModifier, _ ->
+                        Box(contentModifier)
+                    }
+                }
+            }
+        }
+
+        listOf("Open connections", "Open terminal", "Open settings").forEach { description ->
+            composeRule.onNodeWithContentDescription(description)
+                .assertIsDisplayed()
+                .assertWidthIsAtLeast(48.dp)
+                .assertHeightIsAtLeast(48.dp)
+        }
+        assertExactlyThreeDestinations(CompactPrimaryNavigationTestTag)
     }
 
     @Test

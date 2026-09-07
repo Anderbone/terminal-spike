@@ -22,7 +22,7 @@ class TmuxSessionSelectorTest {
         val capture = captureTmuxPane(
             metadataRunner = { command ->
                 metadataCommands += command
-                TmuxExecOutput("\$7\t%9\t80\t24\t3\t0\t0\t0\n".encodeToByteArray(), 0)
+                TmuxExecOutput("\$7|%9|80|24|3|0|0|0\n".encodeToByteArray(), 0)
             },
             historyRunner = { command ->
                 historyCommands += command
@@ -49,7 +49,7 @@ class TmuxSessionSelectorTest {
         val historyCommands = mutableListOf<String>()
         val capture = captureTmuxPane(
             metadataRunner = {
-                TmuxExecOutput("\$7\t%9\t80\t1\t1\t1\t0\t0\n".encodeToByteArray(), 0)
+                TmuxExecOutput("\$7|%9|80|1|1|1|0|0\n".encodeToByteArray(), 0)
             },
             historyRunner = { command ->
                 historyCommands += command
@@ -76,7 +76,7 @@ class TmuxSessionSelectorTest {
         var historyRan = false
         val capture = captureTmuxPane(
             metadataRunner = {
-                TmuxExecOutput("\$7\t%9\t80\t24\t300\t0\t1\t0\n".encodeToByteArray(), 0)
+                TmuxExecOutput("\$7|%9|80|24|300|0|1|0\n".encodeToByteArray(), 0)
             },
             historyRunner = {
                 historyRan = true
@@ -99,7 +99,7 @@ class TmuxSessionSelectorTest {
         val historyCommands = mutableListOf<String>()
         val capture = captureTmuxPane(
             metadataRunner = {
-                TmuxExecOutput("\$7\t%9\t80\t1\t1\t1\t1\t0\n".encodeToByteArray(), 0)
+                TmuxExecOutput("\$7|%9|80|1|1|1|1|0\n".encodeToByteArray(), 0)
             },
             historyRunner = { command ->
                 historyCommands += command
@@ -127,7 +127,7 @@ class TmuxSessionSelectorTest {
         var historyRan = false
         val capture = captureTmuxPane(
             metadataRunner = {
-                TmuxExecOutput("\$7\t%9\t80\t24\t5000\t0\t0\t0\n".encodeToByteArray(), 0)
+                TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
             },
             historyRunner = {
                 historyRan = true
@@ -146,6 +146,72 @@ class TmuxSessionSelectorTest {
     }
 
     @Test
+    fun largeHistoryStartsWithBoundedNewestPageAndExposesOlderCoordinates() {
+        val historyCommands = mutableListOf<String>()
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = { command ->
+                historyCommands += command
+                TmuxExecOutput(ByteArray(1), 0)
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+        )
+
+        requireNotNull(capture)
+        assertEquals(TMUX_HISTORY_PAGE_ROWS, capture.historyRows)
+        assertEquals(5_000, capture.remoteHistoryRows)
+        assertEquals(904, capture.capturedStartRow)
+        assertEquals(0, capture.oldestAvailableRow)
+        assertTrue(capture.truncatedBefore)
+        assertEquals(
+            "'/usr/bin/tmux' capture-pane -p -e -J -t '%9' -S '-4096' -E -1",
+            historyCommands.single(),
+        )
+    }
+
+    @Test
+    fun olderPageUsesDisjointStableRangeAndRejectsChangedRemoteHistory() {
+        val historyCommands = mutableListOf<String>()
+        val request = TmuxHistoryPageRequest("%9", beforeRow = 904, remoteHistoryRows = 5_000)
+        val capture = captureTmuxPane(
+            metadataRunner = {
+                TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
+            },
+            historyRunner = { command ->
+                historyCommands += command
+                TmuxExecOutput(ByteArray(1), 0)
+            },
+            executable = "/usr/bin/tmux",
+            sessionId = "\$7",
+            pageRequest = request,
+        )
+
+        requireNotNull(capture)
+        assertTrue(capture.olderPage)
+        assertEquals(905, capture.historyRows)
+        assertEquals(0, capture.capturedStartRow)
+        assertEquals(
+            "'/usr/bin/tmux' capture-pane -p -e -J -t '%9' -S '-5000' -E '-4096'",
+            historyCommands.single(),
+        )
+
+        assertNull(
+            captureTmuxPane(
+                metadataRunner = {
+                    TmuxExecOutput("\$7|%9|80|24|5001|0|0|0\n".encodeToByteArray(), 0)
+                },
+                historyRunner = { error("stale page must not transfer history") },
+                executable = "/usr/bin/tmux",
+                sessionId = "\$7",
+                pageRequest = request,
+            ),
+        )
+    }
+
+    @Test
     fun activeSessionSwitchUsesSideChannelAndTargetsItsMostRecentClient() {
         val commands = mutableListOf<String>()
         val runner = TmuxCommandRunner { command ->
@@ -154,12 +220,12 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     (
                         "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
-                            "\$7\told\t1\t2\t1\n\$8\twork\t2\t1\t2\n"
+                            "\$7|old|1|2|1\n\$8|work|2|1|2\n"
                     ).encodeToByteArray(),
                     0,
                 )
                 command.contains(" list-clients ") -> TmuxExecOutput(
-                    "/dev/pts/4\t\$7\t100\n/dev/pts/9\t\$7\t200\n/dev/pts/2\t\$8\t300\n"
+                    "/dev/pts/4|\$7|100\n/dev/pts/9|\$7|200\n/dev/pts/2|\$8|300\n"
                         .encodeToByteArray(),
                     0,
                 )
@@ -193,7 +259,7 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     (
                         "__TERMINAL_SPIKE_TMUX__\n/usr/local/bin/tmux\n" +
-                            "\$7\twork\t1\t0\t1\n"
+                            "\$7|work|1|0|1\n"
                     ).encodeToByteArray(),
                     0,
                 )
@@ -216,7 +282,7 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     (
                         "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
-                            "\$7\twork\t1\t0\t1\n"
+                            "\$7|work|1|0|1\n"
                     ).encodeToByteArray(),
                     0,
                 )
@@ -239,12 +305,12 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     (
                         "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
-                            "\$7\told\t1\t0\t1\n\$8\twork\t2\t1\t2\n"
+                            "\$7|old|1|0|1\n\$8|work|2|1|2\n"
                     ).encodeToByteArray(),
                     0,
                 )
                 command.contains(" list-clients ") -> TmuxExecOutput(
-                    "/dev/pts/2\t\$8\t300\n".encodeToByteArray(),
+                    "/dev/pts/2|\$8|300\n".encodeToByteArray(),
                     0,
                 )
                 else -> error("Unexpected command: $command")
@@ -262,7 +328,7 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     (
                         "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
-                            "\$7\twork\t1\t1\t1\n"
+                            "\$7|work|1|1|1\n"
                     ).encodeToByteArray(),
                     0,
                 )
@@ -286,7 +352,7 @@ class TmuxSessionSelectorTest {
                 command.startsWith("/bin/sh -c ") -> TmuxExecOutput(
                     buildString {
                         append("__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n")
-                        if (!deleted) append("\$3\twork\t2\t1\t1725000000\n")
+                        if (!deleted) append("\$3|work|2|1|1725000000\n")
                     }.encodeToByteArray(),
                     0,
                 )
@@ -312,9 +378,9 @@ class TmuxSessionSelectorTest {
             when {
                 command.startsWith("/bin/sh -c ") -> {
                     val sessions = if (listCount.getAndIncrement() == 0) {
-                        "\$1\tone\t1\t0\t1\n\$2\ttwo\t2\t1\t2\n"
+                        "\$1|one|1|0|1\n\$2|two|2|1|2\n"
                     } else {
-                        "\$2\ttwo\t2\t1\t2\n"
+                        "\$2|two|2|1|2\n"
                     }
                     TmuxExecOutput(
                         ("__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" + sessions).encodeToByteArray(),
@@ -379,8 +445,8 @@ class TmuxSessionSelectorTest {
             TmuxExecOutput(
                 (
                     "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n" +
-                        "\$1\tdev\t1\t1\t10\n" +
-                        "\$42\tdownload\t1\t2\t20\n"
+                        "\$1|dev|1|1|10\n" +
+                        "\$42|download|1|2|20\n"
                     ).encodeToByteArray(),
                 0,
             )
@@ -406,9 +472,9 @@ class TmuxSessionSelectorTest {
             "\$45",
             resolveNewTmuxSessionId(
                 runnerWith(
-                    "\$1\tdev\t1\t1\t10",
-                    "\$42\tdownload\t1\t2\t20",
-                    "\$45\t45\t1\t1\t30",
+                    "\$1|dev|1|1|10",
+                    "\$42|download|1|2|20",
+                    "\$45|45|1|1|30",
                 ),
                 existingSessionIds = setOf("\$1", "\$42"),
             ),
@@ -416,9 +482,9 @@ class TmuxSessionSelectorTest {
         assertNull(
             resolveNewTmuxSessionId(
                 runnerWith(
-                    "\$1\tdev\t1\t1\t10",
-                    "\$45\t45\t1\t1\t30",
-                    "\$46\t46\t1\t1\t31",
+                    "\$1|dev|1|1|10",
+                    "\$45|45|1|1|30",
+                    "\$46|46|1|1|31",
                 ),
                 existingSessionIds = setOf("\$1"),
             ),
@@ -453,8 +519,9 @@ class TmuxSessionSelectorTest {
                 attachedClientCount = 2,
                 createdAtEpochSeconds = 1_725_000_000L,
             ),
-            parseTmuxSessionLine("\$12\tbuild server\t4\t2\t1725000000"),
+            parseTmuxSessionLine("\$12|build server|4|2|1725000000"),
         )
+        assertEquals("build|server", parseTmuxSessionLine("\$12|build|server|4|2|1725000000")?.name)
     }
 
     @Test
@@ -465,7 +532,7 @@ class TmuxSessionSelectorTest {
                         "Welcome to the server\n" +
                             "__TERMINAL_SPIKE_TMUX__\n" +
                             "/opt/homebrew/bin/tmux\n" +
-                            "\$4\twork\t3\t1\t1725000000\n"
+                            "\$4|work|3|1|1725000000\n"
                     ).encodeToByteArray(),
                 0,
             )
@@ -497,7 +564,7 @@ class TmuxSessionSelectorTest {
             ),
         )
         assertTrue(requireNotNull(command.get()).startsWith("/bin/sh -c '"))
-        assertTrue(requireNotNull(command.get()).contains("#{session_id}\t#{session_name}"))
+        assertTrue(requireNotNull(command.get()).contains("#{session_id}|#{session_name}"))
         assertFalse(requireNotNull(command.get()).contains("#{session_id}\\t#{session_name}"))
     }
 
@@ -510,7 +577,7 @@ class TmuxSessionSelectorTest {
             val fakeTmux = fakeBin.resolve("tmux")
             Files.writeString(
                 fakeTmux,
-                "#!/bin/sh\nprintf '\$4\\tfish work\\t2\\t0\\t1725000000\\n'\n",
+                "#!/bin/sh\nprintf '\$4|fish work|2|0|1725000000\\n'\n",
             )
             Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"))
             val process = ProcessBuilder(fish.toString(), "-c", TMUX_LIST_COMMAND)
@@ -522,7 +589,7 @@ class TmuxSessionSelectorTest {
             assertTrue(process.waitFor(5, TimeUnit.SECONDS))
             assertEquals(0, process.exitValue())
             assertTrue(output.contains("__TERMINAL_SPIKE_TMUX__\n${fakeTmux}\n"))
-            assertTrue(output.contains("\$4\tfish work\t2\t0\t1725000000"))
+            assertTrue(output.contains("\$4|fish work|2|0|1725000000"))
         } finally {
             Files.walk(fakeBin).use { paths ->
                 paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
@@ -532,10 +599,10 @@ class TmuxSessionSelectorTest {
 
     @Test
     fun rejectsMalformedOrUnsafeSessionRecords() {
-        assertNull(parseTmuxSessionLine("work\t2\t0\t1725000000"))
-        assertNull(parseTmuxSessionLine("\$x\twork\t2\t0\t1725000000"))
-        assertNull(parseTmuxSessionLine("\$1\twork\t-1\t0\t1725000000"))
-        assertNull(parseTmuxSessionLine("\$1\t\u0000\t2\t0\t1725000000"))
+        assertNull(parseTmuxSessionLine("work|2|0|1725000000"))
+        assertNull(parseTmuxSessionLine("\$x|work|2|0|1725000000"))
+        assertNull(parseTmuxSessionLine("\$1|work|-1|0|1725000000"))
+        assertNull(parseTmuxSessionLine("\$1|\u0000|2|0|1725000000"))
     }
 
     @Test

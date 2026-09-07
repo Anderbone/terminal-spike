@@ -18,6 +18,7 @@ import kotlin.math.sin
 
 internal enum class ConnectionsGlyph {
     BACK,
+    RESTORE,
     SEARCH,
     CLOSE,
     ADD,
@@ -56,6 +57,24 @@ internal fun ConnectionsGlyphIcon(
             ConnectionsGlyph.BACK -> {
                 drawLine(resolvedColor, point(0.75f, 0.18f), point(0.38f, 0.5f), strokeWidth, StrokeCap.Round)
                 drawLine(resolvedColor, point(0.38f, 0.5f), point(0.75f, 0.82f), strokeWidth, StrokeCap.Round)
+            }
+            ConnectionsGlyph.RESTORE -> {
+                drawArc(
+                    color = resolvedColor,
+                    startAngle = -55f,
+                    sweepAngle = 255f,
+                    useCenter = false,
+                    topLeft = point(0.17f, 0.17f),
+                    size = Size(width * 0.66f, height * 0.66f),
+                    style = stroke,
+                )
+                val arrow = Path().apply {
+                    moveTo(width * 0.17f, height * 0.38f)
+                    lineTo(width * 0.38f, height * 0.17f)
+                    moveTo(width * 0.17f, height * 0.38f)
+                    lineTo(width * 0.44f, height * 0.4f)
+                }
+                drawPath(arrow, resolvedColor, style = stroke)
             }
             ConnectionsGlyph.SEARCH -> {
                 drawCircle(

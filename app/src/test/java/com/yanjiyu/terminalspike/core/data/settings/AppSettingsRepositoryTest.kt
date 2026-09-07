@@ -2,7 +2,13 @@ package com.yanjiyu.terminalspike.core.data.settings
 
 import androidx.datastore.core.DataStoreFactory
 import java.io.File
+import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -84,6 +90,31 @@ class AppSettingsRepositoryTest {
         assertEquals(updated, AppSettings.parseFrom(file.readBytes()))
     }
 
+    @Test
+    fun globalPreferencesSurviveRepositoryAndDataStoreRecreation() = runBlocking {
+        val file = settingsFile("recreated-repository.pb", AppSettingsSerializer.defaultValue.toByteArray())
+        val first = dataStoreOwner(file)
+        try {
+            first.repository.update { builder ->
+                builder.setThemeMode(AppSettings.ThemeMode.THEME_MODE_DARK)
+                builder.setAccentPreset("coral")
+                builder.setKeepaliveIntervalSeconds(45)
+            }
+        } finally {
+            first.close()
+        }
+
+        val recreated = dataStoreOwner(file)
+        try {
+            val settings = recreated.repository.settings.first()
+            assertEquals(AppSettings.ThemeMode.THEME_MODE_DARK, settings.themeMode)
+            assertEquals("coral", settings.accentPreset)
+            assertEquals(45, settings.keepaliveIntervalSeconds)
+        } finally {
+            recreated.close()
+        }
+    }
+
     private fun kotlinx.coroutines.test.TestScope.repository(
         file: File,
         migrations: List<androidx.datastore.core.DataMigration<AppSettings>> = emptyList(),
@@ -98,6 +129,27 @@ class AppSettingsRepositoryTest {
 
     private fun settingsFile(name: String, bytes: ByteArray): File =
         temporaryFolder.newFile(name).also { file -> file.writeBytes(bytes) }
+
+    private fun dataStoreOwner(file: File): DataStoreOwner {
+        val job = SupervisorJob()
+        return DataStoreOwner(
+            repository = AppSettingsRepository(
+                DataStoreFactory.create(
+                    serializer = AppSettingsSerializer,
+                    scope = CoroutineScope(job + Dispatchers.IO),
+                    produceFile = { file },
+                ),
+            ),
+            job = job,
+        )
+    }
+
+    private data class DataStoreOwner(
+        val repository: AppSettingsRepository,
+        val job: CompletableJob,
+    ) {
+        suspend fun close() = job.cancelAndJoin()
+    }
 
     private suspend fun expectInvalid(block: suspend () -> Unit): InvalidAppSettingsException = try {
         block()

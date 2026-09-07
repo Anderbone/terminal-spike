@@ -93,7 +93,10 @@ internal fun HostEditorDialog(
     var transientSecretWasEntered by rememberSaveable(editorToken) {
         mutableStateOf(false)
     }
-    val initialSavePassword = savedSecretAvailable || initial.persistentId == null
+    // Saving a reusable password must always be an explicit choice. A new host can be saved with
+    // a session-only password, but the credential checkbox starts off just as it does in Quick
+    // Connect. Existing hosts with an available encrypted password continue to show that state.
+    val initialSavePassword = savedSecretAvailable
     var savePassword by rememberSaveable(editorToken) {
         mutableStateOf(initialSavePassword)
     }
@@ -297,7 +300,7 @@ internal fun HostEditorDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 620.dp)
+                    .heightIn(max = 420.dp)
                     .verticalScroll(editorScrollState),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -1323,7 +1326,7 @@ private fun HostTestKeyboardInteractiveDialog(
         },
         text = {
             Column(
-                modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 challenge.instruction.takeIf(String::isNotBlank)?.let { Text(it) }
@@ -1629,7 +1632,10 @@ internal fun GenerateKeyDialog(
         modifier = Modifier.testTag(GenerateKeyDialogTestTag),
         title = { Text(stringResource(R.string.key_editor_generate_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it.take(96) },

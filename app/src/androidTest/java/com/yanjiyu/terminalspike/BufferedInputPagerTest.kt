@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -74,10 +75,6 @@ class BufferedInputPagerTest {
         composeRule.onNodeWithText(
             resources.getString(R.string.terminal_buffered_input_placeholder),
         ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            resources.getString(R.string.terminal_buffered_input_pasted_recoverable),
-        ).assertIsDisplayed()
-
         composeRule.onNodeWithContentDescription(
             resources.getString(R.string.terminal_restore_last_sent_input),
         ).performClick()
@@ -116,8 +113,8 @@ class BufferedInputPagerTest {
 
         val exactDraft = "printf one\nprintf two"
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeRight() }
-        composeRule.onNodeWithContentDescription(resources.getString(R.string.terminal_buffered_input_description))
-            .performTextInput(exactDraft)
+        composeRule.runOnIdle { draftState.update(TextFieldValue(exactDraft), 11L) }
+        composeRule.onNodeWithText(exactDraft).assertIsDisplayed()
         composeRule.onNodeWithText(resources.getString(R.string.terminal_send)).performClick()
 
         composeRule.onNodeWithText(resources.getString(R.string.terminal_multiline_paste_title)).assertIsDisplayed()

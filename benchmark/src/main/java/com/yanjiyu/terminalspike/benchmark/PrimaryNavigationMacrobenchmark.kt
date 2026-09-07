@@ -30,7 +30,7 @@ class PrimaryNavigationMacrobenchmark {
             },
         ) {
             device.openSettings()
-            device.openWorkspace()
+            device.openConnections()
         }
     }
 }

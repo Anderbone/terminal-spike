@@ -132,6 +132,7 @@ class BackupTransferCoordinator(
     private val archives: BackupArchiveCodec,
     private val kdfIterations: BackupKdfIterationsProvider = CalibratedBackupKdfIterations(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val beforeExport: suspend () -> Unit = {},
 ) {
     suspend fun export(
         mode: BackupMode,
@@ -143,6 +144,7 @@ class BackupTransferCoordinator(
         var snapshot: BackupPayloadSnapshot? = null
         try {
             require(metadata.mode == mode) { "Requested and envelope backup modes must match." }
+            beforeExport()
             val calibratedIterations = kdfIterations.iterations()
             snapshot = snapshots.create(
                 BackupExportOptions(mode = mode, includeCustomFonts = includeCustomFonts),

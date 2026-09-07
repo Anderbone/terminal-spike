@@ -87,9 +87,13 @@ internal fun SftpScreen(
     val uploadFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { readUploadFolder(context.contentResolver, uri) } }
-                .onSuccess { (name, entries) -> controller.uploadFolder(name, entries) }
-                .onFailure(controller::reportFailure)
+            val source = try {
+                withContext(Dispatchers.IO) { readUploadFolder(context.contentResolver, uri) }
+            } catch (error: Exception) {
+                controller.reportFailure(error)
+                return@launch
+            }
+            controller.uploadFolder(source)
         }
     }
     val selectedItem = (state as? SftpUiState.Browsing)?.let { browsing ->

@@ -155,4 +155,19 @@ APK/process separation is an engineering security boundary, not a claim that GPL
 - Extension missing/wrong signer/wrong caller/API mismatch/death/FD cleanup tests.
 - Release APK scan for test keys, PEM blocks, credential fixtures, debug screens, protocol logs, analytics/ads/account/network SDKs, and native Mosh objects.
 
-The API, trust-decision, bootstrap/parser, PFD, redaction, application-owned lifecycle, network-hint, and native-build paths have host/unit or focused instrumentation coverage. The latest recorded controlled-server runs completed password-authenticated SSH bootstrap and real UDP terminal input/output on both authorized Android 16 phones. The full USB application suite was green in the latest frozen gate; the Wi-Fi full UI suite and unobscured foreground proof remain environment-blocked by secure keyguard/dozing even though focused API/extension contracts and exact-serial installs passed there. Security acceptance remains open for private-key Mosh bootstrap, resize, simultaneous sessions, worker/process death, extension removal plus SSH, observed network transitions/roaming, notification/battery modes, clean-install backup/provider flows, and the final manual device matrix. The disposable-AVD release-like run used an existing debug identity; production signing and public Mosh distribution remain separate external gates.
+The API, trust-decision, bootstrap/parser, PFD, redaction, application-owned lifecycle,
+network-hint, and native-build paths have host/unit or focused instrumentation coverage. The latest
+controlled-server runs on the exact model-checked old `SM-S911B` completed password and private-key
+bootstrap, real UDP terminal I/O, four simultaneous sessions with independent resize/close,
+isolated-worker death with slot reuse, and broker death with automatic rebind and fresh traffic.
+The worker-death run also proved that an extension failure wins the bounded PFD-EOF/Binder-event
+race instead of being reported as a clean disconnect. The full current old-phone application suite
+passed 317 tests with zero failures/errors and 14 expected opt-in skips; current policy forbids
+tests on the connected fold. A separate external API 35 gate proved ownership-checked exact-PID
+death, clean service/notification teardown, retained host/recent metadata, zero persisted
+session-only secret credentials, honest empty-session restart, password re-prompt, and real SSH
+afterward. Its deep-idle, restricted-standby, and Data Saver mutations were restored exactly.
+Security acceptance remains open for observed network transitions/roaming, OEM notification/battery
+modes, the user's external Mosh server, and the final manual device matrix. The current CI-equivalent
+release-like run used a fresh ephemeral acceptance identity that was removed with its signed
+outputs; production signing and public Mosh distribution remain separate external gates.

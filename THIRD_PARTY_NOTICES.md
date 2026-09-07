@@ -11,6 +11,7 @@ This project includes or resolves the following third-party software:
 - JetBrains annotations, JSpecify annotations, and Guava's standalone `listenablefuture` compatibility artefact — Apache License 2.0.
 - Protocol Buffers Kotlin Lite and compiler 4.32.1, and the Protocol Buffers Gradle plugin 0.9.5 — Revised BSD licences reproduced below.
 - mwiede JSch 2.28.3, including its JZlib and jBCrypt portions — Revised BSD and ISC licences reproduced below.
+- Bouncy Castle Provider 1.85 — Bouncy Castle Licence (MIT-style) reproduced below.
 - Ayu Dark, One Dark, Dracula, Nord, Solarized Dark/Light, Gruvbox Dark, Tokyo Night, and Catppuccin Mocha named terminal palette inputs — MIT; immutable source details and attributions are reproduced below.
 - Source Code Pro 2.042, JetBrains Mono 2.304, IBM Plex Mono 2.5.0/font 2.005, and Cascadia Mono 2407.24 — SIL Open Font License 1.1.
 - Symbols Nerd Font Mono 3.5.0 — a mixed-licence compiled fallback font; component licences and attributions are reproduced below and must not be summarized as MIT-only.
@@ -367,6 +368,16 @@ Copyright (c) 2006 Damien Miller <djm@mindrot.org>
 Permission to use, copy, modify, and distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 
 THE SOFTWARE IS PROVIDED “AS IS” AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+## Bouncy Castle Provider
+
+Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Apache License 2.0
 
