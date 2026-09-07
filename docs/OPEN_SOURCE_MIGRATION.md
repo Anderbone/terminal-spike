@@ -4,10 +4,10 @@ Updated: 2026-09-07
 
 ## Repository comparison
 
-The main repository is `Anderbone/terminal-spike`, currently private. Its inspected baseline
-is `224aaac`. The standalone repository is `Anderbone/terminal-spike-mosh-extension`, currently
-public, at `4fe63fd4e02225a4ecba3b993a28bd9db72029be`. Its local checkout is clean and matches
-GitHub's `main` revision. It also has a published `v1.0.0` source release, which must remain
+At the initial inspection, `Anderbone/terminal-spike` was private. Its inspected baseline
+was `224aaac`. The standalone repository was public at
+`4fe63fd4e02225a4ecba3b993a28bd9db72029be`. Its local checkout was clean and matched
+GitHub's `main` revision at comparison time. It also had a published `v1.0.0` source release, which must remain
 accessible for existing binary recipients.
 
 Comparing the standalone repository's 125 tracked files against the main repository found:
@@ -80,13 +80,27 @@ The completed-build device check found only the authorized old `SM_S911B` on USB
 transports. The Wi-Fi foldable `SM_F976B` was unavailable; no foldable installation/launch could be
 performed and no device tests were run for this source-only change.
 
-## Cutover status
+## Verified cutover
 
-The licence and source migration are prepared locally. Remaining publication steps are committing
-and pushing the reviewed change, changing the main repository to public, verifying anonymous
-source/licence access, enabling its private security-reporting endpoint, and adding a relocation
-notice and archiving the standalone repository. Keep its existing `v1.0.0` source release available.
+- Main repository: <https://github.com/Anderbone/terminal-spike>, **public**. The consolidation
+  source commit is `660f797`. GitHub's anonymous REST response reports `private: false` and
+  `visibility: public`; anonymous raw downloads of `LICENSE`, `MainActivity.kt` and the native
+  `mosh_native.cpp` match the reviewed files byte for byte. The anonymously downloaded complete
+  GitHub source tarball matches all 789 committed file blobs, including native source archives
+  and imported publication assets.
+- Private vulnerability reporting is enabled on the canonical repository.
+- Standalone repository: <https://github.com/Anderbone/terminal-spike-mosh-extension>, **public
+  and archived**. Commit `489e048` adds the relocation notice; its description and homepage point
+  to the main repository. There were no open issues or pull requests to migrate.
+- The old `v1.0.0` release and its `terminal-spike-mosh-extension-source-1.0.0.tar.gz` download
+  remain available. Archival preserves historical source access while ending separate maintenance.
+- No Play release or binary upload was performed. Uncommitted scrollback and Local Arch work in
+  the shared checkout was excluded from the publication commit, including concurrent additions
+  to the main notice file. Verification used the isolated consolidation checkout.
+- Local tests/lint/builds passed as recorded above. The publication push starts a new hosted CI
+  run; previous hosted emulator failures are not represented as resolved by this documentation
+  and licensing change.
 
 The owner requested one repository. Single-APK integration was an additional proposal, not an
 accepted packaging change; [ADR-004](ADR-004-OPEN-SOURCE-APP.md) records that distinction. This
-consolidation retains two APKs and independent Play versioning and does not publish to Play.
+consolidation retains two APKs and independent Play versioning.

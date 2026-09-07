@@ -1,7 +1,7 @@
 # ADR-004: One public repository for Terminal Spike and Mosh
 
 - Date: 2026-09-07
-- Status: Accepted for source consolidation; GitHub cutover in progress
+- Status: Accepted; public repository cutover verified on 2026-09-07
 - Supersedes: ADR-003's private main-source assumption and separate source-maintenance entry point
 
 ## Decision
