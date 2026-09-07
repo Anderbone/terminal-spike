@@ -1,5 +1,9 @@
 # ADR-003: Separate GPL Mosh extension boundary
 
+> Historical licensing rationale: [ADR-004](ADR-004-OPEN-SOURCE-APP.md) supersedes the private
+> main-source assumption and authorizes consolidated public source. The existing APK/process
+> boundary remains implemented. This repository change does not authorize a new store release.
+
 - Status: Accepted for local and debug development; public distribution blocked
 - Date: 2026-08-08
 

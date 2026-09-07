@@ -1,0 +1,94 @@
+{
+  "source_repository": "https://github.com/Anderbone/terminal-spike-mosh-extension",
+  "source_commit": "4fe63fd4e02225a4ecba3b993a28bd9db72029be",
+  "imported_files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "f59ab67f586b870726cab03bbef60eeaad23183b075f96216c332251096058a6"
+    },
+    {
+      "path": "PRIVACY.md",
+      "sha256": "8d9726e4f0ed3fdc4b700d1828390b004502e9da03e5cc8981402ac82a032efd"
+    },
+    {
+      "path": "RELEASING.md",
+      "sha256": "a741723ac3c05db07be4fbb209b53233f5f5eff09715c2054ed04fbeed0879d5"
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "57eb4982933e323ec135af58328743b39cbb01c4069713550bff39f4835152e0"
+    },
+    {
+      "path": "README.md",
+      "sha256": "77807be68233d058a74d60911c3bb31656806872449523d2eb4442ead5752c7c"
+    },
+    {
+      "path": ".github/workflows/android.yml",
+      "sha256": "a7676f3d0c7f73be52ea5476e83ec54e836f003cd631b88d484b1830efc96fc1"
+    },
+    {
+      "path": "docs/mosh-extension-protocol.md",
+      "sha256": "084a71969f80de68d02646fd099a6e14a4d76aed67190222b98fb9582d4f383f"
+    },
+    {
+      "path": "mosh-extension/BUILDING.md",
+      "sha256": "31ffb89bc7e08ca9ddf850077b09101e2aea030d7715d7826d3b6ce9f6dbd31e"
+    },
+    {
+      "path": "store-listing/DATA_SAFETY.md",
+      "sha256": "2ee0b0654672c89a614f2a1451d377502efc8edb9141ab0facb11cc15b69248f"
+    },
+    {
+      "path": "store-listing/FOREGROUND_SERVICE.md",
+      "sha256": "31b65973353064f59da6c339856ed09b6413f7c740240cd54045004e30d45616"
+    },
+    {
+      "path": "store-listing/PLAY_CONSOLE_CHECKLIST.md",
+      "sha256": "ed7404061150f0ed60f8e52450bb752eeb33d70e2a2d59626476a39360db794b"
+    },
+    {
+      "path": "store-listing/README.md",
+      "sha256": "de06fd78a2ae216c847a282946f19bff8e8374c8264deed01a94ecf5aac85862"
+    },
+    {
+      "path": "store-listing/graphics/app-icon-512.png",
+      "sha256": "8e82c92434f6c03b8aee942dec257f5a7213a0f1209cdfc582bf29e1cc72a307"
+    },
+    {
+      "path": "store-listing/graphics/app-icon.svg",
+      "sha256": "51ff00af5441b886188af5661c14cb0540a7856641cf8138e55473736d9e5096"
+    },
+    {
+      "path": "store-listing/graphics/feature-graphic-1024x500.png",
+      "sha256": "9ade979efd5b50f943ce0130c8921d4d215141a061eb7e7e0105b71f6ac26b51"
+    },
+    {
+      "path": "store-listing/graphics/feature-graphic.svg",
+      "sha256": "379b677d6ef9bd29c86c2f59f01584bbabd0f84a0c8fdf45d755d7acf8fa06d8"
+    },
+    {
+      "path": "store-listing/metadata/en-US/full_description.txt",
+      "sha256": "67aab8a4be9d4eb378a8e5977462e370dc3f9602f18eec97ee4429f579c2b1f6"
+    },
+    {
+      "path": "store-listing/metadata/en-US/short_description.txt",
+      "sha256": "6fe84ee9bbcdbab362aa3e6f1b31190946f57fe214da3d1d13aef2864f413a3e"
+    },
+    {
+      "path": "store-listing/metadata/en-US/title.txt",
+      "sha256": "ccaddfb35aab1ad7976745d1e038bc30425717b46c5a0ee0418dd4d0e9f2de23"
+    },
+    {
+      "path": "store-listing/screenshots/phone/01-native-engine-ready.png",
+      "sha256": "a8e2339a3b3ac49f8cabf446d561390177ce855725b6746ef17467b802770fa4"
+    },
+    {
+      "path": "store-listing/screenshots/phone/02-security-and-source.png",
+      "sha256": "fee25b6f3dcf1819c5299650c219cb9907b306ec7f38df9c6a8af2b7d9a678d2"
+    },
+    {
+      "path": "store-listing/video/foreground-service-demo.mp4",
+      "sha256": "0e62706c6afe394afd7fafc6f1b608ca877995f7e27862b88d2f39b11d6276bf"
+    }
+  ]
+}

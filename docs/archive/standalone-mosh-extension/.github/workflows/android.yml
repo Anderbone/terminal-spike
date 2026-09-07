@@ -1,0 +1,69 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+
+      - name: Install pinned SDK packages
+        run: sdkmanager "platforms;android-36" "ndk;29.0.14206865"
+
+      - name: Verify pinned source inputs
+        run: ./mosh-extension/scripts/verify-sources.sh
+
+      - name: Test, lint, and build release artifacts
+        run: >-
+          ./gradlew
+          :mosh-extension:test
+          :mosh-extension:lint
+          :mosh-extension:bundleRelease
+          :mosh-extension:assembleRelease
+          :mosh-extension:assembleDebugAndroidTest
+
+      - name: Build Corresponding Source twice
+        run: |
+          first=$(mktemp -d)
+          second=$(mktemp -d)
+          ./mosh-extension/scripts/create-source-bundle.sh "$first"
+          ./mosh-extension/scripts/create-source-bundle.sh "$second"
+          cmp "$first"/*.tar.gz "$second"/*.tar.gz
+          mkdir -p release-artifacts
+          cp "$first"/*.tar.gz "$first"/*.sha256 release-artifacts/
+
+      - name: Collect unsigned review artifacts
+        run: |
+          cp mosh-extension/build/outputs/bundle/release/*.aab release-artifacts/
+          cp mosh-extension/build/outputs/native-debug-symbols/release/*.zip release-artifacts/
+          cp mosh-extension/build/outputs/mapping/release/mapping.txt release-artifacts/
+          cp mosh-extension/build/reports/lint-results-debug.* release-artifacts/
+
+      - name: Upload review artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mosh-extension-review-artifacts
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 14

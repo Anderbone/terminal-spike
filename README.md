@@ -1,8 +1,25 @@
 # Terminal Spike
 
-Terminal Spike is a local-first native Android SSH terminal release candidate. It opens on a device-only workspace for active sessions, saved connections, identities, snippets, trusted host keys, and terminal configuration. A dedicated Compose application shell surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
+Terminal Spike is an open-source, local-first native Android SSH terminal release candidate. It opens on a device-only workspace for active sessions, saved connections, identities, snippets, trusted host keys, and terminal configuration. A dedicated Compose application shell surrounds a custom hardware-accelerated Android `View` that draws terminal rows directly with `Canvas` and `Paint`.
 
 Password- or private-key-authenticated SSH, opt-in device-bound saved passwords, protected private-key material, SFTP file management, a customizable extra-key bar, bounded VT/xterm screen semantics, and simultaneous remote-session tabs are implemented. Live SSH and Mosh terminals can paste a phone clipboard image into tools such as Codex: the app streams the image over the session's authenticated SSH side channel to a private cache directory on the connected host and bracket-pastes its remote path. Genuine Mosh 1.4.0 transport is available through an optional, separately installed GPL extension; the main APK contains only the permissive IPC API and continues to provide SSH when the extension is absent. The Mosh extension advertises and enforces its capacity of ten process-isolated concurrent transports independently. There is no sync, analytics, advertising, bundled AI, or subscription code.
+
+## Source and licence
+
+This is the canonical repository for the main Android app, Mosh API, native Mosh implementation,
+tests and build tooling. Development and issues for the former standalone Mosh repository move
+here. Both Android packages are built from this checkout; Mosh currently remains a separately
+installed APK. Repository consolidation does not change existing installations or Play releases.
+
+Project-owned code is **GPL-3.0-or-later**, with no warranty. `mosh-api` retains Apache-2.0;
+third-party code, fonts and artwork retain their component licences. See [LICENSE](LICENSE),
+[LICENSING.md](LICENSING.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the
+[Mosh notices](mosh-extension/THIRD_PARTY_NOTICES.md). Mosh is a registered trademark;
+Terminal Spike is not affiliated with or endorsed by the Mosh project.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for changes and [SECURITY.md](SECURITY.md) for vulnerability
+reports. The [consolidation record](docs/OPEN_SOURCE_MIGRATION.md) preserves source provenance;
+older release and architecture records below describe their original verification context.
 
 ## Prerequisites
 
@@ -142,7 +159,7 @@ The guarded main-app installer deliberately does not install the separately pack
 extension. Extension installation remains a separately reviewed local-development operation under
 the repository device and licensing rules.
 
-The native build uses pinned official sources and produces `arm64-v8a` and `x86_64` clients. See [the extension build guide](mosh-extension/BUILDING.md), [the protocol boundary](docs/mosh-extension-protocol.md), and [ADR-003](docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md). The latest controlled-server evidence is the old-phone five-method password class and separate private-key run described above. This validates only that controlled local environment; the user's own saved Mosh server still needs an unlocked manual retest, and no behavior on an arbitrary external server is inferred. Local/debug evaluation is approved, but public distribution and production signing remain blocked pending the ADR's specialist GPL, signing, installation-information, and trademark review.
+The native build uses pinned official sources and produces `arm64-v8a` and `x86_64` clients. See [the extension build guide](mosh-extension/BUILDING.md), [the protocol boundary](docs/mosh-extension-protocol.md), and [ADR-003](docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md). The latest controlled-server evidence is the old-phone five-method password class and separate private-key run described above. This validates only that controlled local environment; the user's own saved Mosh server still needs an unlocked manual retest, and no behavior on an arbitrary external server is inferred. Source publication is authorized by [ADR-004](docs/ADR-004-OPEN-SOURCE-APP.md). New binary distribution and production signing still require the release review described in ADR-003 and the publishing guide.
 
 ## Try a remote shell
 

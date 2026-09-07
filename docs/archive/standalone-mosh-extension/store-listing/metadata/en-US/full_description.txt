@@ -1,0 +1,22 @@
+Add Mosh transport support to Terminal Spike with this separately installed, open-source companion.
+
+The extension provides the encrypted Mosh UDP transport. Terminal Spike remains responsible for saved hosts, SSH host-key verification, authentication, and trusted mosh-server startup. This companion has no host list or credential store and is not a standalone terminal application.
+
+Features:
+• Official Mosh 1.4.0 transport built from pinned source
+• IPv4 and IPv6 support
+• Network roaming supported by the Mosh protocol
+• Terminal input, output, and resize support
+• Up to ten process-isolated active sessions
+• Visible foreground notification while a session is active
+• No analytics, advertising, accounts, tracking, or cloud service
+
+Security boundary:
+Terminal Spike passes only a numeric UDP endpoint, one one-shot ephemeral Mosh key, terminal dimensions, and terminal byte pipes. SSH passwords, private keys, passphrases, saved credentials, and the host database never enter this extension.
+
+Free software:
+The extension is GPL-3.0-or-later software. Exact native sources, checksums, Android modifications, build scripts, dependency licences, and notices are published in the source repository. The main Terminal Spike app is not included in this package or source repository.
+
+Requires a compatible Terminal Spike installation signed for the same release channel.
+
+Mosh is a registered trademark. This Mosh-compatible extension is not affiliated with or endorsed by the Mosh project.

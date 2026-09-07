@@ -40,6 +40,8 @@ install -m 0644 "$extension_dir/source-build/libs.versions.toml" "$bundle_dir/gr
 install -m 0644 "$repository_dir/gradle/wrapper/gradle-wrapper.jar" "$bundle_dir/gradle/wrapper/gradle-wrapper.jar"
 install -m 0644 "$repository_dir/gradle/wrapper/gradle-wrapper.properties" "$bundle_dir/gradle/wrapper/gradle-wrapper.properties"
 install -m 0644 "$repository_dir/docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md" "$bundle_dir/docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md"
+install -m 0644 "$repository_dir/docs/ADR-004-OPEN-SOURCE-APP.md" "$bundle_dir/docs/ADR-004-OPEN-SOURCE-APP.md"
+install -m 0644 "$repository_dir/LICENSE" "$bundle_dir/LICENSE"
 install -m 0644 "$repository_dir/docs/mosh-extension-protocol.md" "$bundle_dir/docs/mosh-extension-protocol.md"
 
 archive="$output_dir/$bundle_name.tar.gz"

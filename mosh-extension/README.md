@@ -1,5 +1,10 @@
 # Terminal Spike Mosh-compatible extension
 
+Source development is maintained in the unified
+[Terminal Spike repository](https://github.com/Anderbone/terminal-spike). See
+[ADR-004](../docs/ADR-004-OPEN-SOURCE-APP.md) for the public-source decision. The APK packaging
+and any future store-release gates are independent of that source consolidation.
+
 This module builds a genuinely separate Android application with application ID
 `com.yanjiyu.terminalspike.mosh`. It contains the GPL Mosh transport and is never linked into the
 main `com.yanjiyu.terminalspike` APK. The main app performs SSH authentication and trusted
@@ -23,4 +28,4 @@ is not affiliated with the Mosh project, and is approved only for local/debug ev
 public-distribution gate in `../docs/ADR-003-MOSH-EXTENSION-BOUNDARY.md` is cleared.
 
 `scripts/create-source-bundle.sh` produces the deterministic, standalone Corresponding Source
-archive for a built extension without including the private main application.
+archive for a built extension. The complete main-app source is available in this same repository.

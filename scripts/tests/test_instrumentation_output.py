@@ -79,6 +79,25 @@ class InstrumentationOutputTest(unittest.TestCase):
         self.assertNotIn("person@example.test", result.stdout)
         self.assertNotIn("OPENSSH PRIVATE KEY", result.stdout)
 
+    def test_redacts_emulator_setup_wizard_google_api_keys(self) -> None:
+        for suffix in ("a", "_", "-"):
+            with self.subTest(suffix=suffix):
+                key = "AIza" + "x" * 34 + suffix
+                source = (
+                    f"SetupWizard: Flag(csat_notification_API_KEY, '{key}', 4, 0)\n"
+                    "INSTRUMENTATION_STATUS_CODE: 0\n"
+                )
+                result = subprocess.run(
+                    [sys.executable, str(REDACTOR)],
+                    input=source,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    source.replace(key, "<redacted-google-api-key>"), result.stdout
+                )
+
     def test_redaction_never_consumes_the_next_instrumentation_record(self) -> None:
         source = (
             "INSTRUMENTATION_STATUS: test=savesPassword\n"

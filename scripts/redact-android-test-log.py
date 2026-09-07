@@ -4,6 +4,12 @@ import sys
 
 
 text = sys.stdin.read()
+# Google-provided emulator components can print API keys even when the app uses none.
+text = re.sub(
+    r"(?<![0-9A-Za-z_-])AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])",
+    "<redacted-google-api-key>",
+    text,
+)
 text = re.sub(r"-----BEGIN [^-]+PRIVATE KEY-----.*?-----END [^-]+PRIVATE KEY-----", "<redacted-private-key>", text, flags=re.DOTALL)
 text = re.sub(
     r"(?i)(password|passphrase|secret|privatekeybase64)([ \t]*(?:[:=][ \t]*|[ \t]+))\S+",

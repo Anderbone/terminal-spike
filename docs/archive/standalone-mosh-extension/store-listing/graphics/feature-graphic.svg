@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#232c38"/>
+  <circle cx="930" cy="78" r="210" fill="#2e3947"/>
+  <circle cx="820" cy="470" r="260" fill="#1b222c"/>
+  <g transform="translate(72 74) scale(.69)">
+    <rect x="104" y="114" width="304" height="289" rx="42" fill="#191f28"/>
+    <path d="M104 184v-29c0-23 18-41 41-41h222c23 0 41 18 41 41v29z" fill="#adb5c0"/>
+    <circle cx="138" cy="147" r="12" fill="#232c38"/>
+    <circle cx="176" cy="147" r="12" fill="#232c38"/>
+    <circle cx="214" cy="147" r="12" fill="#232c38"/>
+    <rect x="237" y="123" width="171" height="61" fill="#232c38"/>
+    <path d="m184 208 77 72-77 72" fill="none" stroke="#f7f4ed" stroke-width="34"/>
+    <path d="M280 342h81" stroke="#70e1ad" stroke-width="28"/>
+    <text x="252" y="165" font-family="monospace" font-size="48" font-weight="700" fill="#70e1ad">MOSH</text>
+  </g>
+  <text x="430" y="210" font-family="sans-serif" font-size="66" font-weight="700" fill="#f7f4ed">Mosh for</text>
+  <text x="430" y="286" font-family="sans-serif" font-size="66" font-weight="700" fill="#70e1ad">Terminal Spike</text>
+  <text x="434" y="342" font-family="sans-serif" font-size="25" fill="#c7ced7">Open-source Mosh transport companion.</text>
+</svg>
