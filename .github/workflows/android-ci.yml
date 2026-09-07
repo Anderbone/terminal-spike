@@ -36,7 +36,9 @@ jobs:
           cache-provider: basic
 
       - name: Install Android platform
-        run: sdkmanager "platforms;android-37"
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-37"
 
       - name: Verify repository-owned release assets and test tooling
         run: |
