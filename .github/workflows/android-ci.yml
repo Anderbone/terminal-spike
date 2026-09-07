@@ -38,7 +38,7 @@ jobs:
       - name: Install Android platform
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-37"
+          "platforms;android-37.0"
 
       - name: Verify repository-owned release assets and test tooling
         run: |
