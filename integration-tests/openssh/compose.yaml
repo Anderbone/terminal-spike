@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        OPENSSH_VERSION: 10.3_p1-r0
+        OPENSSH_VERSION: 10.3_p1-r1
     environment:
       TERMINAL_SPIKE_TEST_PASSWORD: terminal-spike-test-only
     init: true

@@ -104,6 +104,11 @@ jobs:
           distribution: temurin
           java-version: "25"
 
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
@@ -158,6 +163,11 @@ jobs:
           distribution: temurin
           java-version: "25"
 
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
+
       - name: Enable KVM for the Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -210,6 +220,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -264,6 +279,11 @@ jobs:
           distribution: temurin
           java-version: "25"
 
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
+
       - name: Enable KVM for the Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -311,6 +331,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -384,6 +409,11 @@ jobs:
           distribution: temurin
           java-version: "25"
 
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
+
       - name: Enable KVM for the Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -428,6 +458,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+
+      - name: Install Android emulator tooling
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          "platform-tools" "emulator"
 
       - name: Set up and validate Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
