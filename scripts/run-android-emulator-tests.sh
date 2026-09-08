@@ -105,7 +105,7 @@ sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 android_cli_bin="$sdk_root/cmdline-tools/latest/bin/android"
 sdkmanager_bin="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
 avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
-emulator_bin="$sdk_root/emulator/emulator"
+emulator_bin="${TERMINAL_SPIKE_EMULATOR_BIN:-$sdk_root/emulator/emulator}"
 adb_bin="$sdk_root/platform-tools/adb"
 for required_tool in "$avdmanager_bin" "$emulator_bin" "$adb_bin"; do
     [[ -x "$required_tool" ]] || { echo "Required Android SDK tool is missing: $required_tool" >&2; exit 3; }
