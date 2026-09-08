@@ -224,6 +224,7 @@ esac
         self.assertIn("-memory 4096", emulator[0])
         self.assertIn("-partition-size 4096", emulator[0])
         self.assertIn("-gpu swiftshader ", emulator[0])
+        self.assertNotIn("-HasSharedSlotsHostMemoryAllocator", emulator[0])
         adb = [line for line in self.commands() if line.startswith("adb ")]
         self.assertTrue(adb)
         self.assertTrue(all(line.startswith("adb -s emulator-5554 ") for line in adb))
@@ -311,6 +312,8 @@ esac
     def test_api37_required_suite_proves_external_permission_revocation_and_relaunch(self) -> None:
         result = self.run_runner("--api", "37", "--suite", "boundary")
         self.assertEqual(0, result.returncode, result.stderr)
+        emulator = [line for line in self.commands() if line.startswith("emulator ")]
+        self.assertIn("-feature -HasSharedSlotsHostMemoryAllocator", emulator[0])
         evidence = self.output / "local-network-revocation-api37-boundary.txt"
         self.assertEqual(
             [

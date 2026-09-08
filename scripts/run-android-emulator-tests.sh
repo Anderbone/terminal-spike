@@ -178,8 +178,14 @@ fi
 # CI text entry uses semantics and Espresso actions. A hardware keyboard prevents the old API 26
 # software IME from repeatedly resizing Compose dialogs; real IME behavior remains device-tested.
 printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
+graphics_options=(-gpu swiftshader)
+if [[ "$api" == "37" ]]; then
+    # API 37's mapper rejects ReadColorBufferDMA when SurfaceFlinger samples a region.
+    # Keep the emulator on its supported buffer-copy path, independent of host defaults.
+    graphics_options+=(-feature -HasSharedSlotsHostMemoryAllocator)
+fi
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
-    -no-boot-anim -gpu swiftshader -memory "$emulator_memory_mb" -partition-size 4096 \
+    -no-boot-anim "${graphics_options[@]}" -memory "$emulator_memory_mb" -partition-size 4096 \
     -wipe-data -no-snapshot -no-metrics &
 emulator_pid=$!
 
