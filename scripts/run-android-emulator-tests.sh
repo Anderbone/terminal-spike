@@ -136,8 +136,14 @@ emulator_pid=""
 
 cleanup() {
     if [[ -n "$emulator_pid" ]]; then
-        "$adb_bin" -s "$serial" emu kill >/dev/null 2>&1 || true
+        # A stalled console or emulator must not keep a completed test job alive.
+        timeout --kill-after=1 5 "$adb_bin" -s "$serial" emu kill >/dev/null 2>&1 || true
         kill "$emulator_pid" >/dev/null 2>&1 || true
+        for ((shutdown_attempt = 0; shutdown_attempt < 5; shutdown_attempt++)); do
+            kill -0 "$emulator_pid" 2>/dev/null || break
+            sleep 1
+        done
+        kill -KILL "$emulator_pid" >/dev/null 2>&1 || true
         wait "$emulator_pid" >/dev/null 2>&1 || true
     fi
     if [[ -n "$avd_workspace" && -d "$avd_workspace" && \
@@ -149,13 +155,15 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 sdk_install_log="$avd_workspace/sdk-install.txt"
+# Accept only the selected stable image's license. API 32 still references the SDK's
+# legacy preview-license identifier; unattended installers otherwise skip it.
 if [[ -x "$android_cli_bin" ]]; then
-    if ! "$android_cli_bin" sdk install "$system_image" >"$sdk_install_log" 2>&1; then
+    if ! printf 'y\n' | "$android_cli_bin" sdk install "$system_image" >"$sdk_install_log" 2>&1; then
         echo "Android system-image installation failed:" >&2
         sed -n '1,120p' "$sdk_install_log" >&2
         exit 4
     fi
-elif ! "$sdkmanager_bin" "$system_image" >"$sdk_install_log" 2>&1; then
+elif ! printf 'y\n' | "$sdkmanager_bin" "$system_image" >"$sdk_install_log" 2>&1; then
     echo "Android system-image installation failed:" >&2
     sed -n '1,120p' "$sdk_install_log" >&2
     exit 4
@@ -171,7 +179,7 @@ fi
 # software IME from repeatedly resizing Compose dialogs; real IME behavior remains device-tested.
 printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
-    -no-boot-anim -gpu swiftshader_indirect -memory "$emulator_memory_mb" -partition-size 4096 \
+    -no-boot-anim -gpu swiftshader -memory "$emulator_memory_mb" -partition-size 4096 \
     -wipe-data -no-snapshot -no-metrics &
 emulator_pid=$!
 

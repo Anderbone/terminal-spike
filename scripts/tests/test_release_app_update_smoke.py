@@ -58,7 +58,7 @@ case "$*" in
   *"update app.apk") cert=${FAKE_UPDATE_CERT:-CERTIFICATE_A} ;;
   *) cert=CERTIFICATE_A ;;
 esac
-printf 'Signer #1 certificate SHA-256 digest: %s\n' "$cert"
+printf '%s certificate SHA-256 digest: %s\n' "${FAKE_SIGNER_PREFIX:-Signer #1}" "$cert"
 ''',
         )
         self.write_tool(
@@ -140,6 +140,24 @@ printf "package: name='%s' versionCode='%s' versionName='test'\n" "$package" "$v
                 env[variable] = value
                 result = self.run_runner(env=env)
                 self.assertNotEqual(0, result.returncode)
+                self.assertFalse(any(line.startswith("docker ") for line in self.commands()))
+                self.log.unlink(missing_ok=True)
+
+    def test_versioned_signer_output_preserves_certificate_continuity_check(self) -> None:
+        for prefix in ("V2 Signer:", "V3 Signer:", "V3.1 Signer:"):
+            with self.subTest(prefix=prefix):
+                env = self.env.copy()
+                env["FAKE_SIGNER_PREFIX"] = prefix
+                env["FAKE_SMOKE_FAIL"] = "1"
+                result = self.run_runner(env=env)
+                self.assertIn("stage=preflight status=pass", result.stdout)
+                self.assertIn("stage=fixture status=start", result.stdout)
+                self.log.unlink(missing_ok=True)
+
+                env["FAKE_UPDATE_CERT"] = "CERTIFICATE_B"
+                result = self.run_runner(env=env)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("same signing certificate", result.stderr)
                 self.assertFalse(any(line.startswith("docker ") for line in self.commands()))
                 self.log.unlink(missing_ok=True)
 

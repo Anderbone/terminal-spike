@@ -84,6 +84,7 @@ case "$*" in
   *"shell getprop sys.boot_completed") printf '%s\n' "${FAKE_BOOTED:-1}" ;;
   *"shell getprop ro.kernel.qemu") printf '%s\n' "${FAKE_QEMU:-1}" ;;
   *"emu avd name") printf '%s\nOK\n' "$FAKE_AVD" ;;
+  *"emu kill") [[ "${FAKE_STUCK_SHUTDOWN:-0}" != "1" ]] || sleep 300 ;;
   *"shell pm path android") [[ "${FAKE_PM_READY:-1}" == "1" ]] && printf 'package:/system/framework/framework-res.apk\n' ;;
   *" install "*) [[ "${FAKE_INSTALL_FAIL:-0}" != "1" ]] ;;
   *"logcat -c") [[ "${FAKE_LOGCAT_CLEAR_FAIL:-0}" != "1" ]] ;;
@@ -222,6 +223,7 @@ esac
         self.assertEqual(1, len(emulator))
         self.assertIn("-memory 4096", emulator[0])
         self.assertIn("-partition-size 4096", emulator[0])
+        self.assertIn("-gpu swiftshader ", emulator[0])
         adb = [line for line in self.commands() if line.startswith("adb ")]
         self.assertTrue(adb)
         self.assertTrue(all(line.startswith("adb -s emulator-5554 ") for line in adb))
@@ -233,6 +235,24 @@ esac
         self.assertTrue((self.output / "TEST-api35-full.xml").is_file())
         self.assertNotIn("192.168.1.2", (self.output / "logcat-api35-full.txt").read_text())
         self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+
+    def test_stuck_adb_and_emulator_shutdown_are_bounded_after_success(self) -> None:
+        self.write_tool(
+            self.root / "sdk/emulator/emulator",
+            "exec python3 -c 'import os, signal, time; from pathlib import Path; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            'Path(os.environ["FAKE_STATE_DIR"], "emulator.pid").write_text(str(os.getpid())); '
+            "time.sleep(300)'\n",
+        )
+        env = self.env.copy()
+        env["FAKE_STUCK_SHUTDOWN"] = "1"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue((self.output / "TEST-api35-full.xml").is_file())
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+        pid = int((self.state / "emulator.pid").read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
 
     def test_emulator_memory_override_is_bounded_and_forwarded(self) -> None:
         invalid_env = self.env.copy()
@@ -251,10 +271,12 @@ esac
         self.assertEqual(1, len(emulator))
         self.assertIn("-memory 6144", emulator[0])
 
-    def test_prefers_current_android_sdk_installer_when_available(self) -> None:
+    def test_current_android_installer_receives_selected_image_license_acceptance(self) -> None:
         android_cli = self.root / "sdk/cmdline-tools/latest/bin/android"
         self.write_tool(
             android_cli,
+            'read -r acceptance\n'
+            '[[ "$acceptance" == "y" ]]\n'
             'printf "android %s\\n" "$*" >> "$FAKE_SDK_LOG"\n',
         )
 
@@ -267,6 +289,17 @@ esac
             commands,
         )
         self.assertFalse(any(line.startswith("sdkmanager ") for line in commands))
+
+    def test_sdkmanager_fallback_receives_selected_image_license_acceptance(self) -> None:
+        self.write_tool(
+            self.root / "sdk/cmdline-tools/latest/bin/sdkmanager",
+            'read -r acceptance\n'
+            '[[ "$acceptance" == "y" ]]\n'
+            'printf "sdkmanager %s\\n" "$*" >> "$FAKE_SDK_LOG"\n',
+        )
+        result = self.run_runner("--api", "32", "--suite", "boundary")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("sdkmanager system-images;android-32;google_apis;x86_64", self.commands())
 
     def test_old_image_logcat_clear_failure_does_not_suppress_tests(self) -> None:
         env = self.env.copy()

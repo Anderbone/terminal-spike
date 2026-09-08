@@ -113,10 +113,13 @@ verify_release_avd() {
 
 verify_release_avd
 
-initial_cert=$("$apksigner_bin" verify --print-certs "$initial_apk" \
-    | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
-update_cert=$("$apksigner_bin" verify --print-certs "$update_apk" \
-    | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+apk_certificate() {
+    "$apksigner_bin" verify --print-certs "$1" | sed -n \
+        -e 's/^Signer #1 certificate SHA-256 digest: //p' \
+        -e 's/^V[0-9][0-9.]* Signer: certificate SHA-256 digest: //p' | head -n 1
+}
+initial_cert=$(apk_certificate "$initial_apk")
+update_cert=$(apk_certificate "$update_apk")
 if [ -z "$initial_cert" ] || [ "$initial_cert" != "$update_cert" ]; then
     printf 'Initial and update APKs do not have the same signing certificate.\n' >&2
     exit 1

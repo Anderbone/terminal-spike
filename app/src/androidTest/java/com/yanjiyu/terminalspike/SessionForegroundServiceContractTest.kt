@@ -65,7 +65,7 @@ class SessionForegroundServiceContractTest {
                 serviceInfo.foregroundServiceType,
             )
             assertEquals(
-                "active user-started remote terminal sessions",
+                "active user-started terminal sessions and local Linux installation",
                 packageManager.getProperty(
                     "android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE",
                     ComponentName(context, SessionForegroundService::class.java),
