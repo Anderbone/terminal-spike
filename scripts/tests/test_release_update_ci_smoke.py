@@ -196,6 +196,9 @@ if os.environ.get('FAKE_MISSING_AAB') != '1':
         return r'''
 log('release-smoke ' + ' '.join(sys.argv[1:]))
 if os.environ.get('FAKE_SMOKE_FAIL') == '1':
+    print('RELEASE_APP_UPDATE_SMOKE stage=fixture status=start')
+    print('RELEASE_APP_UPDATE_SMOKE stage=secret-value status=pass')
+    print('private credential=secret-value', file=sys.stderr)
     raise SystemExit(1)
 values = [
     'ssh_before=pass',
@@ -344,6 +347,13 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
                 self.assertIn(expected, result.stderr)
                 self.assert_clean()
                 self.reset()
+
+    def test_failed_smoke_retains_only_known_stage_markers(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_SMOKE_FAIL="1"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("stage=black_box_fixture status=start", result.stdout)
+        self.assertNotIn("secret-value", result.stdout + result.stderr)
+        self.assert_clean()
 
     def test_invalid_port_is_rejected_before_tools(self) -> None:
         result = self.run_runner(extra=("--port", "5555"))

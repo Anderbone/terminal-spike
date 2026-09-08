@@ -390,12 +390,25 @@ class ReleaseSmokeRunner:
             label="black-box release update SSH smoke",
             environment=environment,
             timeout=900,
+            check=False,
         )
         assert self.workspace is not None
         (self.workspace / "smoke-private.log").write_text(
             result.stdout + result.stderr,
             encoding="utf-8",
         )
+        # Retain only fixed stage markers, including on failure; private SSH/signing output stays private.
+        for line in result.stdout.splitlines():
+            marker = re.fullmatch(
+                r"RELEASE_APP_UPDATE_SMOKE stage=(preflight|fixture|initial_install|initial_connection|"
+                r"update_install|preserved_connection|notification_rationale|tmux_chooser) "
+                r"status=(start|pass|dismissed|open_shell)",
+                line,
+            )
+            if marker:
+                self.log("black_box_" + marker[1], marker[2])
+        if result.returncode != 0:
+            raise ReleaseSmokeFailure("black-box release update SSH smoke failed")
         required = (
             "ssh_before=pass",
             "ssh_after=pass",

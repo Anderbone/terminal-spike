@@ -15,6 +15,7 @@ import com.yanjiyu.terminalspike.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -175,7 +176,16 @@ class TerminalClipboardWriterTest {
                 }
                 scenario.withResumedFocusedActivity { activity ->
                     val manager = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
-                    assertTrue(manager.primaryClip == null || manager.primaryClip!!.itemCount == 0)
+                    val clip = manager.primaryClip
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        assertTrue(clip == null || clip.itemCount == 0)
+                    } else {
+                        // Before clearPrimaryClip exists, clearing replaces the clip with empty text.
+                        assertNotNull(clip)
+                        assertEquals(1, clip!!.itemCount)
+                        assertEquals("", clip.getItemAt(0).text.toString())
+                        assertNull(clip.description.extras)
+                    }
                 }
             }
         } finally {

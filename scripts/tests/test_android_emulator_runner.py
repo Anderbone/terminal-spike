@@ -221,6 +221,7 @@ esac
         emulator = [line for line in self.commands() if line.startswith("emulator ")]
         self.assertEqual(1, len(emulator))
         self.assertIn("-memory 4096", emulator[0])
+        self.assertIn("-partition-size 4096", emulator[0])
         adb = [line for line in self.commands() if line.startswith("adb ")]
         self.assertTrue(adb)
         self.assertTrue(all(line.startswith("adb -s emulator-5554 ") for line in adb))

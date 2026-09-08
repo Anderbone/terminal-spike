@@ -171,7 +171,7 @@ fi
 # software IME from repeatedly resizing Compose dialogs; real IME behavior remains device-tested.
 printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
-    -no-boot-anim -gpu swiftshader_indirect -memory "$emulator_memory_mb" \
+    -no-boot-anim -gpu swiftshader_indirect -memory "$emulator_memory_mb" -partition-size 4096 \
     -wipe-data -no-snapshot -no-metrics &
 emulator_pid=$!
 
