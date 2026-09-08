@@ -1,0 +1,17 @@
+--- a/shmem.c
++++ b/shmem.c
+@@ -237,6 +237,14 @@
+ 
+ static int ashv_read_remote_segment(int shmid)
+ {
++	/* Terminal Spike: a removed local segment may leave a stale key link.
++	 * Callers hold mutex. Connecting to our own listener would deadlock,
++	 * because that listener also needs mutex before replying. */
++	if (ashv_socket_id_from_shmid(shmid) == ashv_local_socket_id) {
++		errno = EINVAL;
++		return -1;
++	}
++
+ 	struct sockaddr_un addr;
+ 	memset(&addr, 0, sizeof(addr));
+ 	addr.sun_family = AF_UNIX;

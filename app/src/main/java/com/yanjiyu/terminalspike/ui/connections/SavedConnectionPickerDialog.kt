@@ -52,9 +52,10 @@ internal fun SavedConnectionPickerDialog(
     onDismiss: () -> Unit,
     onOpenConnections: () -> Unit,
     onSelectHost: (HostEditorSeed) -> Unit,
+    protocol: ConnectionProtocol? = null,
 ) {
     val catalog = (loadState as? ConnectionsLoadState.Ready)?.editorCatalog
-    val hosts = catalog?.hosts.orEmpty().sortedWith(
+    val hosts = catalog?.hosts.orEmpty().filter { protocol == null || it.draft.protocol == protocol }.sortedWith(
         compareByDescending<HostEditorSeed> { it.draft.isFavourite }
             .thenBy(String.CASE_INSENSITIVE_ORDER) { it.draft.displayName },
     )

@@ -15,6 +15,8 @@ data class TmuxSession(
     val attachedClientCount: Int,
     val createdAtEpochSeconds: Long,
     val previewLines: List<String> = emptyList(),
+    val taskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus =
+        com.yanjiyu.terminalspike.terminal.TerminalTaskStatus(),
 )
 
 enum class TmuxAvailability {
@@ -79,20 +81,24 @@ internal class TmuxSessionSelector(
 
     private val token = nextPromptToken.getAndIncrement()
     private val actions = LinkedBlockingQueue<TmuxSelectorAction>()
+    private val tasks = TmuxTaskMonitor()
 
     fun awaitChoice(): TmuxStartupChoice? {
         var inspection = inspectTmuxSessions(commandRunner)
         var deleteFailed = false
         while (true) {
+            inspection.executable?.let { tasks.refresh(commandRunner, it) }
             onPrompt(
                 TmuxSessionPrompt(
                     promptToken = token,
-                    sessions = inspection.sessions,
+                    sessions = inspection.sessions.map { it.copy(taskStatus = tasks.sessionStatus(it.id)) },
                     availability = inspection.availability,
                     deleteFailed = deleteFailed,
                 ),
             )
-            when (val action = actions.take()) {
+            val action = actions.poll(1L, java.util.concurrent.TimeUnit.SECONDS)
+            if (action == null) continue
+            when (action) {
                 TmuxSelectorAction.Cancel -> return null
                 is TmuxSelectorAction.Select -> {
                     if (action.promptToken != token) continue
@@ -301,6 +307,7 @@ internal fun switchOrAttachTmuxSession(
     commandRunner: TmuxCommandRunner,
     targetSessionId: String,
     sourceSessionId: String?,
+    clientTty: String? = null,
 ): TmuxSessionSwitchResult {
     if (
         !targetSessionId.isTmuxSessionId() ||
@@ -331,7 +338,7 @@ internal fun switchOrAttachTmuxSession(
             .orEmpty()
     }.getOrDefault(emptyList())
     val client = clients
-        .filter { it.sessionId == sourceSessionId }
+        .filter { it.sessionId == sourceSessionId && (clientTty == null || it.tty == clientTty) }
         .maxByOrNull(TmuxClient::activityEpochSeconds)
         ?: return TmuxSessionSwitchResult.Attach(tmuxAttachCommand(executable, targetSessionId))
     return if (runCatching {
@@ -388,8 +395,8 @@ private fun captureTmuxPreview(
 }.getOrDefault(emptyList())
 
 /**
- * Captures only physical history rows for one stable pane target. Metadata and history use separate
- * execs so a session target is resolved to a pane ID once; animation never invokes either runner.
+ * Captures bounded physical history for one stable pane. An outer probe resolves the pane;
+ * one tmux command queue captures metadata and history together. Animation invokes neither runner.
  */
 internal fun captureTmuxPane(
     metadataRunner: TmuxCommandRunner,
@@ -399,12 +406,14 @@ internal fun captureTmuxPane(
     authoritative: Boolean = false,
     includeHistory: Boolean = true,
     pageRequest: TmuxHistoryPageRequest? = null,
+    paneId: String? = null,
 ): TmuxPaneCapture? {
     if (!executable.isTmuxExecutablePath() || !sessionId.isTmuxSessionId()) return null
-    val metadata = runCatching {
+    if (paneId != null && !paneId.matches(Regex("%[0-9]+"))) return null
+    fun readMetadata(target: String): TmuxPaneCaptureMetadata? = runCatching {
         metadataRunner.run(
             "${quotePosixShellArgument(executable)} display-message -p -t " +
-                "${quotePosixShellArgument(sessionId)} " +
+                "${quotePosixShellArgument(target)} " +
                 quotePosixShellArgument(TMUX_PANE_CAPTURE_FORMAT),
         ).takeIf { it.exitStatus == 0 }
             ?.stdout
@@ -413,68 +422,74 @@ internal fun captureTmuxPane(
             ?.filter(String::isNotEmpty)
             ?.singleOrNull()
             ?.let(::parseTmuxPaneCaptureMetadata)
-    }.getOrNull() ?: return null
-    if (metadata.sessionId != sessionId) return null
+    }.getOrNull()
+    var metadata = readMetadata(paneId ?: sessionId) ?: return null
+    if (metadata.sessionId != sessionId || (paneId != null && metadata.paneId != paneId)) return null
 
-    val savedPrimaryRows = if (metadata.alternateScreenActive) metadata.rows else 0
-    val remoteHistoryRows = metadata.historyRows + savedPrimaryRows
+    fun remoteRows(value: TmuxPaneCaptureMetadata): Int =
+        value.historyRows + if (value.alternateScreenActive) value.rows else 0
+    var remoteHistoryRows = remoteRows(metadata)
     if (remoteHistoryRows < metadata.historyRows) return null
-    val oldestAvailableRow =
-        (remoteHistoryRows - ModelLimits.MAX_SCROLLBACK_LINES).coerceAtLeast(0)
+    var oldestAvailableRow = (remoteHistoryRows - ModelLimits.MAX_SCROLLBACK_LINES).coerceAtLeast(0)
     if (pageRequest != null && (
             pageRequest.paneId != metadata.paneId ||
                 pageRequest.remoteHistoryRows != remoteHistoryRows ||
                 pageRequest.beforeRow !in (oldestAvailableRow + 1)..metadata.historyRows
             )
-    ) {
-        return null
-    }
-    // Older pages include the first cached row as an overlap sentinel. If tmux discarded rows
-    // while history_size stayed at its limit, the controller rejects the shifted page.
-    val captureEndRow = pageRequest?.beforeRow?.plus(1) ?: metadata.historyRows
-    val capturedStartRow = maxOf(
-        oldestAvailableRow,
-        (pageRequest?.beforeRow ?: captureEndRow) - TMUX_HISTORY_PAGE_ROWS,
-    )
-    val capturedHistoryRows = captureEndRow - capturedStartRow
-    val includedSavedPrimaryRows = if (pageRequest == null) savedPrimaryRows else 0
-    val capturedRows = capturedHistoryRows + includedSavedPrimaryRows
-    val content = if (!includeHistory || capturedRows == 0) {
+    ) return null
+
+    val content = if (!includeHistory || remoteHistoryRows == 0) {
         byteArrayOf()
     } else {
-        val physicalHistory = if (capturedHistoryRows == 0) {
-            byteArrayOf()
-        } else {
-            val endArgument = if (captureEndRow == metadata.historyRows) {
-                "-1"
-            } else {
-                quotePosixShellArgument("-${metadata.historyRows - captureEndRow + 1}")
-            }
-            runCatching {
-                historyRunner.run(
-                    "${quotePosixShellArgument(executable)} capture-pane -p -e -J -t " +
-                        "${quotePosixShellArgument(metadata.paneId)} -S " +
-                        "${quotePosixShellArgument("-${metadata.historyRows - capturedStartRow}")} " +
-                        "-E $endArgument",
-                ).takeIf { it.exitStatus == 0 }?.stdout
-            }.getOrNull() ?: return null
+        // One synchronous tmux command queue owns both metadata and bytes. Separate SSH execs
+        // can race output: negative capture ranges then refer to a different history size.
+        // The outer probe chooses the pane and capture shape; this batch supplies coordinates.
+        val marker = "__TS_CAPTURE_${java.util.UUID.randomUUID().toString().replace("-", "")}__"
+        val tmux = quotePosixShellArgument(executable)
+        val target = quotePosixShellArgument(metadata.paneId)
+        val commands = mutableListOf(
+            "$tmux display-message -p -t $target " + quotePosixShellArgument(marker + TMUX_PANE_CAPTURE_FORMAT),
+        )
+        if (metadata.historyRows > 0) {
+            val startRow = if (pageRequest == null) TMUX_HISTORY_PAGE_ROWS else
+                metadata.historyRows - maxOf(oldestAvailableRow, pageRequest.beforeRow - TMUX_HISTORY_PAGE_ROWS)
+            val end = if (pageRequest == null) "-1" else
+                quotePosixShellArgument("-${metadata.historyRows - pageRequest.beforeRow}")
+            commands += "capture-pane -p -e -J -t $target -S " + quotePosixShellArgument("-$startRow") + " -E $end"
         }
-        val savedPrimaryScreen = if (includedSavedPrimaryRows == 0) {
-            byteArrayOf()
-        } else {
-            runCatching {
-                historyRunner.run(
-                    "${quotePosixShellArgument(executable)} capture-pane -p -e -J -a -t " +
-                        quotePosixShellArgument(metadata.paneId),
-                ).takeIf { it.exitStatus == 0 }?.stdout
-            }.getOrNull() ?: return null
+        if (pageRequest == null && metadata.alternateScreenActive) {
+            commands += "capture-pane -p -e -J -a -t $target"
         }
-        if (physicalHistory.size > TmuxPaneCapture.MAX_CAPTURE_BYTES - savedPrimaryScreen.size) {
-            return null
-        }
-        physicalHistory + savedPrimaryScreen
+        commands += "display-message -p -t $target " + quotePosixShellArgument(marker + TMUX_PANE_CAPTURE_FORMAT)
+        val output = runCatching {
+            historyRunner.run(commands.joinToString(" \\; ")).takeIf { it.exitStatus == 0 }?.stdout
+        }.getOrNull() ?: return null
+        if (output.size > TmuxPaneCapture.MAX_CAPTURE_BYTES) return null
+        val text = output.toString(Charsets.UTF_8)
+        val firstBreak = text.indexOf('\n')
+        val lastBreak = text.trimEnd('\n').lastIndexOf('\n')
+        if (firstBreak < 0 || lastBreak < firstBreak) return null
+        val beforeLine = text.substring(0, firstBreak)
+        val afterLine = text.substring(lastBreak + 1).trimEnd('\n')
+        if (!beforeLine.startsWith(marker) || !afterLine.startsWith(marker)) return null
+        val before = parseTmuxPaneCaptureMetadata(beforeLine.removePrefix(marker)) ?: return null
+        val after = parseTmuxPaneCaptureMetadata(afterLine.removePrefix(marker)) ?: return null
+        if (before != after || before.sessionId != metadata.sessionId || before.paneId != metadata.paneId ||
+            before.alternateScreenActive != metadata.alternateScreenActive ||
+            (before.historyRows == 0) != (metadata.historyRows == 0) ||
+            (pageRequest != null && before != metadata)
+        ) return null
+        metadata = before
+        remoteHistoryRows = remoteRows(metadata)
+        if (remoteHistoryRows < metadata.historyRows) return null
+        oldestAvailableRow = (remoteHistoryRows - ModelLimits.MAX_SCROLLBACK_LINES).coerceAtLeast(0)
+        text.substring(firstBreak + 1, lastBreak + 1).toByteArray(Charsets.UTF_8)
     }
-    if (content.size > TmuxPaneCapture.MAX_CAPTURE_BYTES) return null
+    val captureEndRow = pageRequest?.beforeRow?.plus(1) ?: metadata.historyRows
+    val capturedStartRow = maxOf(oldestAvailableRow,
+        (pageRequest?.beforeRow ?: captureEndRow) - TMUX_HISTORY_PAGE_ROWS)
+    val capturedRows = captureEndRow - capturedStartRow +
+        if (pageRequest == null && metadata.alternateScreenActive) metadata.rows else 0
 
     val publishedHistoryRows = if (includeHistory) {
         capturedRows

@@ -16,6 +16,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.yanjiyu.terminalspike.localarch.LocalRuntimeState
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.connection.SessionForegroundStartResult
 import com.yanjiyu.terminalspike.connection.SessionForegroundStarter
@@ -48,17 +49,25 @@ class SessionForegroundService : Service() {
     private val repository
         get() = (application as TerminalSpikeApplication).container.sshSessionRepository
 
+    private val localRepository
+        get() = (application as TerminalSpikeApplication).container.localSessionRepository
+
+    private fun failSessions(message: String) {
+        repository.failAllForServiceLoss(message)
+        localRepository.failAllForServiceLoss(message)
+    }
+
     override fun onCreate() {
         super.onCreate()
         notificationFactory = SessionNotificationFactory(this)
         cpuAwakePolicy = SessionCpuAwakePolicy(AndroidSessionCpuAwakeLease(this))
-        val initialState = repository.sessions.value.toNotificationState()
+        val initialState = repository.sessions.value.toNotificationState().withLocalRuntime(localRepository.runtime.value)
         val promoted = runCatching {
             notificationFactory.ensureChannel()
             startForegroundImmediately(initialState)
         }.isSuccess
         if (!promoted) {
-            repository.failAllForServiceLoss(getString(R.string.session_background_service_failed))
+            failSessions(getString(R.string.session_background_service_failed))
             endingForIdle = true
             stopSelf()
             return
@@ -66,10 +75,12 @@ class SessionForegroundService : Service() {
         serviceScope.launch {
             combine(
                 repository.sessions,
+                localRepository.runtime,
                 (application as TerminalSpikeApplication).container.settings.settings,
-            ) { sessions, settings ->
+            ) { sessions, localRuntime, settings ->
                 SessionServiceRuntimeState(
                     sessions = sessions,
+                    localRuntime = localRuntime,
                     keepCpuAwake = settings.keepCpuAwake,
                     notificationPrivacyEnabled = settings.notificationPrivacyEnabled,
                     disconnectNotificationsEnabled = settings.disconnectNotificationsEnabled,
@@ -79,6 +90,7 @@ class SessionForegroundService : Service() {
                 emit(
                     SessionServiceRuntimeState(
                         sessions = repository.sessions.value,
+                        localRuntime = localRepository.runtime.value,
                         keepCpuAwake = AppSettingsSerializer.defaultValue.keepCpuAwake,
                         notificationPrivacyEnabled = true,
                         disconnectNotificationsEnabled = false,
@@ -87,9 +99,9 @@ class SessionForegroundService : Service() {
                 )
             }.collect { runtimeState ->
                 notificationPrivacyEnabled = runtimeState.notificationPrivacyEnabled
-                val notificationState = runtimeState.sessions.toNotificationState()
+                val notificationState = runtimeState.sessions.toNotificationState().withLocalRuntime(runtimeState.localRuntime)
                 cpuAwakePolicy.update(
-                    enabled = runtimeState.keepCpuAwake,
+                    enabled = runtimeState.keepCpuAwake || runtimeState.localRuntime.installationActive,
                     hasActiveSession = notificationState.requiresForegroundService,
                 )
                 updateForegroundState(notificationState, runtimeState.notificationPrivacyEnabled)
@@ -118,7 +130,7 @@ class SessionForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         latestStartId = startId
         endingForIdle = false
-        if (!repository.requiresForegroundService()) finishForegroundForIdle()
+        if (!repository.requiresForegroundService() && !localRepository.runtime.value.requiresForegroundService) finishForegroundForIdle()
         return START_NOT_STICKY
     }
 
@@ -128,7 +140,7 @@ class SessionForegroundService : Service() {
         cpuAwakePolicy.close()
         serviceScope.cancel()
         if (!endingForIdle) {
-            repository.failAllForServiceLoss(getString(R.string.session_background_service_failed))
+            failSessions(getString(R.string.session_background_service_failed))
         }
         if (foregroundStarted) {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -163,7 +175,7 @@ class SessionForegroundService : Service() {
         endingForIdle = false
         if (!foregroundStarted) {
             if (runCatching { startForegroundImmediately(state, privacyEnabled) }.isFailure) {
-                repository.failAllForServiceLoss(getString(R.string.session_background_service_failed))
+                failSessions(getString(R.string.session_background_service_failed))
                 finishForegroundForIdle()
             }
             return
@@ -197,6 +209,7 @@ class SessionForegroundService : Service() {
 
 internal data class SessionServiceRuntimeState(
     val sessions: List<SshSessionSnapshot>,
+    val localRuntime: LocalRuntimeState = LocalRuntimeState(),
     val keepCpuAwake: Boolean,
     val notificationPrivacyEnabled: Boolean,
     val disconnectNotificationsEnabled: Boolean,
@@ -587,3 +600,13 @@ internal fun terminalProgramNotificationIntent(context: Context, sessionId: Long
         .setAction(MainActivity.ACTION_OPEN_TERMINAL_SESSION)
         .putExtra(MainActivity.EXTRA_TERMINAL_SESSION_ID, sessionId)
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+internal fun SessionNotificationState.withLocalRuntime(local: LocalRuntimeState): SessionNotificationState {
+    val localCount = local.activeCount + if (local.installationActive) 1 else 0
+    if (localCount == 0) return this
+    return copy(
+        activeSessionCount = activeSessionCount + localCount,
+        connectedSessionCount = connectedSessionCount + local.connectedCount,
+        activeFriendlyName = if (activeSessionCount == 0 && localCount == 1) "Local Arch Linux" else null,
+    )
+}

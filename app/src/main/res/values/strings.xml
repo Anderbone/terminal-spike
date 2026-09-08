@@ -33,16 +33,16 @@
     <string name="connections_nearby_ssh_no_address">The selected SSH service did not provide a usable hostname or address.</string>
     <string name="connections_nearby_ssh_retry">Scan again</string>
     <string name="connections_nearby_ssh_close">Close</string>
-    <string name="session_notification_channel_name">Remote terminal sessions</string>
-    <string name="session_notification_channel_description">Keeps user-started remote terminal connections active</string>
-    <string name="session_notification_title">Remote terminal active</string>
-    <string name="session_notification_starting">Starting a secure remote terminal session</string>
+    <string name="session_notification_channel_name">Terminal sessions</string>
+    <string name="session_notification_channel_description">Keeps user-started terminal sessions active</string>
+    <string name="session_notification_title">Terminal active</string>
+    <string name="session_notification_starting">Starting a terminal session</string>
     <string name="session_notification_active_named">Active: %1$s</string>
     <string name="session_notification_disconnect_all">Disconnect all</string>
     <string name="session_disconnect_all_confirmation_title">Disconnect all terminals?</string>
     <plurals name="session_disconnect_all_confirmation_message">
-        <item quantity="one">%1$d active remote terminal will be disconnected. Unsaved shell state may be lost.</item>
-        <item quantity="other">%1$d active remote terminals will be disconnected. Unsaved shell state may be lost.</item>
+        <item quantity="one">%1$d active terminal will be disconnected. Unsaved shell state may be lost.</item>
+        <item quantity="other">%1$d active terminals will be disconnected. Unsaved shell state may be lost.</item>
     </plurals>
     <string name="session_disconnect_all_confirmation_confirm">Disconnect all</string>
     <string name="session_disconnect_all_confirmation_cancel">Keep connected</string>
@@ -50,7 +50,7 @@
     <string name="session_notification_disconnected_text">A connection ended unexpectedly. Open the app to review or reconnect.</string>
     <string name="session_notification_reconnected_title">Remote terminal reconnected</string>
     <string name="session_notification_reconnected_text">A fresh shell was opened. Only multiplexer-managed processes may have survived.</string>
-    <string name="session_background_service_failed">Remote terminal stopped because Android could not keep its foreground service active.</string>
+    <string name="session_background_service_failed">Terminal stopped because Android could not keep its foreground service active.</string>
     <string name="terminal_program_notification_channel_name">Terminal task completion</string>
     <string name="terminal_program_notification_channel_description">Alerts from terminal applications, including completed Codex turns</string>
     <string name="terminal_program_notification_title">Terminal task complete</string>
@@ -332,7 +332,7 @@
     <string name="settings_reconnect_notifications_summary">Show when automatic reconnect opens a fresh shell.</string>
     <string name="settings_notification_permission">Notification permission</string>
     <string name="settings_notification_permission_summary">Android 13+ controls whether session notifications appear normally</string>
-    <string name="settings_session_channel">Remote terminal channel</string>
+    <string name="settings_session_channel">Terminal session channel</string>
     <string name="settings_session_channel_summary">Low importance, no sound, vibration or badge</string>
     <string name="settings_open_notification_settings">Open notification settings</string>
     <string name="settings_notification_denial_honesty">A denied notification permission does not silently grant background reliability; Android may show active work only in system task management.</string>
@@ -539,7 +539,10 @@
     <string name="dismiss">Dismiss</string>
     <string name="connections_action_open_files">Open files</string>
     <plurals name="session_notification_active_count">
-        <item quantity="one">%1$d remote terminal session active</item>
-        <item quantity="other">%1$d remote terminal sessions active</item>
+        <item quantity="one">%1$d terminal session active</item>
+        <item quantity="other">%1$d terminal sessions active</item>
     </plurals>
+    <string name="terminal_task_running">Running</string>
+    <string name="terminal_task_finished">Finished / ready</string>
+    <string name="terminal_task_attention">Needs attention</string>
 </resources>

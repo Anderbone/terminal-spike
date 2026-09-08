@@ -71,9 +71,43 @@ internal class MoshBootstrapResult(
     val sessionKey: ByteArray = sessionKey
     private var attachedTmuxSessionId: String? = initialTmuxSessionId
     private val startedInTmux = startedInTmux
+    private var discoveredTmuxClient: TmuxClientIdentity? = null
+    private var tmuxClientWasDiscovered = false
+    private val tmuxTasks = TmuxTaskMonitor()
 
     val isTmuxSession: Boolean
-        get() = synchronized(this) { startedInTmux || attachedTmuxSessionId != null }
+        get() = synchronized(this) {
+            if (tmuxClientWasDiscovered) discoveredTmuxClient != null
+            else startedInTmux || attachedTmuxSessionId != null
+        }
+
+    val terminalTaskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
+        get() = tmuxTasks.paneStatus(synchronized(this) { discoveredTmuxClient?.paneId })
+
+    fun acknowledgeTaskStatus() {
+        tmuxTasks.acknowledge(synchronized(this) { discoveredTmuxClient?.paneId })
+    }
+
+    fun refreshTmuxIdentity(): Boolean {
+        val runner = sshSideChannel?.tmuxCommandRunner() ?: return false
+        val executable = synchronized(this) { tmuxExecutable } ?: queryTmuxExecutable(runner)
+            ?: return false
+        tmuxTasks.refresh(runner, executable)
+        val observation = discoverTmuxClient(runner, executable)
+        if (observation == TmuxClientObservation.Unavailable) return false
+        return synchronized(this) {
+            tmuxExecutable = executable
+            val identity = (observation as? TmuxClientObservation.Attached)?.identity
+            if (identity == null && !tmuxClientWasDiscovered) return false
+            tmuxClientWasDiscovered = true
+            if (discoveredTmuxClient == identity) return false
+            discoveredTmuxClient = identity
+            attachedTmuxSessionId = identity?.sessionId
+            cachedTmuxPaneCapture = null
+            tmuxLiveHistoryRefreshPending = identity != null
+            true
+        }
+    }
 
     fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? {
         if (includeHistory) {
@@ -104,6 +138,7 @@ internal class MoshBootstrapResult(
             sessionId = targetSessionId,
             authoritative = authoritative && includeHistory,
             includeHistory = includeHistory,
+            paneId = synchronized(this) { discoveredTmuxClient?.paneId },
         ) ?: return null
         return synchronized(this) {
             capture.takeIf { attachedTmuxSessionId == targetSessionId }?.also {
@@ -122,6 +157,7 @@ internal class MoshBootstrapResult(
             executable = executable,
             sessionId = sessionId,
             pageRequest = request,
+            paneId = synchronized(this) { discoveredTmuxClient?.paneId },
         ) ?: return null
         return synchronized(this) {
             capture.takeIf { attachedTmuxSessionId == sessionId }
@@ -154,7 +190,9 @@ internal class MoshBootstrapResult(
 
     fun queryTmuxSessionCatalog(includePreviews: Boolean = false): TmuxSessionCatalog =
         sshSideChannel?.let { sideChannel ->
-            queryTmuxSessionCatalog(sideChannel.tmuxCommandRunner(), includePreviews).copy(
+            queryTmuxSessionCatalog(sideChannel.tmuxCommandRunner(), includePreviews).let { catalog ->
+                catalog.copy(sessions = catalog.sessions.map { it.copy(taskStatus = tmuxTasks.sessionStatus(it.id)) })
+            }.copy(
                 activeSessionId = synchronized(this) { attachedTmuxSessionId },
             )
         } ?: TmuxSessionCatalog()
@@ -170,7 +208,8 @@ internal class MoshBootstrapResult(
         val runner = sideChannel?.tmuxCommandRunner()
         val executable = synchronized(this) { tmuxExecutable } ?: runner?.let(::queryTmuxExecutable)
         val switched = when (val result = runner?.let {
-            switchOrAttachTmuxSession(it, sessionId, sourceSessionId)
+            switchOrAttachTmuxSession(it, sessionId, sourceSessionId,
+                clientTty = synchronized(this) { discoveredTmuxClient?.tty })
         } ?: TmuxSessionSwitchResult.Failed) {
             TmuxSessionSwitchResult.Switched -> true
             is TmuxSessionSwitchResult.Attach ->

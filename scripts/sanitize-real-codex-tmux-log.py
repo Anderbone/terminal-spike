@@ -56,12 +56,18 @@ def main() -> None:
         message = raw_line.split(PREFIX, 1)[1].strip()
         if message.startswith("tmux smooth test started"):
             line = "REAL_CODEX_TMUX_EVIDENCE stage=start"
+        elif message == "task indicators running=pass ready=pass":
+            line = "REAL_CODEX_TMUX_EVIDENCE stage=task_indicators running=pass ready=pass"
+        elif message.startswith("shell-started tmux connected"):
+            line = "REAL_CODEX_TMUX_EVIDENCE stage=connected origin=manual"
         elif message.startswith("app-selected tmux connected"):
             line = "REAL_CODEX_TMUX_EVIDENCE stage=connected"
         elif message.startswith("actual Codex output stable before first gesture;"):
             line = "REAL_CODEX_TMUX_EVIDENCE stage=pre_gesture " + " ".join(
                 values(message, STATE_FIELDS)
             )
+        elif message.startswith("tmux paging checkpoint;"):
+            line = "REAL_CODEX_TMUX_EVIDENCE stage=paging " + " ".join(values(message, STATE_FIELDS))
         elif message.startswith("first actual-Codex tmux gesture="):
             line = "REAL_CODEX_TMUX_EVIDENCE stage=first_gesture " + " ".join(
                 values(message, GESTURE_FIELDS + STATE_FIELDS)

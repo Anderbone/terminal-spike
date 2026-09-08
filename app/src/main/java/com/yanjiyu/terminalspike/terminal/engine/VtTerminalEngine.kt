@@ -59,6 +59,8 @@ data class TerminalFrameUpdate(
     val clearScrollbackRequested: Boolean = false,
     /** Rows whose immutable line snapshots changed since the preceding frame. */
     val dirtyRows: IntArray = IntArray(0),
+    /** One-shot VT scrolling/line-movement command; framebuffer inference must not reinterpret it. */
+    val hasExplicitVerticalMovement: Boolean = false,
 ) {
     init {
         require(bellSequence >= 0L)
@@ -112,11 +114,13 @@ class VtTerminalEngine(
     private val pendingTerminalNotifications = ArrayDeque<String>()
     private val deferredPrimaryResizeScrollback = ArrayDeque<TerminalLine>()
     private val deferredAlternateResizeScrollback = ArrayDeque<TerminalLine>()
+    private var hasExplicitVerticalMovement = false
 
     private val active: Screen get() = if (useAlternate) alternate else primary
 
     @Synchronized
     fun accept(bytes: ByteArray): TerminalFrameUpdate {
+        hasExplicitVerticalMovement = false
         val completed = ArrayList<TerminalLine>()
         val responses = ArrayList<ByteArray>()
         val remoteClipboardRequests = ArrayList<TerminalRemoteClipboardRequest>()
@@ -136,6 +140,7 @@ class VtTerminalEngine(
 
     @Synchronized
     fun resize(newColumns: Int, newRows: Int): TerminalFrameUpdate {
+        hasExplicitVerticalMovement = false
         val boundedColumns = newColumns.coerceIn(1, MAX_COLUMNS)
         val boundedRows = newRows.coerceIn(1, MAX_ROWS)
         if (boundedColumns == columns && boundedRows == rows) return snapshot()
@@ -160,6 +165,7 @@ class VtTerminalEngine(
 
     @Synchronized
     fun reset(): TerminalFrameUpdate {
+        hasExplicitVerticalMovement = false
         resetState()
         return snapshot()
     }
@@ -380,8 +386,14 @@ class VtTerminalEngine(
             )
             'J' -> eraseDisplay(parameters.firstOrNull() ?: 0, completed, signals)
             'K' -> eraseLine(parameters.firstOrNull() ?: 0)
-            'L' -> active.insertLines(parameter(0), style)
-            'M' -> active.deleteLines(parameter(0), style)
+            'L' -> {
+                hasExplicitVerticalMovement = true
+                active.insertLines(parameter(0), style)
+            }
+            'M' -> {
+                hasExplicitVerticalMovement = true
+                active.deleteLines(parameter(0), style)
+            }
             'P' -> active.deleteCharacters(parameter(0))
             'S' -> repeat(parameter(0).coerceAtMost(rows)) { scrollUp(completed) }
             'T' -> repeat(parameter(0).coerceAtMost(rows)) { scrollDown() }
@@ -650,13 +662,17 @@ class VtTerminalEngine(
     }
 
     private fun scrollUp(completed: MutableList<TerminalLine>) {
+        hasExplicitVerticalMovement = true
         val removed = active.scrollUp(style)
         if (active.topMargin == 0) {
             completed += removed
         }
     }
 
-    private fun scrollDown() = active.scrollDown(style)
+    private fun scrollDown() {
+        hasExplicitVerticalMovement = true
+        active.scrollDown(style)
+    }
 
     private fun eraseDisplay(
         mode: Int,
@@ -869,6 +885,7 @@ class VtTerminalEngine(
             bellCount = bellCount,
             clearScrollbackRequested = clearScrollbackRequested,
             dirtyRows = screenSnapshot.dirtyRows,
+            hasExplicitVerticalMovement = hasExplicitVerticalMovement,
         )
     }
 

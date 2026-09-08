@@ -662,6 +662,11 @@ fun TerminalSpikeScreen(
     var connectDialogRequest by remember { mutableStateOf<SshConnectDialogRequest?>(null) }
     var pendingWorkspaceAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
     var savedConnectionPickerVisible by rememberSaveable { mutableStateOf(false) }
+    var newSessionPickerVisible by rememberSaveable { mutableStateOf(false) }
+    var newSessionProtocol by rememberSaveable { mutableStateOf<ConnectionProtocol?>(null) }
+    var localArchInstallVisible by rememberSaveable { mutableStateOf(false) }
+    val localArchState by viewModel.localArchState.collectAsStateWithLifecycle()
+    val localArchRuntime by viewModel.localArchRuntime.collectAsStateWithLifecycle()
     var pendingTerminalAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
     var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
     var terminalOwner by rememberSaveable { mutableStateOf(TerminalOwner.WORKSPACE) }
@@ -835,6 +840,19 @@ fun TerminalSpikeScreen(
                     tmuxSwitcherCatalog = withPreviews
                 }
             }
+        }
+    }
+
+    LaunchedEffect(tmuxSwitcherTargetId) {
+        val sessionId = tmuxSwitcherTargetId ?: return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(1_000L)
+            val refreshed = viewModel.queryActiveTmuxSessions(sessionId)
+            if (tmuxSwitcherTargetId != sessionId) return@LaunchedEffect
+            val previews = tmuxSwitcherCatalog?.sessions?.associate { it.id to it.previewLines }.orEmpty()
+            tmuxSwitcherCatalog = refreshed.copy(sessions = refreshed.sessions.map {
+                it.copy(previewLines = previews[it.id].orEmpty())
+            })
         }
     }
 
@@ -1153,6 +1171,14 @@ fun TerminalSpikeScreen(
         immersive = destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible,
         controller = systemBarsController,
     )
+    androidx.lifecycle.compose.LifecycleResumeEffect(
+        state.activeSessionId, destination, terminalSurfaceVisible,
+    ) {
+        if (destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible) {
+            viewModel.acknowledgeTerminalTask(state.activeSessionId)
+        }
+        onPauseOrDispose { }
+    }
     TerminalBellEffect(
         sessionId = state.activeSessionId,
         controller = activeController,
@@ -1185,11 +1211,29 @@ fun TerminalSpikeScreen(
         }
     }
 
+    var localArchProgressVisible by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(localArchRuntime.installationActive) {
+        if (localArchRuntime.installationActive) localArchProgressVisible = true
+    }
     Box(modifier = modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+        if (localArchProgressVisible || localArchRuntime.installationActive) LocalArchProgressStrip(
+            state = localArchState,
+            running = localArchRuntime.installationActive || localArchState.busy,
+            error = localArchRuntime.error ?: localArchState.error,
+            onOpen = {
+                if (viewModel.openLocalArch()) {
+                    localArchProgressVisible = false
+                    destination = AppRoute.TERMINAL_DETAIL
+                }
+            },
+            onDetails = { localArchInstallVisible = true },
+            onDismiss = { localArchProgressVisible = false },
+        )
         AnimatedContent(
             targetState = destination,
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
                 .graphicsLayer {
                     val preview = backPreview
                     translationX = size.width * (preview?.translationFraction ?: 0f)
@@ -1342,7 +1386,7 @@ fun TerminalSpikeScreen(
                                 onHostIdentityAnswer = viewModel::answerHostIdentityPrompt,
                                 onNavigateBack = ::navigateBack,
                                 backDestinationLabel = stringResource(terminalOwner.labelRes),
-                                onNewSession = { savedConnectionPickerVisible = true },
+                                onNewSession = { newSessionPickerVisible = true },
                                 onOpenConnections = { showTools(ToolSection.PROFILES) },
                                 onKeyboardInteractiveAnswer =
                                     viewModel::answerKeyboardInteractiveChallenge,
@@ -1395,7 +1439,7 @@ fun TerminalSpikeScreen(
                             } else {
                                 TerminalEmptyState(
                                     canOpenConnection = state.canAddSshSession,
-                                    onOpenConnection = { savedConnectionPickerVisible = true },
+                                    onOpenConnection = { newSessionPickerVisible = true },
                                     modifier = Modifier.align(Alignment.Center),
                                 )
                             }
@@ -1537,6 +1581,8 @@ fun TerminalSpikeScreen(
                     keyboardProfileId = settingsKeyboardProfileId,
                 )
             }
+        }
+
         }
 
         tmuxSwitcherTargetId?.let { targetId ->
@@ -1757,9 +1803,35 @@ fun TerminalSpikeScreen(
         }
     }
 
+    if (newSessionPickerVisible) NewSessionDialog(
+        onDismiss = { newSessionPickerVisible = false },
+        onRemote = { protocol ->
+            newSessionPickerVisible = false
+            newSessionProtocol = protocol
+            savedConnectionPickerVisible = true
+        },
+        onLocalArch = {
+            newSessionPickerVisible = false
+            if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
+                if (viewModel.openLocalArch()) destination = AppRoute.TERMINAL_DETAIL
+            } else localArchInstallVisible = true
+        },
+    )
+    if (localArchInstallVisible) LocalArchInstallDialog(
+        state = localArchState,
+        onInstall = {
+            if (viewModel.installLocalArch()) {
+                localArchInstallVisible = false
+                localArchProgressVisible = true
+            }
+        },
+        onDismiss = { localArchInstallVisible = false },
+    )
+
     if (savedConnectionPickerVisible) {
         SavedConnectionPickerDialog(
             loadState = connectionsState.loadState,
+            protocol = newSessionProtocol,
             onDismiss = { savedConnectionPickerVisible = false },
             onOpenConnections = {
                 savedConnectionPickerVisible = false

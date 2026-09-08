@@ -23,7 +23,9 @@
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#changedSavedHostKeyIsBlockedByRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#importedPrivateKeySelectedBySavedHostAuthenticatesToRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerCarriesInteractiveBytesWhileMoshExtensionIsAbsent",
-        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView"
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll"
       ]
     },
     {
@@ -88,6 +90,26 @@
       ],
       "tests": [
         "com.yanjiyu.terminalspike.SessionForegroundServiceContractTest#specialUseSubtypeCheckRunsOnPlatformThatEnforcesTheType"
+      ]
+    },
+    {
+      "id": "local-arch-authorized-device-opt-in",
+      "reason": "Requires explicitly selected old-phone Local Arch opt-ins; UI/Cable Flow/Codex/IPC gates require an isolated .archverify application and fresh phone-only fixtures.",
+      "suites": [
+        "full"
+      ],
+      "tests": [
+        "com.yanjiyu.terminalspike.localarch.ArchBootstrapDeviceTest#pinnedArchInstallsValidatesAndSharesPersistentFilesBetweenRealShells",
+        "com.yanjiyu.terminalspike.localarch.ArchCableFlowDeviceTest#runsCableFlowAndCodexInTheInstalledGuest",
+        "com.yanjiyu.terminalspike.localarch.ArchCodexUiDeviceTest#codexStartsInTheInstalledLocalTerminal",
+        "com.yanjiyu.terminalspike.localarch.ArchDevelopmentDeviceTest#runsSignedArchUpgradeAndNativeNodeDevelopmentWorkloads",
+        "com.yanjiyu.terminalspike.localarch.ArchPrismaDeviceTest#stablePrismaSqliteCompatibility",
+        "com.yanjiyu.terminalspike.localarch.ArchSysVIpcDeviceTest#removedSharedMemoryKeyCanBeReusedWithoutDeadlock",
+        "com.yanjiyu.terminalspike.localarch.LocalArchUiDeviceTest#installsFromNewSessionAndUsesTheExistingTerminalUi",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#closingOnePtyDoesNotCloseOrResizeAnother",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#missingExecutableFailsAtLaunchInsteadOfPretendingToConnect",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#packagedProotExecutesWithItsPrivateLibraryDependencies",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#realPtyPropagatesResizeAndControlCharacters"
       ]
     }
   ],
@@ -277,6 +299,10 @@
         "com.yanjiyu.terminalspike.TerminalSessionActionsTest#tmuxChooserMakesStartingANewProtectedSessionExplicit",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#emptyPickerStaysAQuickDialog",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#listsExistingSnippetsAndReturnsSelectedSnippet",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#appSwitcherReflectsBackgroundTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#startupPickerShowsRemoteTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#tmuxSwitcherReflectsInactiveRemoteTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#topTabsReflectBackgroundTaskState",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#forgettingAHostKeyRequiresEndpointSpecificConfirmation",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#savedHostDeletionRequiresConfirmationAndCancelKeepsTheTarget",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#terminalKeyEditorPreviewKeepsAccessibleHeightAndActionSemantics",
@@ -319,6 +345,8 @@
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#importedPrivateKeySelectedBySavedHostAuthenticatesToRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerCarriesInteractiveBytesWhileMoshExtensionIsAbsent",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#absentExtensionNeverAttemptsBinding",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#callbackDispatcherRoutesOnlyToCanonicalSessionKey",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#concurrentConnectUsesOneExplicitBindingAndOneCallback",
@@ -405,6 +433,17 @@
         "com.yanjiyu.terminalspike.core.data.repository.RoomTerminalToolsMutationsTest#replacingKeyboardInteractiveBindingWithPasswordPreservesOldMetadataAndSecret",
         "com.yanjiyu.terminalspike.core.security.credential.AndroidKeystoreCredentialStoreTest#existingKeyOnlyLookupDoesNotCreateAlias",
         "com.yanjiyu.terminalspike.core.security.credential.AndroidKeystoreCredentialStoreTest#realKeystoreKeyIsNonExportableAndMissingReadNeverCreatesAReplacement",
+        "com.yanjiyu.terminalspike.localarch.ArchBootstrapDeviceTest#pinnedArchInstallsValidatesAndSharesPersistentFilesBetweenRealShells",
+        "com.yanjiyu.terminalspike.localarch.ArchCableFlowDeviceTest#runsCableFlowAndCodexInTheInstalledGuest",
+        "com.yanjiyu.terminalspike.localarch.ArchCodexUiDeviceTest#codexStartsInTheInstalledLocalTerminal",
+        "com.yanjiyu.terminalspike.localarch.ArchDevelopmentDeviceTest#runsSignedArchUpgradeAndNativeNodeDevelopmentWorkloads",
+        "com.yanjiyu.terminalspike.localarch.ArchPrismaDeviceTest#stablePrismaSqliteCompatibility",
+        "com.yanjiyu.terminalspike.localarch.ArchSysVIpcDeviceTest#removedSharedMemoryKeyCanBeReusedWithoutDeadlock",
+        "com.yanjiyu.terminalspike.localarch.LocalArchUiDeviceTest#installsFromNewSessionAndUsesTheExistingTerminalUi",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#closingOnePtyDoesNotCloseOrResizeAnother",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#missingExecutableFailsAtLaunchInsteadOfPretendingToConnect",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#packagedProotExecutesWithItsPrivateLibraryDependencies",
+        "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#realPtyPropagatesResizeAndControlCharacters",
         "com.yanjiyu.terminalspike.settings.CustomTerminalFontStoreTest#fixedGridValidationAcceptsMonospaceAndRejectsProportionalTypefaces",
         "com.yanjiyu.terminalspike.settings.CustomTerminalFontStoreTest#preparedRestoreRollsBackAndCrashJournalReconcilesAgainstAuthoritativeReferences",
         "com.yanjiyu.terminalspike.terminal.view.FastTerminalPreImeBackTest#activeTerminalBackBypassesTheImeAndCommitsExactlyOnce",

@@ -15,6 +15,85 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TmuxSessionSelectorTest {
+    private fun coherentRunner(
+        metadata: String,
+        afterMetadata: String = metadata,
+        capture: (String) -> TmuxExecOutput,
+    ) = TmuxCommandRunner { command ->
+        val marker = Regex("__TS_CAPTURE_[0-9a-f]{32}__").find(command)?.value
+            ?: return@TmuxCommandRunner capture(command)
+        val commands = command.split(" \\; ").filter { it.startsWith("capture-pane ") }
+        val content = commands.joinToString("") {
+            val result = capture("'/usr/bin/tmux' $it")
+            check(result.exitStatus == 0)
+            result.stdout.toString(Charsets.UTF_8).let { text ->
+                if (text.isEmpty() || text.endsWith('\n')) text else "$text\n"
+            }
+        }
+        TmuxExecOutput((marker + metadata + "\n" + content + marker + afterMetadata + "\n").toByteArray(), 0)
+    }
+
+    @Test
+    fun knownClientTtyWinsOverAnotherClientsMoreRecentActivity() {
+        val commands = mutableListOf<String>()
+        val runner = TmuxCommandRunner { command ->
+            commands += command
+            when {
+                command == TMUX_LIST_COMMAND -> TmuxExecOutput(
+                    "__TERMINAL_SPIKE_TMUX__\n/usr/bin/tmux\n$7|source|1|2|10\n$8|target|1|0|11\n".toByteArray(), 0,
+                )
+                " list-clients " in command -> TmuxExecOutput(
+                    "/dev/pts/8|$7|100\n/dev/pts/9|$7|999\n".toByteArray(), 0,
+                )
+                else -> TmuxExecOutput(byteArrayOf(), 0)
+            }
+        }
+        assertEquals(TmuxSessionSwitchResult.Switched,
+            switchOrAttachTmuxSession(runner, "$8", "$7", clientTty = "/dev/pts/8"))
+        assertTrue(commands.last().contains("switch-client -c '/dev/pts/8'"))
+    }
+
+    @Test
+    fun historyChangingAfterTheOuterProbeUsesAtomicCaptureCoordinates() {
+        for (changed in listOf("$7|%9|80|24|5001|0|0|0", "$7|%9|80|24|231|0|0|0",
+            "$7|%9|81|24|5000|0|0|0")) {
+            var historyRead = false
+            val capture = captureTmuxPane(
+                metadataRunner = { TmuxExecOutput("$7|%9|80|24|5000|0|0|0".toByteArray(), 0) },
+                historyRunner = coherentRunner(changed) {
+                    historyRead = true
+                    TmuxExecOutput("changed history\n".toByteArray(), 0)
+                },
+                executable = "/usr/bin/tmux", sessionId = "$7",
+            )
+            assertTrue(historyRead)
+            requireNotNull(capture)
+            val fields = changed.split('|')
+            assertEquals(fields[2].toInt(), capture.columns)
+            assertEquals(fields[4].toInt(), capture.remoteHistoryRows)
+            assertEquals((fields[4].toInt() - TMUX_HISTORY_PAGE_ROWS).coerceAtLeast(0), capture.capturedStartRow)
+        }
+    }
+
+    @Test
+    fun inconsistentAtomicCaptureAndOlderPageCoordinatesAreRejected() {
+        val metadata = "$7|%9|80|24|5000|0|0|0"
+        val changed = "$7|%9|80|24|5001|0|0|0"
+        assertNull(captureTmuxPane(
+            metadataRunner = { TmuxExecOutput(metadata.toByteArray(), 0) },
+            historyRunner = coherentRunner(metadata, afterMetadata = changed) {
+                TmuxExecOutput("rows\n".toByteArray(), 0)
+            },
+            executable = "/usr/bin/tmux", sessionId = "$7",
+        ))
+        assertNull(captureTmuxPane(
+            metadataRunner = { TmuxExecOutput(metadata.toByteArray(), 0) },
+            historyRunner = coherentRunner(changed) { TmuxExecOutput("rows\n".toByteArray(), 0) },
+            executable = "/usr/bin/tmux", sessionId = "$7",
+            pageRequest = TmuxHistoryPageRequest("%9", beforeRow = 904, remoteHistoryRows = 5000),
+        ))
+    }
+
     @Test
     fun paneHistoryCaptureJoinsOnlyTmuxMarkedWrapsSoTheParserCanRestoreThem() {
         val metadataCommands = mutableListOf<String>()
@@ -24,7 +103,7 @@ class TmuxSessionSelectorTest {
                 metadataCommands += command
                 TmuxExecOutput("\$7|%9|80|24|3|0|0|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = { command ->
+            historyRunner = coherentRunner("\$7|%9|80|24|3|0|0|0") { command ->
                 historyCommands += command
                 TmuxExecOutput("one\ntwo\nthree\n".encodeToByteArray(), 0)
             },
@@ -39,7 +118,7 @@ class TmuxSessionSelectorTest {
         assertTrue(capture.authoritative)
         assertTrue(metadataCommands.single().contains("display-message -p -t '\$7'"))
         assertEquals(
-            "'/usr/bin/tmux' capture-pane -p -e -J -t '%9' -S '-3' -E -1",
+            "'/usr/bin/tmux' capture-pane -p -e -J -t '%9' -S '-4096' -E -1",
             historyCommands.single(),
         )
     }
@@ -51,7 +130,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|1|1|1|0|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = { command ->
+            historyRunner = coherentRunner("\$7|%9|80|1|1|1|0|0") { command ->
                 historyCommands += command
                 when {
                     " -a " in command -> TmuxExecOutput("saved primary\n".encodeToByteArray(), 0)
@@ -78,7 +157,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|24|300|0|1|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = {
+            historyRunner = coherentRunner("\$7|%9|80|24|300|0|1|0") {
                 historyRan = true
                 TmuxExecOutput("history\n".encodeToByteArray(), 0)
             },
@@ -101,7 +180,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|1|1|1|1|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = { command ->
+            historyRunner = coherentRunner("\$7|%9|80|1|1|1|1|0") { command ->
                 historyCommands += command
                 if (" -a " in command) {
                     TmuxExecOutput("saved primary\n".encodeToByteArray(), 0)
@@ -129,7 +208,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = {
+            historyRunner = coherentRunner("\$7|%9|80|24|5000|0|0|0") {
                 historyRan = true
                 TmuxExecOutput(byteArrayOf(), 0)
             },
@@ -152,7 +231,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = { command ->
+            historyRunner = coherentRunner("\$7|%9|80|24|5000|0|0|0") { command ->
                 historyCommands += command
                 TmuxExecOutput(ByteArray(1), 0)
             },
@@ -180,7 +259,7 @@ class TmuxSessionSelectorTest {
             metadataRunner = {
                 TmuxExecOutput("\$7|%9|80|24|5000|0|0|0\n".encodeToByteArray(), 0)
             },
-            historyRunner = { command ->
+            historyRunner = coherentRunner("\$7|%9|80|24|5000|0|0|0") { command ->
                 historyCommands += command
                 TmuxExecOutput(ByteArray(1), 0)
             },
@@ -203,7 +282,7 @@ class TmuxSessionSelectorTest {
                 metadataRunner = {
                     TmuxExecOutput("\$7|%9|80|24|5001|0|0|0\n".encodeToByteArray(), 0)
                 },
-                historyRunner = { error("stale page must not transfer history") },
+                historyRunner = coherentRunner("\$7|%9|80|24|5000|0|0|0") { error("stale page must not transfer history") },
                 executable = "/usr/bin/tmux",
                 sessionId = "\$7",
                 pageRequest = request,

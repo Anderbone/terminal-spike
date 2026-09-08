@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "abi": "arm64-v8a",
+  "ndkVersion": "29.0.14206865",
+  "sources": [
+    {
+      "name": "proot",
+      "version": "5.1.107.81",
+      "file": "proot-5.1.107.81.zip",
+      "url": "https://github.com/termux/proot/archive/v5.1.107.81.zip",
+      "sha256": "08c9071fb0d208cdaaf98a29ba4293716fa7ec0f875c51eab153b35b53a4f4d6",
+      "license": "GPL-2.0-or-later"
+    },
+    {
+      "name": "talloc",
+      "version": "2.4.3",
+      "file": "talloc-2.4.3.tar.gz",
+      "url": "https://www.samba.org/ftp/talloc/talloc-2.4.3.tar.gz",
+      "sha256": "dc46c40b9f46bb34dd97fe41f548b0e8b247b77a918576733c528e83abd854dd",
+      "license": "LGPL-3.0-or-later (library); retain other source-file licences"
+    },
+    {
+      "name": "libandroid-shmem",
+      "version": "0.7",
+      "file": "libandroid-shmem-0.7.tar.gz",
+      "url": "https://github.com/termux/libandroid-shmem/archive/refs/tags/v0.7.tar.gz",
+      "sha256": "1e5ff8459bc0a8c229dd8a94b27d119987e09ef3414331c2b5ebfff20b98e867",
+      "license": "BSD-3-Clause"
+    }
+  ]
+}

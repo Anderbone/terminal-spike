@@ -1,5 +1,45 @@
 # Third-party notices
 
+## Local Arch runtime source components
+
+Local Arch implementation now includes checksum-verified upstream source archives
+for PRoot 5.1.107.81, talloc 2.4.3 and libandroid-shmem 0.7. Their Android native
+binaries are built and packaged in the application. Exact sources, digests and versions are
+listed in `local-arch-runtime/sources.lock` and the source archives are under
+`local-arch-runtime/third_party/distfiles`.
+
+PRoot source retains its contributor copyright notices and GPL-2.0-or-later grants;
+the complete GPL version 2 is in `local-arch-runtime/licenses/GPL-2.0.txt` and in
+the original archive. The talloc library retains Andrew Tridgell's, Stefan
+Metzmacher's and other contributors' notices and LGPL-3.0-or-later grants; its
+licence is in `local-arch-runtime/licenses/LGPL-3.0.txt`. The full source archives
+retain all file-specific licences. libandroid-shmem retains copyright (c) 2013
+Sergii Pylypenko and (c) 2017 Fredrik Fornwall; its BSD conditions and disclaimer
+are in `local-arch-runtime/licenses/libandroid-shmem.txt` and its source archive.
+
+These licence texts are packaged as application assets. PRoot combined with
+LGPLv3 talloc is distributed under GPL-3.0-or-later using the source's later-version
+grant; source-file notices remain unchanged. Integration patches, the build script
+and replacement instructions are documented in `local-arch-runtime/README.md`.
+Binary distribution must provide access to these exact corresponding source/build
+inputs. This entry makes no written source offer on another party's behalf.
+
+The original JNI PTY bridge statically links LLVM libc++ from Android NDK r29
+`29.0.14206865`, under Apache-2.0 with LLVM exception. Exact r29 NDK and toolchain
+notices are packaged as `ANDROID-NDK-R29-NOTICE` and `LLVM-TOOLCHAIN-NOTICE`.
+
+## Existing application notices
+
+Local Arch's TAR/XZ extraction uses Apache Commons Compress 1.28.0 and XZ for Java
+1.12. Commons Compress and its runtime dependencies Commons Codec 1.19.0, Commons
+IO 2.20.0 and Commons Lang 3.18.0 retain the Apache Software Foundation copyrights
+and Apache-2.0 terms, plus embedded component notices. Their complete unmodified
+JAR licence/notice files are packaged as `COMMONS-COMPRESS-LICENSE.txt`,
+`COMMONS-COMPRESS-NOTICE.txt`, `COMMONS-CODEC-LICENSE.txt`, `COMMONS-CODEC-NOTICE.txt`,
+`COMMONS-IO-LICENSE.txt`, `COMMONS-IO-NOTICE.txt`, `COMMONS-LANG3-LICENSE.txt` and
+`COMMONS-LANG3-NOTICE.txt`. XZ for Java retains its source distribution's attribution
+and 0BSD terms in packaged `XZ-JAVA-COPYING` and `XZ-JAVA-0BSD.txt`.
+
 Copyright 2026 Terminal Spike contributors. Terminal Spike's project-owned source is free
 software under GPL-3.0-or-later, except where a component supplies its own licence. The `mosh-api`
 module retains its Apache-2.0 licence in `mosh-api/LICENSE`. Third-party materials retain their
@@ -1186,3 +1226,90 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <http://www.gnu.org/philosophy/why-not-lgpl.html>.
+
+## Local Arch opt-in development test downloads
+
+The main APK does not bundle TypeScript, esbuild, sharp, better-sqlite3 or the
+is-number Git fixture. The opt-in Android test scripts download pinned versions
+into their separate Arch environment to exercise real development workloads.
+Versions, upstream sources, licences and redistribution obligations are recorded
+in `docs/DEPENDENCIES.md`. Keep package-provided notices and native-component
+licences with any exported copy of that environment; these test commands are not
+a source offer for downloaded third-party software.
+
+
+The separate opt-in guest Prisma fixture pins `prisma`, `@prisma/client`, and
+`@prisma/adapter-better-sqlite3` to stable **7.10.0**, Apache-2.0, from the official
+npm registry and [Prisma source](https://github.com/prisma/prisma). They are installed
+only by an explicit device compatibility test, never bundled in the app APK.
+Retain package license/NOTICE files if redistributing a populated guest filesystem;
+the test itself does not redistribute one. Its exact transitive tree is recorded
+in the guest-generated package-lock.json. No prerelease `latest` tag is used.
+
+The Prisma fixture additionally verifies transitive `better-sqlite3` **12.11.1**
+(MIT, https://github.com/WiseLibs/better-sqlite3) before approving that version's
+native install script. This is distinct from the primary development fixture's
+13.0.3 and is not an Android APK dependency. Its package license remains in the guest.
+
+
+## 2026-09-08: user-requested Arch starter tools
+
+Architecture/licensing decision: install the following stable packages from the
+signed Arch Linux ARM core/extra repositories into the user's guest filesystem,
+using a full pacman upgrade. No additional native binary is linked into or bundled
+with the Android application. GPL guest tools are explicitly approved in this
+architecture; preserve their installed notices and corresponding source obligations
+if ever distributing a populated filesystem. The application distributes only its
+original setup script; users fetch packages from their official repositories.
+
+| Direct guest package | Purpose | Upstream source | License / notice obligations |
+| --- | --- | --- | --- |
+| git | Clone and manage projects | https://git-scm.com/ | GPL-2.0-only; retain notices/source on redistribution |
+| bash-completion | Shell completion | https://github.com/scop/bash-completion | GPL-2.0-or-later; retain notices/source |
+| zoxide | Directory navigation | https://github.com/ajeetdsouza/zoxide | MIT; retain copyright/license |
+| ripgrep | Search project text | https://github.com/BurntSushi/ripgrep | MIT/Unlicense; retain chosen license |
+| fd | Find files | https://github.com/sharkdp/fd | MIT/Apache-2.0; retain license/notices |
+| fzf | Interactive selection | https://github.com/junegunn/fzf | MIT; retain copyright/license |
+| bat | Read source files | https://github.com/sharkdp/bat | MIT/Apache-2.0; retain license/notices |
+| eza | Directory listings | https://github.com/eza-community/eza | MIT; retain copyright/license |
+| jq | Inspect JSON | https://jqlang.org/ | MIT; retain copyright/license |
+| nano | Terminal editor | https://nano-editor.org/ | GPL-3.0-or-later; retain notices/source |
+| less | Pager | https://www.greenwoodsoftware.com/less/ | GPL-3.0-or-later or Less license; preserve chosen license |
+| unzip | Extract ZIP files | https://infozip.sourceforge.net/ | Info-ZIP; retain copyright/license |
+| zip | Create ZIP files | https://infozip.sourceforge.net/ | Info-ZIP; retain copyright/license |
+| curl | Download files / HTTP tools | https://curl.se/ | curl license; retain copyright/license |
+| openssh | SSH client and Git transport | https://www.openssh.com/ | BSD and other file-level permissive licenses; retain notices |
+| rsync | Copy project files | https://rsync.samba.org/ | GPL-3.0-or-later; retain notices/source |
+| base-devel | Build guest software | https://archlinuxarm.org/packages/aarch64/base-devel | Meta-package; dependencies retain their licenses, including GCC/binutils/make GPL and runtime exceptions |
+| nodejs-lts-krypton | Node 24 LTS for Cable Flow | https://nodejs.org/ | MIT plus bundled component notices |
+| npm | Install JavaScript tools | https://github.com/npm/cli | Artistic-2.0 and bundled notices |
+
+Versions are resolved by signed stable repository metadata and recorded by pacman
+in the guest; no testing/staging or prerelease channel is enabled. Arch's full
+upgrade avoids partial upgrades. Omarchy's CLI package list is a selection reference
+(https://github.com/omacom/omarchy/blob/master/install/omarchy-base.packages), not
+copied application code or a desktop installation. AUR helpers are not a bootstrap
+requirement: makepkg requires non-root execution and AUR recipes need ARM review.
+
+### Optional phone Cable Flow/Codex verification dependencies (2026-09-08)
+
+These are explicitly requested guest compatibility probes, downloaded only in the
+opt-in isolated USB test, not Android APK dependencies or automatic account setup.
+
+| Dependency | Purpose and source | Licence / notice obligations |
+| --- | --- | --- |
+| pnpm 10.29.2 | Cable Flow frozen-lockfile package manager; https://github.com/pnpm/pnpm | MIT; retain copyright and permission notice on redistribution |
+| @openai/codex 0.153.4 | User-requested ARM64 CLI executable startup; https://github.com/openai/codex | Apache-2.0; retain license, applicable NOTICE and bundled component notices |
+| PostgreSQL (stable Arch ARM package) | Isolated phone database; https://www.postgresql.org/ and https://archlinuxarm.org/packages/aarch64/postgresql | PostgreSQL license; retain copyright and permission notice |
+| pgvector 0.8.2 | Cable Knowledge SQL extension; https://github.com/pgvector/pgvector/tree/v0.8.2 | PostgreSQL license; retain copyright and permission notice |
+
+Cable Flow source and its own frozen dependency graph are supplied privately from
+the user's repository for this test, not redistributed with Terminal Spike.
+Existing Cable Flow CI licensing fixtures are used only for isolated verification.
+No host authentication files, databases or license files are transferred.
+
+The 2026-09-08 runtime enables PRoot's existing System V IPC extension and adds
+an original stale-local-key lookup fix to libandroid-shmem 0.7 (BSD-3-Clause).
+`local-arch-runtime/patches/shmem-stale-local-key.patch` is included in the runtime
+source offer along with the existing source archives and build inputs. No new
+third-party dependency or version is introduced by this fix.

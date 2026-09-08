@@ -411,6 +411,7 @@ private fun TmuxSessionDialog(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                            TerminalTaskIndicator(session.taskStatus)
                             TextButton(onClick = { deleteTarget = session.id }) {
                                 Text(stringResource(R.string.tmux_selector_delete))
                             }
@@ -727,6 +728,7 @@ private fun SessionTab(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            TerminalTaskIndicator(session.taskStatus)
             if (onClose != null) {
                 Box(
                     modifier = Modifier

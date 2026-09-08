@@ -135,6 +135,7 @@ internal fun ActiveTmuxSessionSwitcherDialog(
                     items(catalog.sessions, key = { it.id }) { session ->
                         TmuxSessionTile(
                             title = session.name,
+                            taskStatus = session.taskStatus,
                             previewLines = session.previewLines,
                             selected = catalog.activeSessionId == session.id,
                             closeDescription = stringResource(
@@ -205,6 +206,7 @@ private fun TerminalTabTile(
 ) {
     SwitcherTile(
         title = session.displayedTerminalTabTitle(),
+        taskStatus = session.taskStatus,
         selected = selected,
         closeDescription = closeDescription,
         onClose = onClose,
@@ -220,6 +222,7 @@ private fun TerminalTabTile(
 @Composable
 private fun TmuxSessionTile(
     title: String,
+    taskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus,
     previewLines: List<String>,
     selected: Boolean,
     closeDescription: String,
@@ -228,6 +231,7 @@ private fun TmuxSessionTile(
 ) {
     SwitcherTile(
         title = title,
+        taskStatus = taskStatus,
         selected = selected,
         closeDescription = closeDescription,
         onClose = onClose,
@@ -241,6 +245,7 @@ private fun TmuxSessionTile(
 @Composable
 private fun SwitcherTile(
     title: String,
+    taskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus,
     selected: Boolean,
     closeDescription: String?,
     onClose: (() -> Unit)?,
@@ -279,6 +284,7 @@ private fun SwitcherTile(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                TerminalTaskIndicator(taskStatus)
                 if (selected) {
                     Surface(
                         modifier = Modifier.size(7.dp),

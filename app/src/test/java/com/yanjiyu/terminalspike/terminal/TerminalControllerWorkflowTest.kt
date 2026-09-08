@@ -17,6 +17,38 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun moshFramebufferRepaintCannotAdvanceAuthoritativeTmuxPagingCoordinates() {
+        val scheduler = ManualFrameScheduler()
+        var requested: com.yanjiyu.terminalspike.connection.TmuxHistoryPageRequest? = null
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {
+            setInputSink(
+                sink = RecordingInputSink(), onResize = { _, _ -> }, isTmuxSession = { true },
+                requestOlderTmuxHistory = { requested = it }, trustTmuxStreamScrollback = false,
+            )
+        }
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))))
+        scheduler.drainAll()
+        controller.stageTmuxHistory(TmuxLocalHistorySnapshot(
+            sessionId = "$1", paneId = "%2",
+            lines = List(4_096) { TerminalLine.plain("server-row-${it + 904}") },
+            remoteHistoryRows = 5_000, capturedStartRow = 904,
+            remoteMousePassthrough = false, historyIncluded = true,
+            authoritative = true, truncatedBefore = true,
+        ))
+        scheduler.drainAll()
+        // The framebuffer renderer may scroll while repainting the same remote history.
+        controller.updateTerminalFrame(frame(screen = listOf(TerminalLine.plain("live"))).copy(
+            completedScrollback = List(20) { TerminalLine.plain("repaint-$it") },
+        ))
+        scheduler.drainAll()
+        controller.viewport.scrollTo(0f)
+        controller.requestOlderTmuxHistoryIfNeeded()
+        assertEquals(5_000, requested?.remoteHistoryRows)
+        assertEquals(904, requested?.beforeRow)
+        assertEquals(4_097, controller.lineCount())
+    }
+
+    @Test
     fun maximumTmuxSnapshotIsPreparedAcrossBoundedFramesAndPublishedAtomically() {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler).apply {

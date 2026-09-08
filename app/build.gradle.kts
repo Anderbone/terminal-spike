@@ -15,6 +15,7 @@ import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -25,6 +26,8 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.zip.ZipFile
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
@@ -33,6 +36,35 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
     alias(libs.plugins.protobuf)
+}
+
+abstract class BuildLocalArchRuntime : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceInputs: ConfigurableFileCollection
+
+    @get:Internal
+    abstract val repositoryDirectory: DirectoryProperty
+
+    @get:Internal
+    abstract val sdkDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun buildRuntime() {
+        execOperations.exec {
+            workingDir(repositoryDirectory.get().asFile)
+            commandLine(
+                "python3", "scripts/build-local-arch-runtime.py", "--ndk",
+                sdkDirectory.dir("ndk/29.0.14206865").get().asFile.absolutePath,
+            )
+        }.assertNormalExitValue()
+    }
 }
 
 abstract class GenerateLegalNotices : DefaultTask() {
@@ -632,6 +664,7 @@ val releaseSigningValues = if (suppliedReleaseSigningInputs == releaseSigningInp
 extensions.configure<ApplicationExtension>("android") {
     namespace = "com.yanjiyu.terminalspike"
     compileSdk = 37
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.yanjiyu.terminalspike"
@@ -676,6 +709,11 @@ extensions.configure<ApplicationExtension>("android") {
         buildConfig = true
     }
 
+    packaging.jniLibs.useLegacyPackaging = true
+    sourceSets.named("main") {
+        assets.srcDir(rootProject.file("local-arch-runtime/licenses"))
+    }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
@@ -700,6 +738,23 @@ extensions.configure<ApplicationExtension>("android") {
 
 kotlin {
     jvmToolchain(17)
+}
+
+val buildLocalArchRuntime = tasks.register<BuildLocalArchRuntime>("buildLocalArchRuntime") {
+    sourceInputs.from(
+        rootProject.fileTree("local-arch-runtime") { exclude("build/**") },
+        rootProject.file("scripts/build-local-arch-runtime.py"),
+        fileTree("src/main/cpp"),
+    )
+    repositoryDirectory.set(rootProject.layout.projectDirectory)
+    sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
+    outputDirectory.set(rootProject.layout.projectDirectory.dir("local-arch-runtime/build/jniLibs"))
+}
+
+androidComponents.onVariants { variant ->
+    variant.sources.jniLibs?.addGeneratedSourceDirectory(
+        buildLocalArchRuntime, BuildLocalArchRuntime::outputDirectory,
+    )
 }
 
 room {
@@ -729,6 +784,8 @@ protobuf {
 dependencies {
     baselineProfile(project(":benchmark"))
     implementation(project(":mosh-api"))
+    implementation(libs.commons.compress)
+    implementation(libs.xz)
     implementation(project(":mosh-core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

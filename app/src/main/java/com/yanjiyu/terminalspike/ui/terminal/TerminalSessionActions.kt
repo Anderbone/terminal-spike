@@ -64,7 +64,7 @@ internal fun terminalSessionActionAvailability(
     val terminal = session.connectionState is ConnectionState.Disconnected ||
         session.connectionState is ConnectionState.Failed
     return TerminalSessionActionAvailability(
-        reconnect = !session.isLocalTerminal && terminal,
+        reconnect = !session.isLocalTerminal && !session.isLocalArch && terminal,
         duplicate = !session.isLocalTerminal && canAddSession,
         disconnect = !session.isLocalTerminal && !terminal,
     )
@@ -181,7 +181,7 @@ internal fun TerminalSessionActions(
         }
         val detail = when (action) {
             DestructiveSessionAction.DISCONNECT ->
-                stringResource(R.string.session_disconnect_detail)
+                stringResource(if (target.isLocalArch) R.string.local_arch_disconnect_detail else R.string.session_disconnect_detail)
             DestructiveSessionAction.CLEAR_LOCAL_SCROLLBACK ->
                 stringResource(R.string.session_clear_scrollback_detail)
         }
@@ -261,7 +261,7 @@ private fun TerminalConnectionDetails(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DetailRow(R.string.session_detail_name, session.title)
-                DetailRow(R.string.session_detail_protocol, session.protocol.name)
+                DetailRow(R.string.session_detail_protocol, if (session.isLocalArch) stringResource(R.string.local_arch_title) else session.protocol.name)
                 DetailRow(
                     R.string.session_detail_state,
                     stringResource(session.connectionState.safeLabelResId()),

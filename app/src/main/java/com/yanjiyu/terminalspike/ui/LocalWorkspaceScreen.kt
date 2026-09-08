@@ -336,7 +336,7 @@ private fun WorkspaceActiveSessionCard(
     val openDescription = stringResource(
         R.string.workspace_open_session,
         session.friendlyName,
-        session.protocol.name,
+        if (session.isLocalArch) stringResource(R.string.local_arch_title) else session.protocol.name,
         statusLabel,
     )
     val actionsDescription = stringResource(
@@ -358,7 +358,8 @@ private fun WorkspaceActiveSessionCard(
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                WorkspaceProtocolBadge(session.protocol)
+                if (session.isLocalArch) Text(stringResource(R.string.local_arch_title), style = MaterialTheme.typography.labelMedium)
+                else WorkspaceProtocolBadge(session.protocol)
                 Spacer(Modifier.size(MaterialTheme.spacing.small))
                 WorkspaceStatusBadge(session.status)
                 Spacer(Modifier.weight(1f))

@@ -689,6 +689,7 @@ private val SettingsCategory.glyph: AppGlyph
         SettingsCategory.NOTIFICATIONS -> AppGlyph.NOTIFICATIONS
         SettingsCategory.BACKUP_RESTORE -> AppGlyph.BACKUP
         SettingsCategory.SECURITY -> AppGlyph.SHIELD
+        SettingsCategory.LOCAL_ARCH -> AppGlyph.TERMINAL
         SettingsCategory.MOSH -> AppGlyph.SIGNAL
         SettingsCategory.ABOUT -> AppGlyph.INFO
         SettingsCategory.DEVELOPER -> AppGlyph.LAB
@@ -748,6 +749,7 @@ private fun SettingsDetail(
                 onDismissClearSavedCredentials = actions.onDismissClearSavedCredentials,
                 onForgetKnownHost = onForgetKnownHost,
             )
+            SettingsCategory.LOCAL_ARCH -> com.yanjiyu.terminalspike.ui.LocalArchSettings()
             SettingsCategory.MOSH -> MoshExtensionSection(
                 state = moshExtension,
                 onRefresh = onRefreshMoshExtension,

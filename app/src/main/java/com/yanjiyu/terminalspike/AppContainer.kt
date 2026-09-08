@@ -354,6 +354,15 @@ class AppContainer internal constructor(
         )
     }
 
+    /** Persistent Arch storage and application-owned local shell processes. */
+    internal val localSessionRepository: com.yanjiyu.terminalspike.localarch.LocalSessionRepository by lazy {
+        com.yanjiyu.terminalspike.localarch.LocalSessionRepository(
+            environment = com.yanjiyu.terminalspike.localarch.ArchEnvironment(applicationContext),
+            scope = applicationScope,
+            foregroundStarter = AndroidSessionForegroundStarter(applicationContext),
+        )
+    }
+
     /** Application-owned live SSH/Mosh state; no transport is scoped to a ViewModel lifecycle. */
     internal val sshSessionRepository: SshSessionRepository by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,

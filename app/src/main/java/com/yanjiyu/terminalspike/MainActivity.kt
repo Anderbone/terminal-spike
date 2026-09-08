@@ -88,9 +88,12 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle().value
             val openTerminalSessionId = openTerminalSessionRequested
                 .collectAsStateWithLifecycle().value
-            val activeRemoteSessionCount = appContainer.sshSessionRepository.sessions
+            val activeTerminalSessionCount = appContainer.sshSessionRepository.sessions
                 .collectAsStateWithLifecycle().value
                 .count { it.connectionState.requiresForegroundService() }
+            val activeLocalSessionCount = appContainer.localSessionRepository.runtime
+                .collectAsStateWithLifecycle().value.activeCount
+            val allActiveTerminalSessionCount = activeTerminalSessionCount + activeLocalSessionCount
             LaunchedEffect(authorityState) {
                 if (shouldResolveStartup(authorityState)) {
                     appContainer.resolveStartup()
@@ -128,11 +131,11 @@ class MainActivity : ComponentActivity() {
                     lockState = visibleLockState,
                     authorityState = authorityState,
                 )
-                LaunchedEffect(mainRoot, disconnectAllRequested, activeRemoteSessionCount) {
+                LaunchedEffect(mainRoot, disconnectAllRequested, allActiveTerminalSessionCount) {
                     if (
                         mainRoot == MainRoot.CONTENT &&
                         disconnectAllRequested &&
-                        activeRemoteSessionCount == 0
+                        allActiveTerminalSessionCount == 0
                     ) {
                         disconnectAllConfirmationRequested.value = false
                     }
@@ -172,15 +175,18 @@ class MainActivity : ComponentActivity() {
                     shouldShowDisconnectAllConfirmation(
                         requested = disconnectAllRequested,
                         root = mainRoot,
-                        activeSessionCount = activeRemoteSessionCount,
+                        activeSessionCount = allActiveTerminalSessionCount,
                     )
                 ) {
                     DisconnectAllSessionsConfirmation(
-                        activeSessionCount = activeRemoteSessionCount,
+                        activeSessionCount = allActiveTerminalSessionCount,
                         onConfirm = {
                             val currentCount = appContainer.sshSessionRepository.sessions.value
                                 .count { it.connectionState.requiresForegroundService() }
                             if (currentCount > 0) appContainer.sshSessionRepository.disconnectAll()
+                            appContainer.localSessionRepository.runtime.value.sessions
+                                .filter { it.connectionState.requiresForegroundService() }
+                                .forEach { appContainer.localSessionRepository.disconnect(it.id) }
                             disconnectAllConfirmationRequested.value = false
                         },
                         onDismiss = { disconnectAllConfirmationRequested.value = false },
@@ -305,8 +311,8 @@ class MainActivity : ComponentActivity() {
         when (source?.action) {
             ACTION_CONFIRM_DISCONNECT_ALL -> disconnectAllConfirmationRequested.value = true
             ACTION_OPEN_TERMINAL_SESSION -> source
-                .getLongExtra(EXTRA_TERMINAL_SESSION_ID, -1L)
-                .takeIf { it >= 0L }
+                .getLongExtra(EXTRA_TERMINAL_SESSION_ID, Long.MIN_VALUE)
+                .takeIf { it != Long.MIN_VALUE }
                 ?.let(::openTerminalSession)
             else -> return
         }
@@ -319,7 +325,7 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun openTerminalSession(sessionId: Long) {
-        if (sessionId >= 0L) openTerminalSessionRequested.value = sessionId
+        if (sessionId != Long.MIN_VALUE) openTerminalSessionRequested.value = sessionId
     }
 
     private fun applyWindowSecurity() {

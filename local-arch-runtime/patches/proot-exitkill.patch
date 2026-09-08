@@ -1,0 +1,12 @@
+--- a/src/tracee/event.c
++++ b/src/tracee/event.c
+@@ -449,7 +449,9 @@
+ 			static bool deliver_sigtrap = false;
+ 
+ 		case SIGTRAP: {
++			/* Terminal Spike: terminate guest children on tracer death. */
+ 			const unsigned long default_ptrace_options = (
++				PTRACE_O_EXITKILL	|
+ 				PTRACE_O_TRACESYSGOOD	|
+ 				PTRACE_O_TRACEFORK	|
+ 				PTRACE_O_TRACEVFORK	|

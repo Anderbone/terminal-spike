@@ -76,6 +76,11 @@ internal enum class SettingsCategory(
         R.string.settings_category_security_summary,
         "security known hosts fingerprints screenshot clipboard osc credentials privacy",
     ),
+    LOCAL_ARCH(
+        R.string.local_arch_title,
+        R.string.local_arch_summary,
+        "local arch linux shell install storage rootfs reset reinstall pacman",
+    ),
     MOSH(
         R.string.settings_category_mosh,
         R.string.settings_category_mosh_summary,
@@ -772,6 +777,7 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.NOTIFICATIONS,
     SettingsCategory.BACKUP_RESTORE,
     SettingsCategory.SECURITY,
+    SettingsCategory.LOCAL_ARCH,
     SettingsCategory.MOSH,
     SettingsCategory.ABOUT,
     SettingsCategory.DEVELOPER,

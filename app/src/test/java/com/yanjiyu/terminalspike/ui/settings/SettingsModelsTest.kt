@@ -38,6 +38,7 @@ class SettingsModelsTest {
                 SettingsCategory.NOTIFICATIONS,
                 SettingsCategory.BACKUP_RESTORE,
                 SettingsCategory.SECURITY,
+                SettingsCategory.LOCAL_ARCH,
                 SettingsCategory.MOSH,
                 SettingsCategory.ABOUT,
                 SettingsCategory.DEVELOPER,

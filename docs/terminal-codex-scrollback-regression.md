@@ -62,6 +62,28 @@ The test must run only on an authorized USB phone. It must never run on the Wi-F
 Machine-specific host addresses, credentials, SDK paths, Codex paths, and generated private keys are
 instrumentation inputs or ignored build artifacts; they must not enter source control.
 
+### Direct Mosh comparison
+
+The same opt-in production-view test accepts `-e sshE2eCodexTransport mosh` together with the
+existing actual-Codex command and SSH bootstrap arguments. The default remains `ssh`. The Mosh
+variant requires an installed compatible extension and reachable server UDP ports, starts a direct
+shell without tmux, launches actual Codex, and preserves every marker/order/bottom/gesture assertion
+from the SSH gate. Run it only on the verified old phone. Do not call an assumption skip, missing
+extension, connection failure, or shell-start failure a scrollback reproduction.
+
+For the table layout shown in the user report, additionally pass `-e sshE2eCodexTable true`. This
+asks actual Codex for a one-column Markdown table containing the same 200 markers. The test reserves
+extra bounded history for rendered table separators and keeps every marker and gesture assertion.
+The default plain-line 200-marker gate remains unchanged; record table runs separately.
+
+The 2026-09-07 direct-Mosh table regression is red on baseline `224aaac` (182 missing
+markers) and green with the local recovery fix (all 200 ordered markers and real drags to001).
+See `MOSH_SCROLLBACK_LIMIT.md` for exact APK, device, viewport, and JVM red/green evidence.
+
+Report the selected transport with its result. Complete SSH history does not establish complete
+Mosh history; Mosh may omit intermediate framebuffer states before the Android app receives them.
+The observed-frame recovery tests in `MoshDisplayHistoryTest` are a separate, narrower regression.
+
 ## Required evidence after scroll changes
 
 Run these gates before declaring any change to terminal parsing, buffering, viewport behavior,

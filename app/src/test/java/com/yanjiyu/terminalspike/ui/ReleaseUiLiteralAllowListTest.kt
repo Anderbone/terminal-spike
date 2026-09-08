@@ -17,6 +17,7 @@ class ReleaseUiLiteralAllowListTest {
             "ui/DeveloperSettingsSection.kt",
             "ui/ExtraKeysBar.kt",
             "ui/LocalWorkspaceScreen.kt",
+            "ui/LocalArchUi.kt",
             "ui/SshConnectionBar.kt",
             "ui/TerminalSpikeScreen.kt",
             "ui/connections/ConnectionsComponents.kt",

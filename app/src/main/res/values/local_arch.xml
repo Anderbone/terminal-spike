@@ -1,0 +1,33 @@
+<resources>
+    <string name="local_arch_title">Local Arch Linux</string>
+    <string name="local_arch_summary">Installation, storage and environment reset</string>
+    <string name="local_arch_intro">A persistent Arch Linux ARM environment on this phone. Shells share installed packages and files. Installation continues while you use other screens or apps. Android force-stop ends running programs.</string>
+    <string name="local_arch_download_detail">Root filesystem: 168 MiB, plus starter packages and updates. Keep at least 4.3 GiB of internal storage free. Files stay in this app’s private storage.</string>
+    <string name="local_arch_unsupported">Local Arch Linux requires an ARM64 Android device.</string>
+    <string name="local_arch_installed">Installed</string>
+    <string name="local_arch_not_installed">Not installed</string>
+    <string name="local_arch_version">Rootfs version: %1$s</string>
+    <string name="local_arch_storage">Storage used: %1$s</string>
+    <string name="local_arch_install">Install Arch Linux</string>
+    <string name="local_arch_retry">Retry installation</string>
+    <string name="local_arch_open">Open local shell</string>
+    <string name="local_arch_checking">Checking installation…</string>
+    <string name="local_arch_downloading">Downloading and verifying Arch Linux…</string>
+    <string name="local_arch_extracting">Extracting Arch Linux…</string>
+    <string name="local_arch_validating">Validating Arch Linux and initializing package signatures…</string>
+    <string name="local_arch_removing">Removing Arch environment…</string>
+    <string name="local_arch_reset">Reset Arch environment</string>
+    <string name="local_arch_reinstall">Reinstall Arch environment</string>
+    <string name="local_arch_delete_warning">This deletes the entire local Linux filesystem, including your projects, installed packages, keys and configuration. This cannot be undone. Close all Local Arch shells first. Type DELETE ARCH to confirm.</string>
+    <string name="local_arch_confirmation">Type DELETE ARCH</string>
+    <string name="local_arch_refresh">Refresh storage usage</string>
+    <string name="local_arch_new_session">New session</string>
+    <string name="local_arch_disconnect_detail">This stops the local shell and its running programs. Your Arch files and installed packages remain available when you open a new Local Arch tab.</string>
+    <string name="local_arch_install_tools">Install starter tools</string>
+    <string name="local_arch_tools_detail">Includes Git, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node installations are kept. Package installation includes a full system update.</string>
+    <string name="local_arch_installing_tools">Installing starter tools and system updates…</string>
+    <string name="local_arch_background">Arch setup is running in the background…</string>
+    <string name="local_arch_ready">Arch is ready</string>
+    <string name="local_arch_operation_failed">Arch setup needs attention</string>
+    <string name="local_arch_details">Details</string>
+</resources>

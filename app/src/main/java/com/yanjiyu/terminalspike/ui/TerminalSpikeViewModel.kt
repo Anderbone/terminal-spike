@@ -397,9 +397,12 @@ data class SessionTabUi(
     val title: String,
     val connectionState: ConnectionState,
     val isLocalTerminal: Boolean = false,
+    val isLocalArch: Boolean = false,
     val workspaceName: String = WORKSPACE_SSH_SESSION_FALLBACK,
     val protocol: ConnectionProtocol = ConnectionProtocol.SSH,
     val terminalTitle: String? = null,
+    val taskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus =
+        com.yanjiyu.terminalspike.terminal.TerminalTaskStatus(),
     val lastActivityAtEpochMillis: Long = 0,
     val recentSessionId: String? = null,
     val endpointIdentityToken: String? = null,
@@ -427,6 +430,7 @@ internal enum class WorkspaceSessionStatus {
 
 internal data class WorkspaceActiveSessionUi(
     val id: Long,
+    val isLocalArch: Boolean = false,
     val friendlyName: String,
     val protocol: ConnectionProtocol,
     val status: WorkspaceSessionStatus,
@@ -646,6 +650,7 @@ internal fun SessionTabUi.toWorkspaceActiveSession(canAddSession: Boolean): Work
         connectionState is ConnectionState.Failed
     return WorkspaceActiveSessionUi(
         id = id,
+        isLocalArch = isLocalArch,
         friendlyName = privacySafeWorkspaceFriendlyName(
             candidate = workspaceName,
             protocol = protocol,
@@ -658,7 +663,7 @@ internal fun SessionTabUi.toWorkspaceActiveSession(canAddSession: Boolean): Work
             sensitiveValues = listOf(title),
         ),
         lastActivityAtEpochMillis = lastActivityAtEpochMillis,
-        canReconnect = canStartAgain,
+        canReconnect = canStartAgain && !isLocalArch,
         canDisconnect = connectionState is ConnectionState.Connecting ||
             connectionState is ConnectionState.Connected ||
             connectionState is ConnectionState.Reconnecting ||
@@ -925,7 +930,7 @@ internal fun TerminalSpikeUiState.withRemoteSessionSnapshots(
     remoteSessions: List<SshSessionSnapshot>,
     preferredSessionId: Long? = null,
 ): TerminalSpikeUiState {
-    val localSessions = sessions.filter(SessionTabUi::isLocalTerminal)
+    val localSessions = sessions.filter { it.isLocalTerminal || it.isLocalArch }
         .ifEmpty { initialTerminalTabs() }
     val remoteTabs = remoteSessions.map { snapshot ->
         SessionTabUi(
@@ -935,6 +940,7 @@ internal fun TerminalSpikeUiState.withRemoteSessionSnapshots(
             workspaceName = snapshot.workspaceName,
             protocol = snapshot.protocol,
             terminalTitle = snapshot.terminalTitle,
+            taskStatus = snapshot.taskStatus,
             lastActivityAtEpochMillis = snapshot.lastActivityAtEpochMillis,
             recentSessionId = snapshot.recentSessionId,
             endpointIdentityToken = snapshot.endpointIdentityToken,
@@ -1506,6 +1512,7 @@ class TerminalSpikeViewModel(
     val uiState: StateFlow<TerminalSpikeUiState> = _uiState.asStateFlow()
     private var pendingRestoredActiveSessionId =
         savedStateHandle.get<Long>(ACTIVE_TERMINAL_SESSION_ID)
+    private var pendingRestoredLocalSessionId = pendingRestoredActiveSessionId?.takeIf { it < 0 }
     internal val terminalBuildFeature = createTerminalBuildFeature(viewModelScope, controller)
     private val appLogger = AppLogger()
     private val appContainer = (application as TerminalSpikeApplication).container
@@ -1540,6 +1547,9 @@ class TerminalSpikeViewModel(
     private var lastAltTapNanos = 0L
     private var lastShiftTapNanos = 0L
     private val moshExtensionClient = appContainer.moshExtension
+    private val localSessions = appContainer.localSessionRepository
+    internal val localArchState = localSessions.environment.state
+    internal val localArchRuntime = localSessions.runtime
     private val remoteSessions = appContainer.sshSessionRepository
     private val terminalDataRepository = appContainer.terminalDataRepository
     private val recentSessionRepository = appContainer.recentSessions
@@ -1586,6 +1596,7 @@ class TerminalSpikeViewModel(
 
     init {
         observeRemoteSessions()
+        observeLocalSessions()
         observeRemoteClipboardRequests()
         viewModelScope.launch {
             uiState
@@ -1701,6 +1712,7 @@ class TerminalSpikeViewModel(
                             ?.remoteClipboardMode
                             ?: RemoteClipboardMode.ASK
                         controller.updateRendererProfile(rendererProfile)
+                        localSessions.updateRendererProfile(rendererProfile)
                         remoteSessions.updateRendererProfiles(
                             defaultProfile = rendererProfile,
                             overridesById = rendererProfiles,
@@ -1769,6 +1781,34 @@ class TerminalSpikeViewModel(
             terminalInputMode = keyboard?.inputMode ?: TerminalInputMode.RAW,
         )
     }
+
+    private fun observeLocalSessions() {
+        viewModelScope.launch {
+            var previousError: String? = null
+            localSessions.runtime.collect { runtime ->
+                val newError = runtime.error?.takeIf { it != previousError }
+                previousError = runtime.error
+                val restoredId = pendingRestoredLocalSessionId
+                pendingRestoredLocalSessionId = null
+                _uiState.update { state ->
+                    state.withLocalSessionSnapshots(runtime.sessions, restoredId).let { projected ->
+                        newError?.let { projected.copy(notice = UiText.Dynamic(it)) } ?: projected
+                    }
+                }
+            }
+        }
+    }
+
+    internal fun openLocalArch(): Boolean {
+        val id = localSessions.start(RemoteSessionTerminalConfiguration(
+            scrollbackLines = activeScrollbackLines,
+            rendererProfile = activeRendererProfile,
+        )) ?: return false
+        _uiState.update { it.withLocalSessionSnapshots(localSessions.runtime.value.sessions, id) }
+        return true
+    }
+
+    internal fun installLocalArch() = localSessions.installOrReset()
 
     private fun observeRemoteSessions() {
         viewModelScope.launch {
@@ -2797,13 +2837,13 @@ class TerminalSpikeViewModel(
     }
 
     fun controllerFor(sessionId: Long): TerminalController =
-        remoteSessions.controllerFor(sessionId) ?: controller
+        localSessions.controllerFor(sessionId) ?: remoteSessions.controllerFor(sessionId) ?: controller
 
     /** Returns no controller for a stale/closed session ID instead of retargeting to local state. */
     internal fun controllerForExistingSession(sessionId: Long): TerminalController? = when {
         sessionId == LOCAL_TERMINAL_SESSION_ID -> controller
         _uiState.value.sessions.none { it.id == sessionId } -> null
-        else -> remoteSessions.controllerFor(sessionId)
+        else -> localSessions.controllerFor(sessionId) ?: remoteSessions.controllerFor(sessionId)
     }
 
     /** Captures one bounded export while the document picker owns the Activity window. */
@@ -3441,6 +3481,8 @@ class TerminalSpikeViewModel(
         }
     }
 
+    internal fun acknowledgeTerminalTask(sessionId: Long) { remoteSessions.acknowledgeTaskStatus(sessionId) }
+
     fun selectSession(sessionId: Long) {
         if (_uiState.value.sessions.none { it.id == sessionId }) return
         _uiState.update { state ->
@@ -3477,7 +3519,9 @@ class TerminalSpikeViewModel(
         remoteSessions.connectionSeedFor(sessionId)?.toUiConnectionSeed()
 
     internal fun duplicateSession(sessionId: Long): SessionDuplicateResult =
-        when (val result = remoteSessions.duplicateUserInitiatedSession(sessionId)) {
+        if (sessionId < 0) {
+            if (openLocalArch()) SessionDuplicateResult.Started else SessionDuplicateResult.Rejected
+        } else when (val result = remoteSessions.duplicateUserInitiatedSession(sessionId)) {
             is DuplicateSshSessionResult.Started -> {
                 val showNotificationEducation = shouldShowNotificationPermissionEducation(
                     visibility = result.notificationVisibility,
@@ -4313,6 +4357,7 @@ class TerminalSpikeViewModel(
     }
 
     fun disconnectSsh(sessionId: Long = _uiState.value.activeSessionId) {
+        if (sessionId < 0) { localSessions.disconnect(sessionId); return }
         if (sessionId == LOCAL_TERMINAL_SESSION_ID) return
         pendingRemoteClipboardRequest
             ?.takeIf { it.sessionId == sessionId }
@@ -4321,6 +4366,7 @@ class TerminalSpikeViewModel(
     }
 
     fun closeSession(sessionId: Long) {
+        if (sessionId < 0) { localSessions.close(sessionId); return }
         if (sessionId == LOCAL_TERMINAL_SESSION_ID) return
         pendingRemoteClipboardRequest
             ?.takeIf { it.sessionId == sessionId }
