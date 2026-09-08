@@ -427,6 +427,20 @@ class SshRealEndToEndTest {
 
     @Test(timeout = REAL_TMUX_SMOOTH_TEST_TIMEOUT_MILLIS)
     fun appSelectedTmuxActualCodexFirstGestureUsesLocalPixelScroll() = runBlocking {
+        actualCodexTmuxScroll(manualStart = false)
+    }
+
+    @Test(timeout = REAL_TMUX_SMOOTH_TEST_TIMEOUT_MILLIS)
+    fun shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll() = runBlocking {
+        actualCodexTmuxScroll(manualStart = true)
+    }
+
+    @Test(timeout = REAL_TMUX_SMOOTH_TEST_TIMEOUT_MILLIS)
+    fun shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll() = runBlocking {
+        actualCodexTmuxScroll(manualStart = true, useMosh = true)
+    }
+
+    private suspend fun actualCodexTmuxScroll(manualStart: Boolean, useMosh: Boolean = false) {
         checkpoint("tmux smooth test started")
         val arguments = InstrumentationRegistry.getArguments()
         val host = arguments.getString(ARG_HOST).orEmpty()
@@ -462,8 +476,8 @@ class SshRealEndToEndTest {
                 RemoteSessionStartRequest(
                     title = "Real tmux smooth scroll",
                     workspaceName = "Real tmux smooth scroll",
-                    connection = RemoteSessionConnectionRequest.Ssh(
-                        SshConnectionConfig(
+                    connection = run {
+                        val ssh = SshConnectionConfig(
                             host = host,
                             port = port,
                             username = username,
@@ -472,9 +486,11 @@ class SshRealEndToEndTest {
                                 loadKey = { fixturePrivateKey.copyOf() },
                                 passphrase = null,
                             ),
-                            tmuxSessionSelectorEnabled = true,
-                        ),
-                    ),
+                            tmuxSessionSelectorEnabled = !manualStart,
+                        )
+                        if (useMosh) RemoteSessionConnectionRequest.Mosh(MoshBootstrapRequest(ssh))
+                        else RemoteSessionConnectionRequest.Ssh(ssh)
+                    },
                     terminalConfiguration = RemoteSessionTerminalConfiguration(
                         scrollbackLines = TMUX_SMOOTH_ROW_COUNT + 256,
                     ),
@@ -529,7 +545,13 @@ class SshRealEndToEndTest {
                     delay(10L)
                 }
             }
-            checkpoint("app-selected tmux connected")
+            if (manualStart) {
+                assertTrue(
+                    "The ordinary shell rejected manual tmux startup.",
+                    controller.sendPaste("tmux new-session -s terminal-spike-manual-${System.nanoTime()}", appendEnter = true),
+                )
+            }
+            checkpoint(if (manualStart) "shell-started tmux connected" else "app-selected tmux connected")
 
             delay(TMUX_CLIENT_ATTACH_SETTLE_MILLIS)
             assertTrue(
@@ -589,10 +611,16 @@ class SshRealEndToEndTest {
                 "The mounted terminal view did not submit the real Codex prompt inside tmux.",
                 dispatchEnterThroughWindow(scenario, mountedTerminal),
             )
+            var taskRunningObserved = false
             val codexOutputComplete = withTimeoutOrNull(OUTPUT_TIMEOUT_MILLIS) {
-                while (controller.indexOfLineContaining(lastExpectedCodexRow()) < 0) delay(25L)
+                while (controller.indexOfLineContaining(lastExpectedCodexRow()) < 0) {
+                    taskRunningObserved = taskRunningObserved || repository.sessions.value
+                        .firstOrNull { it.id == started.sessionId }?.taskStatus?.running == true
+                    delay(25L)
+                }
                 true
             }
+            checkpoint("actual Codex output stable before first gesture; " + controller.tmuxScrollDiagnostic())
             assertTrue(
                 controller.diagnostic("Actual Codex inside tmux did not produce all requested rows."),
                 codexOutputComplete == true,
@@ -616,18 +644,6 @@ class SshRealEndToEndTest {
             val firstCodexRowBeforeGesture = controller.indexOfLineContaining(firstExpectedCodexRow())
             val lastCodexRowBeforeGesture = controller.indexOfLineContaining(lastExpectedCodexRow())
             val bottomBeforeGesture = controller.viewport.visibleRows(overscan = 0)
-            assertTrue(
-                controller.diagnostic("The first Codex row was not retained before the first tmux gesture."),
-                firstCodexRowBeforeGesture >= 0,
-            )
-            assertFalse(
-                controller.diagnostic("The first Codex row was already visible before the first tmux gesture."),
-                firstCodexRowBeforeGesture in bottomBeforeGesture.first until bottomBeforeGesture.lastExclusive,
-            )
-            assertTrue(
-                controller.diagnostic("The last Codex row was not visible before the first tmux gesture."),
-                lastCodexRowBeforeGesture in bottomBeforeGesture.first until bottomBeforeGesture.lastExclusive,
-            )
             val subRow = dispatchSubRowDragThroughWindow(
                 scenario = scenario,
                 instrumentation = instrumentation,
@@ -644,6 +660,18 @@ class SshRealEndToEndTest {
                     "first actual-Codex tmux gesture=$gesture; " +
                         controller.tmuxScrollDiagnostic(),
                 ),
+            )
+            assertTrue(
+                controller.diagnostic("The first Codex row was not retained before the first tmux gesture."),
+                firstCodexRowBeforeGesture >= 0,
+            )
+            assertFalse(
+                controller.diagnostic("The first Codex row was already visible before the first tmux gesture."),
+                firstCodexRowBeforeGesture in bottomBeforeGesture.first until bottomBeforeGesture.lastExclusive,
+            )
+            assertTrue(
+                controller.diagnostic("The last Codex row was not visible before the first tmux gesture."),
+                lastCodexRowBeforeGesture in bottomBeforeGesture.first until bottomBeforeGesture.lastExclusive,
             )
             assertEquals(
                 "The first real Codex/tmux gesture selected the row-based remote path: $gesture",
@@ -689,6 +717,7 @@ class SshRealEndToEndTest {
                 pagingSwipeCount += 1
                 delay(SWIPE_SETTLE_MILLIS)
             }
+            checkpoint("tmux paging checkpoint; " + controller.tmuxScrollDiagnostic())
             val oldestPageArrived = withTimeoutOrNull(TMUX_OUTPUT_DRAIN_TIMEOUT_MILLIS) {
                 while (controller.indexOfLine(firstExpectedSmoothTmuxRow()) < 0) delay(25L)
                 true
@@ -892,6 +921,14 @@ class SshRealEndToEndTest {
                 fling.gestureDiagnostic.remoteWheelReports,
             )
             checkpoint(controller.diagnostic("tmux sub-row drag and fling passed"))
+            if (manualStart) {
+                assertTrue("Actual Codex did not publish Running task metadata.", taskRunningObserved)
+                withTimeout(10_000L) {
+                    while (repository.sessions.value.firstOrNull { it.id == started.sessionId }
+                            ?.taskStatus?.let { !it.running && (it.finished || it.needsAttention) } != true) delay(50L)
+                }
+                checkpoint("task indicators running=pass ready=pass")
+            }
         } finally {
             fixturePrivateKey.fill(0)
             startedSessionId?.let(repository::close)
@@ -1493,6 +1530,12 @@ class SshRealEndToEndTest {
     fun realServerScrollsToFirstRowThroughProductionSessionAndComposeView() = runBlocking {
         checkpoint("test started")
         val arguments = InstrumentationRegistry.getArguments()
+        // Opt in to the same uncompromised actual-Codex gate over direct Mosh. Its result is
+        // separate from SSH: Mosh framebuffer synchronization can omit intermediate output.
+        val codexTransport = arguments.getString(ARG_CODEX_TRANSPORT) ?: "ssh"
+        require(codexTransport == "ssh" || codexTransport == "mosh")
+        val useMosh = codexTransport == "mosh"
+        val codexTable = arguments.getString(ARG_CODEX_TABLE) == "true"
         val host = arguments.getString(ARG_HOST).orEmpty()
         val username = arguments.getString(ARG_USERNAME).orEmpty()
         val password = arguments.getString(ARG_PASSWORD).orEmpty()
@@ -1512,6 +1555,7 @@ class SshRealEndToEndTest {
                 (password.isNotEmpty() || privateKeyBytes != null),
         )
         val port = arguments.getString(ARG_PORT)?.toIntOrNull() ?: DEFAULT_PORT
+        require(!useMosh || codexCommand != null) { "Direct Mosh acceptance requires actual Codex." }
         val passwordBytes = password.encodeToByteArray()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext
@@ -1538,10 +1582,10 @@ class SshRealEndToEndTest {
 
             val result = repository.startUserInitiatedSession(
                 RemoteSessionStartRequest(
-                    title = "Real SSH scrollback",
-                    workspaceName = "Real SSH scrollback",
-                    connection = RemoteSessionConnectionRequest.Ssh(
-                        SshConnectionConfig(
+                    title = "Real $codexTransport scrollback",
+                    workspaceName = "Real $codexTransport scrollback",
+                    connection = run {
+                        val ssh = SshConnectionConfig(
                             host = host,
                             port = port,
                             username = username,
@@ -1557,10 +1601,20 @@ class SshRealEndToEndTest {
                             } else {
                                 null
                             },
-                        ),
-                    ),
+                        )
+                        if (useMosh) {
+                            RemoteSessionConnectionRequest.Mosh(MoshBootstrapRequest(ssh = ssh))
+                        } else {
+                            RemoteSessionConnectionRequest.Ssh(ssh)
+                        }
+                    },
                     terminalConfiguration = RemoteSessionTerminalConfiguration(
-                        scrollbackLines = REAL_SCROLLBACK_CAPACITY,
+                        scrollbackLines = if (codexTable) {
+                            // Rendered Markdown separators consume history too.
+                            OUTPUT_ROW_COUNT * 4 + REAL_SCROLLBACK_CAPACITY
+                        } else {
+                            REAL_SCROLLBACK_CAPACITY
+                        },
                     ),
                 ),
             )
@@ -1619,6 +1673,12 @@ class SshRealEndToEndTest {
             checkpoint("SSH connected")
 
             val submittedRows = if (codexCommand != null) {
+                if (useMosh) {
+                    assertTrue(
+                        "Production Mosh controller rejected the fixture shell command.",
+                        controller.sendPaste("exec /bin/bash --noprofile --norc", appendEnter = true),
+                    )
+                }
                 withTimeout(OUTPUT_TIMEOUT_MILLIS) {
                     while (
                         (0 until controller.lineCount()).none { index ->
@@ -1666,7 +1726,9 @@ class SshRealEndToEndTest {
                     codexInputReady == true,
                 )
                 delay(CODEX_INPUT_READY_SETTLE_MILLIS)
-                val promptPasted = controller.sendPaste(CODEX_200_LINE_PROMPT)
+                val promptPasted = controller.sendPaste(
+                    if (codexTable) CODEX_200_ROW_TABLE_PROMPT else CODEX_200_LINE_PROMPT,
+                )
                 delay(CODEX_PASTE_SETTLE_MILLIS)
                 assertTrue("Production controller rejected the Codex prompt paste.", promptPasted)
                 assertTrue(
@@ -1860,6 +1922,8 @@ class SshRealEndToEndTest {
         const val ARG_PASSWORD = "sshE2ePassword"
         const val ARG_PRIVATE_KEY_BASE64 = "sshE2ePrivateKeyBase64"
         const val ARG_CODEX_COMMAND_BASE64 = "sshE2eCodexCommandBase64"
+        const val ARG_CODEX_TRANSPORT = "sshE2eCodexTransport"
+        const val ARG_CODEX_TABLE = "sshE2eCodexTable"
         const val ARG_REQUIRE_MOSH_ABSENT = "sshE2eRequireMoshAbsent"
         const val DEFAULT_PORT = 22
         const val TERMINAL_COLUMNS = 80
@@ -1896,6 +1960,10 @@ class SshRealEndToEndTest {
         const val CODEX_200_LINE_PROMPT =
             "Reply with exactly 200 lines and no other text. For each integer N from 1 through " +
                 "200, line N must be CODEX_SCROLL_NNN where NNN is zero-padded to three digits."
+        const val CODEX_200_ROW_TABLE_PROMPT =
+            "Reply with a one-column Markdown table with header Row and exactly 200 data rows. " +
+                "For each integer N from 1 through 200, the cell must be CODEX_SCROLL_NNN where " +
+                "NNN is zero-padded to three digits. No code fence and no text outside the table."
         const val CODEX_READER_ANCHOR_MARKER = "CODEX_READER_ANCHOR_PASS"
         const val CODEX_READER_ANCHOR_PROMPT =
             "Reply with exactly one line and no other text. Concatenate CODEX_READER_ANCHOR_ " +

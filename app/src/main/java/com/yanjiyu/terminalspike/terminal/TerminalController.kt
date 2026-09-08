@@ -153,6 +153,7 @@ class TerminalController(
 
     @Volatile
     private var tmuxSessionProvider: (() -> Boolean)? = null
+    private var trustTmuxStreamScrollback = true
 
     @Volatile
     private var tmuxHistoryRefreshListener: ((Boolean) -> Unit)? = null
@@ -296,9 +297,9 @@ class TerminalController(
     }
 
     /** Re-arms managed history when the selector attaches tmux after an earlier outer-screen exit. */
-    internal fun beginManagedTmuxSession() {
+    internal fun beginManagedTmuxSession(identityChanged: Boolean = false) {
         synchronized(queueLock) {
-            if (tmuxOuterTerminalExited) {
+            if (tmuxOuterTerminalExited || identityChanged) {
                 tmuxHistoryActive = false
                 tmuxOuterScreenIsAlternate = null
                 tmuxHistoryMetadataKnown = false
@@ -366,11 +367,13 @@ class TerminalController(
         isTmuxSession: () -> Boolean = { false },
         requestTmuxHistoryRefresh: (Boolean) -> Unit = {},
         requestOlderTmuxHistory: (TmuxHistoryPageRequest) -> Unit = {},
+        trustTmuxStreamScrollback: Boolean = true,
     ) {
         inputSink = sink
         terminalSizeListener = onResize
         inputAcceptedListener = onInputAccepted
         tmuxSessionProvider = isTmuxSession
+        this.trustTmuxStreamScrollback = trustTmuxStreamScrollback
         tmuxHistoryRefreshListener = requestTmuxHistoryRefresh
         tmuxOlderHistoryListener = requestOlderTmuxHistory
         tmuxOuterTerminalExited = false
@@ -455,7 +458,7 @@ class TerminalController(
             }
             if (managedTmuxFrame) {
                 tmuxHistoryActive = true
-                tmuxTerminalScrollbackQueue.addAll(frame.completedScrollback)
+                if (trustTmuxStreamScrollback) tmuxTerminalScrollbackQueue.addAll(frame.completedScrollback)
             }
             val earlierFrame = pendingTerminalFrame
             val coalescedBellCount = (

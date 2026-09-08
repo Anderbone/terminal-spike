@@ -400,6 +400,8 @@ data class SessionTabUi(
     val workspaceName: String = WORKSPACE_SSH_SESSION_FALLBACK,
     val protocol: ConnectionProtocol = ConnectionProtocol.SSH,
     val terminalTitle: String? = null,
+    val taskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus =
+        com.yanjiyu.terminalspike.terminal.TerminalTaskStatus(),
     val lastActivityAtEpochMillis: Long = 0,
     val recentSessionId: String? = null,
     val endpointIdentityToken: String? = null,
@@ -935,6 +937,7 @@ internal fun TerminalSpikeUiState.withRemoteSessionSnapshots(
             workspaceName = snapshot.workspaceName,
             protocol = snapshot.protocol,
             terminalTitle = snapshot.terminalTitle,
+            taskStatus = snapshot.taskStatus,
             lastActivityAtEpochMillis = snapshot.lastActivityAtEpochMillis,
             recentSessionId = snapshot.recentSessionId,
             endpointIdentityToken = snapshot.endpointIdentityToken,
@@ -3440,6 +3443,8 @@ class TerminalSpikeViewModel(
             )
         }
     }
+
+    internal fun acknowledgeTerminalTask(sessionId: Long) { remoteSessions.acknowledgeTaskStatus(sessionId) }
 
     fun selectSession(sessionId: Long) {
         if (_uiState.value.sessions.none { it.id == sessionId }) return

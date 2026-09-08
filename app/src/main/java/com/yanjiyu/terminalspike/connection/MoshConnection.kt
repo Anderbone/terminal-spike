@@ -67,6 +67,18 @@ internal class MoshConnection(
     override val isTmuxSession: Boolean
         get() = synchronized(lock) { activeAttempt?.sshSideChannel?.isTmuxSession == true }
 
+    override val terminalTaskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
+        get() = synchronized(lock) { activeAttempt?.sshSideChannel }?.terminalTaskStatus
+            ?: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus()
+
+    override fun acknowledgeTaskStatus() {
+        synchronized(lock) { activeAttempt?.sshSideChannel }?.acknowledgeTaskStatus()
+    }
+
+    override fun refreshTmuxIdentity(): Boolean = synchronized(lock) {
+        activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
+    }?.refreshTmuxIdentity() ?: false
+
     override fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? = synchronized(lock) {
         activeAttempt?.sshSideChannel?.takeIf { activeAttempt?.running == true }
     }?.captureTmuxPane(includeHistory)

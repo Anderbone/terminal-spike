@@ -40,6 +40,9 @@ class JschSshConnection(
     private var tmuxSelector: TmuxSessionSelector? = null
     private var attachedTmuxSessionId: String? = null
     private var startedInTmux = false
+    private var discoveredTmuxClient: TmuxClientIdentity? = null
+    private var tmuxClientWasDiscovered = false
+    private val tmuxTasks = TmuxTaskMonitor()
     private var tmuxExecutable: String? = null
     private var tmuxSessionsBeforeStart: Set<String> = emptySet()
     private var cachedTmuxPaneCapture: TmuxPaneCapture? = null
@@ -49,7 +52,43 @@ class JschSshConnection(
     private var requestedRows = DEFAULT_TERMINAL_ROWS
 
     override val isTmuxSession: Boolean
-        get() = synchronized(lock) { startedInTmux || attachedTmuxSessionId != null }
+        get() = synchronized(lock) {
+            if (tmuxClientWasDiscovered) discoveredTmuxClient != null
+            else startedInTmux || attachedTmuxSessionId != null
+        }
+
+    override val terminalTaskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
+        get() = tmuxTasks.paneStatus(synchronized(lock) { discoveredTmuxClient?.paneId })
+
+    override fun acknowledgeTaskStatus() {
+        tmuxTasks.acknowledge(synchronized(lock) { discoveredTmuxClient?.paneId })
+    }
+
+    override fun refreshTmuxIdentity(): Boolean {
+        val session = synchronized(lock) {
+            authenticatedSession?.session?.takeIf { running && it.isConnected }
+        } ?: return false
+        val runner = JschTmuxCommandRunner(session)
+        val executable = synchronized(lock) { tmuxExecutable } ?: queryTmuxExecutable(runner)
+            ?: return false
+        tmuxTasks.refresh(runner, executable)
+        val observation = discoverTmuxClient(runner, executable)
+        if (observation == TmuxClientObservation.Unavailable) return false
+        return synchronized(lock) {
+            if (authenticatedSession?.session !== session || !running) return false
+            tmuxExecutable = executable
+            val identity = (observation as? TmuxClientObservation.Attached)?.identity
+            if (identity == null && !tmuxClientWasDiscovered) return false
+            tmuxClientWasDiscovered = true
+            if (discoveredTmuxClient == identity) return false
+            discoveredTmuxClient = identity
+            attachedTmuxSessionId = identity?.sessionId
+            startedInTmux = identity != null
+            cachedTmuxPaneCapture = null
+            tmuxLiveHistoryRefreshPending = identity != null
+            true
+        }
+    }
 
     override fun captureTmuxPane(includeHistory: Boolean): TmuxPaneCapture? {
         if (includeHistory) {
@@ -88,6 +127,7 @@ class JschSshConnection(
             sessionId = targetSessionId,
             authoritative = context.authoritative && includeHistory,
             includeHistory = includeHistory,
+            paneId = synchronized(lock) { discoveredTmuxClient?.paneId },
         ) ?: return null
         return synchronized(lock) {
             capture.takeIf {
@@ -121,6 +161,7 @@ class JschSshConnection(
             executable = context.executable,
             sessionId = requireNotNull(context.sessionId),
             pageRequest = request,
+            paneId = synchronized(lock) { discoveredTmuxClient?.paneId },
         ) ?: return null
         return synchronized(lock) {
             capture.takeIf {
@@ -395,7 +436,9 @@ class JschSshConnection(
         session ?: return TmuxSessionCatalog()
         return queryTmuxSessionCatalog(JschTmuxCommandRunner(session), includePreviews).copy(
             activeSessionId = activeSessionId,
-        )
+        ).let { catalog -> catalog.copy(sessions = catalog.sessions.map {
+            it.copy(taskStatus = tmuxTasks.sessionStatus(it.id))
+        }) }
     }
 
     override fun terminateTmuxSession(sessionId: String): TmuxSessionCatalog {
@@ -417,6 +460,7 @@ class JschSshConnection(
             runner,
             sessionId,
             sourceSessionId,
+            clientTty = synchronized(lock) { discoveredTmuxClient?.tty },
         )) {
             TmuxSessionSwitchResult.Switched -> true
             is TmuxSessionSwitchResult.Attach ->
@@ -519,6 +563,8 @@ class JschSshConnection(
             tmuxSessionsBeforeStart = emptySet()
             cachedTmuxPaneCapture = null
             tmuxLiveHistoryRefreshPending = false
+            discoveredTmuxClient = null
+            tmuxClientWasDiscovered = false
             writer = null
             startupInputGate = null
             output = null
@@ -526,6 +572,7 @@ class JschSshConnection(
             authenticatedSession = null
             current
         }
+        tmuxTasks.clear()
         resources.startupInputGate?.close()
         resources.writer?.stop()
         runCatching { resources.output?.close() }

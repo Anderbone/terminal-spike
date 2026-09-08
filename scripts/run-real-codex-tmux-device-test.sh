@@ -7,6 +7,8 @@ host_address=""
 host_port=22
 host_username="$(id -un)"
 trusted_lan=false
+manual_tmux=false
+manual_mosh=false
 output_dir="$project_dir/build/real-codex-tmux-device-results"
 app_apk="$project_dir/app/build/outputs/apk/debug/app-debug.apk"
 test_apk="$project_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
@@ -20,7 +22,7 @@ usage() {
     cat >&2 <<'EOF'
 Usage: scripts/run-real-codex-tmux-device-test.sh --serial <old-phone-serial>
        --host-address <trusted-lan-ipv4> --trusted-lan [--host-port <port>]
-       [--host-username <name>] [--output-dir <path>]
+       [--host-username <name>] [--output-dir <path>] [--manual-tmux | --manual-mosh]
 
 Runs the actual-Codex and real mouse-application app-selected-tmux acceptance
 only on model SM-S911B. It
@@ -36,6 +38,8 @@ while [[ $# -gt 0 ]]; do
         --host-port) host_port="${2:-}"; shift 2 ;;
         --host-username) host_username="${2:-}"; shift 2 ;;
         --trusted-lan) trusted_lan=true; shift ;;
+        --manual-tmux) manual_tmux=true; shift ;;
+        --manual-mosh) manual_tmux=true; manual_mosh=true; shift ;;
         --output-dir) output_dir="${2:-}"; shift 2 ;;
         *) usage; exit 2 ;;
     esac
@@ -172,6 +176,9 @@ trap 'exit 143' TERM
 verify_old_phone
 cd "$project_dir"
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:stageRuntimeTestUtilities
+if [[ "$manual_mosh" == true ]]; then
+    ./gradlew :mosh-extension:assembleDebug
+fi
 for artifact in "$app_apk" "$test_apk" "$orchestrator_apk" "$test_services_apk"; do
     [[ -f "$artifact" ]] || { echo "Required APK is missing: $artifact" >&2; exit 3; }
 done
@@ -213,6 +220,9 @@ install_apk "$app_apk"
 install_apk "$test_apk"
 install_apk "$orchestrator_apk" true
 install_apk "$test_services_apk" true
+if [[ "$manual_mosh" == true ]]; then
+    install_apk "$project_dir/mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk"
+fi
 
 verify_old_phone
 "$adb_bin" -s "$serial" shell "toybox nc -z -w 5 $host_address $host_port" >/dev/null || {
@@ -226,8 +236,21 @@ codex_command_base64="$(printf '%s' "$codex_command" | base64 -w 0)"
 ssh_class="com.yanjiyu.terminalspike.connection.SshRealEndToEndTest"
 direct_test="realServerScrollsToFirstRowThroughProductionSessionAndComposeView"
 tmux_test="appSelectedTmuxActualCodexFirstGestureUsesLocalPixelScroll"
+if [[ "$manual_tmux" == true ]]; then
+    tmux_test="shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll"
+    if [[ "$manual_mosh" == true ]]; then
+        tmux_test="shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll"
+    fi
+fi
 mouse_app_test="appSelectedTmuxExplicitRemoteMouseScrollsRealLessVimAndHtop"
 test_filter="$ssh_class#$direct_test,$ssh_class#$tmux_test,$ssh_class#$mouse_app_test"
+required_tests=("$direct_test" "$tmux_test" "$mouse_app_test")
+expected_count=3
+if [[ "$manual_tmux" == true ]]; then
+    test_filter="$ssh_class#$tmux_test"
+    required_tests=("$tmux_test")
+    expected_count=1
+fi
 instrumentation_target="com.yanjiyu.terminalspike.test/com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
 orchestrator_target="androidx.test.orchestrator/.AndroidTestOrchestrator"
 arguments=(
@@ -271,13 +294,13 @@ grep -Eq 'INSTRUMENTATION_STATUS_CODE: -[34]' "$public_result" && {
     echo "Real-Codex tmux instrumentation was skipped." >&2
     exit 5
 }
-for required_test in "$direct_test" "$tmux_test" "$mouse_app_test"; do
+for required_test in "${required_tests[@]}"; do
     grep -Fq "test=$required_test" "$public_result" || {
         echo "A required real-Codex test did not run: $required_test" >&2
         exit 5
     }
 done
-grep -Fq 'OK (3 tests)' "$public_result" || { echo "The exact three-test result was not green." >&2; exit 5; }
+grep -Eq "OK \($expected_count tests?\)" "$public_result" || { echo "The exact $expected_count-test result was not green." >&2; exit 5; }
 grep -Fq 'stage=complete subrow=pass fling=pass catch=pass' \
     "$output_dir/evidence-real-codex-tmux.txt" || {
     echo "The final real-Codex tmux checkpoint is missing." >&2
@@ -293,6 +316,12 @@ grep -Fq 'stage=live_bottom autoFollow=true markerVisible=true' \
     echo "The real-Codex live-bottom checkpoint is missing." >&2
     exit 5
 }
+if [[ "$manual_tmux" == true ]]; then
+    grep -Fq 'stage=task_indicators running=pass ready=pass' "$output_dir/evidence-real-codex-tmux.txt" || {
+        echo "The actual-Codex task-indicator evidence is missing." >&2; exit 5;
+    }
+fi
+if [[ "$manual_tmux" == false ]]; then
 grep -Eq 'stage=mouse_application app=less destination=REMOTE_MOUSE reason=EXPLICIT_REMOTE_MOUSE reports=[1-9][0-9]*$' \
     "$output_dir/evidence-real-codex-tmux.txt" || {
     echo "The real tmux mouse-application checkpoint is missing." >&2
@@ -308,6 +337,11 @@ grep -Eq 'stage=mouse_application app=htop destination=REMOTE_MOUSE reason=EXPLI
     echo "The real tmux htop mouse-application checkpoint is missing." >&2
     exit 5
 }
+fi
 python3 "$project_dir/scripts/instrumentation-output-to-junit.py" "$public_result" "$report"
 python3 "$project_dir/scripts/assert-test-report.py" "$report"
+if [[ "$manual_tmux" == true ]]; then
+    printf 'REAL_CODEX_TMUX_RESULT tests=1 failures=0 skips=0 manual_tmux=pass task_indicators=pass route=local wheels=0 paging=5000 subrow=pass fling=pass catch=pass reader_anchor=pass live_bottom=pass\n'
+else
 printf 'REAL_CODEX_TMUX_RESULT tests=3 failures=0 skips=0 direct=pass tmux=pass mouse_apps=less,vim,htop mouse_route=remote mouse_wheels=nonzero route=local wheels=0 paging=5000 subrow=pass fling=pass catch=pass reader_anchor=pass live_bottom=pass\n'
+fi

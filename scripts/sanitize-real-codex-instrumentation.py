@@ -21,6 +21,13 @@ SAFE_SIMPLE_LINES = (
 def main() -> None:
     for raw_line in sys.stdin:
         line = raw_line.rstrip("\r\n")
+        frame = re.fullmatch(
+            r"\s*at com\.yanjiyu\.terminalspike\.connection\.SshRealEndToEndTest[\w$]*"
+            r"\.[\w$<>]+\(SshRealEndToEndTest\.kt:(\d+)\)", line,
+        )
+        if frame:
+            print(f"REAL_CODEX_FAILURE_SOURCE: SshRealEndToEndTest.kt:{frame.group(1)}")
+            continue
         status = re.fullmatch(r"INSTRUMENTATION_STATUS: ([A-Za-z]+)=(.*)", line)
         if status is not None and status.group(1) in SAFE_STATUS_KEYS:
             value = status.group(2)

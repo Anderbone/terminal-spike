@@ -8,9 +8,17 @@ import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.io.InputStream
 
 interface Connection : TerminalInputSink {
-    /** True only while this transport is attached to tmux through the app-owned session flow. */
+    /** True while this transport has an app-selected or side-channel-verified tmux client. */
     val isTmuxSession: Boolean
         get() = false
+
+    val terminalTaskStatus: com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
+        get() = com.yanjiyu.terminalspike.terminal.TerminalTaskStatus()
+
+    fun acknowledgeTaskStatus() = Unit
+
+    /** Background-only identity refresh; true means the attached client/pane changed. */
+    fun refreshTmuxIdentity(): Boolean = false
 
     /**
      * Captures the confirmed app-owned tmux pane through its authenticated side channel.

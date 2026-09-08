@@ -44,6 +44,8 @@ class RealCodexTmuxDeviceRunnerTest(unittest.TestCase):
             """printf 'gradle %s\\n' "$*" >> "$FAKE_COMMAND_LOG"
 mkdir -p app/build/outputs/apk/debug app/build/outputs/apk/androidTest/debug
 mkdir -p app/build/outputs/runtime-test-utils
+mkdir -p mosh-extension/build/outputs/apk/debug
+: > mosh-extension/build/outputs/apk/debug/mosh-extension-debug.apk
 : > app/build/outputs/apk/debug/app-debug.apk
 : > app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 : > app/build/outputs/runtime-test-utils/orchestrator-1.6.1.apk
@@ -73,6 +75,18 @@ case "$*" in
   *"toybox nc -z"*) [[ "${FAKE_REACHABLE:-1}" == 1 ]] ;;
   *"shell sh")
     IFS= read -r instrumentation_command
+    if [[ "$instrumentation_command" == *"shellStarted"* ]]; then
+      [[ "$instrumentation_command" != *"#realServerScrollsToFirstRow"* ]]
+      [[ "$instrumentation_command" != *"#appSelectedTmux"* ]]
+      test=shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll
+      if [[ "$instrumentation_command" == *"shellStartedMoshTmux"* ]]; then
+        test=shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll
+      fi
+      printf 'INSTRUMENTATION_STATUS: test=%s\nINSTRUMENTATION_STATUS_CODE: 1\n' "$test"
+      printf 'INSTRUMENTATION_STATUS: test=%s\nINSTRUMENTATION_STATUS_CODE: 0\n' "$test"
+      printf 'OK (1 test)\n'
+      exit 0
+    fi
     [[ "$instrumentation_command" == *"realServerScrollsToFirstRowThroughProductionSessionAndComposeView"* ]]
     [[ "$instrumentation_command" == *"appSelectedTmuxActualCodexFirstGestureUsesLocalPixelScroll"* ]]
     [[ "$instrumentation_command" == *"appSelectedTmuxExplicitRemoteMouseScrollsRealLessVimAndHtop"* ]]
@@ -94,6 +108,7 @@ case "$*" in
     [[ "${FAKE_INSTRUMENTATION_FAIL:-0}" == 0 ]]
     ;;
   *"logcat -d"*)
+    printf 'I/SshRealScrollE2E: task indicators running=pass ready=pass\n'
     [[ "${FAKE_MISSING_CHECKPOINT:-0}" == 1 ]] || \
       printf 'I/SshRealScrollE2E: actual Codex reader position established autoFollow=false historyAnchor=true fractional=true flings=2 visibleHead=[SECRET_ROW]\nI/SshRealScrollE2E: actual Codex reader output observed autoFollow=false; confirmed=true, outerAlternate=true, historyActive=true, metadataKnown=true, metadataFresh=false, remoteMousePassthrough=false, mouseAny=false, paneInMode=false, historyLines=5300, pane=%%61, capturedStart=0, oldestAvailable=0, remoteHistory=5300, truncatedBefore=false, pendingSnapshots=0, outerExited=false visibleHead=[SECRET_ROW]\nI/SshRealScrollE2E: actual Codex new output preserved reader anchor autoFollow=false pixelDelta=0.0 fractional=true visibleHead=[SECRET_ROW]\nI/SshRealScrollE2E: actual Codex live bottom restored autoFollow=true markerVisible=true visibleTail=[jiyu@private-host]\nI/SshRealScrollE2E: tmux sub-row drag and fling passed visibleTail=[jiyu@private-host]\nI/SshRealScrollE2E: real less remote mouse passed destination=REMOTE_MOUSE reason=EXPLICIT_REMOTE_MOUSE reports=4 visibleTail=[jiyu@private-host]\nI/SshRealScrollE2E: real vim remote mouse passed destination=REMOTE_MOUSE reason=EXPLICIT_REMOTE_MOUSE reports=3 visibleTail=[jiyu@private-host]\nI/SshRealScrollE2E: real htop remote mouse passed destination=REMOTE_MOUSE reason=EXPLICIT_REMOTE_MOUSE reports=3 swipes=5 visibleTail=[jiyu@private-host]\n'
     ;;
@@ -178,6 +193,19 @@ esac
         self.assertNotIn("private-host", public)
         self.assertNotIn("visibleTail", public)
         self.assertNotIn("SECRET_ROW", public)
+
+    def test_manual_modes_run_only_the_exact_method_without_claiming_other_gates(self) -> None:
+        for flag, installs in (("--manual-tmux", 4), ("--manual-mosh", 5)):
+            with self.subTest(flag=flag):
+                result = self.run_runner(flag)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("tests=1 failures=0 skips=0 manual_tmux=pass task_indicators=pass", result.stdout)
+                self.assertNotIn("direct=pass", result.stdout)
+                self.assertNotIn("mouse_apps=", result.stdout)
+                self.assert_private_state_clean()
+                self.assertEqual(installs, sum(" install " in line for line in self.commands()))
+                self.log.unlink(missing_ok=True)
+                shutil.rmtree(self.output, ignore_errors=True)
 
     def test_instrumentation_and_checkpoint_failures_still_revoke_key(self) -> None:
         for variable in ("FAKE_INSTRUMENTATION_FAIL", "FAKE_MISSING_CHECKPOINT"):

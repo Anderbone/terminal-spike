@@ -838,6 +838,19 @@ fun TerminalSpikeScreen(
         }
     }
 
+    LaunchedEffect(tmuxSwitcherTargetId) {
+        val sessionId = tmuxSwitcherTargetId ?: return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(1_000L)
+            val refreshed = viewModel.queryActiveTmuxSessions(sessionId)
+            if (tmuxSwitcherTargetId != sessionId) return@LaunchedEffect
+            val previews = tmuxSwitcherCatalog?.sessions?.associate { it.id to it.previewLines }.orEmpty()
+            tmuxSwitcherCatalog = refreshed.copy(sessions = refreshed.sessions.map {
+                it.copy(previewLines = previews[it.id].orEmpty())
+            })
+        }
+    }
+
     fun showSettings(
         section: ToolSection,
         returnDestination: AppRoute,
@@ -1153,6 +1166,14 @@ fun TerminalSpikeScreen(
         immersive = destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible,
         controller = systemBarsController,
     )
+    androidx.lifecycle.compose.LifecycleResumeEffect(
+        state.activeSessionId, destination, terminalSurfaceVisible,
+    ) {
+        if (destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible) {
+            viewModel.acknowledgeTerminalTask(state.activeSessionId)
+        }
+        onPauseOrDispose { }
+    }
     TerminalBellEffect(
         sessionId = state.activeSessionId,
         controller = activeController,

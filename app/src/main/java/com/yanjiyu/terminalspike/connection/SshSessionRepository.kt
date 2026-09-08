@@ -15,6 +15,8 @@ import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityKeyState
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityProvider
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityUnavailableException
 import com.yanjiyu.terminalspike.terminal.TerminalController
+import com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
+import com.yanjiyu.terminalspike.terminal.TerminalTaskTracker
 import com.yanjiyu.terminalspike.terminal.TmuxLocalHistorySnapshot
 import com.yanjiyu.terminalspike.terminal.TerminalRemoteClipboardDecision
 import com.yanjiyu.terminalspike.terminal.decideRemoteClipboardRequest
@@ -60,6 +62,7 @@ internal data class SshSessionSnapshot(
     val workspaceName: String = title,
     val protocol: ConnectionProtocol = ConnectionProtocol.SSH,
     val terminalTitle: String? = null,
+    val taskStatus: TerminalTaskStatus = TerminalTaskStatus(),
     val lastActivityAtEpochMillis: Long = 0L,
     val recentSessionId: String? = null,
     /** Device-local opaque HMAC used only to suppress matching Recent presentation rows. */
@@ -459,6 +462,7 @@ internal class SshSessionRepository(
                 runtime.terminal.attach(
                     connection = connection,
                     onInputAccepted = { recordAcceptedOutboundSessionActivity(runtime) },
+                    onTaskStatusChanged = { publishTaskStatus(runtime) },
                 )
             }
         }.isSuccess
@@ -1106,6 +1110,22 @@ internal class SshSessionRepository(
         _terminalProgramNotifications.tryEmit(event)
     }
 
+    private fun publishTaskStatus(runtime: SshSessionRuntime) {
+        synchronized(lock) {
+            if (runtimes[runtime.id] !== runtime || runtime.terminated) return
+            val status = runtime.terminal.taskStatus
+            if (runtime.taskStatus != status) {
+                runtime.taskStatus = status
+                publishSessionsLocked()
+            }
+        }
+    }
+
+    fun acknowledgeTaskStatus(sessionId: Long) {
+        val terminal = synchronized(lock) { runtimes[sessionId]?.terminal } ?: return
+        terminal.acknowledgeTaskStatus()
+    }
+
     private fun recordAcceptedOutboundSessionActivity(runtime: SshSessionRuntime) {
         val changed = synchronized(lock) {
             if (runtimes[runtime.id] !== runtime || runtime.terminated) return@synchronized false
@@ -1408,6 +1428,7 @@ internal class SshSessionRepository(
                     runtime.terminal.attach(
                         connection = connection,
                         onInputAccepted = { recordAcceptedOutboundSessionActivity(runtime) },
+                        onTaskStatusChanged = { publishTaskStatus(runtime) },
                     )
                     true
                 }
@@ -1572,6 +1593,7 @@ internal class SshSessionRepository(
                 runtime.terminal.attach(
                     connection = connection,
                     onInputAccepted = { recordAcceptedOutboundSessionActivity(runtime) },
+                    onTaskStatusChanged = { publishTaskStatus(runtime) },
                 )
                 true
             }
@@ -1990,6 +2012,13 @@ internal interface SshSessionTerminal {
 
     fun attach(connection: Connection)
 
+    val taskStatus: TerminalTaskStatus get() = TerminalTaskStatus()
+    fun acknowledgeTaskStatus() = Unit
+
+    fun attach(connection: Connection, onInputAccepted: () -> Unit, onTaskStatusChanged: () -> Unit) {
+        attach(connection, onInputAccepted)
+    }
+
     fun attach(connection: Connection, onInputAccepted: () -> Unit) {
         attach(connection)
     }
@@ -2061,6 +2090,7 @@ private class DefaultSshSessionTerminal(
     private var tmuxCaptureAgainIncludeHistory = false
     private var tmuxPageCaptureInFlightBefore: Int? = null
     private var tmuxMetadataRefresh: ScheduledFuture<*>? = null
+    private var tmuxIdentityRefresh: ScheduledFuture<*>? = null
     private var tmuxMetadataStaleStartedAtNanos = 0L
     private var tmuxOutputRevision = 0L
     private var tmuxHistoryBootstrapRequested = false
@@ -2070,6 +2100,35 @@ private class DefaultSshSessionTerminal(
     @Volatile
     override var terminalTitle: String? = null
         private set
+
+    private val taskLock = Any()
+    private val taskTracker = TerminalTaskTracker()
+    private var onTaskStatusChanged: () -> Unit = {}
+    @Volatile
+    override var taskStatus = TerminalTaskStatus()
+        private set
+
+    override fun attach(connection: Connection, onInputAccepted: () -> Unit, onTaskStatusChanged: () -> Unit) {
+        this.onTaskStatusChanged = onTaskStatusChanged
+        attach(connection, onInputAccepted)
+    }
+
+    override fun acknowledgeTaskStatus() {
+        synchronized(taskLock) { taskTracker.acknowledge() }
+        synchronized(tmuxHistoryLock) { attachedConnection }?.acknowledgeTaskStatus()
+        publishTaskStatus()
+    }
+
+    private fun publishTaskStatus() {
+        val connection = synchronized(tmuxHistoryLock) { attachedConnection }
+        val status = if (connection?.isTmuxSession == true) connection.terminalTaskStatus else {
+            synchronized(taskLock) { taskTracker.status }
+        }
+        if (status != taskStatus) {
+            taskStatus = status
+            onTaskStatusChanged()
+        }
+    }
 
     override val columns: Int get() = controller.terminalColumns
     override val rows: Int get() = controller.terminalRows
@@ -2091,6 +2150,10 @@ private class DefaultSshSessionTerminal(
             tmuxOutputRevision = tmuxOutputRevision.nextPositiveGeneration()
             tmuxHistoryBootstrapRequested = false
         }
+        tmuxIdentityRefresh?.cancel(false)
+        tmuxIdentityRefresh = tmuxHistoryExecutor.scheduleWithFixedDelay(
+            { refreshTmuxIdentity(connection) }, 0L, 500L, TimeUnit.MILLISECONDS,
+        )
         moshDisplayHistory = if (connection is MoshConnection) MoshDisplayHistory() else null
         controller.setInputSink(
             sink = connection,
@@ -2104,6 +2167,7 @@ private class DefaultSshSessionTerminal(
             isTmuxSession = { connection.isTmuxSession },
             requestTmuxHistoryRefresh = ::requestTmuxHistoryCapture,
             requestOlderTmuxHistory = ::requestOlderTmuxHistory,
+            trustTmuxStreamScrollback = connection !is MoshConnection,
         )
     }
 
@@ -2152,6 +2216,11 @@ private class DefaultSshSessionTerminal(
         val update = moshDisplayHistory?.retainDisplayedRows(parsedUpdate) ?: parsedUpdate
         update.responses.forEach(sendResponse)
         terminalTitle = update.terminalTitle
+        synchronized(taskLock) {
+            taskTracker.observeTitle(update.terminalTitle)
+            if (update.bellCount > 0 || update.terminalNotifications.isNotEmpty()) taskTracker.attention()
+        }
+        publishTaskStatus()
         update.remoteClipboardRequests.forEach(onRemoteClipboardRequest)
         update.terminalNotifications.forEach(onTerminalNotification)
         if (update.bellCount > 0) onTerminalBell()
@@ -2173,6 +2242,8 @@ private class DefaultSshSessionTerminal(
 
     override fun detach() {
         synchronized(tmuxHistoryLock) {
+            tmuxIdentityRefresh?.cancel(false)
+            tmuxIdentityRefresh = null
             attachedConnection = null
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
@@ -2190,6 +2261,22 @@ private class DefaultSshSessionTerminal(
 
     override fun refreshTmuxHistory() {
         requestTmuxHistoryCapture(includeHistory = true)
+    }
+
+    private fun refreshTmuxIdentity(connection: Connection) {
+        if (synchronized(tmuxHistoryLock) { stopped || attachedConnection !== connection }) return
+        val changed = runCatching { connection.refreshTmuxIdentity() }.getOrDefault(false)
+        publishTaskStatus()
+        if (!changed) return
+        synchronized(tmuxHistoryLock) {
+            if (stopped || attachedConnection !== connection) return
+            tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
+            tmuxHistoryBootstrapRequested = false
+            tmuxCaptureAgain = false
+            tmuxPageCaptureInFlightBefore = null
+            controller.beginManagedTmuxSession(identityChanged = true)
+        }
+        if (connection.isTmuxSession) refreshTmuxHistory()
     }
 
     private fun requestTmuxHistoryCapture(includeHistory: Boolean) {
@@ -2338,7 +2425,11 @@ private class DefaultSshSessionTerminal(
             }
         }
         if (current) {
-            requestTmuxHistoryCapture(includeHistory = !controller.hasTmuxLocalHistory())
+            // Mosh delivers framebuffer repaints, not the pane's ordered VT history stream.
+            // Refresh one bounded page off-thread instead of inventing remote history coordinates.
+            requestTmuxHistoryCapture(
+                includeHistory = connection is MoshConnection || !controller.hasTmuxLocalHistory(),
+            )
         }
     }
 
@@ -2393,6 +2484,7 @@ private class SshSessionRuntime(
     var connectionState: ConnectionState = ConnectionState.Connecting
 
     @Volatile
+    var taskStatus = TerminalTaskStatus()
     var terminalTitle: String? = null
 
     @Volatile
@@ -2464,6 +2556,7 @@ private class SshSessionRuntime(
         workspaceName = workspaceName,
         protocol = protocol,
         terminalTitle = terminalTitle,
+        taskStatus = if (connectionState is ConnectionState.Connected) taskStatus else taskStatus.disconnected(),
         lastActivityAtEpochMillis = activity.lastPublishedAtEpochMillis,
         recentSessionId = recentSessionId,
         endpointIdentityToken = endpointIdentityToken,

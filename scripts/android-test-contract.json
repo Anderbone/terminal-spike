@@ -23,7 +23,9 @@
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#changedSavedHostKeyIsBlockedByRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#importedPrivateKeySelectedBySavedHostAuthenticatesToRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerCarriesInteractiveBytesWhileMoshExtensionIsAbsent",
-        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView"
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll"
       ]
     },
     {
@@ -277,6 +279,10 @@
         "com.yanjiyu.terminalspike.TerminalSessionActionsTest#tmuxChooserMakesStartingANewProtectedSessionExplicit",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#emptyPickerStaysAQuickDialog",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#listsExistingSnippetsAndReturnsSelectedSnippet",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#appSwitcherReflectsBackgroundTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#startupPickerShowsRemoteTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#tmuxSwitcherReflectsInactiveRemoteTaskState",
+        "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#topTabsReflectBackgroundTaskState",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#forgettingAHostKeyRequiresEndpointSpecificConfirmation",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#savedHostDeletionRequiresConfirmationAndCancelKeepsTheTarget",
         "com.yanjiyu.terminalspike.TerminalToolsConfirmationTest#terminalKeyEditorPreviewKeepsAccessibleHeightAndActionSemantics",
@@ -319,6 +325,8 @@
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#importedPrivateKeySelectedBySavedHostAuthenticatesToRealServer",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerCarriesInteractiveBytesWhileMoshExtensionIsAbsent",
         "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#realServerScrollsToFirstRowThroughProductionSessionAndComposeView",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedMoshTmuxActualCodexFirstGestureUsesLocalPixelScroll",
+        "com.yanjiyu.terminalspike.connection.SshRealEndToEndTest#shellStartedTmuxActualCodexFirstGestureUsesLocalPixelScroll",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#absentExtensionNeverAttemptsBinding",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#callbackDispatcherRoutesOnlyToCanonicalSessionKey",
         "com.yanjiyu.terminalspike.connection.mosh.MoshExtensionClientInstrumentedTest#concurrentConnectUsesOneExplicitBindingAndOneCallback",

@@ -542,4 +542,7 @@
         <item quantity="one">%1$d remote terminal session active</item>
         <item quantity="other">%1$d remote terminal sessions active</item>
     </plurals>
+    <string name="terminal_task_running">Running</string>
+    <string name="terminal_task_finished">Finished / ready</string>
+    <string name="terminal_task_attention">Needs attention</string>
 </resources>
