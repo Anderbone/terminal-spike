@@ -180,9 +180,9 @@ fi
 printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
 graphics_options=(-gpu swiftshader)
 if [[ "$api" == "37" ]]; then
-    # API 37's mapper rejects ReadColorBufferDMA when SurfaceFlinger samples a region.
-    # Keep the emulator on its supported buffer-copy path, independent of host defaults.
-    graphics_options+=(-feature -HasSharedSlotsHostMemoryAllocator)
+    # API 37's mapper crashes in the legacy SwiftShader buffer-read path.
+    # Let the emulator select its supported Lavapipe/ANGLE software backends.
+    graphics_options=(-gpu software)
 fi
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
     -no-boot-anim "${graphics_options[@]}" -memory "$emulator_memory_mb" -partition-size 4096 \
