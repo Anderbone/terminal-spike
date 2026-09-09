@@ -182,8 +182,9 @@ graphics_options=(-gpu swiftshader)
 if [[ "$api" == "37" ]]; then
     # API 37's mapper rejects the host ReadColorBufferDMA path, crashing
     # SurfaceFlinger even with software host graphics. Guest ANGLE uses Vulkan
-    # buffers instead; retain software rendering for headless CI hosts.
-    graphics_options=(-gpu software -feature GuestAngle)
+    # buffers instead. Explicitly enable Vulkan: headless CI feature detection
+    # may disable it, leaving guest ANGLE unable to initialize its compositor.
+    graphics_options=(-gpu software -feature Vulkan -feature GuestAngle)
 fi
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
     -no-boot-anim "${graphics_options[@]}" -memory "$emulator_memory_mb" -partition-size 4096 \

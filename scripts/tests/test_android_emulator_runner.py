@@ -314,7 +314,7 @@ esac
         result = self.run_runner("--api", "37", "--suite", "boundary")
         self.assertEqual(0, result.returncode, result.stderr)
         emulator = [line for line in self.commands() if line.startswith("emulator ")]
-        self.assertIn("-gpu software -feature GuestAngle", emulator[0])
+        self.assertIn("-gpu software -feature Vulkan -feature GuestAngle", emulator[0])
         evidence = self.output / "local-network-revocation-api37-boundary.txt"
         self.assertEqual(
             [
