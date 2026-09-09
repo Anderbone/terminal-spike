@@ -153,6 +153,14 @@ application data and is not a project-distributed asset.
 
 Android SDK Platform and Build Tools are developer prerequisites and are not vendored or packaged as application libraries.
 
+CI emulator jobs install Android SDK Command-line Tools **22.0** from Google's SDK repository
+(`cmdline-tools;22.0`) to parse Android 17's `37.0` system-image metadata correctly. The host test
+runners prefer that installed version, falling back to `latest` for existing developer SDKs.
+Version 12.0 from the GitHub runner image generates `target=android-0` for this image; the emulator
+runner rejects an incorrect generated target before boot. These are development-only tools under
+the [Android SDK License Agreement](https://developer.android.com/studio/terms), with bundled
+component notices; they are not redistributed in the app and add no APK notice obligation.
+
 The project-owned `mosh-api` Android library adds no direct runtime dependency. It reuses the
 catalogued Android Gradle Plugin, JUnit 4, AndroidX Test Ext JUnit, and AndroidX Test Runner entries
 above for building and verification. Its AIDL, models, and tests are licensed under Apache-2.0 in

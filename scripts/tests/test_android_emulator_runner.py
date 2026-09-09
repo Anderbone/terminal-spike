@@ -65,17 +65,20 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
         self.write_tool(
             sdk / "cmdline-tools/latest/bin/avdmanager",
             'cat >/dev/null\n'
-            'name=""\n'
+            'name=""\npackage=""\n'
             'for ((index = 1; index <= $#; index++)); do\n'
             '  if [[ "${!index}" == "--name" ]]; then next=$((index + 1)); name="${!next}"; fi\n'
+            '  if [[ "${!index}" == "--package" ]]; then next=$((index + 1)); package="${!next}"; fi\n'
             'done\n'
+            'target=${package#system-images;}\ntarget=${target%%;*}\n'
+            'printf "target=%s\\n" "${FAKE_AVD_TARGET:-$target}" >"$ANDROID_AVD_HOME/$name.ini"\n'
             'mkdir -p "$ANDROID_AVD_HOME/$name.avd"\n'
             ': >"$ANDROID_AVD_HOME/$name.avd/config.ini"\n'
             'printf "avdmanager %s AVD_HOME=%s\\n" "$*" "$ANDROID_AVD_HOME" >> "$FAKE_SDK_LOG"\n',
         )
         self.write_tool(
             sdk / "emulator/emulator",
-            'printf "emulator %s AVD_HOME=%s SWIFTSHADER_GLES=%s\\n" "$*" "$ANDROID_AVD_HOME" "${ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER:-unset}" >> "$FAKE_SDK_LOG"\nexec tail -f /dev/null\n',
+            'printf "emulator %s AVD_HOME=%s\\n" "$*" "$ANDROID_AVD_HOME" >> "$FAKE_SDK_LOG"\nexec tail -f /dev/null\n',
         )
         self.write_tool(
             sdk / "platform-tools/adb",
@@ -310,12 +313,27 @@ esac
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((self.output / "TEST-api26-boundary.xml").is_file())
 
+    def test_rejects_old_tools_api_zero_before_starting_emulator(self) -> None:
+        env = self.env.copy()
+        env["FAKE_AVD_TARGET"] = "android-0"
+        result = self.run_runner("--api", "37", "--suite", "boundary", env=env)
+        self.assertEqual(4, result.returncode)
+        self.assertIn("AVD target does not match requested API 37", result.stderr)
+        self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
+
+    def test_prefers_pinned_tools_over_legacy_latest(self) -> None:
+        sdk = Path(self.env["ANDROID_SDK_ROOT"])
+        (sdk / "cmdline-tools/latest").rename(sdk / "cmdline-tools/22.0")
+        (sdk / "cmdline-tools/latest/bin").mkdir(parents=True)
+        self.write_tool(sdk / "cmdline-tools/latest/bin/avdmanager", "exit 99\n")
+        result = self.run_runner("--api", "37", "--suite", "boundary")
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_api37_required_suite_proves_external_permission_revocation_and_relaunch(self) -> None:
         result = self.run_runner("--api", "37", "--suite", "boundary")
         self.assertEqual(0, result.returncode, result.stderr)
         emulator = [line for line in self.commands() if line.startswith("emulator ")]
         self.assertIn("-gpu software -feature Vulkan -feature GuestAngle", emulator[0])
-        self.assertIn("SWIFTSHADER_GLES=1", emulator[0])
         evidence = self.output / "local-network-revocation-api37-boundary.txt"
         self.assertEqual(
             [

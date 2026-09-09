@@ -107,7 +107,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
@@ -166,7 +166,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -224,7 +224,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -282,7 +282,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -335,7 +335,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -412,7 +412,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -462,7 +462,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "platform-tools" "emulator"
+          "cmdline-tools;22.0" "platform-tools" "emulator"
 
       - name: Set up and validate Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6

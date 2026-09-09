@@ -102,16 +102,18 @@ if [[ "$suite" != "openssh" && -z "$requested_test_filter" && ! -f "$test_contra
 fi
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 [[ -n "$sdk_root" ]] || { echo "ANDROID_SDK_ROOT is required." >&2; exit 3; }
-android_cli_bin="$sdk_root/cmdline-tools/latest/bin/android"
-sdkmanager_bin="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
-avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
+android_tools_dir="$sdk_root/cmdline-tools/22.0/bin"
+[[ -d "$android_tools_dir" ]] || android_tools_dir="$sdk_root/cmdline-tools/latest/bin"
+android_cli_bin="$android_tools_dir/android"
+sdkmanager_bin="$android_tools_dir/sdkmanager"
+avdmanager_bin="$android_tools_dir/avdmanager"
 emulator_bin="${TERMINAL_SPIKE_EMULATOR_BIN:-$sdk_root/emulator/emulator}"
 adb_bin="$sdk_root/platform-tools/adb"
 for required_tool in "$avdmanager_bin" "$emulator_bin" "$adb_bin"; do
     [[ -x "$required_tool" ]] || { echo "Required Android SDK tool is missing: $required_tool" >&2; exit 3; }
 done
 if [[ ! -x "$android_cli_bin" && ! -x "$sdkmanager_bin" ]]; then
-    echo "Neither Android SDK installer is available under: $sdk_root/cmdline-tools/latest/bin" >&2
+    echo "Neither Android SDK installer is available under: $android_tools_dir" >&2
     exit 3
 fi
 serial="emulator-${TERMINAL_SPIKE_EMULATOR_PORT:-5554}"
@@ -175,6 +177,13 @@ if ! printf 'no\n' | "$avdmanager_bin" create avd --force --name "$avd_name" \
     sed -n '1,120p' "$avd_create_log" >&2
     exit 4
 fi
+# Old command-line tools parse Android 17's fractional API metadata as zero,
+# producing android-0 and making the emulator choose API 3 graphics defaults.
+avd_target=$(sed -n 's/^target[[:space:]]*=[[:space:]]*//p' "$ANDROID_AVD_HOME/$avd_name.ini" | tr -d '\r')
+if [[ "$avd_target" != "android-$platform_version" && "$avd_target" != "android-$api" ]]; then
+    echo "AVD target does not match requested API $api: $avd_target. Install cmdline-tools;22.0." >&2
+    exit 4
+fi
 # CI text entry uses semantics and Espresso actions. A hardware keyboard prevents the old API 26
 # software IME from repeatedly resizing Compose dialogs; real IME behavior remains device-tested.
 printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
@@ -182,13 +191,8 @@ graphics_options=(-gpu swiftshader)
 if [[ "$api" == "37" ]]; then
     # API 37's mapper rejects the host ReadColorBufferDMA path, crashing
     # SurfaceFlinger even with software host graphics. Guest ANGLE uses Vulkan
-    # buffers instead. Explicitly enable Vulkan: headless CI feature detection
-    # may disable it, leaving guest ANGLE unable to initialize its compositor.
+    # buffers instead. Explicit Vulkan keeps this software rendering path deterministic.
     graphics_options=(-gpu software -feature Vulkan -feature GuestAngle)
-    # Use the bundled SwiftShader GLES library alongside Lavapipe Vulkan.
-    # Host ANGLE detection on GitHub's headless runner advertises only GLES 2,
-    # causing guest SurfaceFlinger to restart continuously before boot completes.
-    export ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER=1
 fi
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
     -no-boot-anim "${graphics_options[@]}" -memory "$emulator_memory_mb" -partition-size 4096 \

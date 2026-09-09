@@ -31,6 +31,10 @@ platform blocks raw TCP and production SSH before protocol traffic while
 `ACCESS_LOCAL_NETWORK` is absent, then completes SSH terminal and SFTP transfer traffic against
 the identical live endpoint after the runtime grant:
 
+Install stable SDK Command-line Tools 22.0 (`sdkmanager "cmdline-tools;22.0"`) first. The runners
+prefer that version when installed. Older tools such as 12.0 misread API 37.0 metadata and create
+an `android-0` AVD; the runner rejects that target before launching the emulator.
+
 ```bash
 scripts/run-android-emulator-tests.sh --api 37 --suite lan-openssh \
   --output-dir build/api37-lan-openssh

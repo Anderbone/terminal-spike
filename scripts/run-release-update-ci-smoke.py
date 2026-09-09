@@ -42,9 +42,12 @@ class ReleaseSmokeRunner:
             os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or ""
         )
         self.adb_bin = Path(os.environ.get("ADB", str(self.sdk_root / "platform-tools/adb")))
-        self.android_bin = self.sdk_root / "cmdline-tools/latest/bin/android"
-        self.sdkmanager_bin = self.sdk_root / "cmdline-tools/latest/bin/sdkmanager"
-        self.avdmanager_bin = self.sdk_root / "cmdline-tools/latest/bin/avdmanager"
+        android_tools_dir = self.sdk_root / "cmdline-tools/22.0/bin"
+        if not android_tools_dir.is_dir():
+            android_tools_dir = self.sdk_root / "cmdline-tools/latest/bin"
+        self.android_bin = android_tools_dir / "android"
+        self.sdkmanager_bin = android_tools_dir / "sdkmanager"
+        self.avdmanager_bin = android_tools_dir / "avdmanager"
         self.emulator_bin = self.sdk_root / "emulator/emulator"
         self.apksigner_bin = self.resolve_build_tool("apksigner")
         java_home = Path(os.environ.get("JAVA_HOME", ""))
