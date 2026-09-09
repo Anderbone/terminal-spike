@@ -215,7 +215,7 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
 <node text="Terminal" class="android.widget.TextView" bounds="[100,0][200,100]" />
 <node text="Add host" class="android.widget.TextView" bounds="[0,100][100,200]" />
 <node text="" content-desc="Add host" class="android.view.View" bounds="[0,100][100,200]" />
-<node text="" content-desc="Connect to 127.0.0.1" class="android.view.View" bounds="[0,200][100,300]" />
+<node text="" content-desc="Connect to {'10.0.2.2' if serial.startswith('emulator-') else '127.0.0.1'}" class="android.view.View" bounds="[0,200][100,300]" />
 <node text="Password" class="android.widget.TextView" bounds="[0,300][100,400]" />
 <node text="Save" class="android.widget.TextView" bounds="[0,400][100,500]" />
 <node text="Connect" class="android.widget.TextView" bounds="[0,500][100,600]" />
@@ -297,6 +297,8 @@ elif 'shell input text printf%s' in joined:
         result = self.run_runner()
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
+        self.assertTrue(any("shell input text 10.0.2.2" in line for line in commands))
+        self.assertFalse(any(" reverse " in line for line in commands))
         self.assertTrue(any("shell run-as com.yanjiyu.terminalspike kill -9 111" in line for line in commands))
         self.assertFalse(any("force-stop" in line for line in commands))
         self.assertTrue(any("deviceidle unforce" in line for line in commands))
@@ -348,6 +350,8 @@ elif 'shell input text printf%s' in joined:
         )
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
+        self.assertTrue(any("shell input text 127.0.0.1" in line for line in commands))
+        self.assertTrue(any(" reverse tcp:22222 tcp:22222" in line for line in commands))
         scoped_adb = [line for line in commands if line.startswith("adb -s ")]
         self.assertTrue(scoped_adb)
         self.assertTrue(all(line.startswith("adb -s old-phone-serial ") for line in scoped_adb))

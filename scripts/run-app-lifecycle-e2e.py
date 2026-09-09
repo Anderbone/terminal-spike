@@ -55,6 +55,7 @@ class Runner:
         self.serial = arguments.physical_serial or f"emulator-{arguments.port}"
         self.avd_name = f"terminal-spike-api{arguments.api}-lifecycle"
         self.physical = arguments.physical_serial is not None
+        self.fixture_host = "127.0.0.1" if self.physical else "10.0.2.2"
         self.workspace: Path | None = None
         self.avd_home: Path | None = None
         self.private_log: Path | None = None
@@ -358,7 +359,10 @@ class Runner:
             time.sleep(interval)
         if not installed:
             raise LifecycleFailure("debug app install failed after bounded retries")
-        self.adb("reverse", f"tcp:{FIXTURE_PORT}", f"tcp:{FIXTURE_PORT}", label="SSH reverse")
+        # Keep emulator SSH off the ADB transport used for UI and lifecycle inspection.
+        # Physical USB devices still need forwarding to the loopback-only host fixture.
+        if self.physical:
+            self.adb("reverse", f"tcp:{FIXTURE_PORT}", f"tcp:{FIXTURE_PORT}", label="SSH reverse")
         self.adb(
             "shell",
             "pm",
@@ -487,13 +491,13 @@ class Runner:
         self.wait_for_text("Connections")
         self.tap_node("content-desc", "Add host")
         self.wait_for_text("Add host")
-        self.replace_edit_text(0, "127.0.0.1")
+        self.replace_edit_text(0, self.fixture_host)
         self.replace_edit_text(1, FIXTURE_USER)
         self.replace_edit_text(2, FIXTURE_PORT)
         self.replace_edit_text(3, FIXTURE_PASSWORD)
         self.tap_node("text", "Save", class_name="android.widget.TextView")
         self.wait_for_text("Connections")
-        self.tap_node("content-desc", "Connect to 127.0.0.1")
+        self.tap_node("content-desc", f"Connect to {self.fixture_host}")
         self.wait_for_text("Password")
         self.replace_edit_text(0, FIXTURE_PASSWORD)
         self.tap_node("text", "Connect", class_name="android.widget.TextView")
@@ -780,10 +784,10 @@ class Runner:
             if self.matching_nodes(root, "text", forbidden):
                 raise LifecycleFailure("restart UI falsely represents the dead transport as live")
         self.tap_node("text", "Connections")
-        self.wait_for_node("content-desc", "Connect to 127.0.0.1")
+        self.wait_for_node("content-desc", f"Connect to {self.fixture_host}")
         self.log("restart_state", "pass", new_pid=new_pid)
 
-        self.tap_node("content-desc", "Connect to 127.0.0.1")
+        self.tap_node("content-desc", f"Connect to {self.fixture_host}")
         self.wait_for_text("Password")
         self.replace_edit_text(0, FIXTURE_PASSWORD)
         self.tap_node("text", "Connect", class_name="android.widget.TextView")

@@ -18,6 +18,7 @@ fi
 adb_bin=${ADB:-$sdk_root/platform-tools/adb}
 apksigner_bin=${APKSIGNER:-}
 fixture_port=22222
+fixture_host=10.0.2.2
 fixture_user=terminal
 fixture_password=terminal-spike-test-only
 app_package=com.yanjiyu.terminalspike
@@ -319,13 +320,13 @@ launch_app() {
 connect_new_saved_host() {
     tap_node content-desc "Add host" 0 android.view.View
     wait_for_ui_text "Add host"
-    replace_edit_text 0 127.0.0.1
+    replace_edit_text 0 "$fixture_host"
     replace_edit_text 1 "$fixture_user"
     replace_edit_text 2 "$fixture_port"
     replace_edit_text 3 "$fixture_password"
     tap_node text "Save" 0 android.widget.TextView
     wait_for_ui_text "Connections"
-    tap_node content-desc "Connect to 127.0.0.1" 0 android.view.View
+    tap_node content-desc "Connect to $fixture_host" 0 android.view.View
     wait_for_ui_text "Password"
     replace_edit_text 0 "$fixture_password"
     tap_node text "Connect" 0 android.widget.TextView
@@ -368,7 +369,7 @@ send_marker_and_verify() {
 
 reconnect_saved_host() {
     wait_for_ui_text "Connections"
-    tap_node content-desc "Connect to 127.0.0.1" 0 android.view.View
+    tap_node content-desc "Connect to $fixture_host" 0 android.view.View
     # Password storage is deliberately off; the saved non-secret host must reopen the existing
     # authentication prompt after update rather than silently retaining a transient password.
     wait_for_ui_text "Password"
@@ -382,7 +383,8 @@ docker compose --project-directory "$script_dir" -f "$script_dir/compose.yaml" d
 fixture_managed=true
 "$script_dir/smoke.sh" >/dev/null
 log_stage fixture pass
-adb reverse "tcp:$fixture_port" "tcp:$fixture_port" >/dev/null
+# This runner only accepts its disposable AVD. Its host alias reaches the loopback-only
+# fixture without multiplexing the SSH session through ADB UI/control traffic.
 adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true

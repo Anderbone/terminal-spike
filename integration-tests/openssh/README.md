@@ -132,6 +132,12 @@ teardown, private host/recent metadata retention with no stored session-only pas
 restart PID, password re-prompt, and real SSH afterward. Its optional `--physical-serial` mode
 accepts only a freshly re-enumerated `SM-S911B` and deliberately skips battery-policy mutation.
 
+The lifecycle and release-update emulators reach the host's loopback-only fixture through
+`10.0.2.2`, just like the instrumented OpenSSH tests. SSH traffic stays independent of the ADB
+connection used for UI input and inspection. Local comparisons with `adb reverse` reproduced
+stalled release-terminal output and truncated `dumpsys notification` output (exit 255); the direct
+emulator route passed both acceptance tests. Physical USB lifecycle tests still use `adb reverse`.
+
 For a CI-equivalent ephemeral-signed minified build plus same-version reinstall smoke:
 
 ```bash
