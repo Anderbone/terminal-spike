@@ -183,6 +183,80 @@ class JschSshConnectionIntegrityTest {
     }
 
     @Test
+    fun resizeUsesWriterThreadCoalescesAndPreservesInputCapacity() {
+        val caller = Thread.currentThread()
+        val firstWriteStarted = CountDownLatch(1)
+        val releaseFirstWrite = CountDownLatch(1)
+        val completed = CountDownLatch(3)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+        val workers = Collections.synchronizedList(mutableListOf<Thread>())
+        val failures = Collections.synchronizedList(mutableListOf<Exception>())
+        val writer = BoundedSshWriter(capacity = 1, pollIntervalMillis = 10L)
+        writer.start(
+            stream = object : OutputStream() {
+                override fun write(value: Int) = error("Bulk writes are expected")
+
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    if (bytes[offset] == 1.toByte()) {
+                        firstWriteStarted.countDown()
+                        assertTrue(releaseFirstWrite.await(2, TimeUnit.SECONDS))
+                    }
+                    workers += Thread.currentThread()
+                    events += "input:${bytes[offset]}"
+                    completed.countDown()
+                }
+            },
+            onResize = { columns, rows ->
+                workers += Thread.currentThread()
+                events += "resize:$columns:$rows"
+                completed.countDown()
+            },
+            onFailure = failures::add,
+        )
+        try {
+            assertTrue(writer.offer(byteArrayOf(1)))
+            assertTrue(firstWriteStarted.await(2, TimeUnit.SECONDS))
+            repeat(100) { assertTrue(writer.resize(80 + it, 24 + it)) }
+            assertTrue(writer.offer(byteArrayOf(2)))
+            assertFalse(writer.offer(byteArrayOf(3)))
+            releaseFirstWrite.countDown()
+            assertTrue(completed.await(2, TimeUnit.SECONDS))
+            assertEquals(listOf("input:1", "resize:179:123", "input:2"), events)
+            assertTrue(workers.all { it !== caller && it === workers.first() })
+            assertTrue(failures.isEmpty())
+        } finally {
+            releaseFirstWrite.countDown()
+            writer.stop()
+        }
+        assertFalse(writer.resize(80, 24))
+    }
+
+    @Test
+    fun resizeWakesIdleWriterWithoutWaitingForInputOrPollTimeout() {
+        val resized = CountDownLatch(1)
+        val failures = Collections.synchronizedList(mutableListOf<Exception>())
+        val writer = BoundedSshWriter(capacity = 1, pollIntervalMillis = 60_000L)
+        writer.start(
+            stream = object : OutputStream() {
+                override fun write(value: Int) = error("No user input was offered")
+            },
+            onResize = { columns, rows ->
+                assertEquals(1, columns)
+                assertEquals(1, rows)
+                resized.countDown()
+            },
+            onFailure = failures::add,
+        )
+        try {
+            assertTrue(writer.resize(0, -1))
+            assertTrue(resized.await(2, TimeUnit.SECONDS))
+            assertTrue(failures.isEmpty())
+        } finally {
+            writer.stop()
+        }
+    }
+
+    @Test
     fun writerFailureStopsAcceptanceAndPublishesOneTerminalFailure() {
         val terminalState = CountDownLatch(1)
         val states = Collections.synchronizedList(mutableListOf<ConnectionState>())

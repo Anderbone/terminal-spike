@@ -134,9 +134,17 @@ accepts only a freshly re-enumerated `SM-S911B` and deliberately skips battery-p
 
 The lifecycle and release-update emulators reach the host's loopback-only fixture through
 `10.0.2.2`, just like the instrumented OpenSSH tests. SSH traffic stays independent of the ADB
-connection used for UI input and inspection. Local comparisons with `adb reverse` reproduced
-stalled release-terminal output and truncated `dumpsys notification` output (exit 255); the direct
-emulator route passed both acceptance tests. Physical USB lifecycle tests still use `adb reverse`.
+connection used for UI input and inspection. Physical USB lifecycle tests still use `adb reverse`.
+ADB can briefly disconnect or return truncated inspection output, including empty `exec-out`
+output with exit zero. Read-only UI captures retry at most three times and require valid complete
+XML. Lifecycle notification checks also require a completion marker before interpreting presence
+or absence; incomplete reads never satisfy an assertion. App actions and assertions are not retried.
+
+The release smoke also guards keyboard-triggered SSH window resizing. `ChannelSession.setPtySize`
+writes to the network and must run on the SSH writer thread: the release main-thread network
+policy can otherwise interrupt a packet and leave input stalled. Debug StrictMode logging can
+hide this failure. A two-CPU local release reproduction failed before the writer-thread fix and
+passed with the normal release policy afterward; keep the minified release acceptance gate.
 
 For a CI-equivalent ephemeral-signed minified build plus same-version reinstall smoke:
 

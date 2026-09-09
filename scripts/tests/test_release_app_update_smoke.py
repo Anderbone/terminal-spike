@@ -199,6 +199,37 @@ printf "package: name='%s' versionCode='%s' versionName='test'\n" "$package" "$v
         self.assertNotIn('tap_node text "New connection"', text)
         self.assertNotIn('tap_node text "Save host details"', text)
 
+    def test_ui_capture_recovers_one_truncated_transfer_but_bounds_persistent_failure(self) -> None:
+        source = self.runner.read_text(encoding="utf-8")
+        capture = "dump_ui() {" + source.split("dump_ui() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        probe = r'''
+ui_xml=$1
+mode=$2
+captures=0
+adb() {
+    if [ "$1" = shell ]; then
+        captures=$((captures + 1))
+    elif [ "$mode" = always ] || [ "$captures" -eq 1 ]; then
+        printf '<hierarchy><node'
+    else
+        printf '<hierarchy><node text="ready" /></hierarchy>'
+    fi
+}
+''' + capture + r'''
+result=0
+dump_ui || result=$?
+printf 'captures=%s\n' "$captures"
+exit "$result"
+'''
+        for mode, expected_captures, expected_code in (("once", 2, 0), ("always", 3, 1)):
+            with self.subTest(mode=mode):
+                result = subprocess.run(
+                    ["sh", "-c", probe, "capture-probe", str(self.root / "ui.xml"), mode],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(expected_code, result.returncode, result.stderr)
+                self.assertIn(f"captures={expected_captures}", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -166,8 +166,18 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 dump_ui() {
-    adb shell uiautomator dump --compressed /sdcard/terminal-spike-window.xml >/dev/null
-    adb exec-out cat /sdcard/terminal-spike-window.xml >"$ui_xml"
+    capture_attempt=0
+    while [ "$capture_attempt" -lt 3 ]; do
+        if adb shell uiautomator dump --compressed /sdcard/terminal-spike-window.xml >/dev/null &&
+            adb exec-out cat /sdcard/terminal-spike-window.xml >"$ui_xml" &&
+            python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])' "$ui_xml" 2>/dev/null; then
+            return 0
+        fi
+        capture_attempt=$((capture_attempt + 1))
+        if [ "$capture_attempt" -lt 3 ]; then sleep 1; fi
+    done
+    printf 'UI hierarchy remained incomplete after three captures.\n' >&2
+    return 1
 }
 
 node_center() {

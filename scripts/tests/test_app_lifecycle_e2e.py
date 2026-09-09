@@ -156,9 +156,16 @@ elif f'shell run-as {package} kill -9' in joined:
 elif f'shell dumpsys activity services {package}' in joined:
     if (state / 'pid').exists() and os.environ.get('FAKE_SERVICE_MISSING') != '1':
         print(f'ServiceRecord {package}.SessionForegroundService')
-elif joined.endswith('shell dumpsys notification --noredact'):
+elif 'shell dumpsys notification --noredact && echo ' in joined:
+    incomplete = os.environ.get('FAKE_NOTIFICATION_INCOMPLETE', '')
+    seen = state / 'notification-incomplete-seen'
+    if incomplete == 'always' or incomplete and not seen.exists():
+        seen.touch()
+        print(f'NotificationRecord(0x1: pkg={package} id=2001)')
+        raise SystemExit(255 if incomplete == 'disconnect' else 0)
     if (state / 'pid').exists() or os.environ.get('FAKE_STALE_NOTIFICATION') == '1':
         print(f'NotificationRecord(0x1: pkg={package} user=UserHandle{{0}} id=2001 tag=null)')
+    print('TERMINAL_SPIKE_NOTIFICATION_DUMP_COMPLETE')
 elif joined.endswith('shell dumpsys deviceidle get deep'):
     value = (state / 'idle').read_text().strip() if (state / 'idle').exists() else 'ACTIVE'
     print(value)
@@ -202,6 +209,12 @@ elif joined.endswith(f'exec-out run-as {package} cat databases/terminal-spike.db
 elif f'exec-out run-as {package} cat databases/terminal-spike.db-' in joined:
     raise SystemExit(1)
 elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
+    incomplete = os.environ.get('FAKE_UI_INCOMPLETE', '')
+    seen = state / 'ui-incomplete-seen'
+    if incomplete == 'always' or incomplete and not seen.exists():
+        seen.touch()
+        print('<hierarchy><node text="private-partial-value"')
+        raise SystemExit(0)
     markers = (state / 'markers').read_text().splitlines() if (state / 'markers').exists() else []
     if os.environ.get('FAKE_RECONNECT_MARKER_MISSING') == '1':
         markers = [marker for marker in markers if marker != 'LIFECYCLE_RECONNECTED_42']
@@ -378,6 +391,36 @@ elif 'shell input text printf%s' in joined:
                 self.assertIn(expected, result.stderr)
                 self.assert_cleanup_ran()
                 self.reset_run_state()
+
+    def test_recaptures_incomplete_ui_without_repeating_app_actions(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_UI_INCOMPLETE="once"))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("stage=inspection status=retry kind=ui", result.stdout)
+        self.assertNotIn("private-partial-value", result.stdout + result.stderr)
+        self.assertEqual(1, sum(" kill -9 " in f" {line} " for line in self.commands()))
+
+    def test_persistently_incomplete_ui_fails_after_three_captures(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_UI_INCOMPLETE="always"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("incomplete after three captures", result.stderr)
+        self.assertEqual(3, sum("exec-out cat /sdcard/terminal-spike-window.xml" in line for line in self.commands()))
+        self.assert_cleanup_ran()
+
+    def test_notification_inspection_requires_complete_output_after_disconnect(self) -> None:
+        for failure in ("disconnect", "once"):
+            with self.subTest(failure=failure):
+                result = self.run_runner(env=self.fresh_env(FAKE_NOTIFICATION_INCOMPLETE=failure))
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("stage=inspection status=retry kind=notification", result.stdout)
+                self.reset_run_state()
+
+    def test_partial_notification_record_cannot_pass_the_live_contract(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_NOTIFICATION_INCOMPLETE="always"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("incomplete after three reads", result.stderr)
+        self.assertEqual(3, sum("dumpsys notification" in line for line in self.commands()))
+        self.assertFalse(any(" kill -9 " in f" {line} " for line in self.commands()))
+        self.assert_cleanup_ran()
 
     def test_rejects_stale_notification_and_reconnect_marker_failure(self) -> None:
         cases = (

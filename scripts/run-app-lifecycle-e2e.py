@@ -387,25 +387,33 @@ class Runner:
 
     def dump_ui(self) -> ET.Element:
         assert self.ui_path is not None
-        self.adb(
-            "shell",
-            "uiautomator",
-            "dump",
-            "--compressed",
-            "/sdcard/terminal-spike-window.xml",
-            label="UI hierarchy capture",
-        )
-        result = self.adb(
-            "exec-out",
-            "cat",
-            "/sdcard/terminal-spike-window.xml",
-            label="UI hierarchy transfer",
-        )
-        self.ui_path.write_text(result.stdout, encoding="utf-8")
-        try:
-            return ET.fromstring(result.stdout)
-        except ET.ParseError as error:
-            raise LifecycleFailure("UI hierarchy is malformed") from error
+        for attempt in range(3):
+            capture = self.adb(
+                "shell", "uiautomator", "dump", "--compressed",
+                "/sdcard/terminal-spike-window.xml",
+                label="UI hierarchy capture", check=False,
+            )
+            if capture.returncode not in (0, 255):
+                raise LifecycleFailure("UI hierarchy capture failed")
+            if capture.returncode == 0:
+                result = self.adb(
+                    "exec-out", "cat", "/sdcard/terminal-spike-window.xml",
+                    label="UI hierarchy transfer", check=False,
+                )
+                if result.returncode not in (0, 255):
+                    raise LifecycleFailure("UI hierarchy transfer failed")
+                if result.returncode == 0:
+                    try:
+                        root = ET.fromstring(result.stdout)
+                    except ET.ParseError:
+                        pass
+                    else:
+                        self.ui_path.write_text(result.stdout, encoding="utf-8")
+                        return root
+            if attempt < 2:
+                self.log("inspection", "retry", kind="ui")
+                time.sleep(1)
+        raise LifecycleFailure("UI hierarchy remained incomplete after three captures")
 
     @staticmethod
     def matching_nodes(
@@ -540,15 +548,25 @@ class Runner:
         return APP_PACKAGE in output and "SessionForegroundService" in output
 
     def notification_present(self) -> bool:
-        output = self.adb(
-            "shell", "dumpsys", "notification", "--noredact", label="notification inspection"
-        ).stdout
-        return bool(
-            re.search(
-                rf"NotificationRecord\([^\n]*pkg={re.escape(APP_PACKAGE)}[^\n]*id={NOTIFICATION_ID}\b",
-                output,
+        # A disconnected shell can return partial output. Absence is meaningful only after
+        # dumpsys completed, especially when proving notification cleanup after process death.
+        complete = "TERMINAL_SPIKE_NOTIFICATION_DUMP_COMPLETE"
+        for attempt in range(3):
+            result = self.adb(
+                "shell", f"dumpsys notification --noredact && echo {complete}",
+                label="notification inspection", check=False,
             )
-        )
+            if result.returncode not in (0, 255):
+                raise LifecycleFailure("notification inspection failed")
+            if result.returncode == 0 and result.stdout.rstrip().endswith(complete):
+                return bool(re.search(
+                    rf"NotificationRecord\([^\n]*pkg={re.escape(APP_PACKAGE)}[^\n]*id={NOTIFICATION_ID}\b",
+                    result.stdout,
+                ))
+            if attempt < 2:
+                self.log("inspection", "retry", kind="notification")
+                time.sleep(1)
+        raise LifecycleFailure("notification inspection remained incomplete after three reads")
 
     def require_live_background_contract(self, expected_pid: str) -> None:
         if self.current_pid() != expected_pid:

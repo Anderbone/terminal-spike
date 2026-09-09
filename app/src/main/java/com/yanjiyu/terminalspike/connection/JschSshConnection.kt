@@ -12,6 +12,7 @@ import java.io.OutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CancellationException
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -295,9 +296,14 @@ class JschSshConnection(
                     writer = newWriter
                     startupInputGate = newStartupInputGate
                     running = true
-                    newWriter.start(newOutput) {
+                    newWriter.start(
+                        stream = newOutput,
+                        onResize = { columns, rows -> newShell.setPtySize(columns, rows, 0, 0) },
+                    ) {
                         failConnection(attempt, transientTransportFailure(WRITER_FAILURE_MESSAGE))
                     }
+                    // Include size changes received while the shell channel was connecting.
+                    newWriter.resize(requestedColumns, requestedRows)
                     true
                 }
             }
@@ -391,7 +397,9 @@ class JschSshConnection(
         synchronized(lock) {
             requestedColumns = boundedColumns
             requestedRows = boundedRows
-            shell?.setPtySize(boundedColumns, boundedRows, 0, 0)
+            // setPtySize writes an SSH packet. Calling it from the view's main-thread size
+            // callback can trip the release network policy after JSch advances cipher state.
+            writer?.resize(boundedColumns, boundedRows)
         }
     }
 
@@ -921,6 +929,8 @@ internal class BoundedSshWriter(
 ) {
     private val lock = Any()
     private val queue: ArrayBlockingQueue<ByteArray>
+    private val workAvailable = Semaphore(0)
+    private var pendingSize: Pair<Int, Int>? = null
     private var accepting = false
     private var writerThread: Thread? = null
 
@@ -930,12 +940,16 @@ internal class BoundedSshWriter(
         queue = ArrayBlockingQueue(capacity)
     }
 
-    fun start(stream: OutputStream, onFailure: (Exception) -> Unit) {
+    fun start(
+        stream: OutputStream,
+        onResize: (Int, Int) -> Unit = { _, _ -> },
+        onFailure: (Exception) -> Unit,
+    ) {
         synchronized(lock) {
             check(!accepting && writerThread == null) { "SSH writer is already started." }
             accepting = true
             writerThread = thread(name = "ssh-terminal-writer", isDaemon = true) {
-                runWriter(stream, onFailure)
+                runWriter(stream, onResize, onFailure)
             }
         }
     }
@@ -944,10 +958,19 @@ internal class BoundedSshWriter(
         if (bytes.isEmpty()) return false
         val owned = bytes.copyOf()
         val accepted = synchronized(lock) {
-            accepting && queue.offer(owned)
+            (accepting && queue.offer(owned)).also { if (it) workAvailable.release() }
         }
         if (!accepted) owned.fill(0)
         return accepted
+    }
+
+    /** Coalesces view resize events without using any of the bounded input slots. */
+    fun resize(columns: Int, rows: Int): Boolean = synchronized(lock) {
+        if (!accepting) return@synchronized false
+        val needsWakeup = pendingSize == null
+        pendingSize = columns.coerceAtLeast(1) to rows.coerceAtLeast(1)
+        if (needsWakeup) workAvailable.release()
+        true
     }
 
     fun stop() {
@@ -959,10 +982,20 @@ internal class BoundedSshWriter(
         threadToInterrupt?.interrupt()
     }
 
-    private fun runWriter(stream: OutputStream, onFailure: (Exception) -> Unit) {
+    private fun runWriter(
+        stream: OutputStream,
+        onResize: (Int, Int) -> Unit,
+        onFailure: (Exception) -> Unit,
+    ) {
         try {
             while (isAccepting()) {
-                val bytes = queue.poll(pollIntervalMillis, TimeUnit.MILLISECONDS) ?: continue
+                if (!workAvailable.tryAcquire(pollIntervalMillis, TimeUnit.MILLISECONDS)) continue
+                val size = synchronized(lock) { pendingSize.also { pendingSize = null } }
+                if (size != null) {
+                    onResize(size.first, size.second)
+                    continue
+                }
+                val bytes = queue.poll() ?: continue
                 try {
                     stream.write(bytes)
                     stream.flush()
@@ -996,6 +1029,8 @@ internal class BoundedSshWriter(
     private fun isAccepting(): Boolean = synchronized(lock) { accepting }
 
     private fun wipeQueuedBytes() {
+        pendingSize = null
+        workAvailable.drainPermits()
         while (true) queue.poll()?.fill(0) ?: return
     }
 }
