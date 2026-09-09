@@ -7,13 +7,72 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.MainActivity
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import java.io.File
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /** Explicit USB probe using a credential-free source archive supplied to the isolated test app. */
 class ArchCableFlowDeviceTest {
+    @Test fun upgradesVersionOneWithGitHubAndCodex() = runBlocking<Unit> {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("localArchStarterV2") == "true")
+        assertEquals("SM-S911B", Build.MODEL)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        assertTrue(context.packageName.endsWith(".archverify"))
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val repository = (context.applicationContext as TerminalSpikeApplication).container.localSessionRepository
+            val environment = repository.environment
+            // Startup scans the retained node_modules tree asynchronously. Wait
+            // for that refresh before changing markers and asserting upgrade state.
+            withTimeout(90_000L) { environment.state.first { state -> state.checked } }
+            assertTrue(environment.state.value.installed)
+            val bootstrap = ArchBootstrap(File(context.applicationInfo.nativeLibraryDir))
+            val temporaryDirectory = File(context.filesDir, "arch-tmp")
+            lateinit var project: File
+            lateinit var profile: File
+            environment.withShell { lease ->
+                val rootfs = lease.lease.installation.rootfs
+                // This isolated test app has no user login. Exercise an actual missing
+                // Codex installation instead of accepting the previous probe's binary.
+                bootstrap.runGuest(rootfs, temporaryDirectory, listOf("/bin/bash", "-c",
+                    "npm uninstall --global @openai/codex && ! command -v codex"), 60_000L)
+                File(rootfs.parentFile, "starter-tools.version").writeText("1\n")
+                project = File(rootfs, "root/projects/starter-v2-preserved.txt")
+                project.parentFile!!.mkdirs()
+                project.writeText("preserve-existing-project\n")
+                profile = File(rootfs, "etc/profile.d/terminal-spike-tools.sh")
+            }
+            val profileBefore = profile.readText()
+            environment.refresh()
+            assertTrue(environment.state.value.installed)
+            assertFalse("Version 1 must offer the starter-tools upgrade", environment.state.value.starterToolsInstalled)
+            instrumentation.runOnMainSync { assertTrue(repository.installOrReset()) }
+            val deadline = System.nanoTime() + 10 * 60_000_000_000L
+            while (repository.runtime.value.installationActive && System.nanoTime() < deadline) {
+                kotlinx.coroutines.delay(50)
+            }
+            assertFalse(repository.runtime.value.installationActive)
+            assertNull(repository.runtime.value.error)
+            assertNull(environment.state.value.error)
+            assertTrue(environment.state.value.starterToolsInstalled)
+            assertEquals("preserve-existing-project\n", project.readText())
+            assertEquals(profileBefore, profile.readText())
+            environment.withShell { lease ->
+                val output = bootstrap.runGuest(lease.lease.installation.rootfs, temporaryDirectory,
+                    listOf("/bin/bash", "--login", "-c", "set -e; gh --version; gh auth login --help >/dev/null; " +
+                        "codex --version; codex login --help >/dev/null; " +
+                        "test -s /usr/local/share/terminal-spike/cable-flow-phone.md; " +
+                        "printf 'ARCH_STARTER_V2_OK\\n'"), 30_000L)
+                instrumentation.sendStatus(0, Bundle().apply { putString("stream", output) })
+                assertTrue(output.contains("ARCH_STARTER_V2_OK"))
+                assertEquals("2\n", File(lease.lease.installation.rootfs.parentFile, "starter-tools.version").readText())
+            }
+        }
+    }
+
     @Test fun runsCableFlowAndCodexInTheInstalledGuest() = runBlocking<Unit> {
         assumeTrue(InstrumentationRegistry.getArguments().getString("localArchCableFlow") == "true")
         assertEquals("SM-S911B", Build.MODEL)

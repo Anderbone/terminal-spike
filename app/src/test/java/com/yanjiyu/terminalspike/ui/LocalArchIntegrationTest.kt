@@ -39,6 +39,7 @@ class LocalArchIntegrationTest {
         assertTrue(running.requiresForegroundService)
         assertEquals(1, running.connectedSessionCount)
         assertTrue(idle.withLocalRuntime(LocalRuntimeState(installationActive = true)).requiresForegroundService)
+        assertTrue(idle.withLocalRuntime(LocalRuntimeState(loginActive = true)).requiresForegroundService)
         assertEquals(idle, idle.withLocalRuntime(LocalRuntimeState(listOf(local.copy(connectionState = ConnectionState.Disconnected)))))
         assertEquals(3, SessionNotificationState(2, 2).withLocalRuntime(LocalRuntimeState(listOf(local))).activeSessionCount)
     }

@@ -1264,6 +1264,8 @@ original setup script; users fetch packages from their official repositories.
 
 | Direct guest package | Purpose | Upstream source | License / notice obligations |
 | --- | --- | --- | --- |
+| github-cli | User-requested GitHub login and repository CLI (stable signed Arch ARM package) | https://github.com/cli/cli | MIT; retain copyright and permission notice on redistribution |
+| @openai/codex 0.153.4 | User-requested default ARM64 coding CLI, fetched from https://registry.npmjs.org | https://github.com/openai/codex | Apache-2.0; retain license, applicable NOTICE and bundled component notices |
 | git | Clone and manage projects | https://git-scm.com/ | GPL-2.0-only; retain notices/source on redistribution |
 | bash-completion | Shell completion | https://github.com/scop/bash-completion | GPL-2.0-or-later; retain notices/source |
 | zoxide | Directory navigation | https://github.com/ajeetdsouza/zoxide | MIT; retain copyright/license |
@@ -1284,14 +1286,20 @@ original setup script; users fetch packages from their official repositories.
 | nodejs-lts-krypton | Node 24 LTS for Cable Flow | https://nodejs.org/ | MIT plus bundled component notices |
 | npm | Install JavaScript tools | https://github.com/npm/cli | Artistic-2.0 and bundled notices |
 
-Versions are resolved by signed stable repository metadata and recorded by pacman
+GitHub CLI and Codex became default guest tools at the user’s explicit request
+on 2026-09-08. Codex is fetched separately from the official npm registry at the
+stable version above, only when absent. Existing Codex and account files are kept.
+No authentication or AI request runs automatically; users initiate both logins
+and subsequent commands. The APK contains setup instructions, not these binaries.
+
+Pacman versions are resolved by signed stable repository metadata and recorded by pacman
 in the guest; no testing/staging or prerelease channel is enabled. Arch's full
 upgrade avoids partial upgrades. Omarchy's CLI package list is a selection reference
 (https://github.com/omacom/omarchy/blob/master/install/omarchy-base.packages), not
 copied application code or a desktop installation. AUR helpers are not a bootstrap
 requirement: makepkg requires non-root execution and AUR recipes need ARM review.
 
-### Optional phone Cable Flow/Codex verification dependencies (2026-09-08)
+### Optional phone Cable Flow verification dependencies (2026-09-08)
 
 These are explicitly requested guest compatibility probes, downloaded only in the
 opt-in isolated USB test, not Android APK dependencies or automatic account setup.
@@ -1299,7 +1307,6 @@ opt-in isolated USB test, not Android APK dependencies or automatic account setu
 | Dependency | Purpose and source | Licence / notice obligations |
 | --- | --- | --- |
 | pnpm 10.29.2 | Cable Flow frozen-lockfile package manager; https://github.com/pnpm/pnpm | MIT; retain copyright and permission notice on redistribution |
-| @openai/codex 0.153.4 | User-requested ARM64 CLI executable startup; https://github.com/openai/codex | Apache-2.0; retain license, applicable NOTICE and bundled component notices |
 | PostgreSQL (stable Arch ARM package) | Isolated phone database; https://www.postgresql.org/ and https://archlinuxarm.org/packages/aarch64/postgresql | PostgreSQL license; retain copyright and permission notice |
 | pgvector 0.8.2 | Cable Knowledge SQL extension; https://github.com/pgvector/pgvector/tree/v0.8.2 | PostgreSQL license; retain copyright and permission notice |
 

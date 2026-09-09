@@ -128,13 +128,14 @@ internal class ArchEnvironment(
     private fun installStarterTools(rootfs: File, checkCancelled: () -> Unit) {
         mutableState.update { it.copy(phase = ArchInstallPhase.INSTALLING_TOOLS) }
         val script = appContext.assets.open("local-arch/starter-tools.sh").bufferedReader().use { it.readText() }
+        val guide = appContext.assets.open("local-arch/cable-flow-phone.md").bufferedReader().use { it.readText() }
         val output = bootstrap.runGuest(rootfs, temporaryDirectory,
-            listOf("/bin/bash", "--noprofile", "--norc", "-c", script), 30 * 60_000L,
+            listOf("/bin/bash", "--noprofile", "--norc", "-c", script, "starter-tools", guide), 30 * 60_000L,
             checkCancelled = checkCancelled)
         check(output.contains("LOCAL_ARCH_STARTER_TOOLS_OK")) { "Starter tool validation did not finish" }
         // Outside the guest: package/profile paths may legitimately be guest symlinks.
         java.io.FileOutputStream(File(rootfs.parentFile, "starter-tools.version")).use {
-            it.write("1\n".toByteArray())
+            it.write(STARTER_TOOLS_VERSION.toByteArray())
             it.fd.sync()
         }
     }
@@ -158,14 +159,17 @@ internal class ArchEnvironment(
         }
     }
 
-    suspend fun <T> withShell(block: suspend (ShellLease) -> T): T = withContext(Dispatchers.IO) {
+    suspend fun <T> withShell(
+        guestCommand: List<String> = listOf("/bin/bash", "--login"),
+        block: suspend (ShellLease) -> T,
+    ): T = withContext(Dispatchers.IO) {
         check(state.value.supported) { "Local Arch Linux requires an ARM64 Android device" }
         bootstrap.validateRuntime()
         val lease = store.acquire()
         try {
             // Offline launch remains supported. User-modified DNS is left intact.
             runCatching { bootstrap.refreshDns(lease.installation.rootfs, networkDns()) }
-            block(ShellLease(lease, bootstrap.command(lease.installation.rootfs, temporaryDirectory)))
+            block(ShellLease(lease, bootstrap.command(lease.installation.rootfs, temporaryDirectory, guestCommand)))
         } finally {
             lease.close()
         }
@@ -192,7 +196,12 @@ internal class ArchEnvironment(
             version = installed?.version, storageBytes = bytes,
             starterToolsInstalled = installed?.let {
                 val marker = File(it.rootfs.parentFile, "starter-tools.version")
-                marker.isFile && marker.length() == 2L && marker.readText() == "1\n"
+                marker.isFile && marker.length() == STARTER_TOOLS_VERSION.length.toLong() &&
+                    marker.readText() == STARTER_TOOLS_VERSION
             } ?: false) }
+    }
+
+    private companion object {
+        const val STARTER_TOOLS_VERSION = "2\n"
     }
 }

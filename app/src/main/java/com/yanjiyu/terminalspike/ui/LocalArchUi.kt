@@ -95,24 +95,25 @@ internal fun LocalArchSettings() {
         Text(stringResource(R.string.local_arch_title), style = MaterialTheme.typography.headlineSmall)
         LocalArchStatus(state)
         runtime.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        LocalArchAccounts()
         if (!state.installed && state.supported) {
-            Button(onClick = { repository.installOrReset() }, enabled = state.checked && !state.busy && !runtime.installationActive) {
+            Button(onClick = { repository.installOrReset() }, enabled = state.checked && !state.busy && !runtime.installationActive && !runtime.loginActive) {
                 Text(stringResource(R.string.local_arch_install))
             }
         }
-        if (state.installed && !state.starterToolsInstalled) {
-            Button(onClick = { repository.installOrReset() }, enabled = !state.busy && !runtime.installationActive) {
+        if (state.installed) {
+            Button(onClick = { repository.installOrReset() }, enabled = !state.busy && !runtime.installationActive && !runtime.loginActive) {
                 Text(stringResource(R.string.local_arch_install_tools))
             }
         }
         OutlinedButton(onClick = { scope.launch { repository.environment.refresh() } }, enabled = !state.busy) {
             Text(stringResource(R.string.local_arch_refresh))
         }
-        OutlinedButton(onClick = { confirmation = ""; destructive = "reset" }, enabled = state.checked && !state.busy && !runtime.installationActive) {
+        OutlinedButton(onClick = { confirmation = ""; destructive = "reset" }, enabled = state.checked && !state.busy && !runtime.installationActive && !runtime.loginActive) {
             Text(stringResource(R.string.local_arch_reset))
         }
         if (state.installed) OutlinedButton(onClick = { confirmation = ""; destructive = "reinstall" },
-            enabled = !state.busy && !runtime.installationActive && state.supported) {
+            enabled = !state.busy && !runtime.installationActive && !runtime.loginActive && state.supported) {
             Text(stringResource(R.string.local_arch_reinstall))
         }
     }

@@ -8,7 +8,8 @@ runtime. It requires a 64-bit ARM Android device; Android root is not required.
 Open the terminal, choose **New session → Local Arch Linux**, then **Install Arch
 Linux**. The first installation downloads the pinned 168 MiB image, verifies its
 SHA-256, extracts it into private storage, initializes package signatures, and
-installs signed starter packages with a full system upgrade. Keep at least 4.3 GiB
+installs signed starter packages with a full system upgrade, plus the stable
+official Codex npm package. Keep at least 4.3 GiB
 free, plus space for projects. The dialog closes when installation starts. A
 nonmodal progress strip remains visible while you navigate Settings or other
 screens. Choose **Open local shell** when it says **Arch is ready**; completion
@@ -19,11 +20,12 @@ If interrupted, choose Local Arch Linux again and retry. An incomplete generatio
 is never marked installed. Reinstallation retains the previous environment until
 the replacement has validated successfully.
 
-Fresh installations include Git, Bash completion, zoxide (`z`), ripgrep (`rg`), fd,
+Fresh installations include Git, GitHub CLI (`gh`), Codex, Bash completion, zoxide (`z`), ripgrep (`rg`), fd,
 fzf, bat, eza, jq, Nano, less, ZIP tools, curl, OpenSSH, rsync, base-devel, Node 24
 LTS and npm. Existing installations can choose **Settings → Local Arch Linux →
 Install starter tools** after closing local shells. This preserves projects,
-existing Node installations, and shell customizations. It includes a full package
+existing Node and Codex installations, credentials, and shell customizations.
+The version-2 upgrade is offered even if the earlier starter tools are installed. It includes a full package
 upgrade; it does not reinstall the root filesystem. AUR helpers are separate:
 `makepkg` refuses root, and AUR recipes need ARM compatibility review.
 
@@ -92,3 +94,40 @@ actions. They never install or test the Wi-Fi foldable. The source archive exclu
 host env, credentials and licenses, and databases exist only inside the phone.
 The probe uses Cable Flow's existing CI license fixture, not a production license.
 Codex executable startup does not establish successful authentication or model use.
+
+The default installer includes GitHub CLI and Codex as of starter version 2.
+Follow [the foldable setup guide](../app/src/main/assets/local-arch/cable-flow-phone.md)
+for browser logins, cloning and the Codex handoff. The same guide is installed at
+`/usr/local/share/terminal-spike/cable-flow-phone.md` inside Arch so the phone agent
+can read the verified PostgreSQL recipe without access to the workstation vault.
+
+### GitHub and Codex sign-in from Settings
+
+Open **Settings → Local Arch Linux → Sign in to GitHub / Codex** after installation.
+The app starts the installed CLI, displays its one-time device code, and offers
+**Copy code and open browser**. Approve in the browser and return to Settings for
+the completion result. No terminal commands or token pasting are required.
+GitHub uses HTTPS and configures Git's credential helper after successful login.
+Codex requires device-code login enabled in ChatGPT security settings or by the
+workspace administrator: https://developers.openai.com/codex/auth/.
+GitHub's browser flow is documented at https://cli.github.com/manual/gh_auth_login.
+
+Login runs under the existing foreground service, survives activity recreation,
+can be cancelled, and times out after 16 minutes. Android receives only the
+short-lived code and completion state; raw CLI output is not logged or displayed.
+The CLIs retain their own credentials in the private Arch filesystem. Resetting
+Arch deletes those credentials too. Completion describes this login attempt,
+not a continuously refreshed account-status check. Existing environments can
+use **Install starter tools** without resetting files; new installs automatically
+include GitHub CLI and the pinned stable Codex package.
+
+Settings login verification (2026-09-09): the opt-in
+`ArchLoginDeviceTest#settingsRequestRealCodesAndCancelAcrossRecreation` passed
+on USB `RZCW81JZ9CP` / `SM-S911B` using the isolated `.archverify` app
+(1 test, 20.532 seconds). Both real providers issued codes; recreation retained
+the code, cancellation cleared it, and buttons became available again.
+The test never opens the approval page or completes account authorization.
+Initial device failures exposed UI-thread process startup and Codex's longer
+code format; the final implementation dispatches startup to IO and waits for
+a complete, whitespace-terminated code. Unit coverage includes one-byte
+transport chunks and rejects truncated Codex codes.

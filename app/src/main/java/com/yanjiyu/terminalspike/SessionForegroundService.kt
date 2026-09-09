@@ -602,7 +602,8 @@ internal fun terminalProgramNotificationIntent(context: Context, sessionId: Long
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
 internal fun SessionNotificationState.withLocalRuntime(local: LocalRuntimeState): SessionNotificationState {
-    val localCount = local.activeCount + if (local.installationActive) 1 else 0
+    val localCount = local.activeCount + (if (local.installationActive) 1 else 0) +
+        (if (local.loginActive) 1 else 0)
     if (localCount == 0) return this
     return copy(
         activeSessionCount = activeSessionCount + localCount,

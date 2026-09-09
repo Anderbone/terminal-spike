@@ -1,6 +1,6 @@
 <resources>
     <string name="local_arch_title">Local Arch Linux</string>
-    <string name="local_arch_summary">Installation, storage and environment reset</string>
+    <string name="local_arch_summary">Installation, GitHub and Codex login, storage and reset</string>
     <string name="local_arch_intro">A persistent Arch Linux ARM environment on this phone. Shells share installed packages and files. Installation continues while you use other screens or apps. Android force-stop ends running programs.</string>
     <string name="local_arch_download_detail">Root filesystem: 168 MiB, plus starter packages and updates. Keep at least 4.3 GiB of internal storage free. Files stay in this app’s private storage.</string>
     <string name="local_arch_unsupported">Local Arch Linux requires an ARM64 Android device.</string>
@@ -24,10 +24,18 @@
     <string name="local_arch_new_session">New session</string>
     <string name="local_arch_disconnect_detail">This stops the local shell and its running programs. Your Arch files and installed packages remain available when you open a new Local Arch tab.</string>
     <string name="local_arch_install_tools">Install starter tools</string>
-    <string name="local_arch_tools_detail">Includes Git, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node installations are kept. Package installation includes a full system update.</string>
+    <string name="local_arch_tools_detail">Includes Git, GitHub CLI, Codex, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node and Codex installations are kept. Package installation includes a full system update. Sign into GitHub and Codex below after setup.</string>
     <string name="local_arch_installing_tools">Installing starter tools and system updates…</string>
     <string name="local_arch_background">Arch setup is running in the background…</string>
     <string name="local_arch_ready">Arch is ready</string>
     <string name="local_arch_operation_failed">Arch setup needs attention</string>
     <string name="local_arch_details">Details</string>
+    <string name="local_arch_accounts_detail">Sign in here without typing terminal commands. Copy the one-time code, approve in your browser, then return here. Credentials stay inside your private Arch environment. For Codex, first enable device code login in ChatGPT security settings (or ask your workspace admin).</string>
+    <string name="local_arch_sign_in">Sign in to %1$s</string>
+    <string name="local_arch_login_starting">Requesting a sign-in code…</string>
+    <string name="local_arch_login_code">One-time code: %1$s</string>
+    <string name="local_arch_login_browser">Copy code and open browser</string>
+    <string name="local_arch_login_success">%1$s sign-in completed. Local Arch shells can now use this account.</string>
+    <string name="local_arch_login_failed">Sign-in did not complete. Check your connection and device-login permissions, then retry. If a CLI was removed, reinstall the starter tools.</string>
+    <string name="local_arch_login_browser_failed">Could not open a browser. Install or enable a browser, then try again.</string>
 </resources>

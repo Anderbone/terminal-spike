@@ -33,10 +33,11 @@ internal data class LocalRuntimeState(
     val sessions: List<LocalSessionSnapshot> = emptyList(),
     val installationActive: Boolean = false,
     val error: String? = null,
+    val loginActive: Boolean = false,
 ) {
     val activeCount: Int get() = sessions.count { it.connectionState.requiresForegroundService() }
     val connectedCount: Int get() = sessions.count { it.connectionState is ConnectionState.Connected }
-    val requiresForegroundService: Boolean get() = installationActive || activeCount > 0
+    val requiresForegroundService: Boolean get() = installationActive || loginActive || activeCount > 0
 }
 
 /** Application-owned local processes. No host records, credentials, reconnect policy or network observer. */
@@ -49,6 +50,9 @@ internal class LocalSessionRepository(
     private val entries = linkedMapOf<Long, Entry>()
     private var nextId = -1L
     private var installJob: Job? = null
+    private var loginJob: Job? = null
+    private val mutableLogin = MutableStateFlow(ArchLoginState())
+    val login = mutableLogin.asStateFlow()
     private var installationActive = false
     private var lastError: String? = null
     private val mutableRuntime = MutableStateFlow(LocalRuntimeState())
@@ -125,6 +129,44 @@ internal class LocalSessionRepository(
         return entry.id
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun startLogin(provider: ArchLoginProvider) = synchronized(lock) {
+        if (mutableLogin.value.active || installationActive || !environment.state.value.starterToolsInstalled) {
+            return@synchronized
+        }
+        if (foregroundStarter.startFromVisibleUserAction() !is SessionForegroundStartResult.Started) {
+            mutableLogin.value = ArchLoginState(provider = provider, failed = true)
+            return@synchronized
+        }
+        mutableLogin.value = ArchLoginState(provider = provider, active = true)
+        publish()
+        loginJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+            var succeeded = false
+            var failed = false
+            try {
+                succeeded = environment.withShell(provider.command) { lease ->
+                    lease.command.start(100, 30).use { pty ->
+                        runArchLogin(pty) { code ->
+                            mutableLogin.value = mutableLogin.value.copy(code = code)
+                        }
+                    }
+                }
+                failed = !succeeded
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                failed = true
+            } finally {
+                synchronized(lock) {
+                    mutableLogin.value = ArchLoginState(provider = provider, succeeded = succeeded, failed = failed)
+                    publish()
+                }
+            }
+        }
+    }
+
+    fun cancelLogin() = synchronized(lock) { loginJob?.cancel() }
+
     fun controllerFor(id: Long): TerminalController? = synchronized(lock) { entries[id]?.terminal?.controller }
 
     fun updateRendererProfile(profile: TerminalRendererProfile) {
@@ -156,7 +198,7 @@ internal class LocalSessionRepository(
 
     /** Called only from a visible install or explicitly confirmed reset/reinstall action. */
     fun installOrReset(reinstall: Boolean = false, reset: Boolean = false): Boolean = synchronized(lock) {
-        if (installationActive) return false
+        if (installationActive || mutableLogin.value.active) return false
         if (entries.values.any { !it.closed.get() && it.state.requiresForegroundService() }) {
             lastError = "Close all Local Arch shells before installing tools, resetting or reinstalling."
             publish()
@@ -192,6 +234,7 @@ internal class LocalSessionRepository(
     fun failAllForServiceLoss(message: String) = synchronized(lock) {
         if (!runtime.value.requiresForegroundService) return@synchronized
         installJob?.cancel()
+        loginJob?.cancel()
         entries.values.forEach { entry ->
             if (entry.state.requiresForegroundService()) {
                 entry.closed.set(true)
@@ -207,7 +250,7 @@ internal class LocalSessionRepository(
     private fun publish() {
         mutableRuntime.value = LocalRuntimeState(entries.values.map {
             LocalSessionSnapshot(it.id, it.title, it.state, it.terminalTitle, it.activity)
-        }, installationActive, lastError)
+        }, installationActive, lastError, mutableLogin.value.active)
     }
 
     private class Entry(val id: Long, val title: String, val terminal: SshSessionTerminal) {

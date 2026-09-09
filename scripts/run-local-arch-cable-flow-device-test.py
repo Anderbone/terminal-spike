@@ -73,7 +73,7 @@ def main():
         if int(size.strip()) != archive.stat().st_size:
             raise RuntimeError("Private source archive transfer was incomplete")
     result = subprocess.run([args.adb, "-s", verify(), "shell", "am", "instrument", "-w", "-r",
-        "-e", "class", "com.yanjiyu.terminalspike.localarch.ArchCableFlowDeviceTest",
+        "-e", "class", "com.yanjiyu.terminalspike.localarch.ArchCableFlowDeviceTest#runsCableFlowAndCodexInTheInstalledGuest",
         "-e", "localArchCableFlow", "true", APP + ".test/com.yanjiyu.terminalspike.TerminalSpikeTestRunner"],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     print(result.stdout, end="")
