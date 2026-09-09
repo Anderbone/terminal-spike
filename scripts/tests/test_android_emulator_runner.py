@@ -225,6 +225,7 @@ esac
         self.assertIn("-partition-size 4096", emulator[0])
         self.assertIn("-gpu swiftshader ", emulator[0])
         self.assertNotIn("-gpu software", emulator[0])
+        self.assertNotIn("GuestAngle", emulator[0])
         adb = [line for line in self.commands() if line.startswith("adb ")]
         self.assertTrue(adb)
         self.assertTrue(all(line.startswith("adb -s emulator-5554 ") for line in adb))
@@ -313,7 +314,7 @@ esac
         result = self.run_runner("--api", "37", "--suite", "boundary")
         self.assertEqual(0, result.returncode, result.stderr)
         emulator = [line for line in self.commands() if line.startswith("emulator ")]
-        self.assertIn("-gpu software", emulator[0])
+        self.assertIn("-gpu software -feature GuestAngle", emulator[0])
         evidence = self.output / "local-network-revocation-api37-boundary.txt"
         self.assertEqual(
             [
