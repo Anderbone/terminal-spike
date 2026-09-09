@@ -185,6 +185,10 @@ if [[ "$api" == "37" ]]; then
     # buffers instead. Explicitly enable Vulkan: headless CI feature detection
     # may disable it, leaving guest ANGLE unable to initialize its compositor.
     graphics_options=(-gpu software -feature Vulkan -feature GuestAngle)
+    # Use the bundled SwiftShader GLES library alongside Lavapipe Vulkan.
+    # Host ANGLE detection on GitHub's headless runner advertises only GLES 2,
+    # causing guest SurfaceFlinger to restart continuously before boot completes.
+    export ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER=1
 fi
 "$emulator_bin" -avd "$avd_name" -port "${serial#emulator-}" -no-window -no-audio \
     -no-boot-anim "${graphics_options[@]}" -memory "$emulator_memory_mb" -partition-size 4096 \

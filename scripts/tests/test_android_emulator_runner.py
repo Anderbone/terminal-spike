@@ -75,7 +75,7 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
         )
         self.write_tool(
             sdk / "emulator/emulator",
-            'printf "emulator %s AVD_HOME=%s\\n" "$*" "$ANDROID_AVD_HOME" >> "$FAKE_SDK_LOG"\nexec tail -f /dev/null\n',
+            'printf "emulator %s AVD_HOME=%s SWIFTSHADER_GLES=%s\\n" "$*" "$ANDROID_AVD_HOME" "${ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER:-unset}" >> "$FAKE_SDK_LOG"\nexec tail -f /dev/null\n',
         )
         self.write_tool(
             sdk / "platform-tools/adb",
@@ -315,6 +315,7 @@ esac
         self.assertEqual(0, result.returncode, result.stderr)
         emulator = [line for line in self.commands() if line.startswith("emulator ")]
         self.assertIn("-gpu software -feature Vulkan -feature GuestAngle", emulator[0])
+        self.assertIn("SWIFTSHADER_GLES=1", emulator[0])
         evidence = self.output / "local-network-revocation-api37-boundary.txt"
         self.assertEqual(
             [

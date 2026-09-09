@@ -199,6 +199,7 @@ if os.environ.get('FAKE_SMOKE_FAIL') == '1':
     print('RELEASE_APP_UPDATE_SMOKE stage=fixture status=start')
     print('RELEASE_APP_UPDATE_SMOKE stage=secret-value status=pass')
     print('private credential=secret-value', file=sys.stderr)
+    print('Timed out waiting for a privacy-safe terminal marker.', file=sys.stderr)
     raise SystemExit(1)
 values = [
     'ssh_before=pass',
@@ -352,6 +353,7 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
         result = self.run_runner(env=self.fresh_env(FAKE_SMOKE_FAIL="1"))
         self.assertNotEqual(0, result.returncode)
         self.assertIn("stage=black_box_fixture status=start", result.stdout)
+        self.assertIn("stage=black_box_failure status=fail reason=terminal_marker", result.stdout)
         self.assertNotIn("secret-value", result.stdout + result.stderr)
         self.assert_clean()
 

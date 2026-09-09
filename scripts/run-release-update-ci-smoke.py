@@ -408,6 +408,18 @@ class ReleaseSmokeRunner:
             if marker:
                 self.log("black_box_" + marker[1], marker[2])
         if result.returncode != 0:
+            # Classify only exact, fixed harness errors; never publish private output.
+            failure_reason = "unclassified"
+            for message, reason in (
+                ("Timed out waiting for a privacy-safe terminal marker.", "terminal_marker"),
+                ("Timed out waiting for UI node content-desc=Native terminal renderer.", "terminal_renderer"),
+                ("Timed out waiting for privacy-safe UI marker: Terminal", "terminal_screen"),
+                ("Timed out waiting for the terminal or notification rationale.", "terminal_ready"),
+            ):
+                if message in result.stderr.splitlines():
+                    failure_reason = reason
+                    break
+            self.log("black_box_failure", "fail", reason=failure_reason)
             raise ReleaseSmokeFailure("black-box release update SSH smoke failed")
         required = (
             "ssh_before=pass",
