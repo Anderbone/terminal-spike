@@ -10,12 +10,15 @@ No ads, analytics or subscriptions. Android 8.0+.
 <p>
   <img src="store-assets/google-play/screenshots/phone/01-colour-terminal.png" width="240" alt="Terminal Spike running a colourful shell with terminal shortcut keys">
   <img src="store-assets/google-play/screenshots/phone/02-tmux-session-picker.png" width="240" alt="Choose and resume a tmux session">
+  <img src="store-assets/readme/58e62ec4-d2c8-42bc-8a5a-8065a3b6d388.jpg" width="240" alt="Herdr layout and session screenshot">
+  <img src="store-assets/readme/94eaa821-b240-4f4c-a3cf-783d1920da8c.jpg" width="240" alt="Herdr terminal session screenshot">
 </p>
 
 - **Connect your way:** SSH passwords or keys, plus Mosh in the same app.
 - **Keep working:** multiple tabs, tmux session selection and native scrollback.
 - **Made for touch:** custom shortcut keys, themes, fonts and SFTP file transfers.
 - **Bring your tools:** use remote CLI tools such as Codex on your own server.
+- **Herdr support:** built-in handling for Herdr sessions and pane layout metadata.
 
 ## Install and connect
 
