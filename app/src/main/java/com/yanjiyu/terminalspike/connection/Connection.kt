@@ -8,6 +8,14 @@ import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.io.InputStream
 
 interface Connection : TerminalInputSink {
+    val isHerdrSession: Boolean get() = false
+
+    /** Background-only layout read; never changes shared Herdr configuration or sends keys. */
+    fun captureHerdrSidebarLayout(): HerdrSidebarLayout? = null
+
+    /** Background-only, bounded read from the explicitly selected Herdr session. */
+    fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? = null
+
     /** True while this transport has an app-selected or side-channel-verified tmux client. */
     val isTmuxSession: Boolean
         get() = false

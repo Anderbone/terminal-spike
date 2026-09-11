@@ -30,6 +30,50 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FastTerminalSelectionInteractionTest {
     @Test
+    fun mouseEnabledTerminalTapSendsClickAndKeepsTextInput() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var controller: TerminalController
+            lateinit var view: FastTerminalView
+            val received = mutableListOf<ByteArray>()
+            scenario.onActivity { activity ->
+                controller = TerminalController()
+                controller.setInputSink(
+                    object : com.yanjiyu.terminalspike.terminal.TerminalInputSink {
+                        override fun send(bytes: ByteArray) { received += bytes.copyOf() }
+                    },
+                    onResize = { _, _ -> },
+                )
+                view = attachTerminalView(activity, controller)
+                val engine = VtTerminalEngine(controller.terminalColumns, controller.terminalRows)
+                controller.updateTerminalFrame(engine.accept("\u001B[?1000;1006h".toByteArray()))
+            }
+            val deadline = SystemClock.uptimeMillis() + 5_000L
+            var ready = false
+            while (!ready && SystemClock.uptimeMillis() < deadline) {
+                scenario.onActivity { ready = controller.isMouseTrackingEnabled() }
+                if (!ready) SystemClock.sleep(20L)
+            }
+            assertTrue("Mouse mode frame was applied", ready)
+            scenario.onActivity {
+                val tapTime = SystemClock.uptimeMillis()
+                tapCell(view, column = 0, atTime = tapTime)
+                assertEquals(
+                    "\u001B[<0;1;1M\u001B[<0;1;1m",
+                    received.single().toString(Charsets.US_ASCII),
+                )
+                // The second tap opens text entry without activating the remote control twice.
+                tapCell(view, column = 0, atTime = tapTime + 120L)
+                assertEquals(1, received.size)
+                assertTrue(view.hasFocus())
+                assertTrue(view.onCheckIsTextEditor())
+                val connection = requireNotNull(view.onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+                assertTrue(connection.commitText("hello chat", 1))
+                assertEquals("hello chat", received.last().toString(Charsets.UTF_8))
+            }
+        }
+    }
+
+    @Test
     fun twoHundredLiveTerminalRowsCanScrollBackToTheFirstRow() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var controller: TerminalController
@@ -445,8 +489,8 @@ class FastTerminalSelectionInteractionTest {
         tapCell(view, column = 0)
     }
 
-    private fun tapCell(view: FastTerminalView, column: Int) {
-        val now = SystemClock.uptimeMillis()
+    private fun tapCell(view: FastTerminalView, column: Int, atTime: Long = SystemClock.uptimeMillis()) {
+        val now = atTime
         val density = view.resources.displayMetrics.density
         val x = 8f * density + 9f * density * column + 2f
         val y = 5f * density + 4f

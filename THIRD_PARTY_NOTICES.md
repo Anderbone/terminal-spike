@@ -1320,3 +1320,10 @@ an original stale-local-key lookup fix to libandroid-shmem 0.7 (BSD-3-Clause).
 `local-arch-runtime/patches/shmem-stale-local-key.patch` is included in the runtime
 source offer along with the existing source archives and build inputs. No new
 third-party dependency or version is introduced by this fix.
+
+## kotlinx-serialization-json 1.8.1
+
+Copyright 2017-2024 JetBrains s.r.o.
+Source: https://github.com/Kotlin/kotlinx.serialization/tree/v1.8.1
+Licensed under Apache License 2.0, reproduced in this notice file.
+Used to parse herdr session metadata through the existing SSH transport.

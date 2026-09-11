@@ -290,7 +290,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
             + "\n<!-- release-evidence-current:end -->"
         )
         for relative in (
-            "README.md",
+            "docs/DEVELOPING.md",
             "IMPLEMENTATION_STATUS.md",
             "docs/PUBLISHING.md",
             "docs/NEXT_STEPS.md",
@@ -312,7 +312,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertEqual(0, accepted.returncode, accepted.stderr)
         self.assertIn("documents=4", accepted.stdout)
 
-        (self.root / "README.md").write_text(
+        (self.root / "docs/DEVELOPING.md").write_text(
             f"# Release document\n\n{block.replace('`2` tests', '`3` tests')}\n",
             encoding="utf-8",
         )
@@ -332,7 +332,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertNotEqual(0, rejected.returncode)
         self.assertIn("differs from the candidate manifest", rejected.stderr)
 
-        (self.root / "README.md").write_text(
+        (self.root / "docs/DEVELOPING.md").write_text(
             f"# Release document\n\n{block}\n\nCurrent JVM suite has 999 tests.\n",
             encoding="utf-8",
         )

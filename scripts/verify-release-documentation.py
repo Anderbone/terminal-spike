@@ -14,7 +14,7 @@ from release_evidence import EvidenceError, documentation_summary, load_json_obj
 START_MARKER = "<!-- release-evidence-current:start -->"
 END_MARKER = "<!-- release-evidence-current:end -->"
 DEFAULT_DOCUMENTS = (
-    "README.md",
+    "docs/DEVELOPING.md",
     "docs/PUBLISHING.md",
     "docs/NEXT_STEPS.md",
     "IMPLEMENTATION_STATUS.md",

@@ -455,7 +455,7 @@ class TmuxSessionSelectorTest {
         val listCount = java.util.concurrent.atomic.AtomicInteger(0)
         val runner = TmuxCommandRunner { command ->
             when {
-                command.startsWith("/bin/sh -c ") -> {
+                command == TMUX_LIST_COMMAND -> {
                     val sessions = if (listCount.getAndIncrement() == 0) {
                         "\$1|one|1|0|1\n\$2|two|2|1|2\n"
                     } else {
@@ -472,7 +472,7 @@ class TmuxSessionSelectorTest {
             }
         }
         val prompts = ArrayBlockingQueue<TmuxSessionPrompt>(2)
-        val selected = AtomicReference<TmuxStartupChoice?>()
+        val selected = AtomicReference<StartupSessionChoice?>()
         val selector = TmuxSessionSelector(runner, prompts::put)
         val worker = thread(isDaemon = true) { selected.set(selector.awaitChoice()) }
 
@@ -491,7 +491,7 @@ class TmuxSessionSelectorTest {
     @Test
     fun installedTmuxCanStartANewProtectedSession() {
         val prompts = ArrayBlockingQueue<TmuxSessionPrompt>(1)
-        val selected = AtomicReference<TmuxStartupChoice?>()
+        val selected = AtomicReference<StartupSessionChoice?>()
         val selector = TmuxSessionSelector(
             commandRunner = {
                 TmuxExecOutput(
@@ -512,7 +512,7 @@ class TmuxSessionSelectorTest {
         assertEquals(TmuxStartupChoice.NewSession("/usr/local/bin/tmux"), selected.get())
         assertEquals(
             "'/usr/local/bin/tmux' new-session",
-            tmuxStartupCommand(requireNotNull(selected.get())),
+            startupSessionCommand(requireNotNull(selected.get())),
         )
     }
 

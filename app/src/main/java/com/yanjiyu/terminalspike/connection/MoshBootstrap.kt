@@ -66,7 +66,19 @@ internal class MoshBootstrapResult(
     private var tmuxSessionsBeforeStart: Set<String> = emptySet(),
     private var cachedTmuxPaneCapture: TmuxPaneCapture? = null,
     private var tmuxLiveHistoryRefreshPending: Boolean = startedInTmux,
+    internal var herdrChoice: HerdrStartupChoice? = null,
 ) : AutoCloseable {
+    fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
+        val choice = herdrChoice ?: return null
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
+        return captureHerdrSidebarLayout(runner, choice)
+    }
+
+    fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
+        val choice = herdrChoice ?: return null
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
+        return captureHerdrPaneHistory(runner, choice, previous, reading)
+    }
     val addressBytes: ByteArray = addressBytes.copyOf()
     val sessionKey: ByteArray = sessionKey
     private var attachedTmuxSessionId: String? = initialTmuxSessionId
@@ -317,7 +329,7 @@ internal class MoshBootstrapExecutor(
             execSession = session
             if (!registerResourceIfMissing(operation, session)) throw cancelledFailure()
             ensureActive(operation)
-            val tmuxChoice = if (request.ssh.tmuxSessionSelectorEnabled) {
+            val startupChoice = if (request.ssh.tmuxSessionSelectorEnabled) {
                 val runner = TmuxCommandRunner { tmuxCommand ->
                     readBoundedExecOutput(session.openExec(tmuxCommand), TMUX_MOSH_EXEC_LIMITS).use {
                         TmuxExecOutput(it.stdout.copyOf(), it.exitStatus)
@@ -336,6 +348,7 @@ internal class MoshBootstrapExecutor(
                 null
             }
             ensureActive(operation)
+            val tmuxChoice = startupChoice as? TmuxStartupChoice
             val initialTmuxCapture = (tmuxChoice as? TmuxStartupChoice.Attach)?.let { choice ->
                 captureTmuxPane(
                     metadataRunner = session.tmuxCommandRunner(),
@@ -351,6 +364,7 @@ internal class MoshBootstrapExecutor(
                     tmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
                     startNewTmuxSession = tmuxChoice is TmuxStartupChoice.NewSession,
                     tmuxExecutable = tmuxChoice?.executable ?: DEFAULT_TMUX_EXECUTABLE,
+                    herdrSession = startupChoice as? HerdrStartupChoice,
                 )
             } catch (error: IllegalArgumentException) {
                 throw MoshBootstrapException(
@@ -376,6 +390,7 @@ internal class MoshBootstrapExecutor(
                 cachedTmuxPaneCapture = initialTmuxCapture,
             )
             parsed = null // The result now owns the only project-owned key copy.
+            result.herdrChoice = startupChoice as? HerdrStartupChoice
             if (!finishSuccess(operation)) {
                 result.close()
                 throw cancelledFailure()
@@ -904,7 +919,9 @@ internal fun buildMoshServerCommand(
     tmuxSessionId: String? = null,
     startNewTmuxSession: Boolean = false,
     tmuxExecutable: String = DEFAULT_TMUX_EXECUTABLE,
+    herdrSession: HerdrStartupChoice? = null,
 ): String {
+    require(herdrSession == null || (tmuxSessionId == null && !startNewTmuxSession))
     require(tmuxSessionId == null || !startNewTmuxSession) {
         "A Mosh session cannot both create and attach to tmux."
     }
@@ -936,7 +953,13 @@ internal fun buildMoshServerCommand(
         }
         add("-l")
         add("LANG=${request.locale}")
-        if (tmuxSessionId != null || startNewTmuxSession) {
+        if (herdrSession != null) {
+            add("--")
+            add(herdrSession.executable)
+            add("session")
+            add("attach")
+            add(herdrSession.sessionName)
+        } else if (tmuxSessionId != null || startNewTmuxSession) {
             tmuxSessionId?.let {
                 require(it.isTmuxSessionId()) { "Invalid tmux session target." }
             }

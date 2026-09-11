@@ -16,6 +16,12 @@ are in `local-arch-runtime/README.md`; its licence assets are packaged in the ap
 | talloc library | 2.4.3 | PRoot hierarchical allocator | LGPL-3.0-or-later for library; other source files retain their own terms | [Upstream](https://www.samba.org/ftp/talloc/talloc-2.4.3.tar.gz); preserve copyright/licence, corresponding source, and replacement/rebuild ability for the dynamically linked library |
 | libandroid-shmem | 0.7 | PRoot Android shared-memory compatibility | BSD-3-Clause | [Upstream tag](https://github.com/termux/libandroid-shmem/tree/v0.7); reproduce copyright, conditions and disclaimer in source and binary distributions; notice in `local-arch-runtime/licenses/libandroid-shmem.txt` |
 
+## Herdr session discovery
+
+| Dependency | Version | Purpose | Licence | Source / obligations |
+| --- | --- | --- | --- | --- |
+| kotlinx-serialization-json | 1.8.1 | Parse bounded `herdr session list --json` output over the existing authenticated SSH connection | Apache-2.0 | [Upstream](https://github.com/Kotlin/kotlinx.serialization/tree/v1.8.1); preserve licence and copyright notices. Uses the existing serialization BOM/core family and pinned artifact checksums; no network client is added. |
+
 ## Existing application dependencies
 
 Arch extraction also adds stable JVM dependencies:

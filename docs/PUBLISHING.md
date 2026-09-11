@@ -70,10 +70,11 @@ Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` fa
 
 1. Approve the public product identity. Confirm whether **Terminal Spike** is the final store name,
    then approve the permanent application IDs. Change them only before the first public upload.
-2. The next main-app internal upload uses `versionCode = 6`, `versionName = 0.0.3`; the extension
-   remains independently versioned at code 5 and `1.0.1-mosh-1.4.0`. Play Console has consumed
-   main-app codes 1, 4, and 5, with code 5 active on `internal`. Increment every later upload's
-   version code while choosing public version names independently.
+2. On 2026-09-11, the Publisher API reported main-app codes 1, 4, 5 and 6 consumed;
+   internal testing served `0.0.3 (6)`, while closed testing (`alpha`) served code 4.
+   The next main-app candidate is `0.0.4 (7)`. Recheck consumed codes before uploading.
+   The main APK includes Mosh; do not rebuild or publish the archived standalone extension
+   merely to match the main app's version. See the dated release notes for committed track evidence.
 3. Create and securely back up a production upload key outside Git, enroll both Play apps in Play
    App Signing, and deliberately configure the same app-signing certificate for both packages.
    Their signature-protected Binder permission requires matching installed signatures. Produce and

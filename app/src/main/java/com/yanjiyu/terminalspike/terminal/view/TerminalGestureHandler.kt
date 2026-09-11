@@ -13,6 +13,8 @@ internal class TerminalGestureHandler(
 
     override fun onSingleTapUp(event: MotionEvent): Boolean = actions.onTapConfirmed(event.x, event.y)
 
+    override fun onDoubleTap(event: MotionEvent): Boolean = actions.onDoubleTap(event.x, event.y)
+
     override fun onLongPress(event: MotionEvent) {
         actions.onLongPress(event.x, event.y)
     }

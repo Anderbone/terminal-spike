@@ -24,7 +24,7 @@ does not grant trademark rights or imply endorsement by the Mosh project.
 
 ## Building modified versions and distributing source
 
-The [README](README.md) and [native build guide](mosh-core/BUILDING.md) describe the pinned
+The [developer guide](docs/DEVELOPING.md) and [native build guide](mosh-core/BUILDING.md) describe the pinned
 toolchain and builds. A normal debug build uses the builder's Android debug key. A release build
 can use the builder's own external signing key; the production certificate is not hard-coded.
 The single application includes its own Mosh transport and needs no companion signer.

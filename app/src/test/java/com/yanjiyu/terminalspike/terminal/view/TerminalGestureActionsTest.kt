@@ -9,6 +9,40 @@ import org.junit.Test
 
 class TerminalGestureActionsTest {
     @Test
+    fun mouseTapNavigatesWithoutKeyboardAndDoubleTapOpensItWithoutAnotherClick() {
+        val events = mutableListOf<String>()
+        val actions = actions(
+            handleTap = { x, y -> events += "mouse:$x:$y"; true },
+            canDoubleTapToType = { _, _ -> true },
+            showKeyboard = { events += "keyboard" },
+            performClick = { events += "accessibility" },
+        )
+        actions.onTouchDown(12f, 16f)
+        assertTrue(actions.onTapConfirmed(12f, 16f))
+        assertEquals(listOf("mouse:12.0:16.0", "accessibility"), events)
+        assertTrue(actions.onDoubleTap(12f, 16f))
+        assertFalse(actions.onTapConfirmed(12f, 16f))
+        assertEquals(listOf("mouse:12.0:16.0", "accessibility", "keyboard", "accessibility"), events)
+    }
+
+    @Test
+    fun doubleTapDoesNotForceTypingForLinksOrSelectionHandles() {
+        var keyboards = 0
+        val actions = actions(showKeyboard = { keyboards++ })
+        actions.onTouchDown(1f, 1f)
+        assertFalse(actions.onDoubleTap(1f, 1f))
+        assertEquals(0, keyboards)
+        val selecting = actions(
+            selectionHandleAt = { _, _ -> TerminalSelectionEndpoint.START },
+            canDoubleTapToType = { _, _ -> true },
+            showKeyboard = { keyboards++ },
+        )
+        selecting.onTouchDown(1f, 1f)
+        assertFalse(selecting.onDoubleTap(1f, 1f))
+        assertEquals(0, keyboards)
+    }
+
+    @Test
     fun tapStopsFlingRequestsFocusAndOpensKeyboardOnce() {
         val events = mutableListOf<String>()
         val actions = actions(
@@ -245,6 +279,7 @@ class TerminalGestureActionsTest {
         startSelection: (Float, Float) -> Boolean = { _, _ -> false },
         dragSelection: (TerminalSelectionEndpoint, Float, Float) -> Unit = { _, _, _ -> },
         finishSelectionDrag: (Boolean) -> Unit = {},
+        canDoubleTapToType: (Float, Float) -> Boolean = { _, _ -> false },
     ) = TerminalGestureActions(
         stopFling = stopFling,
         requestFocus = requestFocus,
@@ -258,5 +293,6 @@ class TerminalGestureActionsTest {
         startSelection = startSelection,
         dragSelection = dragSelection,
         finishSelectionDrag = finishSelectionDrag,
+        canDoubleTapToType = canDoubleTapToType,
     )
 }

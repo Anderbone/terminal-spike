@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
@@ -119,32 +122,35 @@ fun TerminalViewBridge(
             attachedView[0] = null
         }
     }
-    AndroidView(
-        factory = { context ->
-            FastTerminalView(context).apply {
-                attachController(controller)
-                setLinkActionCallback(dispatchLinkAction)
-                setClipboardActionCallback(dispatchClipboardAction)
-                setImageContentCallback(dispatchImageContent)
-                setPreImeBackCallback(onPreImeBack)
-                attachedView[0] = this
-                inputFocusRequester.attach(this)
-            }
-        },
-        update = { view ->
-            view.attachController(controller)
-            view.setLinkActionCallback(dispatchLinkAction)
-            view.setClipboardActionCallback(dispatchClipboardAction)
-            view.setImageContentCallback(dispatchImageContent)
-            view.setPreImeBackCallback(onPreImeBack)
-            attachedView[0] = view
-            inputFocusRequester.attach(view)
-        },
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("terminal_container")
-            .semantics { contentDescription = rendererDescription },
-    )
+    fun configureTerminal(view: FastTerminalView) {
+        view.attachController(controller)
+        view.setLinkActionCallback(dispatchLinkAction)
+        view.setClipboardActionCallback(dispatchClipboardAction)
+        view.setImageContentCallback(dispatchImageContent)
+        view.setPreImeBackCallback(onPreImeBack)
+        attachedView[0] = view
+        inputFocusRequester.attach(view)
+    }
+    val sidebarLayout by key(controller) { controller.herdrSidebarLayout.collectAsStateWithLifecycle() }
+    HerdrAdaptiveTerminal(sidebarLayout, controller, modifier.fillMaxSize()) { hiddenColumns ->
+        AndroidView(
+            factory = { context ->
+                HerdrTerminalContainer(context).apply {
+                    configureTerminal(terminal)
+                    hiddenSidebarColumns = hiddenColumns
+                }
+            },
+            update = { container ->
+                val view = container.terminal
+                container.hiddenSidebarColumns = hiddenColumns
+                configureTerminal(view)
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("terminal_container")
+                .semantics { contentDescription = rendererDescription },
+        )
+    }
 }
 
 private fun performDefaultLinkAction(context: Context, request: TerminalLinkActionRequest) {

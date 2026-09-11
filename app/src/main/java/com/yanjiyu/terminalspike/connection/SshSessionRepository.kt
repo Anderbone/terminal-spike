@@ -1316,6 +1316,9 @@ internal class SshSessionRepository(
         }
         queueRecentSessionPersistence(runtime, publishedState)
         if (state is ConnectionState.Connected) {
+            // Layout may have settled while authentication or the session picker was open.
+            // A pre-connect resize can have had no live transport to receive it.
+            connection.resize(runtime.terminal.columns, runtime.terminal.rows)
             runtime.terminal.refreshTmuxHistory()
             dispatchNetworkHintToRuntime(runtime, connection, networkAvailability.state.value)
         }
@@ -2265,6 +2268,27 @@ private class DefaultSshSessionTerminal(
 
     private fun refreshTmuxIdentity(connection: Connection) {
         if (synchronized(tmuxHistoryLock) { stopped || attachedConnection !== connection }) return
+        if (connection.isHerdrSession) {
+            val layout = runCatching { connection.captureHerdrSidebarLayout() }.getOrNull()
+            synchronized(tmuxHistoryLock) {
+                if (stopped || attachedConnection !== connection) return
+                // Ignore an old pre-resize reply, including a shared session resized by another client.
+                if (layout == null || layout.terminalColumns == controller.terminalColumns) {
+                    controller.publishHerdrSidebarLayout(layout)
+                }
+            }
+            val snapshot = runCatching {
+                connection.captureHerdrHistory(controller.herdrHistory, controller.herdrHistoryReading)
+            }.getOrNull()
+            synchronized(tmuxHistoryLock) {
+                if (!stopped && attachedConnection === connection) controller.publishHerdrHistory(snapshot)
+            }
+            return
+        }
+        synchronized(tmuxHistoryLock) {
+            if (stopped || attachedConnection !== connection) return
+            controller.publishHerdrSidebarLayout(null)
+        }
         val changed = runCatching { connection.refreshTmuxIdentity() }.getOrDefault(false)
         publishTaskStatus()
         if (!changed) return

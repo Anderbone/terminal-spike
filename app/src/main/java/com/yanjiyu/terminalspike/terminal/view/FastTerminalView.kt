@@ -86,11 +86,15 @@ class FastTerminalView @JvmOverloads constructor(
     private var legacySymbolItalicTypeface: Typeface? = null
     private var legacySymbolBoldItalicTypeface: Typeface? = null
     private val scroller = OverScroller(context)
+    private val herdrScroll = HerdrNativeScroll(context)
+    private var herdrTouchConsumed = false
+    private var herdrTouchMode = TouchScrollMode.AUTO
     private val horizontalPaddingPx = 8f * resources.displayMetrics.density
     private val verticalPaddingPx = 5f * resources.displayMetrics.density
     private var fontMetrics = textPaint.fontMetrics
     private var lineHeightPx = 1f
     private var cellWidthPx = 1f
+    internal val terminalCellWidthPx: Float get() = cellWidthPx
     private var baselineOffsetPx = 1f
     private val scrollGestureRouter = TerminalScrollGestureRouter()
     private val mouseWheelAccumulator = TerminalMouseWheelAccumulator(MAX_MOUSE_WHEEL_STEPS_PER_EVENT)
@@ -156,6 +160,10 @@ class FastTerminalView @JvmOverloads constructor(
         startSelection = ::startSelectionAt,
         dragSelection = ::dragSelection,
         finishSelectionDrag = ::finishSelectionDrag,
+        canDoubleTapToType = { x, y ->
+            directInputEnabled && terminalController?.isMouseTrackingEnabled() == true &&
+                !selection.hasSelection && linkAt(x, y) == null
+        },
     )
     private val gestureDetector = GestureDetector(
         context,
@@ -221,6 +229,8 @@ class FastTerminalView @JvmOverloads constructor(
 
     fun attachController(controller: TerminalController) {
         if (terminalController === controller) return
+        terminalController?.herdrHistoryReading = false
+        herdrScroll.reset()
         resetComposingInput()
         val wasFocused = hasFocus()
         if (wasFocused) terminalController?.reportFocus(false)
@@ -233,7 +243,7 @@ class FastTerminalView @JvmOverloads constructor(
         lastVisualBellSequence = controller.latestBellSequence()
         applyRendererProfile(controller.rendererProfile)
         controller.viewport.updateGeometry(
-            heightPx = (height - verticalPaddingPx * 2f).toInt().coerceAtLeast(0),
+            heightPx = currentTerminalGrid()?.heightPx ?: 0,
             newLineHeightPx = lineHeightPx,
         )
         controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
@@ -251,9 +261,12 @@ class FastTerminalView @JvmOverloads constructor(
         // Detach removes the listener to avoid retaining an off-window view. Re-register even when
         // the controller identity is unchanged so route/view reuse resumes renderer invalidation.
         terminalController?.addListener(this)
+        scheduleTerminalSizeReport()
     }
 
     override fun onDetachedFromWindow() {
+        terminalController?.herdrHistoryReading = false
+        herdrScroll.reset()
         removeCallbacks(publishIdleStats)
         removeCallbacks(publishTerminalSize)
         removeCallbacks(publishCursorBlink)
@@ -267,6 +280,13 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onTerminalContentChanged(change: TerminalContentChange) {
         val controller = terminalController ?: return
+        if (appliedRendererProfile != controller.rendererProfile) {
+            herdrScroll.reset()
+            controller.herdrHistoryReading = false
+        }
+        if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
+        herdrScroll.updateSource(controller.herdrHistory)
+        controller.herdrHistoryReading = herdrScroll.reader.snapshot != null
         val previousProfile = appliedRendererProfile
         val previousScrollY = controller.viewport.scrollY
         applyRendererProfile(controller.rendererProfile)
@@ -327,8 +347,10 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
+        herdrScroll.reset()
+        terminalController?.herdrHistoryReading = false
         terminalController?.viewport?.updateGeometry(
-            heightPx = (height - verticalPaddingPx * 2f).toInt().coerceAtLeast(0),
+            heightPx = currentTerminalGrid()?.heightPx ?: 0,
             newLineHeightPx = lineHeightPx,
         )
         scheduleTerminalSizeReport()
@@ -338,6 +360,7 @@ class FastTerminalView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val controller = terminalController ?: return
+        if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
         val drawStartNanos = System.nanoTime()
         val viewport = controller.viewport
         val rows = viewport.visibleRows(OVERSCAN_ROWS)
@@ -366,12 +389,31 @@ class FastTerminalView @JvmOverloads constructor(
         drawFindHighlights(canvas, controller)
         drawSelection(canvas, controller)
         drawCursor(canvas, controller, viewport.scrollY)
+        drawHerdrHistory(canvas)
         if (!viewport.autoFollow) drawNewOutputBadge(canvas)
         drawVisualBell(canvas)
         canvas.restore()
         frameStatsCollector.recordDraw(drawStartNanos, System.nanoTime())
         removeCallbacks(publishIdleStats)
         postDelayed(publishIdleStats, FrameStatsCollector.IDLE_DELAY_MS)
+    }
+
+    private fun drawHerdrHistory(canvas: Canvas) {
+        val snapshot = herdrScroll.reader.snapshot ?: return
+        val viewport = herdrScroll.reader.viewport
+        val left = horizontalPaddingPx + snapshot.x * cellWidthPx
+        val top = verticalPaddingPx + snapshot.y * lineHeightPx
+        canvas.save()
+        canvas.clipRect(left, top, left + snapshot.columns * cellWidthPx, top + snapshot.rows * lineHeightPx)
+        fillPaint.color = terminalTheme.background
+        canvas.drawRect(left, top, left + snapshot.columns * cellWidthPx, top + snapshot.rows * lineHeightPx, fillPaint)
+        canvas.translate(snapshot.x * cellWidthPx, snapshot.y * lineHeightPx)
+        val visible = viewport.visibleRows(1)
+        for (row in visible.first until visible.lastExclusive) {
+            val rowTop = verticalPaddingPx + row * lineHeightPx - viewport.scrollY
+            drawLine(canvas, snapshot.lines[row].runs, rowTop + baselineOffsetPx, rowTop)
+        }
+        canvas.restore()
     }
 
     private fun drawLine(canvas: Canvas, runs: List<TerminalRun>, baseline: Float, rowTop: Float) {
@@ -689,6 +731,39 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val herdrController = terminalController
+        val herdrSource = herdrController?.herdrHistory?.takeIf {
+            it.x + it.columns <= herdrController.terminalColumns &&
+                it.y + it.rows <= herdrController.terminalRows &&
+                herdrController.viewport.autoFollow && !selection.hasSelection
+        }
+        if (herdrTouchMode != TouchScrollMode.REMOTE_MOUSE &&
+            (herdrSource != null || herdrScroll.reader.snapshot != null)
+        ) {
+            val consumed = herdrScroll.touch(event, herdrSource, cellWidthPx, lineHeightPx,
+                horizontalPaddingPx, verticalPaddingPx)
+            if (consumed) {
+                if (herdrController?.herdrHistoryReading != true && herdrScroll.reader.snapshot != null) {
+                    android.widget.Toast.makeText(context, R.string.herdr_recent_history_limit,
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+                if (!herdrTouchConsumed) {
+                    val cancel = MotionEvent.obtain(event)
+                    cancel.action = MotionEvent.ACTION_CANCEL
+                    gestureDetector.onTouchEvent(cancel)
+                    cancel.recycle()
+                    gestureActions.onCancel()
+                    stopActiveFling()
+                }
+                herdrTouchConsumed = event.actionMasked != MotionEvent.ACTION_UP &&
+                    event.actionMasked != MotionEvent.ACTION_CANCEL
+                herdrController?.herdrHistoryReading = herdrScroll.reader.snapshot != null
+                parent?.requestDisallowInterceptTouchEvent(herdrTouchConsumed)
+                postInvalidateOnAnimation()
+                return true
+            }
+        }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) herdrTouchConsumed = false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 mouseWheelAccumulator.reset()
@@ -817,6 +892,10 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun computeScroll() {
+        if (herdrScroll.animate()) {
+            terminalController?.herdrHistoryReading = herdrScroll.reader.snapshot != null
+            postInvalidateOnAnimation()
+        }
         if (!scroller.computeScrollOffset()) {
             flingDestination = TerminalScrollDestination.NONE
             return
@@ -1010,7 +1089,21 @@ class FastTerminalView @JvmOverloads constructor(
             selectionActionMode?.finish()
             selectionActionMode = null
             invalidate()
+            return false
         }
+        val controller = terminalController
+        if (directInputEnabled && controller != null && x.isFinite() && y.isFinite() &&
+            x >= horizontalPaddingPx && x < width - horizontalPaddingPx &&
+            y >= verticalPaddingPx && y < height - verticalPaddingPx
+        ) {
+            val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
+            val liveRow = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
+            if (controller.isMouseTrackingEnabled()) {
+                controller.sendMouseClick(column = terminalColumnAt(x), row = liveRow)
+                return true
+            }
+        }
+        // Ordinary shells remain tap-to-type; mouse apps use double-tap or the keyboard button.
         return false
     }
 
@@ -1290,6 +1383,11 @@ class FastTerminalView @JvmOverloads constructor(
         touchMode: TouchScrollMode,
         twoFingerLocalScrollOverride: Boolean = true,
     ) {
+        if (herdrTouchMode != touchMode) {
+            herdrScroll.reset()
+            terminalController?.herdrHistoryReading = false
+        }
+        herdrTouchMode = touchMode
         if (!scrollGestureRouter.updateConfiguration(touchMode, twoFingerLocalScrollOverride)) return
         mouseWheelAccumulator.reset()
         stopActiveFling()
@@ -1565,8 +1663,9 @@ class FastTerminalView @JvmOverloads constructor(
             singleGlyphWidth = textPaint.measureText(CELL_METRIC_GLYPH),
             repeatedGlyphWidth = textPaint.measureText(CELL_METRIC_GLYPH.repeat(2)),
         )
+        (parent as? HerdrTerminalContainer)?.requestLayout()
         terminalController?.viewport?.updateGeometry(
-            heightPx = (height - verticalPaddingPx * 2f).toInt().coerceAtLeast(0),
+            heightPx = currentTerminalGrid()?.heightPx ?: 0,
             newLineHeightPx = lineHeightPx,
         )
         scheduleTerminalSizeReport()
@@ -1582,10 +1681,13 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun reportTerminalSizeNow() {
-        val columns = ((width - horizontalPaddingPx * 2f) / cellWidthPx).toInt().coerceAtLeast(1)
-        val rows = ((height - verticalPaddingPx * 2f) / lineHeightPx).toInt().coerceAtLeast(1)
-        terminalController?.reportTerminalSize(columns, rows)
+        val grid = currentTerminalGrid() ?: return
+        terminalController?.reportTerminalSize(grid.columns, grid.rows)
     }
+
+    private fun currentTerminalGrid(): TerminalGridGeometry? = terminalGridGeometry(
+        width, height, horizontalPaddingPx, verticalPaddingPx, cellWidthPx, lineHeightPx,
+    )
 
     private fun spToPx(sp: Float): Float = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_SP,

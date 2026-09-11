@@ -671,8 +671,8 @@ extensions.configure<ApplicationExtension>("android") {
         ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.0.3"
+        versionCode = 7
+        versionName = "0.0.4"
 
         testInstrumentationRunner = "com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
@@ -797,6 +797,7 @@ dependencies {
     // Lifecycle 2.10 otherwise constrains serialization to 1.7.3, while Room 2.8.4's schema
     // serializers require the 1.8.1 core ABI in the migration-test APK.
     implementation(platform(libs.kotlinx.serialization.bom))
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.jsch)
     // Android does not load JSch's Java-15 multi-release Ed25519 signer. JSch's supported
     // provider path keeps generated and imported Ed25519 identities usable on Android.

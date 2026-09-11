@@ -1,12 +1,28 @@
 package com.yanjiyu.terminalspike.terminal.view
 
 internal object TerminalMouseSequences {
+    fun click(column: Int, row: Int, sgrEncoding: Boolean, reportRelease: Boolean = true): ByteArray {
+        val press = report(0, column, row, sgrEncoding)
+        if (!reportRelease) return press
+        return press + report(if (sgrEncoding) 0 else 3, column, row, sgrEncoding, release = true)
+    }
+
     fun wheel(up: Boolean, column: Int, row: Int, sgrEncoding: Boolean): ByteArray {
+        return report(if (up) WHEEL_UP else WHEEL_DOWN, column, row, sgrEncoding)
+    }
+
+    private fun report(
+        button: Int,
+        column: Int,
+        row: Int,
+        sgrEncoding: Boolean,
+        release: Boolean = false,
+    ): ByteArray {
         val oneBasedColumn = column.coerceAtLeast(0) + 1
         val oneBasedRow = row.coerceAtLeast(0) + 1
-        val button = if (up) WHEEL_UP else WHEEL_DOWN
         if (sgrEncoding) {
-            return "\u001B[<${button};${oneBasedColumn};${oneBasedRow}M".toByteArray(Charsets.US_ASCII)
+            val suffix = if (release) 'm' else 'M'
+            return "\u001B[<${button};${oneBasedColumn};${oneBasedRow}$suffix".toByteArray(Charsets.US_ASCII)
         }
 
         return byteArrayOf(

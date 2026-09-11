@@ -39,6 +39,44 @@ class TerminalSessionActionsTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun herdrSessionsAppearAboveTmuxAndAttachFromTheConnectionChooser() {
+        val target = session(11L, "Server").copy(
+            connectionState = ConnectionState.AwaitingApproval(
+                TmuxSessionPrompt(
+                    promptToken = 73L,
+                    sessions = listOf(TmuxSession("$4", "codex1", 2, 0, 1)),
+                    herdrSessions = listOf(com.yanjiyu.terminalspike.connection.HerdrSession("default", true)),
+                    herdrAvailability = com.yanjiyu.terminalspike.connection.HerdrAvailability.AVAILABLE,
+                ),
+            ),
+        )
+        var answer: Triple<Long, Long, String?>? = null
+        composeRule.setContent {
+            MaterialTheme {
+                SessionChrome(
+                    sessions = listOf(target), activeSessionId = target.id,
+                    notice = null, canAddSession = true, settingsReady = true,
+                    onSelectSession = {}, onDuplicateSession = {}, onCloseSession = {},
+                    onDisconnect = {}, onHostIdentityAnswer = { _, _, _ -> },
+                    onNavigateBack = {}, onNewSession = {}, onOpenConnections = {},
+                    onTmuxSessionAnswer = { sessionId, token, selection ->
+                        answer = Triple(sessionId, token, selection)
+                    },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Choose a session").assertIsDisplayed()
+        composeRule.onNodeWithText("New tmux session").assertIsDisplayed()
+        val herdr = composeRule.onNodeWithTag("startup-session-herdr:default")
+        val tmux = composeRule.onNodeWithTag("startup-session-$4")
+        herdr.assertIsDisplayed().assertHeightIsAtLeast(64.dp)
+        tmux.assertIsDisplayed()
+        assertTrue(herdr.fetchSemanticsNode().boundsInRoot.bottom < tmux.fetchSemanticsNode().boundsInRoot.top)
+        herdr.performClick()
+        composeRule.runOnIdle { assertEquals(Triple(11L, 73L, "herdr:default"), answer) }
+    }
+
+    @Test
     fun tmuxChooserMakesStartingANewProtectedSessionExplicit() {
         val target = session(11L, "Server").copy(
             connectionState = ConnectionState.AwaitingApproval(

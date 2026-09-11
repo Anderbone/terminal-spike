@@ -17,6 +17,60 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun mouseClicksFollowNegotiatedModesAndTypingStillWorks() {
+        val scheduler = ManualFrameScheduler()
+        val sink = RecordingInputSink()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler)
+        controller.setInputSink(sink, onResize = { _, _ -> })
+        controller.reportTerminalSize(80, 24)
+        val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(columns = 80, rows = 24)
+        fun output(text: String) {
+            controller.updateTerminalFrame(engine.accept(text.toByteArray()))
+            scheduler.drainAll()
+        }
+
+        assertFalse(controller.sendMouseClick(4, 7))
+        // Enabling an encoding alone must not enable mouse reporting at a shell prompt.
+        output("\u001B[?1006h")
+        assertFalse(controller.sendMouseClick(4, 7))
+        for (mode in listOf(1000, 1002, 1003)) {
+            output("\u001B[?$mode;1006h")
+            assertTrue(controller.sendMouseClick(4, 7))
+            assertArrayEquals("\u001B[<0;5;8M\u001B[<0;5;8m".toByteArray(), sink.received.last())
+            output("\u001B[?${mode}l")
+            assertFalse(controller.sendMouseClick(4, 7))
+        }
+        output("\u001B[?1006l\u001B[?1000h")
+        assertTrue(controller.sendMouseClick(0, 0))
+        assertArrayEquals(byteArrayOf(27, 91, 77, 32, 33, 33, 27, 91, 77, 35, 33, 33), sink.received.last())
+        output("\u001B[?1000l\u001B[?9h")
+        assertTrue(controller.sendMouseClick(0, 0))
+        assertArrayEquals(byteArrayOf(27, 91, 77, 32, 33, 33), sink.received.last())
+        controller.send("hello chat".toByteArray())
+        assertArrayEquals("hello chat".toByteArray(), sink.received.last())
+    }
+
+    @Test
+    fun mouseClicksRejectHistoryAndOutsideGridWithoutJumpingOrSending() {
+        val scheduler = ManualFrameScheduler()
+        val sink = RecordingInputSink()
+        val controller = TerminalController(TerminalBuffer(capacity = 32), scheduler)
+        controller.setInputSink(sink, onResize = { _, _ -> })
+        controller.reportTerminalSize(80, 24)
+        controller.updateTerminalFrame(frame(modes = TerminalModes(mouseTracking = true, sgrMouseEncoding = true)))
+        scheduler.drainAll()
+        for ((column, row) in listOf(-1 to 0, 0 to -1, 80 to 0, 0 to 24)) {
+            assertFalse(controller.sendMouseClick(column, row))
+        }
+        controller.viewport.updateGeometry(heightPx = 100, newLineHeightPx = 10f)
+        controller.viewport.updateContent(100, 0L)
+        controller.viewport.scrollTo(123.5f)
+        assertFalse(controller.sendMouseClick(4, 7))
+        assertEquals(123.5f, controller.viewport.scrollY)
+        assertTrue(sink.received.isEmpty())
+    }
+
+    @Test
     fun moshFramebufferRepaintCannotAdvanceAuthoritativeTmuxPagingCoordinates() {
         val scheduler = ManualFrameScheduler()
         var requested: com.yanjiyu.terminalspike.connection.TmuxHistoryPageRequest? = null

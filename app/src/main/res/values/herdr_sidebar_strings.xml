@@ -1,0 +1,5 @@
+<resources>
+    <string name="herdr_sidebar_label">Spaces &amp; Agents</string>
+    <string name="herdr_show_sidebar">Show Herdr Spaces and Agents</string>
+    <string name="herdr_hide_sidebar">Hide Herdr Spaces and Agents</string>
+</resources>

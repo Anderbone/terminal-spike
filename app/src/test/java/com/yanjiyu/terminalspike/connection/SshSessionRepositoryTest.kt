@@ -35,6 +35,32 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
     @Test
+    fun connectionReadyResendsTheGeometryThatSettledDuringAuthentication() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val connection = FakeConnection(statesOnConnect = listOf(ConnectionState.Connecting))
+        val terminal = FakeTerminal()
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connection },
+            terminalFactory = SshSessionTerminalFactory { terminal },
+        )
+        try {
+            repository.startUserInitiatedSession("Herdr", config())
+            runCurrent()
+            terminal.columns = 100
+            terminal.rows = 42
+            connection.emit(ConnectionState.Connected)
+            assertEquals(listOf(100 to 42), connection.resizes)
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
     fun successfulTmuxSwitchImmediatelyBootstrapsLocalHistory() = runTest {
         val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val connection = FakeConnection().apply { tmuxSwitchResult = true }
@@ -1634,8 +1660,8 @@ class SshSessionRepositoryTest {
 
     private class FakeTerminal : SshSessionTerminal {
         override val controller: TerminalController? = null
-        override val columns: Int = 80
-        override val rows: Int = 24
+        override var columns: Int = 80
+        override var rows: Int = 24
         override var terminalTitle: String? = null
             private set
         val stopCalls = AtomicInteger()
@@ -1692,6 +1718,7 @@ class SshSessionRepositoryTest {
         private var bytesCallback: ((ByteArray) -> Unit)? = null
         val closeCalls = AtomicInteger()
         val connectCalls = AtomicInteger()
+        val resizes = mutableListOf<Pair<Int, Int>>()
         var tmuxSwitchResult = false
         val tmuxSwitches = mutableListOf<String>()
 
@@ -1712,7 +1739,7 @@ class SshSessionRepositoryTest {
 
         override fun trySend(bytes: ByteArray): Boolean = !closed.isCompleted && bytes.isNotEmpty()
 
-        override fun resize(columns: Int, rows: Int) = Unit
+        override fun resize(columns: Int, rows: Int) { resizes += columns to rows }
 
         override fun answerHostIdentityPrompt(
             promptToken: Long,

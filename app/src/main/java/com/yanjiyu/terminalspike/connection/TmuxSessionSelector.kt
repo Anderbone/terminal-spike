@@ -37,15 +37,18 @@ internal data class TmuxSessionPrompt(
     val sessions: List<TmuxSession>,
     val availability: TmuxAvailability = TmuxAvailability.AVAILABLE,
     val deleteFailed: Boolean = false,
+    val herdrSessions: List<HerdrSession> = emptyList(),
+    val herdrAvailability: HerdrAvailability = HerdrAvailability.NOT_INSTALLED,
 ) : ConnectionPrompt {
     init {
         require(promptToken > 0L)
         require(sessions.size <= MAX_TMUX_SESSIONS)
+        require(herdrSessions.size <= MAX_HERDR_SESSIONS)
     }
 }
 
-internal sealed interface TmuxStartupChoice {
-    val executable: String
+internal sealed interface TmuxStartupChoice : StartupSessionChoice {
+    override val executable: String
 
     data class NewSession(
         override val executable: String,
@@ -83,8 +86,9 @@ internal class TmuxSessionSelector(
     private val actions = LinkedBlockingQueue<TmuxSelectorAction>()
     private val tasks = TmuxTaskMonitor()
 
-    fun awaitChoice(): TmuxStartupChoice? {
+    fun awaitChoice(): StartupSessionChoice? {
         var inspection = inspectTmuxSessions(commandRunner)
+        val herdr = inspectHerdrSessions(commandRunner)
         var deleteFailed = false
         while (true) {
             inspection.executable?.let { tasks.refresh(commandRunner, it) }
@@ -94,6 +98,8 @@ internal class TmuxSessionSelector(
                     sessions = inspection.sessions.map { it.copy(taskStatus = tasks.sessionStatus(it.id)) },
                     availability = inspection.availability,
                     deleteFailed = deleteFailed,
+                    herdrSessions = herdr.sessions,
+                    herdrAvailability = herdr.availability,
                 ),
             )
             val action = actions.poll(1L, java.util.concurrent.TimeUnit.SECONDS)
@@ -103,6 +109,10 @@ internal class TmuxSessionSelector(
                 is TmuxSelectorAction.Select -> {
                     if (action.promptToken != token) continue
                     val target = action.sessionId ?: return null
+                    if (target.isHerdrSelectionId()) {
+                        val session = herdr.sessions.firstOrNull { it.selectionId == target } ?: continue
+                        return HerdrStartupChoice(requireNotNull(herdr.executable), session.name)
+                    }
                     if (
                         target == TMUX_NEW_SESSION_SELECTION &&
                         inspection.availability == TmuxAvailability.AVAILABLE
@@ -147,7 +157,7 @@ internal class TmuxSessionSelector(
             (
                 sessionId == null ||
                     sessionId == TMUX_NEW_SESSION_SELECTION ||
-                    sessionId.isTmuxSessionId()
+                    sessionId.isTmuxSessionId() || sessionId.isHerdrSelectionId()
                 )
         ) {
             actions.offer(TmuxSelectorAction.Select(promptToken, sessionId))

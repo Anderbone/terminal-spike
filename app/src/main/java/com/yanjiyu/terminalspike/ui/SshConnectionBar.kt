@@ -23,6 +23,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.ConnectionState
+import com.yanjiyu.terminalspike.connection.HerdrAvailability
 import com.yanjiyu.terminalspike.connection.HostIdentityDecision
 import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
 import com.yanjiyu.terminalspike.connection.KeyboardInteractiveChallenge
@@ -359,6 +361,68 @@ private fun TmuxSessionDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (prompt.herdrAvailability != HerdrAvailability.NOT_INSTALLED) {
+                    SessionChooserHeading(stringResource(R.string.startup_herdr_heading))
+                    if (prompt.herdrSessions.isEmpty()) {
+                        Text(
+                            stringResource(
+                                if (prompt.herdrAvailability == HerdrAvailability.CHECK_FAILED) {
+                                    R.string.startup_herdr_check_failed
+                                } else {
+                                    R.string.startup_herdr_empty
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Column {
+                                prompt.herdrSessions.forEachIndexed { index, session ->
+                                    if (index > 0) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .testTag("startup-session-${session.selectionId}")
+                                            .clickable { onAttach(session.selectionId) }
+                                            .heightIn(min = 64.dp)
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        ConnectionsGlyphIcon(
+                                            ConnectionsGlyph.WINDOWS,
+                                            modifier = Modifier.size(22.dp),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                session.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                stringResource(R.string.startup_herdr_resume),
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            stringResource(R.string.startup_herdr_touch_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+                SessionChooserHeading(stringResource(R.string.startup_tmux_heading))
                 Text(
                     stringResource(
                         when {
@@ -370,6 +434,8 @@ private fun TmuxSessionDialog(
                             else -> R.string.tmux_selector_summary
                         },
                     ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (prompt.deleteFailed) {
                     Text(
@@ -380,13 +446,14 @@ private fun TmuxSessionDialog(
                 prompt.sessions.forEach { session ->
                     Surface(
                         onClick = { onAttach(session.id) },
+                        modifier = Modifier.testTag("startup-session-${session.id}"),
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp)
+                                .heightIn(min = 56.dp)
                                 .padding(start = 12.dp, end = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -423,7 +490,13 @@ private fun TmuxSessionDialog(
         confirmButton = {
             if (prompt.availability == TmuxAvailability.AVAILABLE) {
                 Button(onClick = onStartNew) {
-                    Text(stringResource(R.string.tmux_selector_start_new))
+                    Text(stringResource(
+                        if (prompt.herdrAvailability != HerdrAvailability.NOT_INSTALLED) {
+                            R.string.startup_new_tmux
+                        } else {
+                            R.string.tmux_selector_start_new
+                        },
+                    ))
                 }
             } else {
                 TextButton(onClick = onOpenShell) {
@@ -462,6 +535,16 @@ private fun TmuxSessionDialog(
             },
         )
     }
+}
+
+@Composable
+private fun SessionChooserHeading(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp).semantics { heading() },
+    )
 }
 
 @Composable

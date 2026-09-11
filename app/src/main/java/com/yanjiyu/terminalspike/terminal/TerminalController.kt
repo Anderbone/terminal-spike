@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.terminal
 
+import com.yanjiyu.terminalspike.connection.HerdrPaneHistory
+import com.yanjiyu.terminalspike.connection.HerdrSidebarLayout
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
@@ -13,6 +15,7 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalViewport
 import com.yanjiyu.terminalspike.terminal.engine.TerminalFrameUpdate
+import com.yanjiyu.terminalspike.terminal.engine.TerminalMouseTrackingMode
 import com.yanjiyu.terminalspike.terminal.engine.TerminalModes
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLineAnchor
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLineSpace
@@ -67,6 +70,23 @@ class TerminalController(
     }
 
     val viewport = TerminalViewport()
+    private val mutableHerdrSidebarLayout = MutableStateFlow<HerdrSidebarLayout?>(null)
+    val herdrSidebarLayout = mutableHerdrSidebarLayout.asStateFlow()
+
+    internal fun publishHerdrSidebarLayout(layout: HerdrSidebarLayout?) {
+        mutableHerdrSidebarLayout.value = layout
+    }
+    @Volatile
+    var herdrHistory: HerdrPaneHistory? = null
+        private set
+    @Volatile
+    var herdrHistoryReading: Boolean = false
+
+    internal fun publishHerdrHistory(snapshot: HerdrPaneHistory?) {
+        if (herdrHistory === snapshot) return
+        herdrHistory = snapshot
+        frameScheduler.postFrame { notifyContentChanged() }
+    }
     @Volatile
     var rendererProfile: TerminalRendererProfile = TerminalRendererProfile()
         private set
@@ -229,6 +249,21 @@ class TerminalController(
         )
     }
 
+    /** A tap targets the live grid only; old scrollback must never click an unseen control. */
+    fun sendMouseClick(column: Int, row: Int): Boolean {
+        if (!terminalModes.mouseTracking || !viewport.autoFollow) return false
+        if (column !in 0 until terminalColumns || row !in 0 until terminalRows) return false
+        return trySendUserInput(
+            bytes = TerminalMouseSequences.click(
+                column = column,
+                row = row,
+                sgrEncoding = terminalModes.sgrMouseEncoding,
+                reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10,
+            ),
+            applyDirectSendPolicy = true,
+        )
+    }
+
     fun isMouseTrackingEnabled(): Boolean = terminalModes.mouseTracking
 
     fun isTmuxSession(): Boolean =
@@ -381,6 +416,9 @@ class TerminalController(
     }
 
     fun resetInputSink() {
+        publishHerdrSidebarLayout(null)
+        publishHerdrHistory(null)
+        herdrHistoryReading = false
         inputSink = defaultInputSink
         terminalSizeListener = null
         inputAcceptedListener = null
@@ -401,6 +439,7 @@ class TerminalController(
             inputSink.trySend(bytes)
         }
         if (accepted) {
+            herdrHistoryReading = false
             if (rendererProfile.jumpToBottomOnKeyboardInput) jumpToBottom()
             inputAcceptedListener?.invoke()
         }

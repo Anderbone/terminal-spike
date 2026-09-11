@@ -39,6 +39,33 @@ class JschSshConnection(
     private var writer: BoundedSshWriter? = null
     private var startupInputGate: StartupFirstInputGate? = null
     private var tmuxSelector: TmuxSessionSelector? = null
+    private var herdrChoice: HerdrStartupChoice? = null
+
+    override val isHerdrSession: Boolean get() = synchronized(lock) { running && herdrChoice != null }
+
+    override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
+            session to (herdrChoice ?: return null)
+        }
+        val captured = captureHerdrSidebarLayout(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
+        return synchronized(lock) {
+            captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
+        }
+    }
+
+    override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
+            session to (herdrChoice ?: return null)
+        }
+        val captured = captureHerdrPaneHistory(
+            JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice, previous, reading,
+        )
+        return synchronized(lock) {
+            captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
+        }
+    }
     private var attachedTmuxSessionId: String? = null
     private var startedInTmux = false
     private var discoveredTmuxClient: TmuxClientIdentity? = null
@@ -223,7 +250,7 @@ class JschSshConnection(
 
             if (!isActive(attempt)) return
 
-            val tmuxChoice = if (config.tmuxSessionSelectorEnabled) {
+            val startupChoice = if (config.tmuxSessionSelectorEnabled) {
                 TmuxSessionSelector(newSession) { prompt ->
                     attempt.states.publish(ConnectionState.AwaitingApproval(prompt))
                 }.also { selector ->
@@ -234,6 +261,8 @@ class JschSshConnection(
             }
             synchronized(lock) { tmuxSelector = null }
             if (!isActive(attempt)) return
+            val tmuxChoice = startupChoice as? TmuxStartupChoice
+            synchronized(lock) { herdrChoice = startupChoice as? HerdrStartupChoice }
             val initialTmuxCapture = (tmuxChoice as? TmuxStartupChoice.Attach)?.let { choice ->
                 captureTmuxPane(
                     metadataRunner = JschTmuxCommandRunner(newSession),
@@ -252,7 +281,7 @@ class JschSshConnection(
                 cachedTmuxPaneCapture = initialTmuxCapture
                 tmuxLiveHistoryRefreshPending = tmuxChoice != null
             }
-            val tmuxStartupCommand = tmuxChoice?.let(::tmuxStartupCommand)
+            val selectedStartupCommand = startupChoice?.let(::startupSessionCommand)
 
             val newShell = newSession.openChannel("shell") as ChannelShell
             val input = newShell.inputStream
@@ -309,7 +338,7 @@ class JschSshConnection(
             }
             if (!connectionStillWanted) return
             val startupResult = attempt.publishConnectedAndDispatchStartup(
-                command = resolveSshStartupCommand(config.startupCommand, tmuxStartupCommand),
+                command = resolveSshStartupCommand(config.startupCommand, selectedStartupCommand),
                 sendOnce = newWriter::offer,
             ) ?: return
             if (startupResult == SshStartupDispatchResult.REJECTED) {
@@ -566,6 +595,7 @@ class JschSshConnection(
             tmuxSelector?.cancel()
             tmuxSelector = null
             attachedTmuxSessionId = null
+            herdrChoice = null
             startedInTmux = false
             tmuxExecutable = null
             tmuxSessionsBeforeStart = emptySet()

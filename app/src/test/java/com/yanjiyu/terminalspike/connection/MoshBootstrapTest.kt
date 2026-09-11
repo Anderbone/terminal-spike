@@ -26,6 +26,53 @@ import org.junit.Test
 
 class MoshBootstrapTest {
     @Test
+    fun selectedHerdrIsLaunchedByBootstrapAndDoesNotOwnTmuxHistory() = runTest {
+        val commands = mutableListOf<String>()
+        val session = object : MoshSshExecSession by FakeExecSession(
+            ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()),
+        ) {
+            override fun openExec(command: String): MoshExecChannel {
+                commands += command
+                val text = when (command) {
+                    TMUX_LIST_COMMAND -> ""
+                    HERDR_LIST_COMMAND -> "__TERMINAL_SPIKE_HERDR__\n/usr/bin/herdr\n" +
+                        """{"sessions":[{"name":"default","default":true,"running":true}]}"""
+                    else -> "MOSH CONNECT 60004 $VALID_KEY\n"
+                }
+                return FakeExecChannel(text.toByteArray())
+            }
+        }
+        val executor = MoshBootstrapExecutor(FakeExecSessionFactory(session))
+        val result = executor.bootstrap(
+            MoshBootstrapRequest(ssh = config(tmuxSelectorEnabled = true)),
+        ) { state ->
+            if (state is MoshBootstrapState.AwaitingApproval) {
+                val prompt = state.prompt as TmuxSessionPrompt
+                executor.answerTmuxSessionPrompt(prompt.promptToken, prompt.herdrSessions.single().selectionId)
+            }
+        }
+        result.use {
+            assertFalse(it.isTmuxSession)
+            assertTrue(commands.last().endsWith("'--' '/usr/bin/herdr' 'session' 'attach' 'default'"))
+            assertEquals(3, commands.size)
+        }
+    }
+
+    @Test
+    fun herdrStartsInsideMoshWithoutClaimingTmuxOrInterpolatingTheName() {
+        val request = MoshBootstrapRequest(ssh = config())
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "work space")
+        assertEquals(
+            "'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' " +
+                "'--' '/usr/bin/herdr' 'session' 'attach' 'work space'",
+            buildMoshServerCommand(request, herdrSession = choice),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            buildMoshServerCommand(request, startNewTmuxSession = true, herdrSession = choice)
+        }
+    }
+
+    @Test
     fun successReturnsNumericEndpointMutableKeyAndAuthenticatedSideChannel() = runTest {
         val password = "bootstrap-password".encodeToByteArray()
         val channel = FakeExecChannel(
@@ -384,11 +431,13 @@ class MoshBootstrapTest {
 
     private fun config(
         authentication: SshAuthentication = SshAuthentication.Password("test".encodeToByteArray()),
+        tmuxSelectorEnabled: Boolean = false,
     ) = SshConnectionConfig(
         host = "example.test",
         port = 22,
         username = "alice",
         authentication = authentication,
+        tmuxSessionSelectorEnabled = tmuxSelectorEnabled,
     )
 
     private companion object {

@@ -276,11 +276,11 @@
     <string name="settings_connection_reliability_heading">Connection reliability</string>
     <string name="settings_tmux_session_selector">Show tmux session selector</string>
     <string name="settings_tmux_session_selector_summary">After login, start, attach to, or delete a tmux session before opening the shell.</string>
-    <string name="tmux_selector_title">Choose a tmux session</string>
-    <string name="tmux_selector_summary">Attach to an active session to resume its programs, start a new protected session, or open the regular shell.</string>
-    <string name="tmux_selector_empty">tmux is available. Start a new session so programs can survive a lost connection, or open the regular shell.</string>
-    <string name="tmux_selector_not_installed">tmux was not found in this SSH command environment. Open the regular shell and run “command -v tmux”; its absolute path may be configured only for a different shell startup mode.</string>
-    <string name="tmux_selector_check_failed">The app could not check tmux on this server. Open the regular shell and run “tmux list-sessions” to diagnose it.</string>
+    <string name="tmux_selector_title">Choose a session</string>
+    <string name="tmux_selector_summary">Resume a session or start a new one.</string>
+    <string name="tmux_selector_empty">No tmux sessions yet. Start one to keep programs running after disconnecting.</string>
+    <string name="tmux_selector_not_installed">tmux is not available on this server.</string>
+    <string name="tmux_selector_check_failed">Could not check tmux sessions. You can still open the shell.</string>
     <string name="tmux_selector_session_metadata">%1$d windows · %2$d attached</string>
     <string name="tmux_selector_attach">Attach</string>
     <string name="tmux_selector_start_new">Start new session</string>
@@ -545,4 +545,11 @@
     <string name="terminal_task_running">Running</string>
     <string name="terminal_task_finished">Finished / ready</string>
     <string name="terminal_task_attention">Needs attention</string>
+    <string name="startup_herdr_heading">herdr</string>
+    <string name="startup_new_tmux">New tmux session</string>
+    <string name="startup_tmux_heading">tmux</string>
+    <string name="startup_herdr_resume">Resume spaces, tabs and agents</string>
+    <string name="startup_herdr_empty">No running herdr sessions.</string>
+    <string name="startup_herdr_check_failed">Could not check herdr sessions. You can still open the shell.</string>
+    <string name="startup_herdr_touch_hint">Tap to navigate. Double-tap to open the keyboard.</string>
 </resources>

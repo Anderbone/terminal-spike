@@ -64,6 +64,21 @@ internal class MoshConnection(
     private val lock = Any()
     private var activeAttempt: ActiveMoshConnection? = null
 
+    override val isHerdrSession: Boolean
+        get() = synchronized(lock) { activeAttempt?.running == true && activeAttempt?.sshSideChannel?.herdrChoice != null }
+
+    override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
+        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null
+        val captured = attempt.sshSideChannel?.captureHerdrHistory(previous, reading)
+        return synchronized(lock) { captured.takeIf { activeAttempt === attempt && attempt.running } }
+    }
+
+    override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
+        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null
+        val captured = attempt.sshSideChannel?.captureHerdrSidebarLayout()
+        return synchronized(lock) { captured.takeIf { activeAttempt === attempt && attempt.running } }
+    }
+
     override val isTmuxSession: Boolean
         get() = synchronized(lock) { activeAttempt?.sshSideChannel?.isTmuxSession == true }
 
