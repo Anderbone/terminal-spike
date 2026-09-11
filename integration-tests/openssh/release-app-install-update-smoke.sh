@@ -267,7 +267,7 @@ wait_for_terminal_ready() {
     terminal_observations=0
     while [ "$attempt" -lt 120 ]; do
         dump_ui
-        if grep -Fq -- "Choose a tmux session" "$ui_xml"; then
+        if grep -Fq -- "Choose a session" "$ui_xml"; then
             center=$(node_center text "Open shell" 0 android.widget.TextView)
             if [ -n "$center" ]; then
                 # This gate is proving the app's direct SSH/update path. Tmux has its own real

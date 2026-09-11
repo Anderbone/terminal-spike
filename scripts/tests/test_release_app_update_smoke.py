@@ -199,6 +199,39 @@ printf "package: name='%s' versionCode='%s' versionName='test'\n" "$package" "$v
         self.assertNotIn('tap_node text "New connection"', text)
         self.assertNotIn('tap_node text "Save host details"', text)
 
+    def test_terminal_readiness_opens_shell_from_the_current_session_chooser(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        strings = ET.parse(SOURCE_ROOT / "app/src/main/res/values/strings.xml").getroot()
+        title = next(item.text for item in strings if item.get("name") == "tmux_selector_title")
+        source = self.runner.read_text(encoding="utf-8")
+        ready = "wait_for_terminal_ready() {" + source.split("wait_for_terminal_ready() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        probe = r'''
+ui_xml=$1
+title=$2
+opened=0
+dump_ui() {
+    if [ "$opened" -eq 0 ]; then
+        printf '<hierarchy><node text="%s" /><node text="Open shell" /></hierarchy>' "$title" > "$ui_xml"
+    else
+        printf '<hierarchy><node text="Terminal" /></hierarchy>' > "$ui_xml"
+    fi
+}
+node_center() { printf '10 20'; }
+adb() { [ "$*" = 'shell input tap 10 20' ] && opened=1; }
+log_stage() { :; }
+sleep() { :; }
+dismiss_notification_rationale_from_dump() { return 1; }
+''' + ready + r'''
+wait_for_terminal_ready || exit 1
+[ "$opened" -eq 1 ]
+'''
+        result = subprocess.run(
+            ["sh", "-c", probe, "chooser-probe", str(self.root / "ui.xml"), title],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_ui_capture_recovers_one_truncated_transfer_but_bounds_persistent_failure(self) -> None:
         source = self.runner.read_text(encoding="utf-8")
         capture = "dump_ui() {" + source.split("dump_ui() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
