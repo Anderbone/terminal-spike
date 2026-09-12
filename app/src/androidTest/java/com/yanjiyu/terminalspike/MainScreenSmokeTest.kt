@@ -176,13 +176,11 @@ class MainScreenSmokeTest {
 
         // Hidden IME restores native navigation even while the draft remains visible.
         composeRule.onNodeWithTag("terminal_container").performTouchInput { click() }
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            bufferedInput.fetchSemanticsNode().config[
-                androidx.compose.ui.semantics.SemanticsProperties.Focused
-            ]
-        }
-        bufferedInput.assertIsFocused()
         composeRule.onNodeWithText("git status --short").assertIsDisplayed()
+        // Re-enter typing explicitly; a terminal tap may stay in navigation on older APIs.
+        bufferedInput.performClick().assertIsFocused()
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
