@@ -170,11 +170,19 @@ class MainScreenSmokeTest {
         val bufferedInput = composeRule.onNodeWithContentDescription("Buffered terminal input")
             .assertIsDisplayed()
         bufferedInput.performTextInput("git status --short")
+        bufferedInput.assertIsFocused()
         closeSoftKeyboard()
         composeRule.onNodeWithText("git status --short").assertIsDisplayed()
 
+        // Hidden IME restores native navigation even while the draft remains visible.
         composeRule.onNodeWithTag("terminal_container").performTouchInput { click() }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            bufferedInput.fetchSemanticsNode().config[
+                androidx.compose.ui.semantics.SemanticsProperties.Focused
+            ]
+        }
         bufferedInput.assertIsFocused()
+        composeRule.onNodeWithText("git status --short").assertIsDisplayed()
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()

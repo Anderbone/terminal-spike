@@ -88,6 +88,7 @@ class FastTerminalView @JvmOverloads constructor(
     private val scroller = OverScroller(context)
     private val herdrScroll = HerdrNativeScroll(context)
     private var herdrTouchConsumed = false
+    private var herdrGestureStartedOnOverlay = false
     private var herdrTouchMode = TouchScrollMode.AUTO
     private val horizontalPaddingPx = 8f * resources.displayMetrics.density
     private val verticalPaddingPx = 5f * resources.displayMetrics.density
@@ -285,7 +286,7 @@ class FastTerminalView @JvmOverloads constructor(
             controller.herdrHistoryReading = false
         }
         if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
-        herdrScroll.updateSource(controller.herdrHistory)
+        herdrScroll.updateSource(controller.herdrHistory.takeIf { controller.isHerdrNativeHistoryVisible() })
         controller.herdrHistoryReading = herdrScroll.reader.snapshot != null
         val previousProfile = appliedRendererProfile
         val previousScrollY = controller.viewport.scrollY
@@ -732,8 +733,17 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val herdrController = terminalController
+        val herdrHistoryVisible = herdrController?.isHerdrNativeHistoryVisible() != false
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            herdrGestureStartedOnOverlay = !herdrHistoryVisible
+        }
+        if (!herdrHistoryVisible || herdrGestureStartedOnOverlay) {
+            herdrScroll.reset()
+            herdrController?.herdrHistoryReading = false
+        }
         val herdrSource = herdrController?.herdrHistory?.takeIf {
-            it.x + it.columns <= herdrController.terminalColumns &&
+            herdrHistoryVisible && !herdrGestureStartedOnOverlay &&
+                it.x + it.columns <= herdrController.terminalColumns &&
                 it.y + it.rows <= herdrController.terminalRows &&
                 herdrController.viewport.autoFollow && !selection.hasSelection
         }
@@ -1629,9 +1639,9 @@ class FastTerminalView @JvmOverloads constructor(
         inputMethodManager?.showSoftInput(this, 0)
     }
 
-    fun requestTerminalInputFocus() {
+    fun requestTerminalInputFocus(showKeyboard: Boolean = true) {
         if (!directInputEnabled || !isAttachedToWindow || !requestFocus()) return
-        restartTerminalInput(showKeyboard = true)
+        restartTerminalInput(showKeyboard = showKeyboard)
     }
 
     fun toggleSoftwareKeyboard() {

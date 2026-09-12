@@ -180,3 +180,27 @@ explicit full-suite inventory; execution awaits the authorized old SM_S911B. The
 event regressions and do not substitute for actual-Codex physical acceptance.
 
 2026-09-12T20:37:54.196444+00:00 — Herdr regression/uniform-buttons follow-up complete: unit tests app/API/core 1068/11/8, zero failures/errors/skips; lint/debug/Android-test builds GREEN (264 tasks, 1m41s); test inventory GREEN6/6. Three new native MotionEvent tests compiled but not run because authorized old SM_S911B absent. Completed APK 534e91c5d0f9201c5e1cde5f96c4b1fe415071a48ba9f822c11c79e59c006fd5 installed on model-verified SM-F976B at exact serial adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp, cold launch Status ok, MainActivity topResumedActivity. No fold tests. Herdr boundary already user-confirmed; broader tmux physical acceptance remains open. Evidence build/herdr-regression-evidence/.
+
+## 2026-09-12: mobile spaces/tabs switcher owns its swipes
+
+User red: on a phone-sized Herdr layout, opening **switch** and swiping the spaces/tabs
+panel displayed cached terminal history instead of scrolling the panel. Herdr 0.8.2 retains
+its focused-pane rectangle underneath that full-screen mobile panel, so pane geometry alone
+cannot grant the native reader ownership.
+
+For the known two-row mobile layout, native history now requires the live **switch** affordance
+in the right-hand header. The panel's **close** / **×** header, missing header, or mismatched
+width leaves the gesture with the existing remote-input policy. This bounded check reads the
+live VT frame, without another capture, remote command, or per-cell Compose state. Opening the
+panel clears a pinned reader/fling; a swipe begun on the panel cannot start native history
+partway through if the panel closes. The next swipe over live terminal output can read history
+again. Desktop Herdr, direct SSH/Mosh and tmux routing remain unchanged. Unknown future mobile
+header formats conservatively retain remote scrolling.
+
+Host regressions cover mobile/desktop geometry, wide-character labels, open/close redraws with
+an unchanged history snapshot, and ordinary-terminal exclusion. The new native-view regression
+checks outbound panel wheel reports, no cached reader, gesture ownership through a close redraw,
+zero-wheel native scrolling on the next gesture, and reader invalidation when the panel opens.
+It is synthetic regression coverage, not actual-Codex or physical smoothness acceptance.
+
+2026-09-12T22:03:21.147407+00:00 — Herdr mobile switcher repair on base 93f6a28 plus preserved unrelated changes: user RED reports panel swipe opening terminal history. Live two-row header now gates native history; panel gestures stay on existing remote mouse policy (AUTO_REMOTE_MOUSE_TRACKING when negotiated), remain remote through a close redraw, and a new live gesture regains native history. Host app/API/core units GREEN1070/11/8, zero failures/errors/skips; full test/lint/debug/Android-test build GREEN264/1m21s, final test timing refinement lint/Android-test build GREEN155/9s, inventory GREEN6. Completed APK 1c54f296da4e506e9db4ebde923f7fcbdd521f01e7203102922179e2a39d26d0 installed and MainActivity top-resumed on model-verified SM-F976B at exact serial adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp; no fold tests. Authorized old SM_S911B absent; native-view event test compiled but UNRUN. Actual physical route/reason and outbound wheel count UNMEASURED; tmux pane metadata not applicable to this Herdr-only change. No new actual-Codex or tmux smooth-scroll acceptance. Evidence: terminal-spike/build/herdr-switcher-evidence/.

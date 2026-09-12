@@ -214,7 +214,7 @@ dump_ui() {
     if [ "$opened" -eq 0 ]; then
         printf '<hierarchy><node text="%s" /><node text="Open shell" /></hierarchy>' "$title" > "$ui_xml"
     else
-        printf '<hierarchy><node text="Terminal" /></hierarchy>' > "$ui_xml"
+        printf '<hierarchy><node content-desc="Native terminal renderer" /></hierarchy>' > "$ui_xml"
     fi
 }
 node_center() { printf '10 20'; }

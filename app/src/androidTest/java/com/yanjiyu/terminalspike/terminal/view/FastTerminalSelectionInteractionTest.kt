@@ -79,16 +79,19 @@ class FastTerminalSelectionInteractionTest {
             lateinit var controller: TerminalController
             lateinit var view: FastTerminalView
             val received = mutableListOf<ByteArray>()
+            val resized = java.util.concurrent.CountDownLatch(1)
             scenario.onActivity { activity ->
                 controller = TerminalController()
                 controller.setInputSink(
                     object : com.yanjiyu.terminalspike.terminal.TerminalInputSink {
                         override fun send(bytes: ByteArray) { received += bytes.copyOf() }
                     },
-                    onResize = { _, _ -> },
+                    onResize = { _, _ -> resized.countDown() },
                 )
                 view = attachTerminalView(activity, controller)
             }
+            assertTrue("Native grid must settle before publishing matching Herdr geometry",
+                resized.await(5, java.util.concurrent.TimeUnit.SECONDS))
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             scenario.onActivity {
                 val engine = VtTerminalEngine(controller.terminalColumns, controller.terminalRows)

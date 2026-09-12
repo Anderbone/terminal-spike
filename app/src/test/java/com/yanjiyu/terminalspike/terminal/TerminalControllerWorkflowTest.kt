@@ -17,6 +17,36 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun herdrMobileSwitcherRedrawDisablesHistoryWithoutWaitingForAnotherCapture() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(capacity = 1000), scheduler)
+        controller.reportTerminalSize(60, 30)
+        controller.publishHerdrSidebarLayout(
+            com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(0, 60, 2, 28),
+        )
+        val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(60, 30)
+        fun header(text: String) {
+            controller.updateTerminalFrame(engine.accept("\u001B[2;51H\u001B[K$text".toByteArray()))
+            scheduler.drainAll()
+        }
+        val history = com.yanjiyu.terminalspike.connection.HerdrPaneHistory(
+            "default/w1:p1/term1", 0, 2, 60, 28, 0,
+            (1..1000).map { TerminalLine.plain("row $it") },
+        )
+        controller.publishHerdrHistory(history)
+        header("│ switch  ")
+        assertTrue(controller.isHerdrNativeHistoryVisible())
+        header("│    ×    ")
+        assertFalse(controller.isHerdrNativeHistoryVisible())
+        assertTrue(controller.herdrHistory === history)
+        header("│ switch  ")
+        assertTrue(controller.isHerdrNativeHistoryVisible())
+        controller.publishHerdrSidebarLayout(null)
+        header("│    ×    ")
+        assertTrue(controller.isHerdrNativeHistoryVisible()) // Ordinary terminals are unaffected.
+    }
+
+    @Test
     fun mouseClicksFollowNegotiatedModesAndTypingStillWorks() {
         val scheduler = ManualFrameScheduler()
         val sink = RecordingInputSink()

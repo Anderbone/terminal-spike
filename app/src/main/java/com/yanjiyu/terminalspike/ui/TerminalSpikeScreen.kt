@@ -1522,7 +1522,9 @@ fun TerminalSpikeScreen(
                                 onBufferedInputModeChanged = { active ->
                                     terminalInputFocusRequester.setDirectInputEnabled(!active)
                                 },
-                                onDirectInputMode = terminalInputFocusRequester::requestFocus,
+                                onDirectInputMode = {
+                                    terminalInputFocusRequester.requestFocus(showKeyboard = false)
+                                },
                             )
                         }
                         if (!terminalSurfaceVisible) {

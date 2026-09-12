@@ -469,6 +469,7 @@
         "com.yanjiyu.terminalspike.terminal.view.HerdrAdaptiveTerminalTest#nonHerdrMobileLayoutDisconnectAndSessionSwitchStayIsolated",
         "com.yanjiyu.terminalspike.terminal.view.HerdrAdaptiveTerminalTest#phoneCanExpandAndHideAndUnfoldingRestoresTheDefaultLayout",
         "com.yanjiyu.terminalspike.terminal.view.HerdrAdaptiveTerminalTest#productionBridgeKeepsTheNativeViewWhenTogglingUnfoldingAndSwitchingToSsh",
+        "com.yanjiyu.terminalspike.terminal.view.HerdrMobileSwitcherScrollTest#switcherKeepsRemoteSwipesAndClosingRestoresNativeHistory",
         "com.yanjiyu.terminalspike.terminal.view.HerdrNativeScrollTest#repeatedOldestBoundaryGesturesRetainEveryRowAndCatchBoundaryFling",
         "com.yanjiyu.terminalspike.terminal.view.HerdrNativeScrollTest#repeatedSwipesPastLiveBottomNeverOpenHistoryOrStartFling",
         "com.yanjiyu.terminalspike.terminal.view.HerdrNativeScrollTest#returningLiveDuringDragCannotReopenHistoryOnReversalOrRelease",

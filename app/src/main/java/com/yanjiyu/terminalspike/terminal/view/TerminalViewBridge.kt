@@ -43,9 +43,9 @@ class TerminalInputFocusRequester internal constructor() {
         if (terminalView === view) terminalView = null
     }
 
-    fun requestFocus() {
+    fun requestFocus(showKeyboard: Boolean = true) {
         setDirectInputEnabled(true)
-        terminalView?.requestTerminalInputFocus()
+        terminalView?.requestTerminalInputFocus(showKeyboard)
     }
 
     fun toggleSoftwareKeyboard() {

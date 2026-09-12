@@ -12,6 +12,15 @@ data class HerdrSidebarLayout(
     val terminalTop: Int? = null,
     val terminalHeight: Int? = null,
 ) {
+    /** Mobile overlays keep the pane geometry even while covering its output. */
+    fun allowsNativeHistory(columns: Int, mobileHeader: String?): Boolean {
+        if (terminalTop != 2 || sidebarColumns != 0) return true
+        if (columns != terminalColumns) return false
+        // Herdr 0.8.x shows “switch” in the live two-row header and “close” / “×”
+        // in the switcher. Require the live affordance; unknown overlays stay remote.
+        return mobileHeader?.takeLast(10)?.substringAfterLast('│', "")?.trim() == "switch"
+    }
+
     /** Only desktop navigation chrome; never infer controls inside a pane or mobile overlay. */
     fun isContextMenuCell(column: Int, row: Int, columns: Int, rows: Int): Boolean {
         if (columns != terminalColumns || column !in 0 until columns || row !in 0 until rows) return false

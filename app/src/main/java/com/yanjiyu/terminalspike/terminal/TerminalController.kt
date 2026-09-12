@@ -82,6 +82,12 @@ class TerminalController(
     @Volatile
     var herdrHistoryReading: Boolean = false
 
+    internal fun isHerdrNativeHistoryVisible(): Boolean =
+        herdrSidebarLayout.value?.allowsNativeHistory(
+            terminalColumns,
+            terminalScreen?.getOrNull(1)?.text,
+        ) != false
+
     internal fun publishHerdrHistory(snapshot: HerdrPaneHistory?) {
         if (herdrHistory === snapshot) return
         herdrHistory = snapshot

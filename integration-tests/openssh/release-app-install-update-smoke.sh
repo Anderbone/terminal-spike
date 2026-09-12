@@ -282,10 +282,10 @@ wait_for_terminal_ready() {
             fi
         fi
         if dismiss_notification_rationale_from_dump; then
-            wait_for_ui_text "Terminal"
+            wait_for_ui_text "Native terminal renderer"
             return 0
         fi
-        if grep -Fq -- "Terminal" "$ui_xml"; then
+        if grep -Fq -- "Native terminal renderer" "$ui_xml"; then
             terminal_observations=$((terminal_observations + 1))
             if [ "$terminal_observations" -ge 2 ]; then
                 return 0
@@ -347,11 +347,10 @@ connect_new_saved_host() {
 
 send_marker() {
     marker=$1
-    # Dismissing the first-session rationale returns to the terminal without restoring focus.
-    # Focus the single native renderer before injecting the fixed smoke command.
-    tap_node content-desc "Native terminal renderer" 0 android.widget.EditText
+    # The default typing panel stages text; its explicit Enter action submits it to SSH.
+    tap_node content-desc "Buffered terminal input" 0 android.view.View
     adb shell input text "printf%s$marker"
-    adb shell input keyevent KEYCODE_ENTER
+    tap_node content-desc "Send text and press Enter" 0 android.view.View
 }
 
 send_marker_and_verify() {
@@ -361,13 +360,21 @@ send_marker_and_verify() {
     attempt=0
     while [ "$attempt" -lt 120 ]; do
         dump_ui
-        if grep -Fq -- "$marker" "$ui_xml"; then
+        # A staged draft is not proof of remote output: require the native renderer's text.
+        if python3 - "$ui_xml" "$marker" <<'PYMARKER'
+import sys
+import xml.etree.ElementTree as ET
+nodes = ET.parse(sys.argv[1]).iter("node")
+sys.exit(0 if any(node.get("content-desc") == "Native terminal renderer" and
+                  sys.argv[2] in node.get("text", "") for node in nodes) else 1)
+PYMARKER
+        then
             return 0
         fi
         # The rationale can be composed after the first terminal frames. If it arrives at the
         # input boundary, dismiss it and resend the privacy-safe marker that it may have consumed.
         if dismiss_notification_rationale_from_dump; then
-            wait_for_ui_text "Terminal"
+            wait_for_ui_text "Native terminal renderer"
             send_marker "$marker"
         fi
         attempt=$((attempt + 1))

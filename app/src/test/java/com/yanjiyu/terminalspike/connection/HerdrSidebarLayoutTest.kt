@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrSidebarLayoutTest {
+    @Test fun mobileHistoryRequiresTheLiveSwitchButtonInsteadOfTheCoveredPaneGeometry() {
+        val mobile = HerdrSidebarLayout(0, 60, 2, 28)
+        assertTrue(mobile.allowsNativeHistory(60, "项目 🤖 tab 1                       │ switch  "))
+        assertTrue(mobile.allowsNativeHistory(60, "tab 1                            │ switch"))
+        for (header in listOf(null, "", "tab switch", "│    ×    ", "│  close  ")) {
+            assertFalse(mobile.allowsNativeHistory(60, header))
+        }
+        assertFalse(mobile.allowsNativeHistory(80, "│ switch  "))
+        assertTrue(HerdrSidebarLayout(26, 120, 1, 29).allowsNativeHistory(120, null))
+        assertTrue(HerdrSidebarLayout(0, 120, 0, 30).allowsNativeHistory(120, null))
+    }
+
     @Test fun readsOnlyTheSelectedSessionAndUsesOuterAreaInsteadOfTheFocusedSplit() {
         val commands = mutableListOf<String>()
         val layout = captureHerdrSidebarLayout({ command ->
