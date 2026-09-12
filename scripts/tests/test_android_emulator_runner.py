@@ -106,7 +106,8 @@ case "$*" in
     printf '%s\n' 'INSTRUMENTATION_STATUS: test=restoreFullArchiveAfterCleanInstall'
     printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'OK (1 test)'
     ;;
-  *"ShellMain am instrument"*) printf '%s\n' "$FAKE_INSTRUMENTATION_OUTPUT" ;;
+  *"ShellMain am instrument"*) sleep "${FAKE_INSTRUMENTATION_DELAY:-0}"; printf '%s\n' "$FAKE_INSTRUMENTATION_OUTPUT" ;;
+  *"shell dumpsys window") printf '%s\n' 'mCurrentFocus=Window{example password=hidden 192.168.1.2}' 'private unrelated window data' ;;
   *"exec-out run-as com.yanjiyu.terminalspike cat files/backup-documents/clean-install-"*)
     printf 'opaque-encrypted-archive-bytes'
     ;;
@@ -218,6 +219,19 @@ esac
         )
         self.assertNotEqual(0, blocked_lan.returncode)
         self.assertIn("fixed required test lists", blocked_lan.stderr)
+
+    def test_focus_evidence_is_filtered_redacted_and_keeps_test_failure(self) -> None:
+        env = self.env.copy()
+        env["FAKE_INSTRUMENTATION_DELAY"] = "2"
+        env["FAKE_INSTRUMENTATION_OUTPUT"] = "INSTRUMENTATION_FAILED: failed fixture"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertNotEqual(0, result.returncode)
+        evidence = (self.output / "focus-api35-full.txt").read_text()
+        self.assertIn("mCurrentFocus=", evidence)
+        self.assertNotIn("hidden", evidence)
+        self.assertNotIn("192.168.1.2", evidence)
+        self.assertNotIn("private unrelated window data", evidence)
+        self.assertEqual([], list(self.tmp.iterdir()))
 
     def test_success_targets_only_exact_emulator_and_cleans_temporary_avd(self) -> None:
         result = self.run_runner("--api", "35", "--suite", "full")

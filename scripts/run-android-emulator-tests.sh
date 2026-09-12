@@ -135,8 +135,18 @@ avd_workspace="$(mktemp -d "$task_temp_root/terminal-spike-avd.XXXXXX")"
 export ANDROID_AVD_HOME="$avd_workspace/avd"
 mkdir -p "$ANDROID_AVD_HOME"
 emulator_pid=""
+focus_monitor_pid=""
+
+stop_focus_monitor() {
+    if [[ -n "$focus_monitor_pid" ]]; then
+        kill "$focus_monitor_pid" >/dev/null 2>&1 || true
+        wait "$focus_monitor_pid" >/dev/null 2>&1 || true
+        focus_monitor_pid=""
+    fi
+}
 
 cleanup() {
+    stop_focus_monitor
     if [[ -n "$emulator_pid" ]]; then
         # A stalled console or emulator must not keep a completed test job alive.
         timeout --kill-after=1 5 "$adb_bin" -s "$serial" emu kill >/dev/null 2>&1 || true
@@ -416,13 +426,33 @@ instrumentation_command+="$forwarded_arguments$target_arguments"
 private_result="$avd_workspace/instrumentation-private.txt"
 raw_result="$output_dir/instrumentation-api${api}-${suite}.txt"
 : >"$private_result"
+# Record only focus ownership, not the full window dump (which can contain user
+# data). Sampling runs off the instrumentation path and never changes UI state.
+private_focus="$avd_workspace/focus-private.txt"
+(
+    previous_focus=""
+    while true; do
+        current_focus="$(timeout --kill-after=1 5 "$adb_bin" -s "$serial" shell dumpsys window 2>/dev/null |
+            grep -E 'mCurrentFocus=|mFocusedApp=|mTopFocusedDisplayId=' || true)"
+        if [[ "$current_focus" != "$previous_focus" ]]; then
+            date -u '+%Y-%m-%dT%H:%M:%SZ'
+            printf '%s\n' "$current_focus"
+            previous_focus="$current_focus"
+        fi
+        sleep 1
+    done
+) >"$private_focus" &
+focus_monitor_pid=$!
 set +e
 timeout --foreground "${TERMINAL_SPIKE_INSTRUMENTATION_TIMEOUT_SECONDS:-1800}" \
     "$adb_bin" -s "$serial" shell "$instrumentation_command" >"$private_result" 2>&1
 instrumentation_status=$?
 set -e
+stop_focus_monitor
 unset private_key_base64 2>/dev/null || true
 python3 "$project_dir/scripts/redact-android-test-log.py" <"$private_result" >"$raw_result"
+python3 "$project_dir/scripts/redact-android-test-log.py" <"$private_focus" \
+    >"$output_dir/focus-api${api}-${suite}.txt"
 "$adb_bin" -s "$serial" logcat -d | \
     python3 "$project_dir/scripts/redact-android-test-log.py" \
     >"$output_dir/logcat-api${api}-${suite}.txt"
