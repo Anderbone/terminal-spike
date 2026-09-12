@@ -48,3 +48,41 @@ of the same display; expanding the sidebar reveals their full extent as well.
   failed because the phone remained locked (`mKeyguardShowing=true`), including after
   waking it and requesting normal keyguard dismissal. Unlocking the phone is still needed
   to confirm the visible launch; no tests were run on it.
+
+## Touch context menus (2026-09-12)
+
+In app-selected Herdr sessions, long-press a visible space in the sidebar or a tab
+in the top/bottom tab bar to send a negotiated right-button press/release at that
+cell. Successful dispatch gives native long-press haptics. Release does not send a
+left click or open the keyboard. Tap an item in Herdr's existing menu to act;
+long-press itself does not close a tab, space, or delete files. Herdr retains its
+own close/delete choices and confirmations. Closing shared remote work remains
+visible to other attached clients.
+
+The existing bounded `pane layout` read now retains the outer area's vertical
+geometry as well as its horizontal boundary. Hit testing excludes pane output,
+requires matching grid dimensions and a desktop layout, and rejects scrollback,
+disabled input/mouse reporting, padding, and an active local history reader.
+Pane text keeps local selection/link actions. Herdr's separate two-row mobile
+header/switcher continues to use its own existing menu; it is not guessed from
+terminal text. No remote configuration, laptop input mapping, dependency, or
+scroll/fling policy changes are introduced.
+
+Geometry and right-button semantics were checked against upstream Herdr v0.8.2
+(`src/ui.rs` and `src/app/input/mouse.rs`); no upstream source was copied.
+Unit regressions cover sidebar, top/bottom/hidden tabs, pane exclusion, mobile and
+resized geometry, SGR/legacy/X10 reports, and controller history/grid guards.
+`herdrNavigationLongPressSendsOnlyRightClickAndOutputStillSelects` exercises native
+MotionEvent long-press dispatch and selection fallback; it requires an authorized
+old-phone run. No tests may run on the foldable.
+
+Final validation: `./gradlew test lint assembleDebug assembleDebugAndroidTest
+--max-workers=2 --no-configuration-cache` passed (264 tasks, 1m10s); six host
+Android-test-contract checks passed. Focused layout/encoding/controller suites:
+4/4/31 tests, zero failures/errors/skips. Native instrumentation compiled but was
+not run: SM_S911B was absent. Completed debug APK SHA-256
+`534e91c5d0f9201c5e1cde5f96c4b1fe415071a48ba9f822c11c79e59c006fd5` installed successfully
+on model-verified SM-F976B at `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`;
+MainActivity was verified top-resumed. No foldable tests or injected gestures.
+Evidence: `build/herdr-context-evidence/` (ignored). Real-workflow user feedback
+remains pending.

@@ -21,6 +21,22 @@ class TerminalMouseSequencesTest {
     }
 
     @Test
+    fun secondaryClickUsesRightButtonWithNegotiatedReleaseEncoding() {
+        assertArrayEquals(
+            "\u001B[<2;5;8M\u001B[<2;5;8m".toByteArray(),
+            TerminalMouseSequences.click(4, 7, sgrEncoding = true, secondary = true),
+        )
+        assertArrayEquals(
+            byteArrayOf(27, 91, 77, 34, 37, 40, 27, 91, 77, 35, 37, 40),
+            TerminalMouseSequences.click(4, 7, sgrEncoding = false, secondary = true),
+        )
+        assertArrayEquals(
+            byteArrayOf(27, 91, 77, 34, 37, 40),
+            TerminalMouseSequences.click(4, 7, sgrEncoding = false, reportRelease = false, secondary = true),
+        )
+    }
+
+    @Test
     fun encodesSgrWheelAtOneBasedCellPosition() {
         assertArrayEquals(
             "\u001B[<64;5;8M".toByteArray(Charsets.US_ASCII),

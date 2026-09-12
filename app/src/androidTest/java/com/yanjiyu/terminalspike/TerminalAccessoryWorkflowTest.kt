@@ -61,6 +61,7 @@ class TerminalAccessoryWorkflowTest {
             }
         }
 
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithText("Raw").assertDoesNotExist()
         composeRule.onNodeWithText("Text").assertDoesNotExist()
         composeRule.onNodeWithTag("terminal_accessory_collapse").assertDoesNotExist()
@@ -95,6 +96,7 @@ class TerminalAccessoryWorkflowTest {
             }
         }
 
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Control modifier")
             .assert(
                 SemanticsMatcher.expectValue(
@@ -129,6 +131,7 @@ class TerminalAccessoryWorkflowTest {
             }
         }
 
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Paste from clipboard").performClick()
         composeRule.runOnIdle { assertEquals(local, selected) }
     }

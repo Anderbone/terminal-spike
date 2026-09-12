@@ -74,6 +74,67 @@ class FastTerminalSelectionInteractionTest {
     }
 
     @Test
+    fun herdrNavigationLongPressSendsOnlyRightClickAndOutputStillSelects() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var controller: TerminalController
+            lateinit var view: FastTerminalView
+            val received = mutableListOf<ByteArray>()
+            scenario.onActivity { activity ->
+                controller = TerminalController()
+                controller.setInputSink(
+                    object : com.yanjiyu.terminalspike.terminal.TerminalInputSink {
+                        override fun send(bytes: ByteArray) { received += bytes.copyOf() }
+                    },
+                    onResize = { _, _ -> },
+                )
+                view = attachTerminalView(activity, controller)
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity {
+                val engine = VtTerminalEngine(controller.terminalColumns, controller.terminalRows)
+                controller.updateTerminalFrame(engine.accept("\u001B[?1000;1006hhello".toByteArray()))
+            }
+            val deadline = SystemClock.uptimeMillis() + 5_000L
+            var ready = false
+            while (!ready && SystemClock.uptimeMillis() < deadline) {
+                scenario.onActivity { ready = controller.isMouseTrackingEnabled() }
+                if (!ready) SystemClock.sleep(20L)
+            }
+            assertTrue(ready)
+            for (sidebar in listOf(true, false)) {
+                scenario.onActivity {
+                    controller.publishHerdrSidebarLayout(
+                        com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(
+                            if (sidebar) 4 else 0, controller.terminalColumns,
+                            if (sidebar) 0 else 1, controller.terminalRows - if (sidebar) 0 else 1,
+                        ),
+                    )
+                    received.clear()
+                }
+                longPressCell(scenario, view, row = 0, column = 0)
+                scenario.onActivity {
+                    assertEquals("\u001B[<2;1;1M\u001B[<2;1;1m", received.single().toString(Charsets.US_ASCII))
+                    assertNull(view.selectedTextForTesting())
+                }
+            }
+            // The same cell is ordinary output when it belongs to a pane, even in Herdr.
+            scenario.onActivity {
+                controller.publishHerdrSidebarLayout(
+                    com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(
+                        0, controller.terminalColumns, 0, controller.terminalRows,
+                    ),
+                )
+                received.clear()
+            }
+            longPressCell(scenario, view, row = 0, column = 0)
+            scenario.onActivity {
+                assertTrue(received.isEmpty())
+                assertEquals("hello", view.selectedTextForTesting())
+            }
+        }
+    }
+
+    @Test
     fun twoHundredLiveTerminalRowsCanScrollBackToTheFirstRow() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var controller: TerminalController

@@ -37,6 +37,8 @@ class TerminalControllerWorkflowTest {
             output("\u001B[?$mode;1006h")
             assertTrue(controller.sendMouseClick(4, 7))
             assertArrayEquals("\u001B[<0;5;8M\u001B[<0;5;8m".toByteArray(), sink.received.last())
+            assertTrue(controller.sendMouseClick(4, 7, secondary = true))
+            assertArrayEquals("\u001B[<2;5;8M\u001B[<2;5;8m".toByteArray(), sink.received.last())
             output("\u001B[?${mode}l")
             assertFalse(controller.sendMouseClick(4, 7))
         }
@@ -61,11 +63,13 @@ class TerminalControllerWorkflowTest {
         scheduler.drainAll()
         for ((column, row) in listOf(-1 to 0, 0 to -1, 80 to 0, 0 to 24)) {
             assertFalse(controller.sendMouseClick(column, row))
+            assertFalse(controller.sendMouseClick(column, row, secondary = true))
         }
         controller.viewport.updateGeometry(heightPx = 100, newLineHeightPx = 10f)
         controller.viewport.updateContent(100, 0L)
         controller.viewport.scrollTo(123.5f)
         assertFalse(controller.sendMouseClick(4, 7))
+        assertFalse(controller.sendMouseClick(4, 7, secondary = true))
         assertEquals(123.5f, controller.viewport.scrollY)
         assertTrue(sink.received.isEmpty())
     }

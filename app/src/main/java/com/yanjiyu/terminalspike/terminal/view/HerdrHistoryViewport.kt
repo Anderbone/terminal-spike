@@ -23,6 +23,17 @@ internal class HerdrHistoryViewport {
         return false
     }
 
+    fun beginScroll(source: HerdrPaneHistory, lineHeight: Float, deltaPx: Float) {
+        // A swipe past live bottom must not flash an older cached snapshot.
+        if (snapshot == null && deltaPx < 0f) begin(source, lineHeight)
+    }
+
+    fun scrollBy(deltaPx: Float) {
+        if (snapshot == null) return
+        viewport.scrollBy(deltaPx)
+        if (viewport.autoFollow) clear()
+    }
+
     fun clear() {
         snapshot = null
         viewport.updateContent(0, null)

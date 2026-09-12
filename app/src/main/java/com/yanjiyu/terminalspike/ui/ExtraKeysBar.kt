@@ -12,12 +12,14 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +29,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,8 +104,6 @@ import kotlinx.coroutines.launch
 
 internal const val MAX_BUFFERED_INPUT_CHARACTERS = 4_096
 
-private const val COMPOSE_PAGE = 0
-private const val FIRST_SHORTCUT_PAGE = 1
 private const val TARGET_SHORTCUT_COLUMNS = 10
 private const val MIN_COMPACT_SHORTCUT_KEY_WIDTH_DP = 29f
 private const val SHORTCUT_KEY_SPACING_DP = 2f
@@ -183,6 +182,7 @@ fun ExtraKeysBar(
     onKey: (TerminalExtraKey) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
+    onSubmitBufferedInput: (Long, String) -> Boolean = onSendBufferedInput,
     onBufferedInputModeChanged: (Boolean) -> Unit,
     onDirectInputMode: () -> Unit,
     modifier: Modifier = Modifier,
@@ -221,6 +221,7 @@ fun ExtraKeysBar(
         },
         onCustomize = onCustomize,
         onSendBufferedInput = onSendBufferedInput,
+        onSubmitBufferedInput = onSubmitBufferedInput,
         onBufferedInputModeChanged = onBufferedInputModeChanged,
         onDirectInputMode = onDirectInputMode,
         modifier = modifier,
@@ -245,6 +246,7 @@ fun TerminalAccessoryBar(
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
+    onSubmitBufferedInput: (Long, String) -> Boolean = onSendBufferedInput,
     onBufferedInputModeChanged: (Boolean) -> Unit,
     onDirectInputMode: () -> Unit,
     modifier: Modifier = Modifier,
@@ -260,49 +262,26 @@ fun TerminalAccessoryBar(
         tonalElevation = 3.dp,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val columnCount = terminalShortcutColumnCount(maxWidth.value)
-            val rowCount = layout.rowCount
-            val shortcutPages = remember(actions, columnCount, rowCount, customizationEnabled) {
-                terminalAccessoryPages(
-                    actions = actions,
-                    columnCount = columnCount,
-                    rowCount = rowCount,
-                    includeCustomizeAction = customizationEnabled &&
-                        !actions.matchDefaultAccessoryDeck(),
-                )
-            }
-            val pageCount = shortcutPages.size + FIRST_SHORTCUT_PAGE
-            val pagerState = rememberPagerState(
-                initialPage = if (inputMode == TerminalInputMode.TEXT) {
-                    COMPOSE_PAGE
-                } else {
-                    FIRST_SHORTCUT_PAGE
-                },
-            ) { pageCount }
-            val bufferedInputMode =
-                pagerState.isScrollInProgress || pagerState.settledPage == COMPOSE_PAGE
+            val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
+            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            var bufferedInputMode by remember { mutableStateOf(true) }
             var bufferedInputModeWasActive by remember { mutableStateOf(false) }
-            val pagerDescription = stringResource(R.string.terminal_input_pages_description)
-            val pagerStateDescription = if (pagerState.currentPage == COMPOSE_PAGE) {
-                stringResource(R.string.terminal_input_text_page)
-            } else {
-                stringResource(
-                    R.string.terminal_input_raw_page,
-                    pagerState.currentPage,
-                    pageCount - 1,
-                )
+            LaunchedEffect(keyboardVisible) {
+                if (keyboardVisible) bufferedInputMode = true
             }
-
-            LaunchedEffect(inputMode) {
-                val preferredPage = if (inputMode == TerminalInputMode.TEXT) {
-                    COMPOSE_PAGE
-                } else {
-                    FIRST_SHORTCUT_PAGE
-                }
-                if (pagerState.currentPage != preferredPage) pagerState.scrollToPage(preferredPage)
+            val columnCount = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
+            val rowCount = layout.rowCount
+            val shortcutActions = actions.filterNot {
+                it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
+                    it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
             }
-            LaunchedEffect(bufferedInputMode) {
-                currentOnBufferedInputModeChanged(bufferedInputMode)
+            val shortcutPages = terminalAccessoryPages(
+                shortcutActions, columnCount, rowCount,
+                customizationEnabled && !actions.matchDefaultAccessoryDeck(),
+            )
+            val pagerState = rememberPagerState { shortcutPages.size }
+            LaunchedEffect(bufferedInputMode, keyboardVisible) {
+                currentOnBufferedInputModeChanged(bufferedInputMode && keyboardVisible)
                 if (!bufferedInputMode && bufferedInputModeWasActive) {
                     focusManager.clearFocus(force = true)
                     currentOnDirectInputMode()
@@ -313,44 +292,54 @@ fun TerminalAccessoryBar(
                 onDispose { currentOnBufferedInputModeChanged(false) }
             }
 
-            HorizontalPager(
-                state = pagerState,
-                beyondViewportPageCount = 1,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (rowCount == 1) 54.dp else 106.dp)
-                    .testTag("terminal_input_pager")
-                    .semantics {
-                        contentDescription = pagerDescription
-                        stateDescription = pagerStateDescription
-                    },
-            ) { page ->
-                if (page == COMPOSE_PAGE) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(106.dp),
+            ) {
+                if (bufferedInputMode) {
                     BufferedInputPage(
                         inputTargetId = inputTargetId,
                         sendEnabled = bufferedInputSendEnabled,
                         draftState = bufferedInputDraftState,
-                        active = pagerState.settledPage == COMPOSE_PAGE,
+                        active = keyboardVisible,
                         multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
                         voiceInputLanguageTag = voiceInputLanguageTag,
                         onSend = onSendBufferedInput,
+                        onSubmit = onSubmitBufferedInput,
+                        onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
+                        onToggleTyping = { bufferedInputMode = false },
                     )
                 } else {
-                    ExtraKeyPage(
-                        cells = shortcutPages[page - FIRST_SHORTCUT_PAGE],
-                        columnCount = columnCount,
-                        rowCount = rowCount,
-                        modifiers = modifiers,
-                        customizationEnabled = customizationEnabled,
-                        keyRepeatEnabled = keyRepeatEnabled,
-                        onPressFeedback = {
-                            if (hapticFeedbackEnabled) {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            }
-                        },
-                        onAction = onAction,
-                        onCustomize = onCustomize,
-                    )
+                    Column(Modifier.width(52.dp).fillMaxHeight().padding(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ExtraKeyButton(
+                            label = stringResource(R.string.terminal_escape_short),
+                            description = escapeDescription,
+                            onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                        TypingToggle(active = false, onClick = { bufferedInputMode = true },
+                            modifier = Modifier.weight(1f))
+                    }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
+                    ) { page ->
+                        ExtraKeyPage(
+                            cells = shortcutPages[page],
+                            columnCount = columnCount,
+                            rowCount = rowCount,
+                            modifiers = modifiers,
+                            customizationEnabled = customizationEnabled,
+                            keyRepeatEnabled = keyRepeatEnabled,
+                            onPressFeedback = {
+                                if (hapticFeedbackEnabled) {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            },
+                            onAction = onAction,
+                            onCustomize = onCustomize,
+                        )
+                    }
                 }
             }
         }
@@ -425,6 +414,18 @@ private fun TerminalAccessoryAction.defaultDeckKeyOrNull(): TerminalExtraKey? = 
 }
 
 @Composable
+private fun TypingToggle(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ExtraKeyButton(
+        label = stringResource(R.string.terminal_typing_toggle),
+        description = stringResource(R.string.terminal_typing_toggle),
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().testTag("terminal_typing_toggle").semantics {
+            selected = active
+        },
+    )
+}
+
+@Composable
 private fun BufferedInputPage(
     inputTargetId: Long,
     sendEnabled: Boolean,
@@ -433,10 +434,14 @@ private fun BufferedInputPage(
     multilineConfirmationEnabled: Boolean,
     voiceInputLanguageTag: String,
     onSend: (Long, String) -> Boolean,
+    onSubmit: (Long, String) -> Boolean,
+    onEnter: () -> Unit,
+    onToggleTyping: () -> Unit,
 ) {
     val draft = draftState.value
     val validationMessage = draftState.validationMessage
     val canRestoreLastSent = draftState.canRestoreLastSent
+    val enterDescription = stringResource(R.string.terminal_buffered_input_enter)
     val inputDescription = stringResource(R.string.terminal_buffered_input_description)
     val restoreInputDescription = stringResource(R.string.terminal_restore_last_sent_input)
     val focusRequester = remember { FocusRequester() }
@@ -445,6 +450,7 @@ private fun BufferedInputPage(
     val currentInputTargetId by rememberUpdatedState(inputTargetId)
     val currentVoiceLanguageTag by rememberUpdatedState(voiceInputLanguageTag)
     var confirmingMultilinePaste by remember { mutableStateOf(false) }
+    var pendingSubmit by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf(VoiceInputPhase.IDLE) }
     var partialTranscript by remember { mutableStateOf("") }
     var voiceFailure by remember { mutableStateOf<VoiceInputFailure?>(null) }
@@ -482,12 +488,17 @@ private fun BufferedInputPage(
         if (voicePhase != VoiceInputPhase.IDLE) voiceRecognizer.cancel()
     }
 
-    fun sendDraft() {
+    fun sendDraft(submit: Boolean = false) {
+        if (submit && sendEnabled && draft.text.isEmpty() && validationMessage == null) {
+            onEnter()
+            return
+        }
         if (!draft.isBufferedSendEligible(sendEnabled, validationMessage)) return
         if (multilineConfirmationEnabled && draft.text.requiresMultilineConfirmation()) {
+            pendingSubmit = submit
             confirmingMultilinePaste = true
         } else {
-            draftState.dispatch(inputTargetId, sendEnabled, onSend)
+            draftState.dispatch(inputTargetId, sendEnabled, if (submit) onSubmit else onSend)
         }
     }
 
@@ -505,6 +516,17 @@ private fun BufferedInputPage(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Column(Modifier.width(44.dp).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            ExtraKeyButton(
+                label = stringResource(R.string.terminal_enter_short),
+                description = enterDescription,
+                onClick = { sendDraft(submit = true) },
+                enabled = sendEnabled && validationMessage == null && draft.composition == null,
+                modifier = Modifier.weight(1f).fillMaxWidth().testTag("buffered_input_enter"),
+            )
+            TypingToggle(active = true, onClick = onToggleTyping, modifier = Modifier.weight(1f))
+        }
         val voiceStatus = voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
         OutlinedTextField(
             value = draft,
@@ -598,15 +620,7 @@ private fun BufferedInputPage(
             ),
             keyboardActions = KeyboardActions(onSend = { sendDraft() }),
         )
-        Button(
-            onClick = { sendDraft() },
-            enabled = draft.isBufferedSendEligible(sendEnabled, validationMessage),
-            modifier = Modifier
-                .widthIn(min = 72.dp)
-                .heightIn(min = 56.dp),
-        ) {
-            Text(stringResource(R.string.terminal_send))
-        }
+
     }
 
     if (confirmingMultilinePaste) {
@@ -620,7 +634,9 @@ private fun BufferedInputPage(
                 Button(
                     onClick = {
                         confirmingMultilinePaste = false
-                        draftState.dispatch(inputTargetId, sendEnabled, onSend)
+                        draftState.dispatch(
+                            inputTargetId, sendEnabled, if (pendingSubmit) onSubmit else onSend,
+                        )
                     },
                 ) {
                     Text(stringResource(R.string.terminal_paste))
@@ -726,6 +742,7 @@ private fun ExtraKeyRow(
         cells.forEach { cell ->
             if (cell == null) {
                 ExtraKeyButton(
+                    modifier = Modifier.weight(1f),
                     label = editLabel,
                     modifierState = null,
                     enabled = customizationEnabled,
@@ -744,6 +761,7 @@ private fun ExtraKeyRow(
                     ?.explanation
                     ?.resolve()
                 ExtraKeyButton(
+                    modifier = Modifier.weight(1f),
                     label = cell.label.resolve(),
                     modifierState = modifierState,
                     enabled = disabledReason == null,
@@ -766,16 +784,17 @@ private fun ExtraKeyRow(
 }
 
 @Composable
-private fun RowScope.ExtraKeyButton(
+private fun ExtraKeyButton(
     label: String,
-    modifierState: AccessoryModifierState?,
-    enabled: Boolean,
     description: String,
-    disabledReason: String?,
-    repeatEnabled: Boolean,
-    glyph: ConnectionsGlyph?,
-    onPressFeedback: () -> Unit,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    modifierState: AccessoryModifierState? = null,
+    enabled: Boolean = true,
+    disabledReason: String? = null,
+    repeatEnabled: Boolean = false,
+    glyph: ConnectionsGlyph? = null,
+    onPressFeedback: () -> Unit = {},
 ) {
     val baseFontSizeSp = terminalShortcutLabelFontSizeSp(label.length)
     val modifierStateDescription = modifierState?.let { state ->
@@ -800,8 +819,7 @@ private fun RowScope.ExtraKeyButton(
     }
 
     Surface(
-        modifier = Modifier
-            .weight(1f)
+        modifier = modifier
             .heightIn(min = 48.dp)
             .accessoryKeyInput(
                 enabled = enabled,

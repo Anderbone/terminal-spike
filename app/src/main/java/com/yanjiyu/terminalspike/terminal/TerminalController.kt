@@ -250,7 +250,7 @@ class TerminalController(
     }
 
     /** A tap targets the live grid only; old scrollback must never click an unseen control. */
-    fun sendMouseClick(column: Int, row: Int): Boolean {
+    fun sendMouseClick(column: Int, row: Int, secondary: Boolean = false): Boolean {
         if (!terminalModes.mouseTracking || !viewport.autoFollow) return false
         if (column !in 0 until terminalColumns || row !in 0 until terminalRows) return false
         return trySendUserInput(
@@ -259,6 +259,7 @@ class TerminalController(
                 row = row,
                 sgrEncoding = terminalModes.sgrMouseEncoding,
                 reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10,
+                secondary = secondary,
             ),
             applyDirectSendPolicy = true,
         )

@@ -72,19 +72,19 @@ internal class HerdrNativeScroll(context: Context) {
                 if (!dragging && abs(event.y - downY) > configuration.scaledTouchSlop &&
                     abs(event.y - downY) > abs(event.x - downX)
                 ) {
-                    val target = source ?: return false
-                    if (reader.snapshot == null) reader.begin(target, lineHeight)
+                    val target = reader.snapshot ?: source ?: return false
+                    reader.beginScroll(target, lineHeight, lastY - event.y)
                     dragging = true
                 }
                 if (!dragging) return caughtReader
-                reader.viewport.scrollBy(lastY - event.y)
+                reader.scrollBy(lastY - event.y)
                 lastY = event.y
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 val consumed = dragging || caughtReader
                 velocity?.addMovement(event)
-                if (dragging) {
+                if (dragging && reader.snapshot != null) {
                     val tracker = velocity
                     tracker?.computeCurrentVelocity(1000, configuration.scaledMaximumFlingVelocity.toFloat())
                     val speed = -(tracker?.yVelocity ?: 0f).toInt()

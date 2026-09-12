@@ -18,8 +18,6 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
-import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.closeSoftKeyboard
@@ -161,6 +159,7 @@ class MainScreenSmokeTest {
     @Test
     fun shortcutPageShowsDirectControlChords() {
         openRendererLab()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
     }
@@ -168,9 +167,6 @@ class MainScreenSmokeTest {
     @Test
     fun rendererLabBufferedInputStagesTextAndPreservesTerminalFocusRouting() {
         openRendererLab()
-        val pager = composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
-
-        pager.performTouchInput { swipeRight() }
         val bufferedInput = composeRule.onNodeWithContentDescription("Buffered terminal input")
             .assertIsDisplayed()
         bufferedInput.performTextInput("git status --short")
@@ -180,7 +176,7 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithTag("terminal_container").performTouchInput { click() }
         bufferedInput.assertIsFocused()
 
-        pager.performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
         onView(isAssignableFrom(FastTerminalView::class.java)).check(matches(hasFocus()))
     }

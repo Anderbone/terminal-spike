@@ -4120,7 +4120,7 @@ class TerminalSpikeViewModel(
         return outcome
     }
 
-    fun sendBufferedInput(sessionId: Long, text: String): Boolean {
+    fun sendBufferedInput(sessionId: Long, text: String, appendEnter: Boolean = false): Boolean {
         val state = _uiState.value
         if (text.isEmpty()) return false
         val error = state.bufferedInputValidationError(sessionId, text)
@@ -4139,7 +4139,7 @@ class TerminalSpikeViewModel(
             }
             return false
         }
-        if (!targetController.sendPaste(text)) {
+        if (!targetController.sendPaste(text, appendEnter = appendEnter)) {
             _uiState.update { it.copy(notice = uiText(R.string.notice_buffer_queue_failed)) }
             return false
         }

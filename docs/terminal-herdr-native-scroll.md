@@ -13,8 +13,8 @@ ANSI read. It does not introduce another connection, executable helper or librar
 A native Canvas overlay clips history to that pane's rectangle. One-finger vertical drag uses a
 Float viewport, fling uses Android OverScroller, and touch catches fling. The reader pins its
 snapshot while output continues; background checks validate identity/layout without refetching
-the transcript during reading. Tapping the reader or typing returns to live output. A toast
-explains the recent-history limit. Explicit Remote mouse mode retains the existing input route.
+the transcript during reading. Tapping the reader or typing returns to live output. The recent-history limit is documented here without interrupting gestures with a toast.
+Explicit Remote mouse mode retains the existing input route.
 
 This implementation supports Herdr sessions selected in the app and panes reported by Herdr as
 Codex. A manually launched, unidentified Herdr client does not gain this adapter. Capture failures,
@@ -148,3 +148,35 @@ The native view reschedules terminal sizing on reattachment, skips unmeasured ge
 Validation: `./gradlew test lint assembleDebug --max-workers=2 --no-configuration-cache` passed in 59 seconds (166 actionable tasks). HerdrPaneHistoryTest: 9 tests; TerminalGridGeometryTest: 3; SshSessionRepositoryTest: 39; all zero failures/errors/skips. Evidence: `build/herdr-native-scroll-evidence/layout-gates.log` and `layout-deployment.json`.
 
 Deployment at 2026-09-11T00:10:59+00:00: verified model SM-F976B at exact serial `192.168.0.33:34961`, installed debug APK SHA-256 `b7d154f16c57bdb09f4b604fbfbd7916a705f403079db0a2fac92e8ce6b14759`, launched successfully, and confirmed MainActivity as topResumedActivity with keyguard not showing. No device tests ran on the foldable. The authorized SM_S911B was unavailable. Actual first-login geometry, gesture smoothness, route/reason, outbound wheel count and full ordered real-Codex history remain unmeasured for this build; user confirmation is pending. No tmux acceptance claim is made.
+
+## 2026-09-12: history boundary and repeated toast
+
+User red evidence: https://photos.app.goo.gl/zY5Vj9hY3AFDLu2cA reports repeated boundary jumps
+and shows the 1,000-row toast over the Herdr terminal. Source inspection found that either drag
+direction opened a cached snapshot and returning to bottom kept that snapshot until release.
+The reader now opens only for an older-history drag, clears immediately at live bottom, and
+consumes the remaining drag without reopening history or starting a fling on the cleared reader.
+The repeated toast and its unused string are removed; the bounded 1,000-row capture is unchanged.
+
+All 12 Herdr unit tests pass, including new repeated-live-bottom, immediate-bottom-return and
+repeated-oldest-boundary regressions. Full `test lint assembleDebug --max-workers=2
+--no-configuration-cache` passed in 44 seconds, 166 tasks. Evidence:
+`build/herdr-boundary-evidence/gates.log`. Existing direct SSH/Mosh and tmux tests are preserved.
+The authorized SM_S911B is absent, so real gesture, fling and actual-Codex acceptance have not
+been rerun. No tests run on the foldable. Deployment evidence is recorded in
+`build/herdr-boundary-evidence/deployment.json`; user verification remains pending.
+
+Completed debug APK `4811639a18728d7e6c73a0367ea383c5ca28b57793ab2b59ac6071101d0c139b` installed successfully on model-verified `SM-F976B` at exact serial `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`. Cold launch returned Status ok; MainActivity is topResumedActivity. No fold tests. User real-workflow confirmation remains pending.
+
+## 2026-09-12: user acceptance and gesture regression coverage
+
+The user confirmed that the boundary fix works on build `4811639a…c139b` and requested
+regression protection. `HerdrNativeScrollTest` now dispatches Android MotionEvents through the
+production gesture handler for repeated live-bottom swipes without opening history/flinging,
+fractional reader movement and source-refresh stability, immediate bottom return with no
+same-gesture reopening, and repeated oldest-boundary gestures retaining all 1,000 ordered rows.
+These complement the 12 host Herdr capture/viewport tests. The native tests are included in the
+explicit full-suite inventory; execution awaits the authorized old SM_S911B. They are synthetic
+event regressions and do not substitute for actual-Codex physical acceptance.
+
+2026-09-12T20:37:54.196444+00:00 — Herdr regression/uniform-buttons follow-up complete: unit tests app/API/core 1068/11/8, zero failures/errors/skips; lint/debug/Android-test builds GREEN (264 tasks, 1m41s); test inventory GREEN6/6. Three new native MotionEvent tests compiled but not run because authorized old SM_S911B absent. Completed APK 534e91c5d0f9201c5e1cde5f96c4b1fe415071a48ba9f822c11c79e59c006fd5 installed on model-verified SM-F976B at exact serial adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp, cold launch Status ok, MainActivity topResumedActivity. No fold tests. Herdr boundary already user-confirmed; broader tmux physical acceptance remains open. Evidence build/herdr-regression-evidence/.

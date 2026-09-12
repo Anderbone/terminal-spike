@@ -51,6 +51,7 @@ class ExtraKeysBarShortcutTest {
             }
         }
 
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithText("^C").assertIsDisplayed()
         composeRule.onNodeWithText("^W").assertIsDisplayed()
         composeRule.onNodeWithText("CTRL+C").assertDoesNotExist()
@@ -61,7 +62,7 @@ class ExtraKeysBarShortcutTest {
         composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
 
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.CTRL_C, activated) }
-        assertFirstPageIsTenByTwo()
+        assertShortcutAreaIsNineByTwo()
     }
 
     @Test
@@ -81,6 +82,7 @@ class ExtraKeysBarShortcutTest {
             }
         }
 
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
 
         composeRule.onNodeWithContentDescription("Terminal key F1").assertIsDisplayed()
@@ -89,7 +91,7 @@ class ExtraKeysBarShortcutTest {
     }
 
     @Test
-    fun phoneWidthDeckHasExactlyTenUnclippedKeysInEachFirstPageRow() {
+    fun phoneWidthDeckKeepsNineUnclippedShortcutsBesideTheFixedControls() {
         composeRule.setContent {
             MaterialTheme {
                 Box(Modifier.width(360.dp)) {
@@ -98,11 +100,12 @@ class ExtraKeysBarShortcutTest {
             }
         }
 
-        assertFirstPageIsTenByTwo()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        assertShortcutAreaIsNineByTwo()
     }
 
-    private fun assertFirstPageIsTenByTwo() {
-        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.take(20).map { key ->
+    private fun assertShortcutAreaIsNineByTwo() {
+        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot { it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB }.map { key ->
             composeRule.onNodeWithContentDescription(
                 key.accessibilityDescription.resolve(
                     InstrumentationRegistry.getInstrumentation().targetContext.resources,
@@ -118,7 +121,7 @@ class ExtraKeysBarShortcutTest {
             .boundsInRoot
         val rows = firstPageBounds.groupBy { bounds -> bounds.top.toInt() }
 
-        assertEquals(listOf(10, 10), rows.values.map { it.size }.sorted())
+        assertEquals(listOf(9, 9), rows.values.map { it.size }.sorted())
         assertTrue(
             firstPageBounds.all { bounds ->
                 bounds.left >= deckBounds.left && bounds.right <= deckBounds.right

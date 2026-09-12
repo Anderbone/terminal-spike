@@ -117,6 +117,45 @@ class HerdrPaneHistoryTest {
         assertEquals(reader.viewport.maximumScrollY - 200f, reader.viewport.scrollY, 0f)
     }
 
+    @Test fun swipingPastLiveBottomDoesNotOpenCachedHistory() {
+        val reader = HerdrHistoryViewport()
+        repeat(5) {
+            reader.beginScroll(snapshot(), 20f, 80f)
+            reader.scrollBy(80f)
+            assertNull(reader.snapshot)
+        }
+    }
+
+    @Test fun reachingLiveBottomClearsSnapshotBeforeFingerUpAndIgnoresRemainingMoves() {
+        val reader = HerdrHistoryViewport()
+        reader.beginScroll(snapshot(), 20f, -100f)
+        reader.scrollBy(-100f)
+        assertNotNull(reader.snapshot)
+        reader.scrollBy(150f)
+        assertNull(reader.snapshot)
+        reader.scrollBy(-40f)
+        assertNull(reader.snapshot)
+        // Only a new older-history gesture may start another reader.
+        reader.beginScroll(snapshot(), 20f, -3.25f)
+        reader.scrollBy(-3.25f)
+        assertNotNull(reader.snapshot)
+        assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
+    }
+
+    @Test fun repeatedOldestBoundaryDragsKeepAllThousandRowsPinned() {
+        val reader = HerdrHistoryViewport()
+        val original = snapshot()
+        reader.beginScroll(original, 20f, -20000f)
+        repeat(5) {
+            reader.scrollBy(-20000f)
+            assertTrue(reader.retainSource(snapshot(lines = List(1000) { TerminalLine.plain("new $it") })))
+            reader.beginScroll(snapshot(), 20f, -100f)
+            assertSame(original, reader.snapshot)
+            assertEquals(0f, reader.viewport.scrollY, 0f)
+        }
+        assertEquals((1..1000).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+    }
+
     private fun snapshot(identity: String = "default/w1:p1/term1", x: Int = 2,
         lines: List<TerminalLine> = (1..1000).map { TerminalLine.plain("row $it") },
     ) = HerdrPaneHistory(identity, x, 1, 80, 24, 0, lines)

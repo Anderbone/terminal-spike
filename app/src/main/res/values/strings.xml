@@ -552,4 +552,8 @@
     <string name="startup_herdr_empty">No running herdr sessions.</string>
     <string name="startup_herdr_check_failed">Could not check herdr sessions. You can still open the shell.</string>
     <string name="startup_herdr_touch_hint">Tap to navigate. Double-tap to open the keyboard.</string>
+    <string name="terminal_typing_toggle">Type</string>
+    <string name="terminal_buffered_input_enter">Send text and press Enter</string>
+    <string name="terminal_escape_short">ESC</string>
+    <string name="terminal_enter_short">↵</string>
 </resources>

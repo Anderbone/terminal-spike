@@ -155,7 +155,7 @@ class FastTerminalView @JvmOverloads constructor(
         showKeyboard = { if (directInputEnabled) showKeyboard() },
         performClick = { performClick() },
         handleTap = ::handleTerminalTap,
-        handleLongPress = ::showLinkActionsAt,
+        handleLongPress = { x, y -> showHerdrContextMenuAt(x, y) || showLinkActionsAt(x, y) },
         selectionHandleAt = ::selectionHandleAt,
         startSelection = ::startSelectionAt,
         dragSelection = ::dragSelection,
@@ -743,10 +743,6 @@ class FastTerminalView @JvmOverloads constructor(
             val consumed = herdrScroll.touch(event, herdrSource, cellWidthPx, lineHeightPx,
                 horizontalPaddingPx, verticalPaddingPx)
             if (consumed) {
-                if (herdrController?.herdrHistoryReading != true && herdrScroll.reader.snapshot != null) {
-                    android.widget.Toast.makeText(context, R.string.herdr_recent_history_limit,
-                        android.widget.Toast.LENGTH_SHORT).show()
-                }
                 if (!herdrTouchConsumed) {
                     val cancel = MotionEvent.obtain(event)
                     cancel.action = MotionEvent.ACTION_CANCEL
@@ -1105,6 +1101,28 @@ class FastTerminalView @JvmOverloads constructor(
         }
         // Ordinary shells remain tap-to-type; mouse apps use double-tap or the keyboard button.
         return false
+    }
+
+    private fun showHerdrContextMenuAt(x: Float, y: Float): Boolean {
+        val controller = terminalController ?: return false
+        val layout = controller.herdrSidebarLayout.value ?: return false
+        if (!directInputEnabled || !x.isFinite() || !y.isFinite() ||
+            x < horizontalPaddingPx || x >= width - horizontalPaddingPx ||
+            y < verticalPaddingPx || y >= height - verticalPaddingPx ||
+            herdrScroll.reader.snapshot != null
+        ) return false
+        val column = terminalColumnAt(x)
+        val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
+        val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
+        if (!layout.isContextMenuCell(column, row, controller.terminalColumns, controller.terminalRows)) return false
+        if (!controller.sendMouseClick(column, row, secondary = true)) return false
+        selection.clear()
+        activeLink = null
+        selectionActionMode?.finish()
+        selectionActionMode = null
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        invalidate()
+        return true
     }
 
     /** Long-pressing a detected URL opens a focused Open/Copy menu instead of word selection. */

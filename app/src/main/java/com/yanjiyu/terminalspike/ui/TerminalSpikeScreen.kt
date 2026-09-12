@@ -1513,7 +1513,12 @@ fun TerminalSpikeScreen(
                                     }
                                 },
                                 onCustomize = { showTools(ToolSection.KEYS) },
-                                onSendBufferedInput = viewModel::sendBufferedInput,
+                                onSendBufferedInput = { sessionId, text ->
+                                    viewModel.sendBufferedInput(sessionId, text)
+                                },
+                                onSubmitBufferedInput = { sessionId, text ->
+                                    viewModel.sendBufferedInput(sessionId, text, appendEnter = true)
+                                },
                                 onBufferedInputModeChanged = { active ->
                                     terminalInputFocusRequester.setDirectInputEnabled(!active)
                                 },
