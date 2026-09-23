@@ -189,6 +189,7 @@
         "com.yanjiyu.terminalspike.BufferedInputPagerTest#foregroundContextSelectsInputWithoutLosingDraftOrManualChoice",
         "com.yanjiyu.terminalspike.BufferedInputPagerTest#keyboardSendStagesTextAndExplicitEnterSubmitsEvenWithAnEmptyDraft",
         "com.yanjiyu.terminalspike.BufferedInputPagerTest#multilineSendRequiresConfirmationAndCancelKeepsTheDraft",
+        "com.yanjiyu.terminalspike.BufferedInputPagerTest#snippetsPageReturnsImeEnterToTerminalAndPreservesBufferedDraft",
         "com.yanjiyu.terminalspike.BufferedInputPagerTest#stagedTextFollowsTheActiveSessionWhenSent",
         "com.yanjiyu.terminalspike.ConnectionDialogNavigationTest#cancellingAddHostKeepsConnectionsVisible",
         "com.yanjiyu.terminalspike.DeveloperSettingsNavigationTest#rendererLabLivesUnderDebugDeveloperSettingsAndBackReturnsThere",

@@ -274,7 +274,7 @@ fun TerminalAccessoryBar(
             var bufferedInputMode by remember(inputTargetId) {
                 mutableStateOf(inputContext.agent || bufferedInputDraftState.value.text.isNotEmpty())
             }
-            var bufferedInputModeWasActive by remember { mutableStateOf(false) }
+            var bufferedInputPageWasActive by remember { mutableStateOf(false) }
             LaunchedEffect(inputContext, manualInputMode, bufferedInputDraftState.value.text) {
                 val manual = manualInputMode
                 // Never hide an in-progress draft because a metadata refresh or pane switch arrives.
@@ -303,13 +303,15 @@ fun TerminalAccessoryBar(
             )
             val inputPageCount = if (bufferedInputMode) 1 else shortcutPages.size
             val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null) 1 else 0 }
-            LaunchedEffect(bufferedInputMode, keyboardVisible) {
-                currentOnBufferedInputModeChanged(bufferedInputMode && keyboardVisible)
-                if (!bufferedInputMode && bufferedInputModeWasActive) {
+            // Snippets send into the terminal, so the hidden draft must not keep owning the IME.
+            val bufferedInputPageActive = bufferedInputMode && pagerState.currentPage == 0
+            LaunchedEffect(bufferedInputPageActive, keyboardVisible) {
+                currentOnBufferedInputModeChanged(bufferedInputPageActive && keyboardVisible)
+                if (!bufferedInputPageActive && bufferedInputPageWasActive) {
                     focusManager.clearFocus(force = true)
                     currentOnDirectInputMode()
                 }
-                bufferedInputModeWasActive = bufferedInputMode
+                bufferedInputPageWasActive = bufferedInputPageActive
             }
             DisposableEffect(Unit) {
                 onDispose { currentOnBufferedInputModeChanged(false) }
@@ -331,7 +333,7 @@ fun TerminalAccessoryBar(
                                 inputTargetId = inputTargetId,
                                 sendEnabled = bufferedInputSendEnabled,
                                 draftState = bufferedInputDraftState,
-                                active = keyboardVisible && pagerState.currentPage == 0,
+                                active = keyboardVisible && bufferedInputPageActive,
                                 multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
                                 voiceInputLanguageTag = voiceInputLanguageTag,
                                 onSend = onSendBufferedInput,

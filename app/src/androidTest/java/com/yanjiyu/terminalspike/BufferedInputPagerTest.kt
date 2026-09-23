@@ -1,9 +1,16 @@
 package com.yanjiyu.terminalspike
 
+import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -12,11 +19,24 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.ExtraKeysBar
+import com.yanjiyu.terminalspike.settings.CommandSnippet
+import com.yanjiyu.terminalspike.terminal.TerminalController
+import com.yanjiyu.terminalspike.terminal.TerminalInputSink
+import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
+import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
+import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
+import com.yanjiyu.terminalspike.ui.TerminalAccessoryBar
+import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
@@ -24,6 +44,81 @@ import org.junit.Test
 class BufferedInputPagerTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun snippetsPageReturnsImeEnterToTerminalAndPreservesBufferedDraft() {
+        val sent = mutableListOf<String>()
+        val draft = BufferedInputDraftState()
+        lateinit var terminal: FastTerminalView
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize().imePadding()) {
+                    AndroidView(
+                        factory = { context ->
+                            FastTerminalView(context).also { view ->
+                                terminal = view
+                                view.attachController(TerminalController().apply {
+                                    setInputSink(
+                                        sink = object : TerminalInputSink {
+                                            override fun send(bytes: ByteArray) {
+                                                sent += bytes.decodeToString()
+                                            }
+                                        },
+                                        onResize = { _, _ -> },
+                                    )
+                                })
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TerminalAccessoryBar(
+                        actions = TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
+                        modifiers = AccessoryModifierSnapshot(),
+                        customizationEnabled = true,
+                        inputTargetId = 11L,
+                        bufferedInputSendEnabled = true,
+                        bufferedInputDraftState = draft,
+                        inputContext = TerminalInputContext("test-agent", agent = true),
+                        onAction = {},
+                        onCustomize = {},
+                        onSendBufferedInput = { _, text -> sent += text; true },
+                        onBufferedInputModeChanged = { terminal.setDirectInputEnabled(!it) },
+                        onDirectInputMode = { terminal.requestTerminalInputFocus(showKeyboard = false) },
+                        snippetsContent = {
+                            TerminalSnippetsPage(
+                                snippets = listOf(CommandSnippet(1L, "Insert prompt", "hello", false)),
+                                canSave = true,
+                                canSend = true,
+                                onSend = { sent += "hello" },
+                                onNewCodex = {},
+                                onSave = { Result.success(Unit) },
+                                onEditorClosed = {},
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("keep my draft")
+        composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
+        composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Insert prompt").performClick()
+        composeRule.runOnIdle {
+            assertTrue("Snippets must return keyboard focus to the terminal", terminal.hasFocus())
+            val connection = checkNotNull(terminal.onCreateInputConnection(EditorInfo()))
+            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            assertEquals(listOf("hello", "\r"), sent)
+            assertEquals("keep my draft", draft.value.text)
+        }
+        composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeRight() }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsFocused()
+        composeRule.onNodeWithText("keep my draft").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(false, terminal.onCheckIsTextEditor())
+            assertEquals(listOf("hello", "\r"), sent)
+        }
+    }
 
     @Test
     fun foregroundContextSelectsInputWithoutLosingDraftOrManualChoice() {
