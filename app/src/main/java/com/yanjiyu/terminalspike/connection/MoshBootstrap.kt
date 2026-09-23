@@ -4,6 +4,7 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.SocketFactory
 import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.core.model.MoshPortRange
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Inet4Address
@@ -68,6 +69,12 @@ internal class MoshBootstrapResult(
     private var tmuxLiveHistoryRefreshPending: Boolean = startedInTmux,
     internal var herdrChoice: HerdrStartupChoice? = null,
 ) : AutoCloseable {
+    fun captureInputContext(): TerminalInputContext {
+        val choice = herdrChoice ?: return tmuxTasks.inputContext(synchronized(this) { discoveredTmuxClient?.paneId })
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return TerminalInputContext()
+        return captureHerdrInputContext(runner, choice)
+    }
+
     fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
         val choice = herdrChoice ?: return null
         val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null

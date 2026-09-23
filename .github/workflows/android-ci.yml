@@ -24,6 +24,9 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Validate assets, tooling, and exact test inventory before building
+        run: scripts/verify-android.sh preflight
+
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -40,33 +43,19 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "platforms;android-37.0"
 
-      - name: Verify repository-owned release assets and test tooling
-        run: |
-          scripts/verify-bundled-fonts.sh
-          store-assets/google-play/validate-store-assets.sh
-          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Test, lint, and build with the shared local command
+        run: scripts/verify-android.sh build
 
-      - name: Test, lint, and build release surfaces
-        run: >-
-          ./gradlew --dependency-verification=strict
-          --no-daemon --max-workers=2 -Pkotlin.incremental=false
-          :mosh-api:testDebugUnitTest
-          :mosh-api:lintDebug
-          :mosh-api:assembleDebug
-          :mosh-core:testDebugUnitTest
-          :mosh-core:lintDebug
-          :mosh-core:lintRelease
-          :mosh-core:assembleDebug
-          :mosh-core:assembleRelease
-          :mosh-core:assembleDebugAndroidTest
-          :app:testDebugUnitTest
-          :app:lintDebug
-          :app:lintRelease
-          :app:assembleDebug
-          :app:assembleRelease
-          :app:assembleDebugAndroidTest
-          :app:stageRuntimeTestUtilities
-          :benchmark:assemble
+      - name: Upload verification timing and test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-verification-reports
+          path: |
+            build/verification/
+            **/build/test-results/testDebugUnitTest/*.xml
+            **/build/reports/lint-results-*.xml
+          retention-days: 7
 
       - name: Stage runtime-test APKs
         run: |
@@ -84,7 +73,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  required-runtime:
+      - name: Stage verified unsigned release artifacts
+        run: python3 scripts/stage-ci-release.py
+
+      - name: Upload verified unsigned release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-verified-release
+          path: build/ci-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  required-runtime-shard:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     needs: verify
     runs-on: ubuntu-latest
@@ -93,6 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         api: [26, 35]
+        shard: [0, 1]
 
     steps:
       - name: Check out sources
@@ -109,11 +110,6 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-
       - name: Enable KVM for the Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -127,11 +123,12 @@ jobs:
           name: android-test-apks
           path: build/ci-apks
 
-      - name: Run the full API ${{ matrix.api }} suite
+      - name: Run API ${{ matrix.api }} shard ${{ matrix.shard }} with exact membership
         run: >-
           scripts/run-android-emulator-tests.sh
           --api ${{ matrix.api }}
           --suite full
+          --shard-index ${{ matrix.shard }} --shard-count 2
           --app-apk build/ci-apks/app-debug.apk
           --test-apk build/ci-apks/app-debug-androidTest.apk
           --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
@@ -142,10 +139,40 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: android-runtime-api-${{ matrix.api }}
+          name: android-runtime-api-${{ matrix.api }}-shard-${{ matrix.shard }}
           path: build/ci-android-results
           if-no-files-found: warn
           retention-days: 14
+
+  required-runtime:
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+    needs: required-runtime-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        api: [26, 35]
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Require every runtime shard to pass
+        env:
+          SHARD_RESULT: ${{ needs.required-runtime-shard.result }}
+        run: test "$SHARD_RESULT" = success
+      - name: Download both shard reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: android-runtime-api-${{ matrix.api }}-shard-*
+          path: build/runtime-shards
+      - name: Verify complete combined membership and skip identity
+        env:
+          TEST_API: ${{ matrix.api }}
+        run: |
+          cat "build/runtime-shards/android-runtime-api-${TEST_API}-shard-0/instrumentation-api${TEST_API}-full.txt" \
+              "build/runtime-shards/android-runtime-api-${TEST_API}-shard-1/instrumentation-api${TEST_API}-full.txt" \
+              > build/runtime-shards/combined.txt
+          python3 scripts/verify-android-test-contract.py scripts/android-test-contract.json \
+              build/runtime-shards/combined.txt full "$TEST_API"
 
   backup-clean-install:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
@@ -462,12 +489,7 @@ jobs:
       - name: Install Android emulator tooling
         run: >-
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          "cmdline-tools;22.0" "platform-tools" "emulator"
-
-      - name: Set up and validate Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
+          "cmdline-tools;22.0" "platform-tools" "emulator" "build-tools;36.0.0"
 
       - name: Enable KVM for the Android emulator
         run: |
@@ -476,10 +498,17 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Build and run ephemeral-signed release update SSH acceptance
+      - name: Download verified unsigned release artifacts from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-verified-release
+          path: build/ci-release
+
+      - name: Sign verified artifacts and run release update SSH acceptance
         run: >-
           scripts/run-release-update-ci-smoke.py
           --api 35
+          --verified-release-dir build/ci-release
           --output-dir build/ci-release-smoke-result
 
       - name: Stop the OpenSSH fixture again

@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+import hashlib
+import json
 import shutil
 import signal
 import subprocess
@@ -101,6 +103,8 @@ while not (state / 'emulator-stop').exists():
     def write_tool(self, path: Path, body: str) -> None:
         prelude = """#!/usr/bin/env python3
 import os
+import hashlib
+import json
 from pathlib import Path
 import sys
 import time
@@ -283,6 +287,51 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
             "app-release-acceptance.apk",
         ):
             self.assertNotIn(forbidden, result.stdout + result.stderr + evidence)
+
+    def prepare_verified_artifacts(self) -> Path:
+        self.write_tool(self.bin / "git", "print('a' * 40) if 'rev-parse' in sys.argv else None\n")
+        source = self.root / "verified"
+        source.mkdir()
+        hashes = {}
+        for name in ("app-release-unsigned.apk", "app-release.aab"):
+            (source / name).write_bytes(b'verified artifact')
+            hashes[name] = hashlib.sha256((source / name).read_bytes()).hexdigest()
+        (source / "manifest.json").write_text(json.dumps(
+            {"schema": 1, "revision": "a" * 40, "sha256": hashes}
+        ))
+        return source
+
+    def test_verified_artifacts_are_signed_and_tested_without_rebuilding(self) -> None:
+        source = self.prepare_verified_artifacts()
+        result = self.run_runner(extra=("--verified-release-dir", str(source)))
+        self.assertEqual(0, result.returncode, result.stderr)
+        commands = self.commands()
+        self.assertFalse(any(line.startswith("gradlew") for line in commands))
+        self.assertTrue(any(line.startswith("apksigner sign") for line in commands))
+        self.assertTrue(any(line.startswith("jarsigner -keystore") for line in commands))
+        self.assertTrue(any(line.startswith("release-smoke emulator-5554") for line in commands))
+        self.assert_clean()
+
+    def test_reused_artifacts_reject_tampering_revision_and_dirty_checkout(self) -> None:
+        source = self.prepare_verified_artifacts()
+        manifest_path = source / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        for failure in ("revision", "checksum", "dirty"):
+            with self.subTest(failure=failure):
+                self.reset()
+                manifest_path.write_text(json.dumps(manifest))
+                (source / "app-release.aab").write_bytes(b'verified artifact')
+                if failure == "revision":
+                    manifest_path.write_text(json.dumps(dict(manifest, revision="b" * 40)))
+                elif failure == "checksum":
+                    (source / "app-release.aab").write_bytes(b'tampered')
+                else:
+                    self.write_tool(self.bin / "git",
+                                    "print('a' * 40) if 'rev-parse' in sys.argv else sys.exit(1)\n")
+                result = self.run_runner(extra=("--verified-release-dir", str(source)))
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
+                self.assertFalse(any(line.startswith("gradlew") for line in self.commands()))
 
     def test_preview_build_tools_are_not_selected(self) -> None:
         preview = self.root / "sdk/build-tools/99.0.0-rc1/apksigner"

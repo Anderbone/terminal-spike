@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="snippet_accessory_add">+ Add snippet</string>
+    <string name="snippet_accessory_example">New Codex</string>
+    <string name="snippet_codex_example_name">Clear and start Codex</string>
+    <string name="snippet_sequence_help">Plain text is inserted literally. For a sequence, start with #!keys, then one action per line: text …, ctrl+c, enter, tab, escape, or wait 500 (milliseconds).</string>
+    <string name="snippet_sequence_execution">Key sequences run their actions in order after confirmation.</string>
+    <string name="snippet_sequence_invalid">Invalid key sequence. Use text …, ctrl+a through ctrl+z, enter, tab, escape, or wait 1–10000. Total waits must not exceed 60000 ms.</string>
+</resources>

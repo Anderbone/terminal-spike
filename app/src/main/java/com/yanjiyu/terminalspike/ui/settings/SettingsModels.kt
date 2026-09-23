@@ -741,6 +741,7 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.ARROW_UP -> TerminalExtraKey.UP
     KeyboardAction.ARROW_DOWN -> TerminalExtraKey.DOWN
     KeyboardAction.ARROW_LEFT -> TerminalExtraKey.LEFT
+    KeyboardAction.SHIFT_LEFT -> TerminalExtraKey.SHIFT_LEFT
     KeyboardAction.ARROW_RIGHT -> TerminalExtraKey.RIGHT
     KeyboardAction.HYPHEN -> TerminalExtraKey.DASH
     KeyboardAction.AT_SIGN -> TerminalExtraKey.AT

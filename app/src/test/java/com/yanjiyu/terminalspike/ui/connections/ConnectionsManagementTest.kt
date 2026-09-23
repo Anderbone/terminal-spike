@@ -148,6 +148,18 @@ class ConnectionsManagementTest {
         assertFalse(result.errors.name != null || result.errors.command != null)
     }
 
+    @Test
+    fun keySequenceUsesRunPolicyAndRejectsInvalidActions() {
+        val draft = SnippetEditorDraft(name = "Sequence", command = "#!keys\nctrl+c\nenter",
+            tapAction = SnippetTapAction.INSERT, confirmMultilineExecution = false)
+        val saved = requireNotNull(validateSnippetEditor(draft, 42).snippet)
+        assertEquals(SnippetTapAction.SEND_IMMEDIATELY, saved.tapAction)
+        assertTrue(saved.confirmMultilineExecution)
+        val invalid = validateSnippetEditor(draft.copy(command = "#!keys\ninvalid"), 42)
+        assertTrue(invalid.snippet == null)
+        assertTrue(invalid.errors.command != null)
+    }
+
     private companion object {
         const val KEY_ID = "10000000-0000-4000-8000-000000000001"
         const val PROFILE_ID = "10000000-0000-4000-8000-000000000002"

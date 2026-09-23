@@ -35,6 +35,7 @@ internal enum class ConnectionsGlyph {
     WINDOWS,
     IMAGE,
     KEYBOARD,
+    WRITE,
     MIC,
     STOP,
 }
@@ -249,6 +250,21 @@ internal fun ConnectionsGlyphIcon(
                     lineTo(width * 0.82f, height * 0.72f)
                 }
                 drawPath(landscape, resolvedColor, style = stroke)
+            }
+            ConnectionsGlyph.WRITE -> {
+                val pencil = Path().apply {
+                    moveTo(width * 0.18f, height * 0.62f)
+                    lineTo(width * 0.65f, height * 0.15f)
+                    lineTo(width * 0.85f, height * 0.35f)
+                    lineTo(width * 0.38f, height * 0.82f)
+                    lineTo(width * 0.13f, height * 0.87f)
+                    close()
+                    moveTo(width * 0.56f, height * 0.24f)
+                    lineTo(width * 0.76f, height * 0.44f)
+                    moveTo(width * 0.18f, height * 0.62f)
+                    lineTo(width * 0.38f, height * 0.82f)
+                }
+                drawPath(pencil, resolvedColor, style = stroke)
             }
             ConnectionsGlyph.KEYBOARD -> {
                 drawRoundRect(

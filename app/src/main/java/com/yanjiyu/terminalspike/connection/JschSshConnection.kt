@@ -5,6 +5,7 @@ import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.yanjiyu.terminalspike.core.security.credential.CredentialStoreException
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -42,6 +43,21 @@ class JschSshConnection(
     private var herdrChoice: HerdrStartupChoice? = null
 
     override val isHerdrSession: Boolean get() = synchronized(lock) { running && herdrChoice != null }
+
+    override fun captureInputContext(): TerminalInputContext {
+        val (session, choice) = synchronized(lock) {
+            if (!running) return TerminalInputContext()
+            val choice = herdrChoice ?: return tmuxTasks.inputContext(discoveredTmuxClient?.paneId)
+            val session = authenticatedSession?.session?.takeIf { it.isConnected }
+                ?: return TerminalInputContext()
+            session to choice
+        }
+        val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
+        return synchronized(lock) {
+            captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
+                ?: TerminalInputContext()
+        }
+    }
 
     override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
         val (session, choice) = synchronized(lock) {

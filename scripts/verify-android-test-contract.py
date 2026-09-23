@@ -51,7 +51,8 @@ def load_contract(path: Path) -> dict[str, Any]:
     supported_apis = contract.get("supported_apis")
     if (
         not isinstance(supported_apis, list)
-        or any(not isinstance(api, int) for api in supported_apis)
+        or not supported_apis
+        or any(type(api) is not int for api in supported_apis)
         or len(supported_apis) != len(set(supported_apis))
     ):
         fail("supported_apis must be a unique list of integers")
@@ -162,8 +163,65 @@ def format_ids(identifiers: list[str] | set[str], limit: int = 10) -> str:
     return shown
 
 
+
+def validate_sources(contract: dict[str, Any], source_root: Path) -> None:
+    """Check the reviewed inventory before spending time building or booting devices."""
+    package_pattern = re.compile(r"^package\s+([\w.]+)", re.MULTILINE)
+    method_pattern = re.compile(
+        r"@Test(?:\s*\([^\n]*\))?\s+"
+        r"(?:@[\w.]+(?:\([^\n]*\))?\s+)*"
+        r"fun\s+([A-Za-z_$][\w$]*)\s*\("
+    )
+    discovered: set[str] = set()
+    for source in sorted(source_root.rglob("*.kt")):
+        text = source.read_text(encoding="utf-8")
+        methods = method_pattern.findall(text)
+        if not methods:
+            continue
+        package = package_pattern.search(text)
+        if package is None:
+            fail(f"test source has no package: {source.name}")
+        for method in methods:
+            identifier = f"{package.group(1)}.{source.stem}#{method}"
+            if identifier in discovered:
+                fail(f"duplicate source test: {identifier}")
+            discovered.add(identifier)
+    required = set(contract["suites"]["full"]["required_tests"])
+    if discovered != required:
+        fail("full-suite source inventory differs "
+             f"(unlisted: {format_ids(discovered - required)}; "
+             f"missing source: {format_ids(required - discovered)})")
+    for suite in contract["suites"]:
+        unknown = set(contract["suites"][suite]["required_tests"]) - discovered
+        if unknown:
+            fail(f"suite {suite} names missing source tests: {format_ids(unknown)}")
+    for suite in contract["suites"]:
+        for api in contract["supported_apis"]:
+            expected_skips(contract, suite, api)
+
+
+
+def shard_tests(contract: dict[str, Any], suite: str, index: int, count: int) -> set[str]:
+    tests = contract["suites"][suite]["required_tests"]
+    classes = sorted({test.split("#", 1)[0] for test in tests})
+    if not 1 <= count <= len(classes) or not 0 <= index < count:
+        fail("invalid or empty shard", exit_code=2)
+    selected = set(classes[index::count])
+    return {test for test in tests if test.split("#", 1)[0] in selected}
+
+
 def main() -> None:
-    if len(sys.argv) != 5:
+    if len(sys.argv) == 4 and sys.argv[1] == "--validate":
+        contract = load_contract(Path(sys.argv[2]))
+        validate_sources(contract, Path(sys.argv[3]))
+        print("ANDROID_TEST_CONTRACT_PREFLIGHT membership=exact schema=1 skips=validated")
+        return
+    if len(sys.argv) == 6 and sys.argv[1] == "--filter":
+        contract = load_contract(Path(sys.argv[2]))
+        selected = shard_tests(contract, sys.argv[3], int(sys.argv[4]), int(sys.argv[5]))
+        print(",".join(sorted({test.split("#", 1)[0] for test in selected})))
+        return
+    if len(sys.argv) not in (5, 7):
         fail("expected contract, instrumentation output, suite, and API", exit_code=2)
     contract_path = Path(sys.argv[1])
     result_path = Path(sys.argv[2])
@@ -182,6 +240,8 @@ def main() -> None:
     results = parse_results(result_path)
     actual = {identifier for identifier, _ in results}
     required = set(contract["suites"][suite]["required_tests"])
+    if len(sys.argv) == 7:
+        required = shard_tests(contract, suite, int(sys.argv[5]), int(sys.argv[6]))
     missing = required - actual
     unexpected = actual - required
     if missing or unexpected:
@@ -193,7 +253,7 @@ def main() -> None:
         fail(f"suite {suite} API {api} membership differs ({'; '.join(details)})")
 
     actual_skips = {identifier for identifier, status in results if status == "skipped"}
-    allowed_skips = expected_skips(contract, suite, api)
+    allowed_skips = expected_skips(contract, suite, api) & required
     missing_skips = allowed_skips - actual_skips
     unexpected_skips = actual_skips - allowed_skips
     if missing_skips or unexpected_skips:

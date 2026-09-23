@@ -594,13 +594,15 @@ internal fun validateSnippetEditor(
     val groupError = group?.let {
         validatePlainText(it, R.string.connections_field_group, ModelLimits.MAX_GROUP_LENGTH)
     }
-    val commandError = validateCommand(
+    val commandError = runCatching { com.yanjiyu.terminalspike.settings.SnippetSequence.parse(draft.command) }
+        .exceptionOrNull()?.let { uiText(R.string.snippet_sequence_invalid) } ?: validateCommand(
         draft.command,
         R.string.connections_field_command,
         ModelLimits.MAX_COMMAND_LENGTH,
     )
     val errors = SnippetEditorErrors(nameError, groupError, commandError)
     if (!errors.isEmpty) return SnippetEditorValidation(null, errors)
+    val sequence = com.yanjiyu.terminalspike.settings.SnippetSequence.parse(draft.command) != null
     val multiline = draft.command.any { it == '\r' || it == '\n' }
     return SnippetEditorValidation(
         snippet = Snippet(
@@ -608,9 +610,9 @@ internal fun validateSnippetEditor(
             name = name,
             group = group,
             command = draft.command,
-            tapAction = draft.tapAction,
+            tapAction = if (sequence) SnippetTapAction.SEND_IMMEDIATELY else draft.tapAction,
             appendEnter = draft.appendEnter,
-            confirmMultilineExecution = if (draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY && multiline) {
+            confirmMultilineExecution = if ((sequence || draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY) && multiline) {
                 true
             } else {
                 draft.confirmMultilineExecution

@@ -1377,7 +1377,8 @@ private fun SnippetEditorDialog(
     var label by remember(snippet?.id) { mutableStateOf(snippet?.label.orEmpty()) }
     var command by remember(snippet?.id) { mutableStateOf(snippet?.command.orEmpty()) }
     var appendEnter by remember(snippet?.id) { mutableStateOf(snippet?.appendEnter ?: true) }
-    val valid = label.isNotBlank() && label.none(Char::isISOControl) && command.isNotBlank() &&
+    val sequenceValid = runCatching { com.yanjiyu.terminalspike.settings.SnippetSequence.parse(command) }.isSuccess
+    val valid = sequenceValid && label.isNotBlank() && label.none(Char::isISOControl) && command.isNotBlank() &&
         command.none { it.isISOControl() && it !in "\r\n\t" }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1403,6 +1404,8 @@ private fun SnippetEditorDialog(
                     Checkbox(checked = appendEnter, onCheckedChange = { appendEnter = it })
                     Text("Press Enter after sending")
                 }
+                Text(stringResource(R.string.snippet_sequence_help), style = MaterialTheme.typography.bodySmall)
+                if (!sequenceValid) Text(stringResource(R.string.snippet_sequence_invalid))
                 Text("Stored encrypted. Do not save passwords or access tokens in snippets.", style = MaterialTheme.typography.bodySmall)
             }
         },

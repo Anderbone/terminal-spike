@@ -45,8 +45,11 @@ Open this directory in Android Studio, use its bundled JBR 25 (or another JDK 25
 From a shell:
 
 ```bash
-./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest
+scripts/verify-android.sh
 ```
+
+See [CI and releasing](CI-AND-RELEASING.md) for focused UI checks, shared artifacts,
+CI timing and repeatable internal publishing.
 
 The following release-manifest block and historical signing/emulator evidence describe the
 pre-bundling release. See ADR-005 for the single-APK verification record.

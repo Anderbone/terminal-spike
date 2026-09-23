@@ -36,7 +36,7 @@ class ModelEnumsTest {
     fun keyboardActionsCoverTheCompleteAccessoryContract() {
         val expectedCodes = setOf(
             "escape", "control", "alt", "tab", "shift",
-            "arrow_up", "arrow_down", "arrow_left", "arrow_right",
+            "arrow_up", "arrow_down", "arrow_left", "arrow_right", "shift_left",
             "home", "end", "page_up", "page_down", "backspace", "insert", "delete", "enter",
             "slash", "backslash", "pipe", "tilde", "backtick", "hyphen", "underscore", "at_sign",
             "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",

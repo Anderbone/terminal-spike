@@ -113,6 +113,59 @@ class AndroidTestContractTest(unittest.TestCase):
             "Every Android @Test method must be explicitly reviewed in the full-suite contract.",
         )
 
+    def test_checked_in_contract_passes_production_preflight(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(VALIDATOR), "--validate", str(CHECKED_IN_CONTRACT),
+             str(ANDROID_TEST_SOURCES)], capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_preflight_rejects_unsorted_inventory_before_instrumentation(self) -> None:
+        self.contract["suites"]["full"]["required_tests"].reverse()
+        self.contract_path.write_text(json.dumps(self.contract))
+        result = subprocess.run(
+            [sys.executable, str(VALIDATOR), "--validate", str(self.contract_path), str(self.root)],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("must be sorted", result.stderr)
+
+    def test_shards_partition_full_inventory_and_reject_missing_tests(self) -> None:
+        self.contract_path.write_text(json.dumps(self.contract))
+        filters = []
+        for index in range(2):
+            result = subprocess.run(
+                [sys.executable, str(VALIDATOR), "--filter", str(self.contract_path),
+                 "full", str(index), "2"], capture_output=True, text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            filters.append(result.stdout.strip())
+            case = self.valid_cases()[index]
+            self.run_validator([case])  # Writes the fixture instrumentation output.
+            validated = subprocess.run(
+                [sys.executable, str(VALIDATOR), str(self.contract_path), str(self.output_path),
+                 "full", "35", str(index), "2"], capture_output=True, text=True,
+            )
+            self.assertEqual(0, validated.returncode, validated.stderr)
+        self.assertEqual(["com.example.FirstTest", "com.example.SecondTest"], filters)
+        combined = self.run_validator(self.valid_cases())
+        self.assertEqual(0, combined.returncode, combined.stderr)
+        missing = self.run_validator(self.valid_cases()[:1])
+        self.assertNotEqual(0, missing.returncode)
+        duplicate = self.run_validator(self.valid_cases() + self.valid_cases()[:1])
+        self.assertNotEqual(0, duplicate.returncode)
+
+    def test_shards_reject_invalid_or_empty_partitions(self) -> None:
+        self.contract_path.write_text(json.dumps(self.contract))
+        for index, count in [(0, 0), (-1, 2), (2, 2), (0, 3)]:
+            with self.subTest(index=index, count=count):
+                result = subprocess.run(
+                    [sys.executable, str(VALIDATOR), "--filter", str(self.contract_path),
+                     "full", str(index), str(count)], capture_output=True, text=True,
+                )
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("invalid or empty shard", result.stderr)
+
     def test_accepts_exact_membership_and_exact_api_skip_identity(self) -> None:
         modern = self.run_validator(self.valid_cases(), api=35)
         old = self.run_validator(self.valid_cases(second_code=-4), api=26)

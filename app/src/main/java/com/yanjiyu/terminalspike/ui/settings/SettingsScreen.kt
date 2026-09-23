@@ -1881,6 +1881,7 @@ private fun keyboardActionLabel(action: KeyboardAction): String = when (action) 
     KeyboardAction.ARROW_UP -> "↑"
     KeyboardAction.ARROW_DOWN -> "↓"
     KeyboardAction.ARROW_LEFT -> "←"
+    KeyboardAction.SHIFT_LEFT -> "⇧←"
     KeyboardAction.ARROW_RIGHT -> "→"
     KeyboardAction.HOME -> stringResource(R.string.settings_keyboard_action_home)
     KeyboardAction.END -> stringResource(R.string.settings_keyboard_action_end)

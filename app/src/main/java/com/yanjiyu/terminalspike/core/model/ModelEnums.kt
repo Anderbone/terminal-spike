@@ -155,6 +155,7 @@ enum class KeyboardAction(override val wireCode: String) : WireCoded {
     ARROW_UP("arrow_up"),
     ARROW_DOWN("arrow_down"),
     ARROW_LEFT("arrow_left"),
+    SHIFT_LEFT("shift_left"),
     ARROW_RIGHT("arrow_right"),
     HOME("home"),
     END("end"),

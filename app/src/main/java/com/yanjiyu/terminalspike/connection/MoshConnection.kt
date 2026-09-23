@@ -17,6 +17,7 @@ import com.yanjiyu.terminalspike.mosh.api.MoshNetworkHint
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionRequest
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionState
 import com.yanjiyu.terminalspike.mosh.api.MoshStopReason
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -66,6 +67,14 @@ internal class MoshConnection(
 
     override val isHerdrSession: Boolean
         get() = synchronized(lock) { activeAttempt?.running == true && activeAttempt?.sshSideChannel?.herdrChoice != null }
+
+    override fun captureInputContext(): TerminalInputContext {
+        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return TerminalInputContext()
+        val captured = attempt.sshSideChannel?.captureInputContext() ?: TerminalInputContext()
+        return synchronized(lock) {
+            captured.takeIf { activeAttempt === attempt && attempt.running } ?: TerminalInputContext()
+        }
+    }
 
     override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
         val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null

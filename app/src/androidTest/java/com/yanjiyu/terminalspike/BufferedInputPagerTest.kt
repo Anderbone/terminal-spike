@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -17,11 +18,60 @@ import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.ExtraKeysBar
 import org.junit.Assert.assertEquals
 import org.junit.Rule
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
 
 class BufferedInputPagerTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun foregroundContextSelectsInputWithoutLosingDraftOrManualChoice() {
+        val context = mutableStateOf(TerminalInputContext())
+        val draft = BufferedInputDraftState()
+        composeRule.setContent {
+            MaterialTheme {
+                ExtraKeysBar(
+                    keys = TerminalExtraKey.DEFAULT_ORDER,
+                    ctrlArmed = false,
+                    altArmed = false,
+                    customizationEnabled = true,
+                    inputTargetId = 11L,
+                    bufferedInputSendEnabled = true,
+                    bufferedInputDraftState = draft,
+                    inputContext = context.value,
+                    onKey = {},
+                    onCustomize = {},
+                    onSendBufferedInput = { _, _ -> true },
+                    onBufferedInputModeChanged = {},
+                    onDirectInputMode = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/1", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/1", true) }
+        composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/2", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("keep this draft")
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/2", false) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals("keep this draft", draft.value.text) }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithText("keep this draft").assertIsDisplayed()
+        composeRule.runOnIdle {
+            draft.update(TextFieldValue(), 11L)
+            context.value = TerminalInputContext("herdr/3", true)
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/3", false) }
+        composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+    }
 
     @Test
     fun keyboardSendStagesTextAndExplicitEnterSubmitsEvenWithAnEmptyDraft() {
@@ -39,6 +89,7 @@ class BufferedInputPagerTest {
                     inputTargetId = 11L,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = draftState,
+                    inputContext = TerminalInputContext("test-agent", agent = true),
                     onKey = { if (it == TerminalExtraKey.ENTER) enterCount++ },
                     onCustomize = {},
                     onSendBufferedInput = { _, text -> staged.add(text); true },
@@ -89,6 +140,7 @@ class BufferedInputPagerTest {
                     inputTargetId = inputTargetId.longValue,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = draftState,
+                    inputContext = TerminalInputContext("test-agent", agent = true),
                     onKey = {},
                     onCustomize = {},
                     onSendBufferedInput = { targetId, text ->
@@ -148,6 +200,7 @@ class BufferedInputPagerTest {
                     inputTargetId = 11L,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = draftState,
+                    inputContext = TerminalInputContext("test-agent", agent = true),
                     onKey = {},
                     onCustomize = {},
                     onSendBufferedInput = { _, text ->

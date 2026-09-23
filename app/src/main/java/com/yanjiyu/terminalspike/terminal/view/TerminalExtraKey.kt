@@ -21,6 +21,7 @@ enum class TerminalExtraKey(
     UP("↑", TerminalKeySequences.ARROW_UP, byteArrayOf(0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x41)),
     DOWN("↓", TerminalKeySequences.ARROW_DOWN, byteArrayOf(0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x42)),
     LEFT("←", TerminalKeySequences.ARROW_LEFT, byteArrayOf(0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x44)),
+    SHIFT_LEFT("⇧←", "\u001b[1;2D".toByteArray(Charsets.US_ASCII), accessibilityDescriptionRes = R.string.terminal_key_shift_left),
     RIGHT("→", TerminalKeySequences.ARROW_RIGHT, byteArrayOf(0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x43)),
     PAGE_UP("PGUP", TerminalKeySequences.PAGE_UP, byteArrayOf(0x1b, 0x5b, 0x35, 0x3b, 0x35, 0x7e)),
     PAGE_DOWN("PGDN", TerminalKeySequences.PAGE_DOWN, byteArrayOf(0x1b, 0x5b, 0x36, 0x3b, 0x35, 0x7e)),

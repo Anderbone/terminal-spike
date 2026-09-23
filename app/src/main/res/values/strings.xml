@@ -556,4 +556,5 @@
     <string name="terminal_buffered_input_enter">Send text and press Enter</string>
     <string name="terminal_escape_short">ESC</string>
     <string name="terminal_enter_short">↵</string>
+    <string name="terminal_key_shift_left">Shift Left</string>
 </resources>

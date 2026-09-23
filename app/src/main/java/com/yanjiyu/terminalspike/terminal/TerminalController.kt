@@ -69,6 +69,13 @@ class TerminalController(
         this.frameScheduler = frameScheduler
     }
 
+    private val mutableInputContext = MutableStateFlow(TerminalInputContext())
+    val inputContext = mutableInputContext.asStateFlow()
+
+    internal fun publishInputContext(context: TerminalInputContext) {
+        mutableInputContext.value = context
+    }
+
     val viewport = TerminalViewport()
     private val mutableHerdrSidebarLayout = MutableStateFlow<HerdrSidebarLayout?>(null)
     val herdrSidebarLayout = mutableHerdrSidebarLayout.asStateFlow()
@@ -457,6 +464,9 @@ class TerminalController(
         val boundedColumns = columns.coerceAtLeast(1)
         val boundedRows = rows.coerceAtLeast(1)
         if (boundedColumns == terminalColumns && boundedRows == terminalRows) return
+        mutableHerdrSidebarLayout.value = mutableHerdrSidebarLayout.value?.resizedDesktop(
+            terminalColumns, terminalRows, boundedColumns, boundedRows,
+        )
         terminalColumns = boundedColumns
         terminalRows = boundedRows
         terminalSizeListener?.invoke(boundedColumns, boundedRows)

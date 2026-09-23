@@ -27,6 +27,7 @@ import com.yanjiyu.terminalspike.ui.ExtraKeysBar
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
 
 class ExtraKeysBarShortcutTest {
@@ -57,7 +58,9 @@ class ExtraKeysBarShortcutTest {
         composeRule.onNodeWithText("CTRL+C").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed().performClick()
         composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Control modifier").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Shift Left").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(TerminalExtraKey.SHIFT_LEFT, activated) }
+        composeRule.onNodeWithContentDescription("Control C").performClick()
         composeRule.onNodeWithContentDescription("Terminal key PGUP").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
 
@@ -105,7 +108,7 @@ class ExtraKeysBarShortcutTest {
     }
 
     private fun assertShortcutAreaIsNineByTwo() {
-        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot { it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB }.map { key ->
+        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot { it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB }.map { if (it == TerminalExtraKey.CTRL) TerminalExtraKey.SHIFT_LEFT else it }.map { key ->
             composeRule.onNodeWithContentDescription(
                 key.accessibilityDescription.resolve(
                     InstrumentationRegistry.getInstrumentation().targetContext.resources,
@@ -121,6 +124,26 @@ class ExtraKeysBarShortcutTest {
             .boundsInRoot
         val rows = firstPageBounds.groupBy { bounds -> bounds.top.toInt() }
 
+        val escapeBounds = composeRule.onNodeWithContentDescription("Terminal key ESC")
+            .fetchSemanticsNode().boundsInRoot
+        val typingBounds = composeRule.onNodeWithTag("terminal_typing_toggle")
+            .fetchSemanticsNode().boundsInRoot
+        for (bounds in firstPageBounds + typingBounds) {
+            assertEquals(escapeBounds.width, bounds.width, 1f)
+            assertEquals(escapeBounds.height, bounds.height, 1f)
+        }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        val activeTypingBounds = composeRule.onNodeWithTag("terminal_typing_toggle")
+            .fetchSemanticsNode().boundsInRoot
+        val enterBounds = composeRule.onNodeWithTag("buffered_input_enter")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(typingBounds, activeTypingBounds)
+        assertEquals(escapeBounds, enterBounds)
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        assertEquals(
+            typingBounds,
+            composeRule.onNodeWithTag("terminal_typing_toggle").fetchSemanticsNode().boundsInRoot,
+        )
         assertEquals(listOf(9, 9), rows.values.map { it.size }.sorted())
         assertTrue(
             firstPageBounds.all { bounds ->
@@ -144,6 +167,7 @@ private fun TestExtraKeysBar(
         inputTargetId = 11L,
         bufferedInputSendEnabled = true,
         bufferedInputDraftState = draftState,
+        inputContext = TerminalInputContext("test-agent", agent = true),
         onKey = onKey,
         onCustomize = {},
         onSendBufferedInput = { _, _ -> true },

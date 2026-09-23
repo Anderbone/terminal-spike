@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -205,33 +207,67 @@ class ReleaseSmokeRunner:
                 "TERMINAL_SPIKE_RELEASE_KEY_PASSWORD": password,
             }
         )
-        result = self.command(
-            [
-                self.project / "gradlew",
-                "--dependency-verification=strict",
-                "--no-daemon",
-                "--no-configuration-cache",
-                "--max-workers=2",
-                ":app:assembleRelease",
-                ":app:bundleRelease",
-                ":app:verifyReleasePackaging",
-            ],
-            label="ephemeral signed release build",
-            environment=environment,
-            timeout=1800,
-        )
         assert self.workspace is not None
-        (self.workspace / "gradle-private.log").write_text(
-            result.stdout + result.stderr,
-            encoding="utf-8",
-        )
-        if not self.release_apk.is_file() or not self.release_aab.is_file():
-            raise ReleaseSmokeFailure("signed release APK or AAB is missing")
         private_apk = self.workspace / "app-release-acceptance.apk"
         private_aab = self.workspace / "app-release-acceptance.aab"
-        shutil.copy2(self.release_apk, private_apk)
-        shutil.copy2(self.release_aab, private_aab)
-
+        if self.arguments.verified_release_dir is not None:
+            source = self.arguments.verified_release_dir.resolve()
+            manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+            revision = self.command(
+                ["git", "-C", self.project, "rev-parse", "HEAD"], label="checkout revision",
+            ).stdout.strip()
+            self.command(
+                ["git", "-C", self.project, "diff", "--exit-code", "HEAD", "--quiet"],
+                label="clean release checkout",
+            )
+            names = {"app-release-unsigned.apk", "app-release.aab"}
+            if (manifest.get("schema") != 1 or manifest.get("revision") != revision
+                    or set(manifest.get("sha256", {})) != names):
+                raise ReleaseSmokeFailure("verified release provenance does not match this checkout")
+            for name in names:
+                artifact = source / name
+                if (artifact.is_symlink() or not artifact.is_file() or not artifact.stat().st_size
+                        or hashlib.sha256(artifact.read_bytes()).hexdigest() != manifest["sha256"][name]):
+                    raise ReleaseSmokeFailure("verified release artifact checksum mismatch")
+            shutil.copy2(source / "app-release-unsigned.apk", private_apk)
+            shutil.copy2(source / "app-release.aab", private_aab)
+            self.command(
+                [self.apksigner_bin, "sign", "--ks", keystore, "--ks-key-alias", alias,
+                 "--ks-pass", "env:TERMINAL_SPIKE_RELEASE_STORE_PASSWORD",
+                 "--key-pass", "env:TERMINAL_SPIKE_RELEASE_KEY_PASSWORD", private_apk],
+                label="acceptance APK signing", environment=environment,
+            )
+            self.command(
+                [self.jarsigner_bin, "-keystore", keystore, "-storetype", "PKCS12",
+                 "-storepass:env", "TERMINAL_SPIKE_RELEASE_STORE_PASSWORD",
+                 "-keypass:env", "TERMINAL_SPIKE_RELEASE_KEY_PASSWORD", private_aab, alias],
+                label="acceptance AAB signing", environment=environment,
+            )
+            self.log("release_artifacts", "pass", source="verified-build", revision=revision)
+        else:
+            result = self.command(
+                [
+                    self.project / "gradlew",
+                    "--dependency-verification=strict",
+                    "--no-daemon",
+                    "--no-configuration-cache",
+                    "--max-workers=2",
+                    ":app:assembleRelease",
+                    ":app:bundleRelease",
+                    ":app:verifyReleasePackaging",
+                ],
+                label="ephemeral signed release build",
+                environment=environment,
+                timeout=1800,
+            )
+            (self.workspace / "gradle-private.log").write_text(
+                result.stdout + result.stderr,
+                encoding="utf-8",
+            )
+            if not self.release_apk.is_file() or not self.release_aab.is_file():
+                raise ReleaseSmokeFailure("signed release APK or AAB is missing")
+            shutil.copy2(self.release_apk, private_apk)
+            shutil.copy2(self.release_aab, private_aab)
         key_output = self.command(
             [
                 self.keytool_bin,
@@ -493,6 +529,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--api", type=int, default=35)
     parser.add_argument("--port", type=int, default=int(os.environ.get("TERMINAL_SPIKE_EMULATOR_PORT", "5554")))
     parser.add_argument("--output-dir", type=Path, default=Path("build/release-ci-smoke"))
+    parser.add_argument("--verified-release-dir", type=Path, help="Reuse CI artifacts after revision and SHA-256 verification")
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()
     if arguments.port < 5554 or arguments.port > 5682 or arguments.port % 2:

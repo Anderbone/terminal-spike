@@ -122,6 +122,8 @@ import com.yanjiyu.terminalspike.ui.sftp.SftpSecretKind
 import com.yanjiyu.terminalspike.ui.sftp.SftpSessionController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
+import com.yanjiyu.terminalspike.settings.SnippetSequence
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -3936,6 +3938,8 @@ class TerminalSpikeViewModel(
                 uiText(R.string.notice_snippet_name_unsupported)
             command.isBlank() || command.length > UserSettings.MAX_SNIPPET_LENGTH ->
                 uiText(R.string.notice_snippet_command_length, UserSettings.MAX_SNIPPET_LENGTH)
+            runCatching { SnippetSequence.parse(command) }.isFailure ->
+                uiText(R.string.snippet_sequence_invalid)
             command.any { it.isISOControl() && it !in "\r\n\t" } ->
                 uiText(R.string.notice_snippet_unsupported_control)
             else -> null
@@ -3973,6 +3977,26 @@ class TerminalSpikeViewModel(
                     reportCatalogWriteFailure(error, uiText(R.string.notice_snippet_delete_failed))
                 }
         }
+    }
+
+    fun startNewCodex(): Boolean {
+        val state = _uiState.value
+        val target = state.activeSession
+        if (!target.isLocalTerminal && target.connectionState !is ConnectionState.Connected) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_connect_before_snippet)) }
+            return false
+        }
+        // The dedicated action directly runs this fixed sequence; saved snippets retain their policy.
+        return dispatchSnippet(
+            state = state,
+            snippet = CommandSnippet(
+                id = Long.MIN_VALUE,
+                label = "New Codex",
+                command = SnippetSequence.CODEX_EXAMPLE,
+                appendEnter = false,
+            ),
+            confirmed = true,
+        ) != SnippetDispatchOutcome.REJECTED
     }
 
     fun sendSnippet(id: Long): Boolean = sendSnippet(id, _uiState.value.activeSessionId)
@@ -4063,14 +4087,46 @@ class TerminalSpikeViewModel(
         }
     }
 
+    private var snippetSequenceJob: Job? = null
+
     private fun dispatchSnippet(
         state: TerminalSpikeUiState,
         snippet: CommandSnippet,
         confirmed: Boolean,
     ): SnippetDispatchOutcome {
         val activeController = controllerForExistingSession(state.activeSessionId)
+        val parsed = runCatching {
+            if (snippet.sendsImmediately) SnippetSequence.parse(snippet.command) else null
+        }
         val outcome = dispatchSnippet(snippet, confirmed) { appendEnter ->
-            activeController?.sendPaste(snippet.command, appendEnter = appendEnter) == true
+            val steps = parsed.getOrNull()
+            when {
+                parsed.isFailure || activeController == null || snippetSequenceJob?.isActive == true -> false
+                steps == null -> activeController.sendPaste(snippet.command, appendEnter = appendEnter)
+                else -> {
+                    snippetSequenceJob = viewModelScope.launch {
+                        // Publish acceptance before execution can report a failed send.
+                        yield()
+                        val completeSteps = if (appendEnter) steps + SnippetSequence.Step.Key(13) else steps
+                        val completed = SnippetSequence.execute(
+                            steps = completeSteps,
+                            canContinue = {
+                                val current = _uiState.value
+                                val session = current.sessions.firstOrNull { it.id == state.activeSessionId }
+                                current.activeSessionId == state.activeSessionId && session != null &&
+                                    controllerForExistingSession(session.id) === activeController &&
+                                    (session.isLocalTerminal || session.connectionState is ConnectionState.Connected)
+                            },
+                            sendText = { activeController.sendPaste(it) },
+                            sendKey = { activeController.trySend(byteArrayOf(it)) },
+                        )
+                        if (!completed) {
+                            _uiState.update { it.copy(notice = uiText(R.string.notice_snippet_queue_failed)) }
+                        }
+                    }
+                    true
+                }
+            }
         }
         when (outcome) {
             SnippetDispatchOutcome.INSERTED -> {

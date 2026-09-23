@@ -17,6 +17,53 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun herdrMenusFollowDesktopWidthAndHeightChangesWithoutAnotherSshRead() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        for ((top, height) in listOf(1 to 32, 0 to 32, 0 to 33)) {
+            controller.reportTerminalSize(88, 33)
+            controller.publishHerdrSidebarLayout(
+                com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(26, 88, top, height),
+            )
+            // The reported foldable state: cached 88x33 chrome, live 96x20 grid.
+            // Returning to an already verified desktop width must work as well.
+            for ((columns, rows) in listOf(96 to 20, 88 to 33, 110 to 18, 96 to 30)) {
+                controller.reportTerminalSize(columns, rows)
+                val layout = requireNotNull(controller.herdrSidebarLayout.value)
+                assertTrue("Sidebar must survive desktop width changes", layout.isContextMenuCell(4, rows - 2, columns, rows))
+                assertEquals(top == 1, layout.isContextMenuCell(40, 0, columns, rows))
+                assertEquals(top == 0 && height == 32, layout.isContextMenuCell(40, rows - 1, columns, rows))
+                assertFalse("Pane output must remain local selection", layout.isContextMenuCell(40, 5, columns, rows))
+            }
+            controller.reportTerminalSize(60, 30)
+            assertFalse("Unverified narrower widths may use mobile navigation",
+                requireNotNull(controller.herdrSidebarLayout.value).isContextMenuCell(4, 0, 60, 30))
+        }
+    }
+
+    @Test
+    fun herdrMenusFollowKeyboardHeightChangesWithoutAnotherSshRead() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        for ((top, height) in listOf(1 to 17, 0 to 17, 0 to 18)) {
+            controller.reportTerminalSize(88, 18)
+            controller.publishHerdrSidebarLayout(
+                com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(26, 88, top, height),
+            )
+            for (rows in listOf(33, 18, 40, 12)) {
+                controller.reportTerminalSize(88, rows)
+                val layout = requireNotNull(controller.herdrSidebarLayout.value)
+                assertTrue("Sidebar must survive keyboard height changes", layout.isContextMenuCell(4, rows - 2, 88, rows))
+                assertEquals(top == 1, layout.isContextMenuCell(40, 0, 88, rows))
+                assertEquals(top == 0 && height == 17, layout.isContextMenuCell(40, rows - 1, 88, rows))
+                assertFalse("Pane output must remain local selection", layout.isContextMenuCell(40, 5, 88, rows))
+            }
+            controller.reportTerminalSize(60, 12)
+            assertFalse("Width changes can switch to mobile layout", requireNotNull(controller.herdrSidebarLayout.value).isContextMenuCell(4, 0, 60, 12))
+        }
+        controller.resetInputSink()
+        assertNull(controller.herdrSidebarLayout.value)
+    }
+
+    @Test
     fun herdrMobileSwitcherRedrawDisablesHistoryWithoutWaitingForAnotherCapture() {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(capacity = 1000), scheduler)

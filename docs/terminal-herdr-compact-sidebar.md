@@ -1,5 +1,188 @@
 # Herdr sidebar on narrow screens
 
+## Repeated menu regression coverage (2026-09-23)
+
+The user confirmed the width-change fix works on the foldable. Follow-up coverage
+adds `topAndBottomTabMenusSurviveRepeatedResizesAndViewReplacement` to
+`HerdrContextMenuRecoveryTest` and the exact full-suite test inventory. It tests
+top and bottom tabs with both visible and hidden sidebars, three successive
+widen/shrink cycles per layout, null/throwing/stale-successful layout reads,
+and native-view replacement while refreshes fail. Holds start after native
+measurement settles without waiting for new metadata. Every hold must emit
+exactly the secondary-button press/release, with no extra click or local text
+selection. The existing font/keyboard resizing, pane-selection, and mobile
+switcher regressions remain in place.
+
+The checked-in CI workflow runs the full inventory in its API 26/35 runtime
+jobs for pushes and pull requests; missing methods and unexpected skips fail
+the inventory check. `scripts/verify-android.sh` runs unit tests and compiles
+the instrumentation APK but does not execute these native touch tests locally.
+Use `HerdrContextMenuRecoveryTest` with `TerminalSpikeTestRunner` on the
+model-verified old USB phone for the focused device gate. Never run it on the
+foldable. Evidence for this follow-up is under ignored
+`build/longpress-regression/`.
+
+These tests exercise Android's production refresh loop and native input with a
+controlled connection. They do not prove that a particular remote Herdr version
+renders its Close menu, or that a fresh session can obtain metadata when its SSH
+side channel is unavailable. Keep the user-confirmed real-workflow check as
+separate evidence, and retain each newly observed failure as a regression.
+
+Validation: shared verification passed (125 tooling tests; 450 Gradle tasks
+including unit tests, lint, and builds). All four focused device methods passed
+on model-verified USB `SM-S911B` (`RZCW81JZ9CP`) in 59.596 seconds. The new method
+checked 40 long presses across 24 native resizes and four view replacements.
+The generated CI shard filter includes the class, and inventory validation
+passed. Hosted CI was not run. This follow-up changes tests/documentation only;
+the debug app SHA-256 remains
+`dc556e2c05699c6ba9635d6a4a3cceff9541a444387c53d76ebfbf7dce03d6e6`,
+also verified directly against the installed foldable APK. The preceding
+successful install and the user's real-menu confirmation apply to this exact
+unchanged app binary. Final launch returned `Status: ok` with MainActivity
+top-resumed on the foldable. No foldable tests ran.
+
+## Cached menus across desktop width changes (2026-09-23)
+
+Read-only inspection of the affected foldable (`SM-F976B`, wireless serial
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`, installed version 0.0.6 / 9)
+found a live 96-column, 20-row terminal with cached 88-column geometry,
+top=1 and height=32. Direct input was enabled and no history reader was active.
+The earlier height-only correction left that cache unchanged after a width
+change, so navigation hit testing rejected every cell. No gestures or tests
+were sent to the foldable.
+
+The cache now carries the width at which desktop geometry was verified. It
+preserves sidebar width and top/bottom tab anchors when widening and when
+returning to that verified width, including simultaneous height changes.
+Unknown narrower widths can switch to mobile navigation and still require a
+fresh layout read; mobile, incomplete, and already mismatched geometry are
+never extrapolated. This does not repair an unavailable SSH side channel or
+infer navigation when no valid layout has ever been received.
+
+`herdrMenusFollowDesktopWidthAndHeightChangesWithoutAnotherSshRead` first failed
+with `Sidebar must survive desktop width changes` on the exact observed resize.
+It covers top/bottom/hidden tabs, repeated width/height changes, pane exclusion,
+and the narrower-width guard. `HerdrContextMenuRecoveryTest` now includes native
+font-size changes while layout reads fail, then delayed old-size replies, and
+requires exactly the secondary-button press/release for sidebar and tab holds.
+Evidence is retained under ignored `build/longpress-investigation/`.
+
+Validation: the shared verification gate passed (450 Gradle tasks), including
+1,105 unit tests, debug/release lint and builds, and the test APK. The preflight
+passed all 125 tooling tests and exact Android-test inventory validation. All
+three focused tests passed on model-verified USB `SM-S911B` (`RZCW81JZ9CP`):
+menu recovery including font resizing, navigation long-press versus output
+selection, and mobile-switcher routing. An initial invocation used the wrong
+runner component and started no tests; the corrected invocation used
+`TerminalSpikeTestRunner`. Completed debug APK SHA-256:
+`dc556e2c05699c6ba9635d6a4a3cceff9541a444387c53d76ebfbf7dce03d6e6`.
+That APK installed successfully on the model-verified foldable at the serial
+above. MainActivity cold launch returned `Status: ok` and the activity resumed,
+but the secure lock screen (`showing=true`, `inputRestricted=true`, focused
+`Bouncer`) prevented visible-foreground verification. Unlock/open and try the
+real Herdr tab/space menu; that user-workflow confirmation remains pending.
+No foldable tests were run.
+
+## Cached menus across keyboard height changes (2026-09-17)
+
+The follow-up report reproduced on the exact previously verified APK
+`6434043ac03386949f31db42522ccfc56ed3770a7e8a02cac6db16c14b2c10e7`.
+Read-only inspection of the attached foldable view found an 88-column, 33-row
+terminal with enabled mouse reporting and no history reader, but its retained
+layout had top=1 and height=17 (the earlier 18-row terminal). The first fix
+preserved the cache through SSH failures but did not adapt it when closing the
+keyboard increased the terminal height. Menu hit testing correctly rejected
+that stale geometry.
+
+Height-only resizes now preserve verified desktop top/bottom chrome offsets in
+the cached layout. Width changes and unverified/mobile geometry are not
+extrapolated. Background refresh also rejects replies for an obsolete height,
+so a delayed response cannot undo the correction. History snapshots and scroll
+routing are unchanged.
+
+`herdrMenusFollowKeyboardHeightChangesWithoutAnotherSshRead` reproduced the
+failure before the fix and covers repeated shrink/grow cycles with top, bottom,
+and hidden tabs, sidebar targets, pane exclusion, width changes, and detach.
+The native `HerdrContextMenuRecoveryTest` also exercises view height changes
+while SSH reads fail, followed by delayed replies for the original height.
+Logs are under ignored `build/herdr-height-evidence/`.
+
+Validation: RED unit assertion for the sidebar after growing from 18 to 33 rows;
+GREEN 1076 app unit tests, full `test lint assembleDebug assembleDebugAndroidTest`
+(264 tasks), and final Android-test/lint rebuild. All three focused old-USB-phone
+tests passed on model-verified `SM-S911B` (`RZCW81JZ9CP`), including native height
+changes and stale replies. Inventory validation and diff checks passed.
+APK `f6a6ed2dae5f6b46e55d481dc669030a149efec58337eb45ae9c81d3914c69f7`
+installed successfully on model-verified `SM-F976B` at
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`. Launch returned Status ok, but
+foreground verification was blocked by the secure lock screen (`showing=true`,
+`inputRestricted=true`) even after wake and normal keyguard-dismiss requests.
+Unlock and open the app for the real-workflow visual check. No foldable tests ran.
+
+## Long-press recovery after an auxiliary SSH failure (2026-09-16)
+
+The reported regression occurred in the desktop sidebar/tab layout on the
+foldable, not in Herdr's mobile switcher. Read-only inspection of the running
+Mosh session found mouse reporting enabled, no active history reader, and no
+cached navigation layout. The auxiliary SSH connection repeatedly failed to
+open exec channels (`channel is not opened`), although the Mosh terminal stayed
+connected. Each failed layout refresh previously cleared the cached geometry,
+so a tab or space long press fell through to local text selection.
+
+Failed layout reads now retain the last successful layout for that connection.
+A successful refresh still replaces it, including when tabs or the sidebar are
+hidden. Existing grid-dimension checks reject stale coordinates, and detach
+clears the cache. This does not change Herdr's layout or remote configuration.
+
+`HerdrContextMenuRecoveryTest` uses the production session refresh loop and native
+`MotionEvent` long presses. It checks tab and space right-click press/release
+reports before and after both null and throwing side-channel failures, then
+checks successful layout replacement and detach cleanup. Evidence is retained
+under ignored `build/herdr-longpress-evidence/`.
+
+Validation: the new test first failed on USB `RZCW81JZ9CP` (`SM-S911B`): after a
+failed refresh, the expected secondary press/release at column 7, row 1 was
+absent. With the fix, that test, the original navigation long-press test, and
+`HerdrMobileSwitcherScrollTest` all passed (3/3). `test lint assembleDebug
+assembleDebugAndroidTest` passed (264 tasks); app unit tests passed 1075/1075,
+Mosh API tests 11/11, and test-inventory validation passed. The verified debug
+APK SHA-256 is `6434043ac03386949f31db42522ccfc56ed3770a7e8a02cac6db16c14b2c10e7`.
+It was installed and launched on model-verified `SM-F976B` at
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`, with MainActivity top-resumed.
+No tests ran on the foldable. This verifies Android menu dispatch; the user's
+real Herdr workflow remains the final visual check.
+
+## Phone navigation correction (2026-09-14)
+
+The Android sidebar toggle and artificial terminal widening have been removed.
+Herdr now receives the actual window width from the first frame and owns its
+responsive navigation throughout. On a narrow grid, its mobile header opens the
+switcher directly; its right-hand action changes from switch to close. The left
+“switch” text in the open panel is a title, not a relocated Android button.
+Opening navigation no longer resizes the terminal or introduces another header.
+The production bridge regression checks actual-width measurement and native-view
+retention through desktop/mobile metadata updates, resizing, font-size changes,
+and session changes. It also checks stable rows/columns and focus when metadata
+arrives or disappears.
+
+Validation on 2026-09-14: `test lint assembleDebug assembleDebugAndroidTest` passed
+(264 tasks); app unit tests 1070/1070 and Mosh API tests 11/11 passed. Three focused
+instrumentation tests passed on USB `RZCW81JZ9CP`, model verified as `SM-S911B`:
+`HerdrAdaptiveTerminalTest`, `HerdrTerminalContainerTest`, and
+`HerdrMobileSwitcherScrollTest`. Test inventory validation passed 6/6. Debug APK
+SHA-256: `536c820473afb18c0db12ddecccdf8182da799f5f0489745abd246c0d756f03e`.
+The installed build launched with MainActivity top-resumed. Logs are under
+`build/phone-switcher-evidence/` (ignored).
+
+These device regressions use fixtures. The USB phone had no saved hosts or open
+sessions, so actual Herdr chooser appearance, rotation, and saved SSH/Mosh
+reconnection remain visually unverified. The remote panel still uses its own
+left “switch” title; this patch does not redesign that remote UI. No foldable was
+connected in ADB for the required final install/launch. User visual acceptance
+remains pending.
+
+The earlier implementation and evidence below are historical.
+
 The terminal window's available width selects the presentation. Below 600 dp, app-selected
 Herdr sessions hide the Spaces/Agents sidebar and show a left chevron in a small header to
 reveal or hide it. At 600 dp and above there is no additional header or clipping. Opening a

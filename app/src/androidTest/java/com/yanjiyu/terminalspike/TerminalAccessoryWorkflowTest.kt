@@ -28,6 +28,7 @@ import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.TerminalAccessoryBar
 import org.junit.Assert.assertEquals
 import org.junit.Rule
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
 
 class TerminalAccessoryWorkflowTest {
@@ -50,6 +51,7 @@ class TerminalAccessoryWorkflowTest {
                             inputTargetId = 7L,
                             bufferedInputSendEnabled = true,
                             bufferedInputDraftState = remember { BufferedInputDraftState() },
+                            inputContext = TerminalInputContext("test-agent", agent = true),
                             onAction = {},
                             onCustomize = {},
                             onSendBufferedInput = { _, _ -> true },
@@ -87,6 +89,7 @@ class TerminalAccessoryWorkflowTest {
                     inputTargetId = 7L,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = remember { BufferedInputDraftState() },
+                    inputContext = TerminalInputContext("test-agent", agent = true),
                     onAction = {},
                     onCustomize = {},
                     onSendBufferedInput = { _, _ -> true },
@@ -122,6 +125,7 @@ class TerminalAccessoryWorkflowTest {
                     inputTargetId = 7L,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = remember { BufferedInputDraftState() },
+                    inputContext = TerminalInputContext("test-agent", agent = true),
                     onAction = { selected = it },
                     onCustomize = {},
                     onSendBufferedInput = { _, _ -> true },

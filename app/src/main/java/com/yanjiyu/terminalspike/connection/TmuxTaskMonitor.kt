@@ -1,11 +1,12 @@
 package com.yanjiyu.terminalspike.connection
 
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
 import com.yanjiyu.terminalspike.terminal.TerminalTaskTracker
 
 /** Bounded metadata only; never captures history to determine whether an inactive pane is working. */
 internal class TmuxTaskMonitor(private val clockNanos: () -> Long = System::nanoTime) {
-    private data class Pane(val sessionId: String, val paneId: String, val tracker: TerminalTaskTracker, var bell: Boolean)
+    private data class Pane(val sessionId: String, val paneId: String, val tracker: TerminalTaskTracker, var bell: Boolean, var agent: Boolean = false)
     private val panes = linkedMapOf<String, Pane>()
     private var lastRefreshNanos = 0L
     private var refreshGeneration = 0L
@@ -33,7 +34,10 @@ internal class TmuxTaskMonitor(private val clockNanos: () -> Long = System::nano
         }.getOrNull()
         if (output == null || output.exitStatus != 0) {
             synchronized(this) {
-                if (generation == refreshGeneration) panes.values.forEach { it.tracker.invalidateObservation() }
+                if (generation == refreshGeneration) panes.values.forEach {
+                    it.tracker.invalidateObservation()
+                    it.agent = false
+                }
             }
             return
         }
@@ -47,6 +51,7 @@ internal class TmuxTaskMonitor(private val clockNanos: () -> Long = System::nano
                 val key = "${fields[0]}:${fields[1]}:${fields[2]}"
                 seen += key
                 val pane = panes.getOrPut(key) { Pane(fields[0], fields[1], TerminalTaskTracker(), false) }
+                pane.agent = fields[3] == "1"
                 // A shell or another application must not inherit a Codex spinner from a stale title.
                 if (fields[3] == "1") {
                     pane.tracker.observeTitle(fields[5])
@@ -60,6 +65,11 @@ internal class TmuxTaskMonitor(private val clockNanos: () -> Long = System::nano
             panes.keys.retainAll(seen)
         }
     }
+
+    @Synchronized
+    fun inputContext(paneId: String?): TerminalInputContext = panes.entries
+        .firstOrNull { it.value.paneId == paneId }
+        ?.let { TerminalInputContext("tmux/${it.key}", it.value.agent) } ?: TerminalInputContext()
 
     @Synchronized
     fun paneStatus(paneId: String?): TerminalTaskStatus = panes.values

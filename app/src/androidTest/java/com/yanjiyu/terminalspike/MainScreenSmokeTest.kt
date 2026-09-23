@@ -159,7 +159,6 @@ class MainScreenSmokeTest {
     @Test
     fun shortcutPageShowsDirectControlChords() {
         openRendererLab()
-        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
     }
@@ -167,6 +166,7 @@ class MainScreenSmokeTest {
     @Test
     fun rendererLabBufferedInputStagesTextAndPreservesTerminalFocusRouting() {
         openRendererLab()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         val bufferedInput = composeRule.onNodeWithContentDescription("Buffered terminal input")
             .assertIsDisplayed()
         bufferedInput.performTextInput("git status --short")

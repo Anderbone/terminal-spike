@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrSidebarLayoutTest {
+    @Test fun desktopResizeDoesNotGuessMobileUnknownOrStaleGeometry() {
+        for (layout in listOf(
+            HerdrSidebarLayout(0, 60, 2, 28),
+            HerdrSidebarLayout(26, 60),
+            HerdrSidebarLayout(26, 60, 1, 17),
+            HerdrSidebarLayout(26, 88, 1, 29),
+        )) {
+            assertEquals(layout, layout.resizedDesktop(60, 30, 96, 20))
+        }
+        val desktop = HerdrSidebarLayout(26, 88, 1, 32)
+        assertEquals(desktop, desktop.resizedDesktop(88, 33, 60, 20))
+        assertEquals(desktop, desktop.resizedDesktop(88, 33, 96, 1))
+    }
+
     @Test fun mobileHistoryRequiresTheLiveSwitchButtonInsteadOfTheCoveredPaneGeometry() {
         val mobile = HerdrSidebarLayout(0, 60, 2, 28)
         assertTrue(mobile.allowsNativeHistory(60, "项目 🤖 tab 1                       │ switch  "))

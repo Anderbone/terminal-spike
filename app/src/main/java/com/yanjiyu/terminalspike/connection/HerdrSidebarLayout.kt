@@ -11,7 +11,19 @@ data class HerdrSidebarLayout(
     val terminalColumns: Int,
     val terminalTop: Int? = null,
     val terminalHeight: Int? = null,
+    private val verifiedDesktopColumns: Int = terminalColumns,
 ) {
+    /** A confirmed desktop width stays desktop when widened; narrower unknown widths may be mobile. */
+    fun resizedDesktop(oldColumns: Int, oldRows: Int, columns: Int, rows: Int): HerdrSidebarLayout {
+        val top = terminalTop ?: return this
+        val height = terminalHeight ?: return this
+        if (oldColumns != terminalColumns || columns < verifiedDesktopColumns ||
+            top !in 0..1 || oldRows - top - height !in 0..1
+        ) return this
+        val resizedHeight = height + rows - oldRows
+        return if (resizedHeight > 0) copy(terminalColumns = columns, terminalHeight = resizedHeight) else this
+    }
+
     /** Mobile overlays keep the pane geometry even while covering its output. */
     fun allowsNativeHistory(columns: Int, mobileHeader: String?): Boolean {
         if (terminalTop != 2 || sidebarColumns != 0) return true

@@ -1504,25 +1504,32 @@ internal fun SnippetEditorDialog(
                     maxLines = 10,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 )
-                Text(stringResource(R.string.snippet_editor_tap_action), style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = draft.tapAction == SnippetTapAction.INSERT,
-                        onClick = { draft = draft.copy(tapAction = SnippetTapAction.INSERT) },
-                        label = { Text(stringResource(R.string.snippet_editor_insert)) },
-                    )
-                    FilterChip(
-                        selected = draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY,
-                        onClick = {
-                            draft = draft.copy(
-                                tapAction = SnippetTapAction.SEND_IMMEDIATELY,
-                                confirmMultilineExecution = true,
-                            )
-                        },
-                        label = { Text(stringResource(R.string.snippet_editor_run_immediately)) },
-                    )
+                Text(stringResource(R.string.snippet_sequence_help), style = MaterialTheme.typography.bodySmall)
+                val sequence = draft.command.lineSequence().firstOrNull() ==
+                    com.yanjiyu.terminalspike.settings.SnippetSequence.HEADER
+                if (sequence) {
+                    Text(stringResource(R.string.snippet_sequence_execution))
+                } else {
+                    Text(stringResource(R.string.snippet_editor_tap_action), style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = draft.tapAction == SnippetTapAction.INSERT,
+                            onClick = { draft = draft.copy(tapAction = SnippetTapAction.INSERT) },
+                            label = { Text(stringResource(R.string.snippet_editor_insert)) },
+                        )
+                        FilterChip(
+                            selected = draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY,
+                            onClick = {
+                                draft = draft.copy(
+                                    tapAction = SnippetTapAction.SEND_IMMEDIATELY,
+                                    confirmMultilineExecution = true,
+                                )
+                            },
+                            label = { Text(stringResource(R.string.snippet_editor_run_immediately)) },
+                        )
+                    }
                 }
-                if (draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY &&
+                if ((sequence || draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY) &&
                     draft.command.any { it == '\r' || it == '\n' }
                 ) {
                     Text(

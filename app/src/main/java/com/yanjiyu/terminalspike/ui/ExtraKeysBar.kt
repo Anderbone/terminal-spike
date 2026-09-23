@@ -80,6 +80,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -87,6 +88,7 @@ import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.core.model.KeyboardLayout
 import com.yanjiyu.terminalspike.core.model.TerminalInputMode
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierState
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
@@ -179,6 +181,7 @@ fun ExtraKeysBar(
     inputTargetId: Long,
     bufferedInputSendEnabled: Boolean,
     bufferedInputDraftState: BufferedInputDraftState,
+    inputContext: TerminalInputContext = TerminalInputContext(),
     onKey: (TerminalExtraKey) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
@@ -203,6 +206,7 @@ fun ExtraKeysBar(
         inputTargetId = inputTargetId,
         bufferedInputSendEnabled = bufferedInputSendEnabled,
         bufferedInputDraftState = bufferedInputDraftState,
+        inputContext = inputContext,
         onAction = { action ->
             when (action) {
                 is TerminalAccessoryAction.Key -> onKey(action.key)
@@ -243,12 +247,14 @@ fun TerminalAccessoryBar(
     inputTargetId: Long,
     bufferedInputSendEnabled: Boolean,
     bufferedInputDraftState: BufferedInputDraftState,
+    inputContext: TerminalInputContext = TerminalInputContext(),
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
     onSubmitBufferedInput: (Long, String) -> Boolean = onSendBufferedInput,
     onBufferedInputModeChanged: (Boolean) -> Unit,
     onDirectInputMode: () -> Unit,
+    snippetsContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -264,14 +270,30 @@ fun TerminalAccessoryBar(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
             val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-            var bufferedInputMode by remember { mutableStateOf(true) }
+            var manualInputMode by remember(inputTargetId, inputContext) { mutableStateOf<Boolean?>(null) }
+            var bufferedInputMode by remember(inputTargetId) {
+                mutableStateOf(inputContext.agent || bufferedInputDraftState.value.text.isNotEmpty())
+            }
             var bufferedInputModeWasActive by remember { mutableStateOf(false) }
-            LaunchedEffect(keyboardVisible) {
-                if (keyboardVisible) bufferedInputMode = true
+            LaunchedEffect(inputContext, manualInputMode, bufferedInputDraftState.value.text) {
+                val manual = manualInputMode
+                // Never hide an in-progress draft because a metadata refresh or pane switch arrives.
+                if (manual != null) bufferedInputMode = manual
+                else if (!bufferedInputMode || bufferedInputDraftState.value.text.isEmpty()) {
+                    bufferedInputMode = inputContext.agent
+                }
             }
             val columnCount = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
+            val keyWidth = (maxWidth - 6.dp - 2.dp * columnCount) / (columnCount + 1)
             val rowCount = layout.rowCount
-            val shortcutActions = actions.filterNot {
+            val displayedActions = if (actions.matchDefaultAccessoryDeck()) {
+                actions.map { action ->
+                    if (action.defaultDeckKeyOrNull() == TerminalExtraKey.CTRL) {
+                        TerminalExtraKey.SHIFT_LEFT.toAccessoryAction()
+                    } else action
+                }
+            } else actions
+            val shortcutActions = displayedActions.filterNot {
                 it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
                     it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
             }
@@ -279,7 +301,8 @@ fun TerminalAccessoryBar(
                 shortcutActions, columnCount, rowCount,
                 customizationEnabled && !actions.matchDefaultAccessoryDeck(),
             )
-            val pagerState = rememberPagerState { shortcutPages.size }
+            val inputPageCount = if (bufferedInputMode) 1 else shortcutPages.size
+            val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null) 1 else 0 }
             LaunchedEffect(bufferedInputMode, keyboardVisible) {
                 currentOnBufferedInputModeChanged(bufferedInputMode && keyboardVisible)
                 if (!bufferedInputMode && bufferedInputModeWasActive) {
@@ -295,50 +318,60 @@ fun TerminalAccessoryBar(
             Row(
                 modifier = Modifier.fillMaxWidth().height(106.dp),
             ) {
-                if (bufferedInputMode) {
-                    BufferedInputPage(
-                        inputTargetId = inputTargetId,
-                        sendEnabled = bufferedInputSendEnabled,
-                        draftState = bufferedInputDraftState,
-                        active = keyboardVisible,
-                        multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
-                        voiceInputLanguageTag = voiceInputLanguageTag,
-                        onSend = onSendBufferedInput,
-                        onSubmit = onSubmitBufferedInput,
-                        onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
-                        onToggleTyping = { bufferedInputMode = false },
-                    )
-                } else {
-                    Column(Modifier.width(52.dp).fillMaxHeight().padding(2.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        ExtraKeyButton(
-                            label = stringResource(R.string.terminal_escape_short),
-                            description = escapeDescription,
-                            onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                        TypingToggle(active = false, onClick = { bufferedInputMode = true },
-                            modifier = Modifier.weight(1f))
-                    }
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
-                    ) { page ->
-                        ExtraKeyPage(
-                            cells = shortcutPages[page],
-                            columnCount = columnCount,
-                            rowCount = rowCount,
-                            modifiers = modifiers,
-                            customizationEnabled = customizationEnabled,
-                            keyRepeatEnabled = keyRepeatEnabled,
-                            onPressFeedback = {
-                                if (hapticFeedbackEnabled) {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                }
-                            },
-                            onAction = onAction,
-                            onCustomize = onCustomize,
-                        )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
+                ) { page ->
+                    if (snippetsContent != null && page == inputPageCount) {
+                        snippetsContent()
+                    } else if (bufferedInputMode) {
+                        Row(Modifier.fillMaxSize()) {
+                            BufferedInputPage(
+                                keyWidth = keyWidth,
+                                inputTargetId = inputTargetId,
+                                sendEnabled = bufferedInputSendEnabled,
+                                draftState = bufferedInputDraftState,
+                                active = keyboardVisible && pagerState.currentPage == 0,
+                                multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
+                                voiceInputLanguageTag = voiceInputLanguageTag,
+                                onSend = onSendBufferedInput,
+                                onSubmit = onSubmitBufferedInput,
+                                onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
+                                onToggleTyping = { manualInputMode = false },
+                            )
+                        }
+                    } else {
+                        Row(Modifier.fillMaxSize()) {
+                            Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
+                                .padding(start = 3.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                ExtraKeyButton(
+                                    label = stringResource(R.string.terminal_escape_short),
+                                    description = escapeDescription,
+                                    onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                )
+                                TypingToggle(active = false, onClick = { manualInputMode = true },
+                                    modifier = Modifier.weight(1f))
+                            }
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                ExtraKeyPage(
+                                    cells = shortcutPages[page],
+                                    columnCount = columnCount,
+                                    rowCount = rowCount,
+                                    modifiers = modifiers,
+                                    customizationEnabled = customizationEnabled,
+                                    keyRepeatEnabled = keyRepeatEnabled,
+                                    onPressFeedback = {
+                                        if (hapticFeedbackEnabled) {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                    },
+                                    onAction = onAction,
+                                    onCustomize = onCustomize,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -419,6 +452,8 @@ private fun TypingToggle(active: Boolean, onClick: () -> Unit, modifier: Modifie
         label = stringResource(R.string.terminal_typing_toggle),
         description = stringResource(R.string.terminal_typing_toggle),
         onClick = onClick,
+        glyph = ConnectionsGlyph.WRITE,
+        emphasized = true,
         modifier = modifier.fillMaxWidth().testTag("terminal_typing_toggle").semantics {
             selected = active
         },
@@ -427,6 +462,7 @@ private fun TypingToggle(active: Boolean, onClick: () -> Unit, modifier: Modifie
 
 @Composable
 private fun BufferedInputPage(
+    keyWidth: Dp,
     inputTargetId: Long,
     sendEnabled: Boolean,
     draftState: BufferedInputDraftState,
@@ -512,12 +548,12 @@ private fun BufferedInputPage(
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(start = 3.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.width(44.dp).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.width(keyWidth).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ExtraKeyButton(
                 label = stringResource(R.string.terminal_enter_short),
                 description = enterDescription,
@@ -701,7 +737,7 @@ private fun ExtraKeyPage(
     val rows = cells.chunked(columnCount)
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 3.dp),
+        modifier = Modifier.fillMaxSize().padding(start = 2.dp, end = 3.dp, top = 3.dp, bottom = 3.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         repeat(rowCount) { rowIndex ->
@@ -794,6 +830,7 @@ private fun ExtraKeyButton(
     disabledReason: String? = null,
     repeatEnabled: Boolean = false,
     glyph: ConnectionsGlyph? = null,
+    emphasized: Boolean = false,
     onPressFeedback: () -> Unit = {},
 ) {
     val baseFontSizeSp = terminalShortcutLabelFontSizeSp(label.length)
@@ -810,12 +847,14 @@ private fun ExtraKeyButton(
     val containerColor = when (modifierState) {
         AccessoryModifierState.ARMED -> MaterialTheme.colorScheme.primaryContainer
         AccessoryModifierState.LOCKED -> MaterialTheme.colorScheme.tertiaryContainer
-        AccessoryModifierState.OFF, null -> MaterialTheme.colorScheme.surfaceVariant
+        AccessoryModifierState.OFF, null -> if (emphasized) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.surfaceVariant
     }
     val contentColor = when (modifierState) {
         AccessoryModifierState.ARMED -> MaterialTheme.colorScheme.onPrimaryContainer
         AccessoryModifierState.LOCKED -> MaterialTheme.colorScheme.onTertiaryContainer
-        AccessoryModifierState.OFF, null -> MaterialTheme.colorScheme.onSurface
+        AccessoryModifierState.OFF, null -> if (emphasized) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface
     }
 
     Surface(

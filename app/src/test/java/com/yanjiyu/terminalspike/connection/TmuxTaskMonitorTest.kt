@@ -5,6 +5,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TmuxTaskMonitorTest {
+    @Test fun inputContextTracksForegroundRatherThanSpinnerAndClearsOnFailure() {
+        refresh("$1|%1|80|1|0|Ready")
+        assertTrue(monitor.inputContext("%1").agent)
+        assertFalse(monitor.inputContext("%2").agent)
+        refresh("$1|%1|80|0|0|⠋ stale agent title")
+        assertFalse(monitor.inputContext("%1").agent)
+        refresh("$1|%1|80|1|0|Ready")
+        now += 1_000_000_001L
+        monitor.refresh({ TmuxExecOutput(byteArrayOf(), 1) }, "/usr/bin/tmux")
+        assertFalse(monitor.inputContext("%1").agent)
+    }
+
     private var now = 2_000_000_000L
     private val monitor = TmuxTaskMonitor { now }
 

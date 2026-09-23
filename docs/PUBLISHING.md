@@ -10,6 +10,9 @@ distribution. Complete every applicable item below for each separately published
 Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` failures/errors); Mosh API JVM `11` tests (`11` passed, `0` skipped, `0` failures/errors); Mosh extension JVM `8` tests (`8` passed, `0` skipped, `0` failures/errors); old-phone Android app `332` tests (`307` passed, `25` skipped, `0` failures/errors). The source and artifact hashes and any pending external gates are recorded in `build/release-evidence/candidate-manifest.json`.
 <!-- release-evidence-current:end -->
 
+For routine main-app internal releases, use the verified `prepare`/`publish` commands
+in [CI and releasing](CI-AND-RELEASING.md). Existing applicable gates below still apply.
+
 ## Repository gates — complete
 
 - The dated 2026-09-03 local gate was green with 960 app JVM tests. Stable API

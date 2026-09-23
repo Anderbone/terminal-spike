@@ -14,6 +14,7 @@ import com.yanjiyu.terminalspike.core.data.repository.RecentEndpointIdentityPers
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityKeyState
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityProvider
 import com.yanjiyu.terminalspike.core.security.RecentEndpointIdentityUnavailableException
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.TerminalTaskStatus
 import com.yanjiyu.terminalspike.terminal.TerminalTaskTracker
@@ -2143,6 +2144,7 @@ private class DefaultSshSessionTerminal(
     override fun attach(connection: Connection, onInputAccepted: () -> Unit) {
         synchronized(tmuxHistoryLock) {
             attachedConnection = connection
+            controller.publishInputContext(TerminalInputContext())
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
             tmuxCaptureAgainIncludeHistory = false
@@ -2248,6 +2250,7 @@ private class DefaultSshSessionTerminal(
             tmuxIdentityRefresh?.cancel(false)
             tmuxIdentityRefresh = null
             attachedConnection = null
+            controller.publishInputContext(TerminalInputContext())
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
             tmuxCaptureAgainIncludeHistory = false
@@ -2266,14 +2269,28 @@ private class DefaultSshSessionTerminal(
         requestTmuxHistoryCapture(includeHistory = true)
     }
 
+    private fun refreshInputContext(connection: Connection) {
+        val context = runCatching { connection.captureInputContext() }.getOrDefault(TerminalInputContext())
+        synchronized(tmuxHistoryLock) {
+            if (!stopped && attachedConnection === connection) controller.publishInputContext(context)
+        }
+    }
+
     private fun refreshTmuxIdentity(connection: Connection) {
         if (synchronized(tmuxHistoryLock) { stopped || attachedConnection !== connection }) return
         if (connection.isHerdrSession) {
+            refreshInputContext(connection)
             val layout = runCatching { connection.captureHerdrSidebarLayout() }.getOrNull()
             synchronized(tmuxHistoryLock) {
                 if (stopped || attachedConnection !== connection) return
-                // Ignore an old pre-resize reply, including a shared session resized by another client.
-                if (layout == null || layout.terminalColumns == controller.terminalColumns) {
+                // Mosh can remain live while its auxiliary SSH channel fails. A failed read
+                // does not mean the visible navigation disappeared: retain the last valid
+                // layout until a successful refresh or session detach. Hit testing still
+                // rejects stale grid dimensions; also ignore another client's resize here.
+                val capturedBottom = layout?.terminalTop?.let { top -> layout.terminalHeight?.let { top + it } }
+                if (layout != null && layout.terminalColumns == controller.terminalColumns &&
+                    capturedBottom != null && capturedBottom in (controller.terminalRows - 1)..controller.terminalRows
+                ) {
                     controller.publishHerdrSidebarLayout(layout)
                 }
             }
@@ -2291,6 +2308,7 @@ private class DefaultSshSessionTerminal(
         }
         val changed = runCatching { connection.refreshTmuxIdentity() }.getOrDefault(false)
         publishTaskStatus()
+        refreshInputContext(connection)
         if (!changed) return
         synchronized(tmuxHistoryLock) {
             if (stopped || attachedConnection !== connection) return

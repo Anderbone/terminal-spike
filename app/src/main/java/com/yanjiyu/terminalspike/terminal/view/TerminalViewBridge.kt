@@ -3,11 +3,10 @@ package com.yanjiyu.terminalspike.terminal.view
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
@@ -131,18 +130,17 @@ fun TerminalViewBridge(
         attachedView[0] = view
         inputFocusRequester.attach(view)
     }
-    val sidebarLayout by key(controller) { controller.herdrSidebarLayout.collectAsStateWithLifecycle() }
-    HerdrAdaptiveTerminal(sidebarLayout, controller, modifier.fillMaxSize()) { hiddenColumns ->
+    // Keep the advertised grid at the actual window width. Widening it to hide a
+    // sidebar makes Herdr alternate between desktop and mobile navigation.
+    Box(modifier.fillMaxSize()) {
         AndroidView(
             factory = { context ->
                 HerdrTerminalContainer(context).apply {
                     configureTerminal(terminal)
-                    hiddenSidebarColumns = hiddenColumns
                 }
             },
             update = { container ->
                 val view = container.terminal
-                container.hiddenSidebarColumns = hiddenColumns
                 configureTerminal(view)
             },
             modifier = Modifier

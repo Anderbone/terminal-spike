@@ -1172,6 +1172,7 @@ private fun TerminalExtraKey.toKeyboardAction(): KeyboardAction = when (this) {
     TerminalExtraKey.UP -> KeyboardAction.ARROW_UP
     TerminalExtraKey.DOWN -> KeyboardAction.ARROW_DOWN
     TerminalExtraKey.LEFT -> KeyboardAction.ARROW_LEFT
+    TerminalExtraKey.SHIFT_LEFT -> KeyboardAction.SHIFT_LEFT
     TerminalExtraKey.RIGHT -> KeyboardAction.ARROW_RIGHT
     TerminalExtraKey.PAGE_UP -> KeyboardAction.PAGE_UP
     TerminalExtraKey.PAGE_DOWN -> KeyboardAction.PAGE_DOWN
@@ -1248,6 +1249,7 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.ARROW_UP -> TerminalExtraKey.UP
     KeyboardAction.ARROW_DOWN -> TerminalExtraKey.DOWN
     KeyboardAction.ARROW_LEFT -> TerminalExtraKey.LEFT
+    KeyboardAction.SHIFT_LEFT -> TerminalExtraKey.SHIFT_LEFT
     KeyboardAction.ARROW_RIGHT -> TerminalExtraKey.RIGHT
     KeyboardAction.PAGE_UP -> TerminalExtraKey.PAGE_UP
     KeyboardAction.PAGE_DOWN -> TerminalExtraKey.PAGE_DOWN

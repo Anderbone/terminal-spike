@@ -5,6 +5,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage
+import com.yanjiyu.terminalspike.core.model.Snippet
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerDialog
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerItemTestTagPrefix
@@ -59,6 +62,43 @@ class TerminalSnippetPickerDialogTest {
 
         composeRule.onNodeWithText("No snippets yet").assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").assertIsDisplayed()
+    }
+
+    @Test
+    fun accessoryPageAddsPlainTextWithoutSendingIt() {
+        var saved: Snippet? = null
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(emptyList(), true, true,
+                    onSend = { error("Saving must not execute a snippet") },
+                    onNewCodex = { error("Adding a snippet must not start Codex") },
+                    onSave = { saved = it; Result.success(Unit) }, onEditorClosed = {})
+            }
+        }
+        composeRule.onNodeWithText("+ Add snippet").performClick()
+        composeRule.onNodeWithTag("snippet-editor-name").performTextInput("Greeting")
+        composeRule.onNodeWithTag("snippet-editor-command").performTextInput("hello")
+        composeRule.onNodeWithTag("snippet-editor-save").performClick()
+        composeRule.runOnIdle {
+            assertEquals("hello", saved?.command)
+            assertEquals(false, saved?.appendEnter)
+        }
+    }
+
+    @Test
+    fun accessoryPageRunsNewCodexWithoutOpeningEditor() {
+        var starts = 0
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(emptyList(), false, true,
+                    onSend = { error("New Codex must not select a saved snippet") },
+                    onNewCodex = { starts++ },
+                    onSave = { error("New Codex must not save a snippet") }, onEditorClosed = {})
+            }
+        }
+        composeRule.onNodeWithText("New Codex").performClick()
+        composeRule.onNodeWithTag("snippet-editor-save").assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, starts) }
     }
 
     private fun snippet(

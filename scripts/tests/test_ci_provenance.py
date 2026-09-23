@@ -33,7 +33,9 @@ class CiProvenanceTest(unittest.TestCase):
             ),
             uses,
         )
-        self.assertIn("--dependency-verification=strict", workflow)
+        self.assertIn("scripts/verify-android.sh build", workflow)
+        verification = (PROJECT_ROOT / "scripts/verify-android.sh").read_text()
+        self.assertIn("--dependency-verification=strict", verification)
         self.assertIn("api: [28, 29, 32, 33, 37]", workflow)
         self.assertIn("api: [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]", workflow)
         backup_job = workflow.split("  backup-clean-install:", 1)[1].split(

@@ -4,10 +4,14 @@ import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.core.model.requireIdentifier
 import com.yanjiyu.terminalspike.core.model.requireOptionalCommand
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.io.InputStream
 
 interface Connection : TerminalInputSink {
+    /** Background-only foreground inspection through the existing authenticated connection. */
+    fun captureInputContext(): TerminalInputContext = TerminalInputContext()
+
     val isHerdrSession: Boolean get() = false
 
     /** Background-only layout read; never changes shared Herdr configuration or sends keys. */

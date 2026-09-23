@@ -10,6 +10,8 @@ app_apk="$project_dir/app/build/outputs/apk/debug/app-debug.apk"
 test_apk="$project_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 private_key_file=""
 requested_test_filter=""
+shard_index=""
+shard_count=""
 orchestrator_apk="$project_dir/app/build/outputs/runtime-test-utils/orchestrator-1.6.1.apk"
 test_services_apk="$project_dir/app/build/outputs/runtime-test-utils/test-services-1.6.0.apk"
 test_contract="$project_dir/scripts/android-test-contract.json"
@@ -19,6 +21,7 @@ usage() {
 Usage: scripts/run-android-emulator-tests.sh --api <26-37> --suite <full|boundary|openssh|lan-openssh|backup-clean-install>
        [--app-apk <path>] [--test-apk <path>] [--output-dir <path>]
        [--orchestrator-apk <path>] [--test-services-apk <path>]
+       [--shard-index <0-based> --shard-count <count>]
        [--private-key-file <path>] [--test-filter <class-or-class-list>] [--dry-run]
 EOF
 }
@@ -34,6 +37,8 @@ while [[ $# -gt 0 ]]; do
         --output-dir) output_dir="${2:-}"; shift 2 ;;
         --private-key-file) private_key_file="${2:-}"; shift 2 ;;
         --test-filter) requested_test_filter="${2:-}"; shift 2 ;;
+        --shard-index) shard_index="${2:-}"; shift 2 ;;
+        --shard-count) shard_count="${2:-}"; shift 2 ;;
         --dry-run) dry_run=true; shift ;;
         *) usage; exit 2 ;;
     esac
@@ -72,6 +77,18 @@ if [[ -n "$requested_test_filter" ]]; then
         exit 2
     }
     test_filter="$requested_test_filter"
+fi
+
+contract_shard_arguments=()
+if [[ -n "$shard_index" || -n "$shard_count" ]]; then
+    if [[ "$suite" != full || ! "$api" =~ ^(26|35)$ || -n "$requested_test_filter" ||
+          ! "$shard_index" =~ ^[0-9]+$ || ! "$shard_count" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Shards require full API 26/35, both numeric shard arguments, and no custom filter." >&2
+        exit 2
+    fi
+    test_filter="$(python3 "$project_dir/scripts/verify-android-test-contract.py" \
+        --filter "$test_contract" "$suite" "$shard_index" "$shard_count")"
+    contract_shard_arguments=("$shard_index" "$shard_count")
 fi
 
 avd_name="terminal-spike-api${api}-${suite}"
@@ -496,7 +513,7 @@ python3 "$project_dir/scripts/instrumentation-output-to-junit.py" \
     "$raw_result" "$output_dir/TEST-api${api}-${suite}.xml"
 if [[ "$suite" != "openssh" && "$suite" != "lan-openssh" && -z "$requested_test_filter" ]]; then
     python3 "$project_dir/scripts/verify-android-test-contract.py" \
-        "$test_contract" "$raw_result" "$suite" "$api"
+        "$test_contract" "$raw_result" "$suite" "$api" "${contract_shard_arguments[@]}"
 fi
 
 if [[ "$api" == "37" && ( "$suite" == "full" || "$suite" == "boundary" ) && -z "$requested_test_filter" ]]; then

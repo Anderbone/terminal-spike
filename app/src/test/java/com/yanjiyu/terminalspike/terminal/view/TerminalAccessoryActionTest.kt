@@ -47,6 +47,16 @@ class TerminalAccessoryActionTest {
     }
 
     @Test
+    fun shiftLeftShortcutSendsTheQueuedQuestionsChordOnEveryPress() {
+        val action = TerminalExtraKey.SHIFT_LEFT.toAccessoryAction()
+        val expected = "\u001b[1;2D".toByteArray(Charsets.US_ASCII)
+        val first = action.resolvedBytes(AccessoryModifierSnapshot())
+        assertArrayEquals(expected, first)
+        first.fill(0)
+        assertArrayEquals(expected, action.resolvedBytes(AccessoryModifierSnapshot()))
+    }
+
+    @Test
     fun shiftNavigationUsesExactXtermSequences() {
         val shift = AccessoryModifierSnapshot(shift = AccessoryModifierState.ARMED)
         val expected = mapOf(

@@ -625,6 +625,7 @@ fun TerminalSpikeScreen(
     val localNetworkActionDispatch by
         viewModel.localNetworkActionDispatch.collectAsStateWithLifecycle()
     val activeController = viewModel.controllerFor(state.activeSessionId)
+    val inputContext by activeController.inputContext.collectAsStateWithLifecycle()
     val performance by activeController.performance.collectAsStateWithLifecycle()
     val terminalBuildKeepsScreenOn by viewModel.terminalBuildFeature.keepScreenOn.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1459,6 +1460,23 @@ fun TerminalSpikeScreen(
                         }
                         if (terminalSurfaceVisible && !focusMode) {
                             TerminalAccessoryBar(
+                                snippetsContent = {
+                                    com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage(
+                                        snippets = state.snippets,
+                                        canSave = state.settingsReady,
+                                        canSend = state.canSendTerminalInput,
+                                        onSend = { id ->
+                                            terminalInputFocusRequester.resetComposingInput()
+                                            viewModel.sendSnippet(id, state.activeSessionId)
+                                        },
+                                        onNewCodex = {
+                                            terminalInputFocusRequester.resetComposingInput()
+                                            viewModel.startNewCodex()
+                                        },
+                                        onSave = viewModel::saveConnectionsSnippet,
+                                        onEditorClosed = { restoreTerminalFocusAfterSnippetPicker = true },
+                                    )
+                                },
                                 actions = state.accessoryActions,
                                 modifiers = AccessoryModifierSnapshot(
                                     control = accessoryModifierState(
@@ -1485,6 +1503,7 @@ fun TerminalSpikeScreen(
                                 inputTargetId = state.activeSessionId,
                                 bufferedInputSendEnabled = state.canSendTerminalInput,
                                 bufferedInputDraftState = viewModel.bufferedInputDraftState,
+                                inputContext = inputContext,
                                 onAction = { action ->
                                     if (action is TerminalAccessoryAction.Local) {
                                         when (action.action) {
