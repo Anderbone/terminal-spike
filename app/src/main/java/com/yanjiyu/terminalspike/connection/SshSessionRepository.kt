@@ -34,8 +34,10 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
@@ -47,6 +49,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -342,6 +345,7 @@ internal class SshSessionRepository(
     private val recentSessionIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val networkAvailability: NetworkAvailability = AlwaysOnlineNetworkAvailability,
     private val reconnectStableWindowMillis: Long = DEFAULT_RECONNECT_STABLE_WINDOW_MILLIS,
+    private val herdrNotificationDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /** Keeps the existing SSH-only construction surface source-compatible during the UI cutover. */
     constructor(
@@ -1020,6 +1024,8 @@ internal class SshSessionRepository(
 
     private fun closeRuntime(runtime: SshSessionRuntime, clearTerminal: Boolean) {
         runtime.clearAuthenticationSecrets()
+        runtime.herdrNotificationJob?.cancel()
+        runtime.herdrNotificationJob = null
         runtime.reconnectJob?.cancel()
         runtime.reconnectJob = null
         runtime.reconnectStabilityJob?.cancel()
@@ -1109,6 +1115,37 @@ internal class SshSessionRepository(
             )
         }
         _terminalProgramNotifications.tryEmit(event)
+    }
+
+    private fun monitorHerdrTaskCompletion(runtime: SshSessionRuntime, connection: Connection) {
+        if (!connection.isHerdrSession) return
+        val job = applicationScope.launch(herdrNotificationDispatcher, start = CoroutineStart.LAZY) {
+            val tracker = HerdrTaskNotificationTracker()
+            while (isActive) {
+                val live = synchronized(lock) {
+                    runtimes[runtime.id] === runtime && !runtime.terminated &&
+                        runtime.connection === connection && runtime.connectionState is ConnectionState.Connected
+                }
+                if (!live) break
+                val states = runCatching { connection.captureHerdrAgentStates() }.getOrNull()
+                if (isActive && tracker.observe(states)) {
+                    emitTerminalProgramNotification(runtime, connection, message = "")
+                }
+                delay(2_000L)
+            }
+        }
+        val registered = synchronized(lock) {
+            if (runtimes[runtime.id] !== runtime || runtime.terminated ||
+                runtime.connection !== connection || runtime.connectionState !is ConnectionState.Connected ||
+                runtime.herdrNotificationJob?.isActive == true
+            ) {
+                false
+            } else {
+                runtime.herdrNotificationJob = job
+                true
+            }
+        }
+        if (registered) job.start() else job.cancel()
     }
 
     private fun publishTaskStatus(runtime: SshSessionRuntime) {
@@ -1234,6 +1271,8 @@ internal class SshSessionRepository(
             }
             runtime.activity.force(now())
             if (state.isTerminal()) {
+                runtime.herdrNotificationJob?.cancel()
+                runtime.herdrNotificationJob = null
                 runtime.reconnectStabilityJob?.cancel()
                 runtime.reconnectStabilityJob = null
             }
@@ -1317,6 +1356,7 @@ internal class SshSessionRepository(
         }
         queueRecentSessionPersistence(runtime, publishedState)
         if (state is ConnectionState.Connected) {
+            monitorHerdrTaskCompletion(runtime, connection)
             // Layout may have settled while authentication or the session picker was open.
             // A pre-connect resize can have had no live transport to receive it.
             connection.resize(runtime.terminal.columns, runtime.terminal.rows)
@@ -2562,6 +2602,9 @@ private class SshSessionRuntime(
 
     @Volatile
     var reconnectStabilityJob: Job? = null
+
+    @Volatile
+    var herdrNotificationJob: Job? = null
 
     @Volatile
     var reconnectAttemptsStarted: Int = 0

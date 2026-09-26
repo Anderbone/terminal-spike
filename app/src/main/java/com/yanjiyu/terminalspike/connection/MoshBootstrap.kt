@@ -69,6 +69,17 @@ internal class MoshBootstrapResult(
     private var tmuxLiveHistoryRefreshPending: Boolean = startedInTmux,
     internal var herdrChoice: HerdrStartupChoice? = null,
 ) : AutoCloseable {
+    fun captureHerdrAgentStates(): List<HerdrAgentState>? {
+        val choice = herdrChoice ?: return null
+        val sideChannel = sshSideChannel ?: return null
+        val runner = TmuxCommandRunner { command ->
+            readBoundedExecOutput(sideChannel.openExec(command), HERDR_AGENT_EXEC_LIMITS).use { output ->
+                TmuxExecOutput(output.stdout.copyOf(), output.exitStatus)
+            }
+        }
+        return captureHerdrAgentStates(runner, choice)
+    }
+
     fun captureInputContext(): TerminalInputContext {
         val choice = herdrChoice ?: return tmuxTasks.inputContext(synchronized(this) { discoveredTmuxClient?.paneId })
         val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return TerminalInputContext()
@@ -1162,6 +1173,13 @@ private val MOSH_CONNECT_PREFIX = "MOSH CONNECT ".encodeToByteArray()
 private val MOSH_LOCALE = Regex("[A-Za-z0-9_.@+-]+(?:UTF-?8)[A-Za-z0-9_.@+-]*", RegexOption.IGNORE_CASE)
 
 private const val DEFAULT_MOSH_SERVER_COMMAND = "mosh-server"
+private val HERDR_AGENT_EXEC_LIMITS = MoshExecLimits(
+    channelConnectTimeoutMillis = 5_000,
+    totalTimeoutMillis = 5_000,
+    maximumOutputBytes = 256 * 1024,
+    maximumLineBytes = 256 * 1024,
+    maximumLines = 256,
+)
 private val TMUX_MOSH_EXEC_LIMITS = MoshExecLimits(
     channelConnectTimeoutMillis = 5_000,
     totalTimeoutMillis = 5_000,

@@ -219,6 +219,29 @@ notification_condition = "always"
 
 Codex reads this configuration at process startup. Android notification permission and the **Terminal task completion** notification channel must remain enabled on the phone.
 
+App-selected Herdr sessions additionally monitor bounded `herdr --session <name> agent list`
+metadata over the existing authenticated SSH connection (including Mosh's retained side channel).
+A sample is taken off the UI thread every two seconds after the preceding read, with a five-second
+command deadline, 256 KiB response limit and 256-agent limit. An observed `working` → `idle`/`done`
+transition with an advancing sequence and unchanged pane/terminal/agent identity emits one generic
+completion notification for the originating app tab. Multiple completions in one sample coalesce.
+Active and background Herdr panes are included. No terminal transcript is read and no task title is
+retained for these notifications. First samples, failed reads, disappeared panes, unknown states,
+identity changes and disconnects do not replay old completions. Very short tasks entirely between
+samples can be missed; a failed auxiliary SSH channel disables this path even if Mosh remains live.
+Manually launched Herdr sessions that the app did not select do not acquire this monitor.
+
+This avoids relying on Herdr 0.8.2's outer-terminal detection or on OSC notifications crossing Mosh.
+Herdr's own `[ui.toast] delivery = "terminal"` remains useful for supported desktop terminals but
+is not required by the Android metadata path. Newly created **Terminal task completion** channels
+enable vibration; existing channel preferences are preserved by Android and must be changed in
+system notification settings. Notification permission, channel settings and Do Not Disturb still
+apply. After installing an update, reconnect the saved Herdr session before testing a new task.
+
+Manual acceptance on 2026-09-26: after enabling the existing channel's vibration setting, the user
+confirmed real task-completion vibration on the foldable. A second ten-second task produced one
+vibration and the user accepted the behavior. Automated notification tests ran only on USB SM-S911B.
+
 ## Wireless development install
 
 After pairing a phone through Android's Wireless debugging screen, list exact ADB targets. The

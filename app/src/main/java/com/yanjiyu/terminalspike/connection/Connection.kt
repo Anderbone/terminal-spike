@@ -16,6 +16,9 @@ interface Connection : TerminalInputSink {
 
     val isHerdrSession: Boolean get() = false
 
+    /** Bounded lifecycle metadata over the existing authenticated side channel, off the UI thread. */
+    fun captureHerdrAgentStates(): List<HerdrAgentState>? = null
+
     /** Background-only layout read; never changes shared Herdr configuration or sends keys. */
     fun captureHerdrSidebarLayout(): HerdrSidebarLayout? = null
 

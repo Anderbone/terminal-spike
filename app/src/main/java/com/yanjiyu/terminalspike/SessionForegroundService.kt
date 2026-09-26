@@ -398,6 +398,7 @@ internal class SessionNotificationFactory(
                 description = applicationContext.getString(
                     R.string.terminal_program_notification_channel_description,
                 )
+                enableVibration(true)
                 setShowBadge(true)
             },
         )

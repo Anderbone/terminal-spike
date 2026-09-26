@@ -47,6 +47,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,6 +80,8 @@ import com.yanjiyu.terminalspike.ui.theme.iconMetrics
 import com.yanjiyu.terminalspike.ui.theme.spacing
 import com.yanjiyu.terminalspike.ui.theme.statusColors
 import kotlinx.coroutines.delay
+
+internal val LocalHasConnectedTerminal = compositionLocalOf { false }
 
 internal enum class AppDestination(@StringRes val labelResId: Int) {
     WORKSPACE(R.string.navigation_connections),
@@ -897,10 +900,7 @@ private fun RowScope.WorkspaceNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            AppGlyphIcon(
-                glyph = glyph,
-                modifier = Modifier.size(24.dp),
-            )
+            PrimaryNavigationIcon(glyph)
         },
         label = { Text(label) },
         colors = NavigationBarItemDefaults.colors(
@@ -965,10 +965,7 @@ private fun ColumnScope.WorkspaceRailNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            AppGlyphIcon(
-                glyph = glyph,
-                modifier = Modifier.size(24.dp),
-            )
+            PrimaryNavigationIcon(glyph)
         },
         label = { Text(label) },
         alwaysShowLabel = true,
@@ -980,6 +977,23 @@ private fun ColumnScope.WorkspaceRailNavigationItem(
             indicatorColor = MaterialTheme.colorScheme.primaryContainer,
         ),
     )
+}
+
+@Composable
+private fun PrimaryNavigationIcon(glyph: AppGlyph) {
+    Box {
+        AppGlyphIcon(glyph = glyph, modifier = Modifier.size(24.dp))
+        if (glyph == AppGlyph.TERMINAL && LocalHasConnectedTerminal.current) {
+            val description = stringResource(R.string.workspace_status_connected)
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(8.dp)
+                    .background(MaterialTheme.statusColors.connected, CircleShape)
+                    .semantics { contentDescription = description },
+            )
+        }
+    }
 }
 
 @Composable

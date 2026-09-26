@@ -2418,6 +2418,23 @@ class TerminalSpikeViewModel(
         return accepted
     }
 
+    internal fun openExistingConnectionsHost(persistentHostId: String): Boolean {
+        val catalog = connectionsCatalogLoad.value?.catalog ?: return false
+        val state = _uiState.value
+        val session = state.sessions
+            .filter {
+                !it.isLocalTerminal &&
+                    it.sourceProfileId?.let(catalog::persistentHostId) == persistentHostId &&
+                    (it.connectionState is ConnectionState.Connected ||
+                        it.connectionState is ConnectionState.Connecting)
+            }
+            .let { candidates ->
+                candidates.firstOrNull { it.id == state.activeSessionId } ?: candidates.firstOrNull()
+            } ?: return false
+        selectSession(session.id)
+        return true
+    }
+
     internal fun connectConnectionsHost(request: HostConnectRequest): Boolean {
         val catalog = connectionsCatalogLoad.value?.catalog
         val catalogHost = catalog?.hosts?.firstOrNull { it.profile.id == request.persistentHostId }

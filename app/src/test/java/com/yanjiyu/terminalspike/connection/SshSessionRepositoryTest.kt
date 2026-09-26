@@ -35,6 +35,56 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
     @Test
+    fun herdrCompletionPublishesWithoutTerminalBytesAndStopsOnDisconnect() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val ownerScope = CoroutineScope(SupervisorJob() + dispatcher)
+        var sample = listOf(HerdrAgentState("w6:pC", "term1", "agent1", "working", 1))
+        var reads = 0
+        val connection = object : FakeConnection() {
+            override val isHerdrSession = true
+            override fun captureHerdrAgentStates(): List<HerdrAgentState> {
+                reads++
+                return sample
+            }
+        }
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connection },
+            terminalFactory = SshSessionTerminalFactory { FakeTerminal() },
+            herdrNotificationDispatcher = dispatcher,
+        )
+        val events = mutableListOf<TerminalProgramNotificationEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.terminalProgramNotifications.collect { events += it }
+        }
+        try {
+            val started = repository.startUserInitiatedSession("Herdr", config()) as StartSshSessionResult.Started
+            runCurrent()
+            assertTrue(events.isEmpty())
+            sample = listOf(sample.single().copy(state = "idle", sequence = 2))
+            advanceTimeBy(2_000)
+            runCurrent()
+            assertEquals(listOf(TerminalProgramNotificationEvent(started.sessionId, "Herdr", "")), events)
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertEquals(1, events.size)
+            repository.disconnectAll()
+            val readsAtDisconnect = reads
+            sample = listOf(sample.single().copy(state = "working", sequence = 3))
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertEquals(readsAtDisconnect, reads)
+            assertEquals(1, events.size)
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
     fun connectionReadyResendsTheGeometryThatSettledDuringAuthentication() = runTest {
         val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val connection = FakeConnection(statesOnConnect = listOf(ConnectionState.Connecting))

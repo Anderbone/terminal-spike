@@ -1,6 +1,8 @@
 package com.yanjiyu.terminalspike
 
+import android.Manifest
 import android.app.Notification
+import android.app.NotificationManager
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -8,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.connection.TerminalProgramNotificationEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -73,12 +76,14 @@ class SessionNotificationActionTest {
     @Test
     fun terminalBellNotificationUsesGenericTaskText() {
         val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
-        val notification = SessionNotificationFactory(context).buildTerminalProgramNotification(
-            event = TerminalProgramNotificationEvent(
-                sessionId = 42L,
-                sessionTitle = "Terminal Spike dev",
-                message = "",
-            ),
+        val factory = SessionNotificationFactory(context)
+        val event = TerminalProgramNotificationEvent(
+            sessionId = -9042L,
+            sessionTitle = "Terminal Spike dev",
+            message = "",
+        )
+        val notification = factory.buildTerminalProgramNotification(
+            event = event,
             privacyEnabled = false,
         )
 
@@ -86,6 +91,25 @@ class SessionNotificationActionTest {
             context.getString(R.string.terminal_program_notification_text),
             notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+                context.packageName, Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+        factory.ensureChannel()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val tag = "terminal-program-${event.sessionId}"
+        try {
+            factory.publishTerminalProgramNotification(event, privacyEnabled = true)
+            composeRule.waitUntil(5_000) { manager.activeNotifications.any { it.tag == tag } }
+            val posted = manager.activeNotifications.single { it.tag == tag }.notification
+            assertEquals(SessionNotificationFactory.PROGRAM_NOTIFICATION_CHANNEL_ID, posted.channelId)
+            assertEquals(Notification.VISIBILITY_SECRET, posted.visibility)
+            assertEquals(context.getString(R.string.terminal_program_notification_text),
+                posted.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        } finally {
+            manager.activeNotifications.filter { it.tag == tag }.forEach { manager.cancel(it.tag, it.id) }
+        }
     }
 
     @Test

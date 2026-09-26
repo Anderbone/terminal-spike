@@ -1231,6 +1231,11 @@ fun TerminalSpikeScreen(
             onDetails = { localArchInstallVisible = true },
             onDismiss = { localArchProgressVisible = false },
         )
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalHasConnectedTerminal provides state.sessions.any {
+                !it.isLocalTerminal && it.connectionState is ConnectionState.Connected
+            },
+        ) {
         AnimatedContent(
             targetState = destination,
             modifier = Modifier
@@ -1317,6 +1322,11 @@ fun TerminalSpikeScreen(
                         onCancelTestKeyboardInteractive =
                             viewModel::cancelConnectionsKeyboardInteractive,
                         onCancelHostTest = viewModel::cancelConnectionsHostTest,
+                        onOpenExistingHost = { hostId ->
+                            viewModel.openExistingConnectionsHost(hostId).also { opened ->
+                                if (opened) showTerminal(target)
+                            }
+                        },
                         onConnectCatalogHost = { request ->
                             val host = viewModel.connectionsHostName(request.persistentHostId)
                             if (host == null) {
@@ -1608,6 +1618,8 @@ fun TerminalSpikeScreen(
                     keyboardProfileId = settingsKeyboardProfileId,
                 )
             }
+        }
+
         }
 
         }

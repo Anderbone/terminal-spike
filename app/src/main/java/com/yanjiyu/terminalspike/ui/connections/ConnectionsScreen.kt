@@ -59,6 +59,7 @@ internal data class ConnectionsCallbacks(
     val onRetry: () -> Unit,
     val onAddHost: (() -> Unit)? = null,
     val onConnectHost: ((String) -> Unit)? = null,
+    val onOpenExistingHost: ((String) -> Boolean)? = null,
     val onOpenSftp: ((String) -> Unit)? = null,
     val onEditHost: ((String) -> Unit)? = null,
     val onDeleteHost: ((String) -> Unit)? = null,
@@ -294,7 +295,8 @@ internal fun ConnectionsScreen(
                                 onSelectKey = { selectedKeyId = it },
                                 onSelectSnippet = { selectedSnippetId = it },
                                 onConnectHost = callbacks.onConnectCatalogHost?.let { connect ->
-                                    { id ->
+                                    openHost@{ id ->
+                                        if (callbacks.onOpenExistingHost?.invoke(id) == true) return@openHost
                                         val seed = editorCatalog.hosts.firstOrNull {
                                             it.draft.persistentId == id
                                         }

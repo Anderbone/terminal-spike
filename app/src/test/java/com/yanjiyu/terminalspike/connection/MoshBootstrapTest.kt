@@ -37,6 +37,8 @@ class MoshBootstrapTest {
                     TMUX_LIST_COMMAND -> ""
                     HERDR_LIST_COMMAND -> "__TERMINAL_SPIKE_HERDR__\n/usr/bin/herdr\n" +
                         """{"sessions":[{"name":"default","default":true,"running":true}]}"""
+                    "'/usr/bin/herdr' '--session' 'default' 'agent' 'list'" ->
+                        """{"result":{"type":"agent_list","agents":[{"pane_id":"w6:pC","terminal_id":"term1","agent_status":"working","state_change_seq":10,"terminal_title":"${"x".repeat(4_000)}"}]}}"""
                     else -> "MOSH CONNECT 60004 $VALID_KEY\n"
                 }
                 return FakeExecChannel(text.toByteArray())
@@ -55,6 +57,9 @@ class MoshBootstrapTest {
             assertFalse(it.isTmuxSession)
             assertTrue(commands.last().endsWith("'--' '/usr/bin/herdr' 'session' 'attach' 'default'"))
             assertEquals(3, commands.size)
+            assertEquals(listOf(HerdrAgentState("w6:pC", "term1", null, "working", 10)),
+                it.captureHerdrAgentStates())
+            assertEquals(4, commands.size)
         }
     }
 
