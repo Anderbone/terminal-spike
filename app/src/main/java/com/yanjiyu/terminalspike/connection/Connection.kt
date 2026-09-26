@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.connection
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRule
+import com.yanjiyu.terminalspike.core.model.PortForwardRules
 import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.core.model.requireIdentifier
@@ -171,7 +173,10 @@ class SshConnectionConfig(
     val startupCommand: String? = null,
     /** Shows the authenticated tmux session chooser before opening an SSH shell. */
     val tmuxSessionSelectorEnabled: Boolean = false,
+    portForwards: List<PortForwardRule> = emptyList(),
 ) {
+    val portForwards: List<PortForwardRule> = portForwards.toList()
+
     init {
         require(
             keepaliveIntervalSeconds == 0 ||
@@ -180,6 +185,7 @@ class SshConnectionConfig(
         ) {
             "SSH keepalive must be off or within the supported interval range."
         }
+        PortForwardRules.validate(this.portForwards)
         requireIdentifier(terminalType, "SSH terminal type", ModelLimits.MAX_TERM_LENGTH)
         requireOptionalCommand(
             startupCommand,

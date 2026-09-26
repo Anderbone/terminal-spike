@@ -49,7 +49,8 @@ internal fun captureHerdrPaneHistory(
 
     val layout = result("pane", "layout").getValue("layout") as JsonObject
     val paneId = layout.string("focused_pane_id")
-    require(paneId.matches(Regex("[A-Za-z0-9_-]+:p[0-9]+")))
+    // Herdr public pane numbers include uppercase letters (for example w6:pC).
+    require(paneId.matches(Regex("[A-Za-z0-9_-]+:p[0-9A-Z]+")))
     val paneLayout = (layout.getValue("panes") as JsonArray).map { it as JsonObject }
         .single { it.string("pane_id") == paneId }
     val rect = paneLayout.getValue("rect") as JsonObject
@@ -65,13 +66,14 @@ internal fun captureHerdrPaneHistory(
     val scroll = before.getValue("scroll") as JsonObject
     require(scroll.integer("viewport_rows") == rows)
     val offset = scroll.integer("offset_from_bottom")
+    require(offset >= 0)
     val terminalId = before.string("terminal_id")
     val revision = (before.getValue("revision") as JsonPrimitive).content
     val identity = "${choice.sessionName}/$paneId/$terminalId"
     if (previous != null && previous.identity == identity &&
         previous.x == x && previous.y == y && previous.columns == columns && previous.rows == rows &&
         (reading || previous.revision == revision && previous.offsetFromBottom == offset)
-    ) return previous
+    ) return if (previous.offsetFromBottom == offset) previous else previous.copy(offsetFromBottom = offset)
 
     val content = run("pane", "read", paneId, "--source", "recent", "--lines", "1000", "--format", "ansi")
     val after = result("pane", "get", paneId).getValue("pane") as JsonObject

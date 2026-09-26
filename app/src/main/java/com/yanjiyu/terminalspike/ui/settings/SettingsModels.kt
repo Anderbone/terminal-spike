@@ -55,6 +55,11 @@ internal enum class SettingsCategory(
         R.string.settings_category_snippets_summary,
         "snippets commands saved insert run terminal shortcuts",
     ),
+    PORT_FORWARDING(
+        R.string.port_forward_title,
+        R.string.port_forward_settings_summary,
+        "port forwarding local remote tunnel ssh mosh tcp",
+    ),
     SESSIONS_BACKGROUND(
         R.string.settings_category_sessions_background,
         R.string.settings_category_sessions_background_summary,
@@ -774,6 +779,7 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.KEYBOARD,
     SettingsCategory.SSH_KEYS,
     SettingsCategory.SNIPPETS,
+    SettingsCategory.PORT_FORWARDING,
     SettingsCategory.SESSIONS_BACKGROUND,
     SettingsCategory.NOTIFICATIONS,
     SettingsCategory.BACKUP_RESTORE,

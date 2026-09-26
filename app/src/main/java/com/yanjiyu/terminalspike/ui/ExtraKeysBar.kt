@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,13 +34,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +73,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -566,7 +568,9 @@ private fun BufferedInputPage(
             TypingToggle(active = true, onClick = onToggleTyping, modifier = Modifier.weight(1f))
         }
         val voiceStatus = voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
-        OutlinedTextField(
+        val interactionSource = remember { MutableInteractionSource() }
+        val inputFocused by interactionSource.collectIsFocusedAsState()
+        BasicTextField(
             value = draft,
             onValueChange = { nextValue -> draftState.update(nextValue, inputTargetId) },
             modifier = Modifier
@@ -575,81 +579,10 @@ private fun BufferedInputPage(
                 .focusRequester(focusRequester)
                 .testTag("buffered_terminal_input")
                 .semantics { contentDescription = inputDescription },
-            placeholder = { Text(stringResource(R.string.terminal_buffered_input_placeholder)) },
-            minLines = 1,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            interactionSource = interactionSource,
             maxLines = 3,
-            isError = validationMessage != null,
-            supportingText = (validationMessage?.resolve() ?: voiceStatus)?.let { message ->
-                { Text(message, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            },
-            trailingIcon = {
-                val voiceActive = voicePhase != VoiceInputPhase.IDLE
-                if (canRestoreLastSent) {
-                    IconButton(
-                        onClick = draftState::restoreLastSent,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .semantics { contentDescription = restoreInputDescription },
-                    ) {
-                        ConnectionsGlyphIcon(
-                            glyph = ConnectionsGlyph.RESTORE,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                } else {
-                    val voiceState = stringResource(
-                        if (voiceActive) {
-                            R.string.terminal_voice_state_on
-                        } else {
-                            R.string.terminal_voice_state_off
-                        },
-                    )
-                    val voiceDescription = stringResource(R.string.terminal_voice_input)
-                    Surface(
-                        shape = CircleShape,
-                        color = if (voiceActive) {
-                            MaterialTheme.colorScheme.errorContainer
-                        } else {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        },
-                        contentColor = if (voiceActive) {
-                            MaterialTheme.colorScheme.onErrorContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        },
-                        modifier = Modifier.semantics {
-                            contentDescription = voiceDescription
-                            stateDescription = voiceState
-                        },
-                    ) {
-                        IconButton(
-                            onClick = {
-                                if (voiceActive) {
-                                    voiceRecognizer.stop()
-                                } else if (!voiceRecognizer.available) {
-                                    voiceFailure = VoiceInputFailure.UNAVAILABLE
-                                } else if (
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.RECORD_AUDIO,
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    voiceFailure = null
-                                    voiceRecognizer.start(currentVoiceLanguageTag)
-                                } else {
-                                    microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            },
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            ConnectionsGlyphIcon(
-                                glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
-                                modifier = Modifier.size(21.dp),
-                            )
-                        }
-                    }
-                }
-            },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrectEnabled = true,
@@ -657,8 +590,117 @@ private fun BufferedInputPage(
                 imeAction = ImeAction.Send,
             ),
             keyboardActions = KeyboardActions(onSend = { sendDraft() }),
+            decorationBox = { innerTextField ->
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = MaterialTheme.shapes.extraSmall,
+                    border = BorderStroke(
+                        if (inputFocused) 2.dp else 1.dp,
+                        when {
+                            validationMessage != null -> MaterialTheme.colorScheme.error
+                            inputFocused -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.outline
+                        },
+                    ),
+                ) {
+                    Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp)) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            if (draft.text.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.terminal_buffered_input_placeholder),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            innerTextField()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val voiceActive = voicePhase != VoiceInputPhase.IDLE
+                            val voiceState = stringResource(
+                                if (voiceActive) {
+                                    R.string.terminal_voice_state_on
+                                } else {
+                                    R.string.terminal_voice_state_off
+                                },
+                            )
+                            val voiceDescription = stringResource(R.string.terminal_voice_input)
+                            Surface(
+                                shape = CircleShape,
+                                color = if (voiceActive) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                                contentColor = if (voiceActive) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        if (voiceActive) {
+                                            voiceRecognizer.stop()
+                                        } else if (!voiceRecognizer.available) {
+                                            voiceFailure = VoiceInputFailure.UNAVAILABLE
+                                        } else if (
+                                            ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.RECORD_AUDIO,
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            voiceFailure = null
+                                            voiceRecognizer.start(currentVoiceLanguageTag)
+                                        } else {
+                                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    },
+                                    modifier = Modifier.size(44.dp).semantics {
+                                        contentDescription = voiceDescription
+                                        stateDescription = voiceState
+                                    },
+                                ) {
+                                    ConnectionsGlyphIcon(
+                                        glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
+                                        modifier = Modifier.size(21.dp),
+                                    )
+                                }
+                            }
+                            if (canRestoreLastSent) {
+                                IconButton(
+                                    onClick = draftState::restoreLastSent,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .semantics { contentDescription = restoreInputDescription },
+                                ) {
+                                    ConnectionsGlyphIcon(
+                                        glyph = ConnectionsGlyph.RESTORE,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                            (validationMessage?.resolve() ?: voiceStatus)?.let { message ->
+                                Text(
+                                    message,
+                                    modifier = Modifier.weight(1f),
+                                    color = if (validationMessage != null) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
         )
-
     }
 
     if (confirmingMultilinePaste) {

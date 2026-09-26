@@ -2,6 +2,9 @@ package com.yanjiyu.terminalspike
 
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -9,10 +12,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +34,9 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.ExtraKeysBar
 import com.yanjiyu.terminalspike.settings.CommandSnippet
+import com.yanjiyu.terminalspike.terminal.TerminalCursor
+import com.yanjiyu.terminalspike.terminal.engine.TerminalFrameUpdate
+import com.yanjiyu.terminalspike.terminal.engine.TerminalModes
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
@@ -43,10 +52,118 @@ import org.junit.Test
 
 class BufferedInputPagerTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun withSoftwareKeyboard(block: () -> Unit) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(command),
+        ).bufferedReader().use { it.readText().trim() }
+        val setting = "show_ime_with_hard_keyboard"
+        val previous = shell("settings get secure $setting")
+        check(previous in listOf("null", "0", "1"))
+        try {
+            // The emulator runner disables the IME for ordinary semantics-only tests.
+            // These two regressions specifically exercise visible-keyboard ownership.
+            shell("settings put secure $setting 1")
+            composeRule.runOnUiThread {
+                composeRule.activity.enableEdgeToEdge()
+                composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            block()
+        } finally {
+            shell(if (previous == "null") "settings delete secure $setting"
+                else "settings put secure $setting $previous")
+        }
+    }
 
     @Test
-    fun snippetsPageReturnsImeEnterToTerminalAndPreservesBufferedDraft() {
+    fun bufferedDraftKeepsFocusWhileHerdrTabsAndSpacesReceiveFirstTap() = withSoftwareKeyboard {
+        val sent = mutableListOf<String>()
+        val draft = BufferedInputDraftState()
+        val controller = TerminalController()
+        lateinit var terminal: FastTerminalView
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize().imePadding()) {
+                    AndroidView(
+                        factory = { context ->
+                            FastTerminalView(context).also { view ->
+                                terminal = view
+                                controller.setInputSink(
+                                    sink = object : TerminalInputSink {
+                                        override fun send(bytes: ByteArray) { sent += bytes.decodeToString() }
+                                    },
+                                    onResize = { _, _ -> },
+                                )
+                                view.attachController(controller)
+                            }
+                        },
+                        modifier = Modifier.weight(1f).testTag("mouse_terminal"),
+                    )
+                    ExtraKeysBar(
+                        keys = TerminalExtraKey.DEFAULT_ORDER,
+                        ctrlArmed = false,
+                        altArmed = false,
+                        customizationEnabled = true,
+                        inputTargetId = 11L,
+                        bufferedInputSendEnabled = true,
+                        bufferedInputDraftState = draft,
+                        inputContext = TerminalInputContext("herdr/agent", agent = true),
+                        onKey = {},
+                        onCustomize = {},
+                        onSendBufferedInput = { _, text -> sent += text; true },
+                        onBufferedInputModeChanged = { terminal.setDirectInputEnabled(!it) },
+                        onDirectInputMode = { terminal.requestTerminalInputFocus(showKeyboard = false) },
+                    )
+                }
+            }
+        }
+        composeRule.runOnIdle {
+            composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performClick().performTextInput("keep my draft")
+        composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
+        composeRule.runOnIdle {
+            controller.updateTerminalFrame(
+                TerminalFrameUpdate(
+                    completedScrollback = emptyList(),
+                    screen = emptyList(),
+                    cursor = TerminalCursor(),
+                    alternateScreen = false,
+                    modes = TerminalModes(
+                        mouseTracking = true, sgrMouseEncoding = true,
+                    ),
+                ),
+            )
+        }
+        composeRule.waitUntil(5_000) { controller.isMouseTrackingEnabled() }
+        for ((column, row) in listOf(6 to 0, 1 to 3)) {
+            composeRule.onNodeWithTag("mouse_terminal").performTouchInput {
+                val density = terminal.resources.displayMetrics.density
+                click(
+                    Offset(
+                        8f * density + (column + 0.5f) * terminal.terminalCellWidthPx,
+                        5f * density + (row + 0.5f) * controller.viewport.lineHeightPx,
+                    ),
+                )
+            }
+            composeRule.onNodeWithTag("buffered_terminal_input").assertIsFocused()
+            composeRule.runOnIdle {
+                assertEquals("keep my draft", draft.value.text)
+                assertEquals(false, terminal.onCheckIsTextEditor())
+                assertEquals(null, terminal.onCreateInputConnection(EditorInfo()))
+                assertEquals(
+                    "\u001B[<0;${column + 1};${row + 1}M\u001B[<0;${column + 1};${row + 1}m",
+                    sent.lastOrNull(),
+                )
+            }
+        }
+        composeRule.runOnIdle { assertEquals(2, sent.size) }
+    }
+
+    @Test
+    fun snippetsPageReturnsImeEnterToTerminalAndPreservesBufferedDraft() = withSoftwareKeyboard {
         val sent = mutableListOf<String>()
         val draft = BufferedInputDraftState()
         lateinit var terminal: FastTerminalView
@@ -99,7 +216,10 @@ class BufferedInputPagerTest {
                 }
             }
         }
-        composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("keep my draft")
+        composeRule.runOnIdle {
+            composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performClick().performTextInput("keep my draft")
         composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
         composeRule.onNodeWithText("Insert prompt").performClick()
@@ -252,11 +372,14 @@ class BufferedInputPagerTest {
 
         composeRule.onNodeWithContentDescription(resources.getString(R.string.terminal_buffered_input_description))
             .performTextInput("printf 'exact ✓'")
+        val typingSize = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot.size
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithText("ESC").assertIsDisplayed()
         composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        assertEquals(typingSize, composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot.size)
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        assertEquals(typingSize, composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot.size)
         composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, sendCount) }
         composeRule.runOnIdle { inputTargetId.longValue = 22L }
@@ -272,9 +395,26 @@ class BufferedInputPagerTest {
         composeRule.onNodeWithText(
             resources.getString(R.string.terminal_buffered_input_placeholder),
         ).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(
+        val voiceButton = composeRule.onNodeWithContentDescription(
+            resources.getString(R.string.terminal_voice_input),
+        )
+        val restoreButton = composeRule.onNodeWithContentDescription(
             resources.getString(R.string.terminal_restore_last_sent_input),
-        ).performClick()
+        )
+        voiceButton.assertIsDisplayed()
+        restoreButton.assertIsDisplayed()
+        val inputBounds = composeRule.onNodeWithTag("buffered_terminal_input").fetchSemanticsNode().boundsInRoot
+        val voiceBounds = voiceButton.fetchSemanticsNode().boundsInRoot
+        val restoreBounds = restoreButton.fetchSemanticsNode().boundsInRoot
+        assertTrue("input=$inputBounds voice=$voiceBounds restore=$restoreBounds", voiceBounds.top >= inputBounds.center.y)
+        assertTrue(voiceBounds.bottom <= inputBounds.bottom)
+        assertTrue(voiceBounds.left >= inputBounds.left)
+        assertTrue(restoreBounds.top >= inputBounds.center.y)
+        assertTrue(restoreBounds.bottom <= inputBounds.bottom)
+        assertTrue(restoreBounds.right <= inputBounds.right)
+        restoreButton.performClick()
+        voiceButton.assertIsDisplayed()
+        assertEquals(voiceBounds, voiceButton.fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
     }
 

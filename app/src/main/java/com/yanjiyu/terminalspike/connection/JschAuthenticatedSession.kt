@@ -65,6 +65,15 @@ internal class JschAuthenticatedSessionFactory(
             )
             if (opened.isClosed()) return null
             session.connect(CONNECT_TIMEOUT_MS)
+            if (opened.isClosed()) {
+                session.disconnect()
+                return null
+            }
+            opened.startPortForwards(config.portForwards)
+            if (opened.isClosed()) {
+                session.disconnect()
+                return null
+            }
             connected = true
             return opened
         } finally {
@@ -96,6 +105,11 @@ internal class AuthenticatedJschSession(
     private var closed = false
 
     fun isClosed(): Boolean = synchronized(lock) { closed }
+
+    fun startPortForwards(rules: List<com.yanjiyu.terminalspike.core.model.PortForwardRule>) = synchronized(lock) {
+        // Close cannot race listener creation, including a partially completed remote registration.
+        if (!closed) session.startPortForwards(rules)
+    }
 
     override fun answerKeyboardInteractiveChallenge(
         challengeToken: Long,

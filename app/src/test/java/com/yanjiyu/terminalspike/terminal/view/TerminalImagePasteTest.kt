@@ -9,6 +9,22 @@ import org.junit.Test
 
 class TerminalImagePasteTest {
     @Test
+    fun selectedMediaSupportsVideosWithoutBroadeningClipboardImages() {
+        assertEquals("mp4", selectedMediaExtension("VIDEO/MP4; charset=binary"))
+        assertEquals("webm", selectedMediaExtension("video/webm"))
+        assertEquals("mov", selectedMediaExtension("video/quicktime"))
+        assertEquals("mkv", selectedMediaExtension("video/x-matroska"))
+        assertEquals("3gp", selectedMediaExtension("video/3gpp"))
+        assertEquals("3g2", selectedMediaExtension("video/3gpp2"))
+        assertEquals("mpeg", selectedMediaExtension("video/mpeg"))
+        assertEquals("avi", selectedMediaExtension("video/x-msvideo"))
+        assertEquals("png", selectedMediaExtension("image/png"))
+        assertNull(selectedMediaExtension("text/plain"))
+        assertNull(selectedMediaExtension("application/octet-stream"))
+        assertNull(pastedImageExtension("video/mp4"))
+    }
+
+    @Test
     fun supportedClipboardMimeTypesMapToStableExtensions() {
         assertEquals("png", pastedImageExtension("image/png"))
         assertEquals("jpg", pastedImageExtension("IMAGE/JPEG; charset=binary"))

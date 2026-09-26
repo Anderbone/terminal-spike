@@ -371,6 +371,8 @@ data class HostProfileEntity(
     val moshServerCommand: String?,
     @ColumnInfo(name = "mosh_locale")
     val moshLocale: String? = null,
+    @ColumnInfo(name = "port_forwards", defaultValue = "''")
+    val portForwards: String = "",
     @ColumnInfo(name = "mosh_fallback_policy_code", defaultValue = "'never'")
     val moshFallbackPolicyCode: String = "never",
     @ColumnInfo(name = "created_at_epoch_millis")

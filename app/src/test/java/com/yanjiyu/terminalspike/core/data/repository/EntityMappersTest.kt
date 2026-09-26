@@ -23,6 +23,17 @@ import org.junit.Test
 
 class EntityMappersTest {
     @Test
+    fun portForwardsPersistAndCorruptRulesFailClosed() {
+        val host = validHost().copy(portForwards = listOf(
+            com.yanjiyu.terminalspike.core.model.PortForwardRule(listenPort = 8080, destinationPort = 80),
+        ))
+        assertEquals(host, host.toEntity().toDomainModel())
+        assertThrows(CorruptStoredDataException::class.java) {
+            host.toEntity().copy(portForwards = "unknown").toDomainModel()
+        }
+    }
+
+    @Test
     fun moshSinglePortAndOneElementRangeUseDistinctLosslessRepresentations() {
         val single = validHost(moshPort = 60_001)
         val range = validHost(moshPortRange = MoshPortRange(60_001, 60_001))

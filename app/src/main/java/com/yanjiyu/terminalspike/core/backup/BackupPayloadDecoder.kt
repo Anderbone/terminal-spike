@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.core.backup
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRules
 import com.yanjiyu.terminalspike.core.model.BellSettings
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.CursorStyle
@@ -389,6 +390,7 @@ private class DecoderState(private val expectedMode: BackupMode) {
             moshPortRange = rangeFirst?.let { MoshPortRange(it, requireNotNull(rangeLast)) },
             moshServerCommand = fields.optionalString(27),
             moshLocale = fields.optionalString(30),
+            portForwards = PortForwardRules.decode(fields.optionalString(32).orEmpty()),
             moshFallbackPolicy = fields.optionalString(31)
                 ?.let(MoshFallbackPolicy::fromWireCode)
                 ?: MoshFallbackPolicy.NEVER,
@@ -620,7 +622,7 @@ private class DecoderState(private val expectedMode: BackupMode) {
 
     private companion object {
         val COMMON_FIELDS = setOf(1, 2)
-        val HOST_FIELDS = COMMON_FIELDS + (10..31)
+        val HOST_FIELDS = COMMON_FIELDS + (10..32)
         val CREDENTIAL_FIELDS = COMMON_FIELDS + (10..16)
         val SSH_KEY_FIELDS = COMMON_FIELDS + (10..20)
         val KNOWN_HOST_FIELDS = COMMON_FIELDS + (10..16)

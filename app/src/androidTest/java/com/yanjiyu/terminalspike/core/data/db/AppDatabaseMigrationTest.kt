@@ -59,7 +59,7 @@ class AppDatabaseMigrationTest {
             DATABASE_NAME,
         ).build()
         try {
-            assertEquals(3, migrated.openHelper.writableDatabase.version)
+            assertEquals(AppDatabase.SCHEMA_VERSION, migrated.openHelper.writableDatabase.version)
             val host = migrated.hostProfileDao().findById(HOST_ID)
             assertNotNull(host)
             assertEquals("Mosh", host?.displayName)
@@ -100,6 +100,25 @@ class AppDatabaseMigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test
+    fun versionThreeAddsEmptyForwardsAndRulesSurviveReopen() = runBlocking {
+        migration.createDatabase(DATABASE_NAME, 3).use { it.insert("host_profiles", 0, versionOneHost()) }
+        fun open() = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME).build()
+        val encoded = com.yanjiyu.terminalspike.core.model.PortForwardRules.encode(listOf(
+            com.yanjiyu.terminalspike.core.model.PortForwardRule(listenPort = 8080, destinationPort = 80),
+        ))
+        var database = open()
+        try {
+            val host = requireNotNull(database.hostProfileDao().findById(HOST_ID))
+            assertEquals("", host.portForwards)
+            database.hostProfileDao().update(host.copy(portForwards = encoded))
+        } finally { database.close() }
+        database = open()
+        try {
+            assertEquals(encoded, database.hostProfileDao().findById(HOST_ID)?.portForwards)
+        } finally { database.close() }
     }
 
     private fun versionOneHost() = ContentValues().apply {

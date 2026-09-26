@@ -226,6 +226,7 @@ internal fun SettingsDestination(
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
+    onOpenPortForwards: () -> Unit = {},
     terminalProfileId: String? = null,
     keyboardProfileId: String? = null,
     settingsViewModel: SettingsViewModel = viewModel(),
@@ -361,6 +362,7 @@ internal fun SettingsDestination(
         onOpenSettings = onOpenSettings,
         onOpenSshKeys = onOpenSshKeys,
         onOpenSnippets = onOpenSnippets,
+        onOpenPortForwards = onOpenPortForwards,
         onDismissMessage = settingsViewModel::consumeMessage,
         backupState = backupState,
         backupActions = backupActions,
@@ -384,6 +386,7 @@ internal fun SettingsScreen(
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit = {},
     onOpenSnippets: () -> Unit = {},
+    onOpenPortForwards: () -> Unit = {},
     onDismissMessage: () -> Unit,
     backupState: BackupWorkflowUiState = BackupWorkflowUiState(),
     backupActions: BackupSettingsActions = BackupSettingsActions.NONE,
@@ -457,6 +460,7 @@ internal fun SettingsScreen(
                             onOpenRendererLab = onOpenRendererLab,
                             onOpenSshKeys = onOpenSshKeys,
                             onOpenSnippets = onOpenSnippets,
+                            onOpenPortForwards = onOpenPortForwards,
                             backupState = backupState,
                             backupActions = backupActions,
                             savedCredentialClearState = savedCredentialClearState,
@@ -488,6 +492,7 @@ internal fun SettingsScreen(
                         onOpenRendererLab = onOpenRendererLab,
                         onOpenSshKeys = onOpenSshKeys,
                         onOpenSnippets = onOpenSnippets,
+                        onOpenPortForwards = onOpenPortForwards,
                         backupState = backupState,
                         backupActions = backupActions,
                         savedCredentialClearState = savedCredentialClearState,
@@ -685,6 +690,7 @@ private val SettingsCategory.glyph: AppGlyph
         SettingsCategory.KEYBOARD -> AppGlyph.KEYBOARD
         SettingsCategory.SSH_KEYS -> AppGlyph.KEYCHAIN
         SettingsCategory.SNIPPETS -> AppGlyph.SNIPPETS
+        SettingsCategory.PORT_FORWARDING -> AppGlyph.WORKSPACE
         SettingsCategory.SESSIONS_BACKGROUND -> AppGlyph.WORKSPACE
         SettingsCategory.NOTIFICATIONS -> AppGlyph.NOTIFICATIONS
         SettingsCategory.BACKUP_RESTORE -> AppGlyph.BACKUP
@@ -711,6 +717,7 @@ private fun SettingsDetail(
     onOpenRendererLab: () -> Unit,
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
+    onOpenPortForwards: () -> Unit = {},
     backupState: BackupWorkflowUiState,
     backupActions: BackupSettingsActions,
     savedCredentialClearState: SavedCredentialClearUiState,
@@ -732,6 +739,12 @@ private fun SettingsDetail(
                 detail = R.string.settings_snippets_management_detail,
                 action = R.string.settings_snippets_management_action,
                 onOpen = onOpenSnippets,
+            )
+            SettingsCategory.PORT_FORWARDING -> DataManagementSettings(
+                category = SettingsCategory.PORT_FORWARDING,
+                detail = R.string.port_forward_settings_detail,
+                action = R.string.port_forward_manage,
+                onOpen = onOpenPortForwards,
             )
             SettingsCategory.SESSIONS_BACKGROUND -> SessionsBackgroundSettings(state, actions)
             SettingsCategory.NOTIFICATIONS -> NotificationSettings(state, actions)

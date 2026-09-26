@@ -13,6 +13,20 @@ import org.junit.Test
 
 class ConnectionsManagementTest {
     @Test
+    fun portForwardsSurviveSavingEitherProtocolAndDuplicatesBlockSaving() {
+        val rule = com.yanjiyu.terminalspike.core.model.PortForwardRule(listenPort = 8080, destinationPort = 80)
+        ConnectionProtocol.entries.forEach { protocol ->
+            val draft = HostEditorDraft(displayName = "Tunnel", hostname = "example.test",
+                username = "tester", protocol = protocol, portForwards = listOf(rule))
+            val result = validateHostEditor(draft, availableKeyIds = emptySet())
+            assertEquals(listOf(rule), requireNotNull(result.value).toProfile(nowEpochMillis = 42).portForwards)
+            val duplicate = validateHostEditor(draft.copy(portForwards = listOf(rule, rule)), availableKeyIds = emptySet())
+            assertNull(duplicate.value)
+            assertNotNull(duplicate.errors.portForwards)
+        }
+    }
+
+    @Test
     fun fullMoshHostDraftValidatesAndPreservesAdvancedFields() {
         val result = validateHostEditor(
             HostEditorDraft(

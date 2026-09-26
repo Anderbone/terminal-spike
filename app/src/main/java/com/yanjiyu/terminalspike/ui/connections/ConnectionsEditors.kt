@@ -224,6 +224,7 @@ internal fun HostEditorDialog(
             nextErrors.tag != null ||
             nextErrors.startupCommand != null ||
             nextErrors.keepalive != null ||
+            nextErrors.portForwards != null ||
             nextErrors.moshPort != null ||
             nextErrors.moshServerCommand != null ||
             nextErrors.moshLocale != null
@@ -651,6 +652,12 @@ internal fun HostEditorDialog(
                         minLines = 2,
                         maxLines = 4,
                     )
+                    PortForwardEditor(
+                        rules = draft.portForwards,
+                        onChange = { updateDraft(draft.copy(portForwards = it)) },
+                        enabled = editorControlsEnabled,
+                    )
+                    errors.portForwards?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                     Text(stringResource(R.string.host_editor_keepalive_override), style = MaterialTheme.typography.labelMedium)
                     EnumChips(
                         values = HostKeepaliveMode.entries,

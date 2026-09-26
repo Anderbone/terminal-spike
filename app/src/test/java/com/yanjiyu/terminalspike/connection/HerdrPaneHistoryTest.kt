@@ -56,10 +56,74 @@ class HerdrPaneHistoryTest {
         assertTrue(commands.none { "'read'" in it })
     }
 
-    private fun fixtureResponse(command: String, revision: Int = 1, agent: String = "codex"): TmuxExecOutput {
+    @Test fun letterAndMultiCharacterPaneNumbersRetainNativeHistory() {
+        for (paneId in listOf("w6:pC", "wZ:pA1", "w1:p0")) {
+            val commands = mutableListOf<String>()
+            val captured = captureHerdrPaneHistory({ command ->
+                commands += command
+                fixtureResponse(command, paneId = paneId)
+            }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+            assertNotNull("Valid Herdr pane $paneId must provide native history", captured)
+            assertEquals("default/$paneId/term1", captured!!.identity)
+            assertEquals(1000, captured.lines.size)
+            assertTrue(commands.any { "'read' '$paneId'" in it })
+        }
+        for (paneId in listOf("w6:p", "w6:pC;id", "w6:pC extra", "w6:pC/other")) {
+            val commands = mutableListOf<String>()
+            assertNull(captureHerdrPaneHistory({ command ->
+                commands += command
+                fixtureResponse(command, paneId = paneId)
+            }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false))
+            assertEquals("Reject malformed ids before querying a pane", 1, commands.size)
+        }
+    }
+
+    @Test fun remotelyScrolledPaneRemainsAvailableForNativeHistory() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        val first = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it, offset = 6) }, choice, null, false))
+        assertEquals(6, first.offsetFromBottom)
+        for (reading in listOf(false, true)) {
+            val updated = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it, offset = 0) }, choice, first, reading))
+            assertEquals("Remote position must update even while reader rows stay pinned", 0, updated.offsetFromBottom)
+            if (reading) assertSame(first.lines, updated.lines)
+        }
+    }
+
+    @Test fun nativeBottomDoesNotRevealTheRemotelyScrolledScreen() {
+        val source = snapshot().copy(offsetFromBottom = 6)
+        val reader = HerdrHistoryViewport()
+        reader.beginScroll(source, 20f, 200f)
+        reader.scrollBy(200f)
+        assertNotNull("Latest input must stay visible above the old remote screen", reader.snapshot)
+        assertTrue(reader.viewport.autoFollow)
+        assertEquals(reader.viewport.maximumScrollY, reader.viewport.scrollY, 0f)
+        reader.scrollBy(100f)
+        assertNotNull(reader.snapshot)
+        reader.retainSource(source.copy(offsetFromBottom = 0))
+        assertNull("Return to live only when the remote screen is actually at bottom", reader.snapshot)
+    }
+
+    @Test fun heldLatestSnapshotUpdatesButOlderReaderKeepsItsPixelAnchor() {
+        val source = snapshot().copy(offsetFromBottom = 6)
+        val reader = HerdrHistoryViewport()
+        reader.begin(source, 20f)
+        reader.scrollBy(200f)
+        val latest = source.copy(lines = source.lines + TerminalLine.plain("LATEST_INPUT"))
+        reader.retainSource(latest)
+        assertSame(latest, reader.snapshot)
+        assertTrue(reader.viewport.autoFollow)
+        assertEquals("LATEST_INPUT", reader.snapshot!!.lines.last().text)
+        reader.scrollBy(-3.25f)
+        val anchor = reader.viewport.scrollY
+        reader.retainSource(source)
+        assertSame(latest, reader.snapshot)
+        assertEquals(anchor, reader.viewport.scrollY, 0f)
+    }
+
+    private fun fixtureResponse(command: String, revision: Int = 1, agent: String = "codex", offset: Int = 0, paneId: String = "w1:p2"): TmuxExecOutput {
         val value = when {
-            "'layout'" in command -> """{"result":{"layout":{"focused_pane_id":"w1:p2","tab_id":"w1:t1","panes":[{"pane_id":"w1:p2","rect":{"x":2,"y":1,"width":80,"height":24}}]}}}"""
-            "'get'" in command -> """{"result":{"pane":{"pane_id":"w1:p2","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":$revision,"scroll":{"viewport_rows":24,"offset_from_bottom":0}}}}"""
+            "'layout'" in command -> """{"result":{"layout":{"focused_pane_id":"$paneId","tab_id":"w1:t1","panes":[{"pane_id":"$paneId","rect":{"x":2,"y":1,"width":80,"height":24}}]}}}"""
+            "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":$revision,"scroll":{"viewport_rows":24,"offset_from_bottom":$offset}}}}"""
             "'read'" in command -> (1..1000).joinToString("\n", postfix = "\n") { "row $it" }
             else -> error("Unexpected remote command")
         }

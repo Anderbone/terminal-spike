@@ -12,7 +12,7 @@ data class TerminalImageContentRequest(
     val releasePermission: () -> Unit = {},
 )
 
-/** One locally selected or pasted image whose bytes are opened only for the bounded upload. */
+/** One selected media file or pasted image opened only for the bounded upload. */
 data class TerminalImagePasteSource(
     val mimeType: String,
     val open: () -> InputStream?,
@@ -24,9 +24,9 @@ fun interface TerminalImageContentCallback {
     fun onImageContent(request: TerminalImageContentRequest): Boolean
 }
 
-internal const val MAX_PASTED_IMAGE_BYTES: Long = 20L * 1024L * 1024L
+internal const val MAX_PASTED_IMAGE_BYTES: Long = 100L * 1024L * 1024L
 
-/** Codex CLI's supported clipboard-image formats, kept narrower than the image MIME wildcard. */
+/** Supported clipboard-image formats, kept narrower than the image MIME wildcard. */
 internal fun pastedImageExtension(mimeType: String): String? = when (
     mimeType.substringBefore(';').trim().lowercase()
 ) {
@@ -34,6 +34,21 @@ internal fun pastedImageExtension(mimeType: String): String? = when (
     "image/jpeg", "image/jpg" -> "jpg"
     "image/webp" -> "webp"
     "image/gif" -> "gif"
+    else -> null
+}
+
+/** Videos are uploaded unchanged and pasted as remote file paths. */
+internal fun selectedMediaExtension(mimeType: String): String? = pastedImageExtension(mimeType) ?: when (
+    mimeType.substringBefore(';').trim().lowercase()
+) {
+    "video/mp4" -> "mp4"
+    "video/webm" -> "webm"
+    "video/quicktime" -> "mov"
+    "video/x-matroska" -> "mkv"
+    "video/3gpp" -> "3gp"
+    "video/3gpp2" -> "3g2"
+    "video/mpeg" -> "mpeg"
+    "video/x-msvideo" -> "avi"
     else -> null
 }
 
@@ -72,5 +87,5 @@ internal class PastedImageSizeLimitInputStream(
 }
 
 internal class PastedImageTooLargeException(maximumBytes: Long) : IOException(
-    "Pasted image exceeds the $maximumBytes-byte limit.",
+    "Selected media exceeds the $maximumBytes-byte limit.",
 )

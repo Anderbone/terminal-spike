@@ -95,21 +95,21 @@
     <string name="terminal_multiline_paste_title">Paste multiple lines?</string>
     <string name="terminal_multiline_paste_message">This will paste the complete multiline draft into the current terminal. No extra Enter key will be added.</string>
     <string name="terminal_paste">Paste</string>
-    <string name="notice_image_paste_uploading">Uploading image…</string>
+    <string name="notice_image_paste_uploading">Uploading file…</string>
     <plurals name="notice_image_paste_uploading_count">
-        <item quantity="one">Uploading %d image…</item>
-        <item quantity="other">Uploading %d images…</item>
+        <item quantity="one">Uploading %d file…</item>
+        <item quantity="other">Uploading %d files…</item>
     </plurals>
-    <string name="notice_image_paste_attached">Image attached to terminal input</string>
+    <string name="notice_image_paste_attached">File attached to terminal input</string>
     <plurals name="notice_image_paste_attached_count">
-        <item quantity="one">%d image attached to terminal input</item>
-        <item quantity="other">%d images attached to terminal input</item>
+        <item quantity="one">%d file attached to terminal input</item>
+        <item quantity="other">%d files attached to terminal input</item>
     </plurals>
-    <string name="notice_image_paste_partial">%1$d of %2$d images attached to terminal input</string>
-    <string name="notice_image_paste_failed">Could not attach the image</string>
-    <string name="notice_image_paste_requires_remote">Image paste requires a connected SSH or Mosh session</string>
-    <string name="notice_image_paste_format_unsupported">This image format is not supported</string>
-    <string name="notice_image_paste_too_large">Images must be 20 MB or smaller</string>
+    <string name="notice_image_paste_partial">%1$d of %2$d files attached to terminal input</string>
+    <string name="notice_image_paste_failed">Could not attach the file</string>
+    <string name="notice_image_paste_requires_remote">Media upload requires a connected SSH or Mosh session</string>
+    <string name="notice_image_paste_format_unsupported">This media format is not supported</string>
+    <string name="notice_image_paste_too_large">Files must be 100 MB or smaller</string>
     <string name="terminal_customize_keys">Customize terminal keys</string>
     <string name="terminal_edit_keys_short">EDIT</string>
     <string name="terminal_modifier_off">%1$s off</string>

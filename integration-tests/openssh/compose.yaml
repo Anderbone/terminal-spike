@@ -6,6 +6,7 @@ services:
         OPENSSH_VERSION: 10.3_p1-r1
     environment:
       TERMINAL_SPIKE_TEST_PASSWORD: terminal-spike-test-only
+      TERMINAL_SPIKE_TEST_FORWARDING: ${TERMINAL_SPIKE_TEST_FORWARDING:-no}
     init: true
     ports:
       - "${TERMINAL_SPIKE_SSH_BIND_ADDRESS:-127.0.0.1}:${TERMINAL_SPIKE_SSH_PORT:-22222}:22"

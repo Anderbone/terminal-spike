@@ -110,6 +110,7 @@ internal fun LocalToolsScreen(
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit = {},
     onOpenSnippets: () -> Unit = {},
+    onOpenPortForwards: () -> Unit = {},
     onUseProfile: (SavedSshProfile) -> Unit,
     onSaveProfile: (label: String, host: String, port: String, username: String, existingId: Long?) -> Unit,
     onDeleteProfile: (Long) -> Unit,
@@ -145,6 +146,7 @@ internal fun LocalToolsScreen(
             onOpenSettings = onOpenSettings,
             onOpenSshKeys = onOpenSshKeys,
             onOpenSnippets = onOpenSnippets,
+            onOpenPortForwards = onOpenPortForwards,
             terminalProfileId = terminalProfileId,
             keyboardProfileId = keyboardProfileId,
         )

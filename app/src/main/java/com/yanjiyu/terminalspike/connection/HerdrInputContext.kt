@@ -27,7 +27,8 @@ internal fun captureHerdrInputContext(
     }
     val focused = focus()
     val paneId = requireNotNull(focused.second)
-    require(paneId.matches(Regex("[A-Za-z0-9_-]+:p[0-9]+")))
+    // Herdr public pane numbers include uppercase letters (for example w6:pC).
+    require(paneId.matches(Regex("[A-Za-z0-9_-]+:p[0-9A-Z]+")))
     val pane = result("get", paneId).getValue("pane") as JsonObject
     require(pane.string("pane_id") == paneId && pane.string("tab_id") == focused.first)
     val process = result("process-info", "--pane", paneId).getValue("process_info") as JsonObject

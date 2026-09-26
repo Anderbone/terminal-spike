@@ -1024,7 +1024,7 @@ private fun com.yanjiyu.terminalspike.terminal.TerminalController.lastIndexOfExa
     lineAt(index)?.text?.trimEnd() == expected
 } ?: -1
 
-private class EphemeralKnownHostTrustStore : KnownHostTrustStore {
+internal class EphemeralKnownHostTrustStore : KnownHostTrustStore {
     private val lock = Any()
     private val entries = mutableListOf<TrustedKnownHostKey>()
 

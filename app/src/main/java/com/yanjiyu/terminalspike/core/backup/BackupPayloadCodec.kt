@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.core.backup
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRules
 import com.yanjiyu.terminalspike.core.model.HostProfile
 import com.yanjiyu.terminalspike.core.model.KeyboardProfile
 import com.yanjiyu.terminalspike.core.model.KnownHost
@@ -236,6 +237,7 @@ private object BackupPayloadEncoder {
         u64(28, host.createdAtEpochMillis)
         u64(29, host.updatedAtEpochMillis)
         optionalString(30, host.moshLocale)
+        if (host.portForwards.isNotEmpty()) string(32, PortForwardRules.encode(host.portForwards))
         if (host.moshFallbackPolicy != MoshFallbackPolicy.NEVER) {
             string(31, host.moshFallbackPolicy.wireCode)
         }

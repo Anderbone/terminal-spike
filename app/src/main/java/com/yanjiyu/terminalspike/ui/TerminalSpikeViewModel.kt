@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.ui
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRule
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
@@ -92,7 +93,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
 import com.yanjiyu.terminalspike.terminal.view.accessoryModifierState
 import com.yanjiyu.terminalspike.terminal.view.encodeTerminalChord
 import com.yanjiyu.terminalspike.terminal.view.resolve
-import com.yanjiyu.terminalspike.terminal.view.pastedImageExtension
+import com.yanjiyu.terminalspike.terminal.view.selectedMediaExtension
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsLoadState
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsInteractionAction
@@ -1395,6 +1396,7 @@ private class SessionRuntimeProfileSelection(
     val remoteClipboardMode: RemoteClipboardMode,
     val keepaliveIntervalSeconds: Int,
     val reliabilityPolicy: RemoteSessionReliabilityPolicy,
+    val portForwards: List<PortForwardRule> = emptyList(),
 )
 
 /** Secret-bearing selection used only across the synchronous session-start boundary. */
@@ -3245,6 +3247,7 @@ class TerminalSpikeViewModel(
             },
             terminalType = terminal.profile?.termValue,
             startupCommand = terminal.startupCommand,
+            portForwards = host?.portForwards.orEmpty(),
             remoteClipboardMode = terminal.profile?.links?.remoteClipboardMode
                 ?: activeRemoteClipboardMode,
             keepaliveIntervalSeconds = reliability.keepaliveIntervalSeconds,
@@ -3363,6 +3366,7 @@ class TerminalSpikeViewModel(
             keepaliveIntervalSeconds = runtimeProfiles.keepaliveIntervalSeconds,
             terminalType = runtimeProfiles.terminalType,
             startupCommand = runtimeProfiles.startupCommand,
+            portForwards = runtimeProfiles.portForwards,
             tmuxSessionSelectorEnabled = tmuxSessionSelectorEnabled,
         )
             val safeWorkspaceName = privacySafeWorkspaceFriendlyName(
@@ -4215,9 +4219,8 @@ class TerminalSpikeViewModel(
     )
 
     /**
-     * Uploads an ordered image batch over the authenticated SSH side channel and pastes each
-     * resulting path in selection order. Codex turns those paths into multiple `[Image #N]`
-     * attachments in its current input.
+     * Uploads an ordered media batch over the authenticated SSH side channel and pastes each
+     * resulting path in selection order. The receiving application decides how to handle it.
      */
     internal fun pasteImages(
         sessionId: Long,
@@ -4225,7 +4228,7 @@ class TerminalSpikeViewModel(
     ): Boolean {
         if (images.isEmpty()) return false
         val prepared = images.mapNotNull { image ->
-            pastedImageExtension(image.mimeType)?.let { extension -> image to extension }
+            selectedMediaExtension(image.mimeType)?.let { extension -> image to extension }
         }
         if (prepared.isEmpty()) {
             _uiState.update { it.copy(notice = uiText(R.string.notice_image_paste_format_unsupported)) }
@@ -4264,7 +4267,7 @@ class TerminalSpikeViewModel(
                         withContext(Dispatchers.IO) {
                             runCatching {
                                 val input = requireNotNull(image.open()) {
-                                    "The selected image is no longer available."
+                                    "The selected media file is no longer available."
                                 }
                                 remoteSessions.uploadPastedImage(
                                     sessionId = sessionId,

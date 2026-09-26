@@ -318,6 +318,7 @@ internal class TerminalDataRepository(
             tag = existing?.tag,
             startupCommand = existing?.startupCommand,
             keepaliveIntervalSeconds = existing?.keepaliveIntervalSeconds,
+            portForwards = existing?.portForwards.orEmpty(),
             reconnectPolicy = existing?.reconnectPolicy,
             moshPort = existing?.moshPort ?: profile.moshPort,
             moshPortRange = existing?.moshPortRange ?: profile.moshPortRange,
@@ -399,6 +400,7 @@ internal class TerminalDataRepository(
                 tag = existing?.tag,
                 startupCommand = existing?.startupCommand,
                 keepaliveIntervalSeconds = existing?.keepaliveIntervalSeconds,
+                portForwards = existing?.portForwards.orEmpty(),
                 reconnectPolicy = existing?.reconnectPolicy,
                 moshPort = existing?.moshPort ?: profile.moshPort,
                 moshPortRange = existing?.moshPortRange ?: profile.moshPortRange,
@@ -1066,7 +1068,8 @@ private fun TerminalDataRecords.toLegacySettings(ids: EphemeralTerminalIdRegistr
                     SavedHostConnectionCompatibility.PRIVATE_KEY_REQUIRES_FULL_UI
                 credential?.authentication is SshAuthentication.KeyboardInteractive ->
                     SavedHostConnectionCompatibility.KEYBOARD_INTERACTIVE_UNAVAILABLE
-                host.startupCommand != null || host.keepaliveIntervalSeconds != null ||
+                host.portForwards.isNotEmpty() ||
+                    host.startupCommand != null || host.keepaliveIntervalSeconds != null ||
                     host.reconnectPolicy != null ||
                     (host.terminalProfileId != null &&
                         host.terminalProfileId != defaultTerminalProfileId) ||

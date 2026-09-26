@@ -1922,6 +1922,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
     val reconnectTerminalType = terminalType
     val reconnectStartupCommand = startupCommand
     val reconnectTmuxSelector = tmuxSessionSelectorEnabled
+    val reconnectPortForwards = portForwards
     return {
         SshConnectionConfig(
             host = reconnectHost,
@@ -1932,6 +1933,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
             terminalType = reconnectTerminalType,
             startupCommand = reconnectStartupCommand,
             tmuxSessionSelectorEnabled = reconnectTmuxSelector,
+            portForwards = reconnectPortForwards,
         )
     }
 }
@@ -2097,6 +2099,8 @@ private class DefaultSshSessionTerminal(
     private var tmuxIdentityRefresh: ScheduledFuture<*>? = null
     private var tmuxMetadataStaleStartedAtNanos = 0L
     private var tmuxOutputRevision = 0L
+    private var herdrOutputRevision = 0L
+    private var herdrCapturedOutputRevision = -1L
     private var tmuxHistoryBootstrapRequested = false
     private var stopped = false
     private var moshDisplayHistory: MoshDisplayHistory? = null
@@ -2216,6 +2220,11 @@ private class DefaultSshSessionTerminal(
         onTerminalNotification: (String) -> Unit,
         onTerminalBell: () -> Unit,
     ) {
+        synchronized(tmuxHistoryLock) {
+            if (attachedConnection?.isHerdrSession == true) {
+                herdrOutputRevision = herdrOutputRevision.nextPositiveGeneration()
+            }
+        }
         noteTmuxOutputStarted()
         val parsedUpdate = engine.accept(bytes)
         val update = moshDisplayHistory?.retainDisplayedRows(parsedUpdate) ?: parsedUpdate
@@ -2294,11 +2303,24 @@ private class DefaultSshSessionTerminal(
                     controller.publishHerdrSidebarLayout(layout)
                 }
             }
+            val (revision, previous, pinned) = synchronized(tmuxHistoryLock) {
+                val reading = controller.herdrHistoryReading
+                val pinned = reading && controller.herdrHistoryPinned
+                Triple(herdrOutputRevision, controller.herdrHistory.takeIf {
+                    pinned || !reading && herdrOutputRevision == herdrCapturedOutputRevision
+                }, pinned)
+            }
             val snapshot = runCatching {
-                connection.captureHerdrHistory(controller.herdrHistory, controller.herdrHistoryReading)
+                connection.captureHerdrHistory(previous, pinned)
             }.getOrNull()
             synchronized(tmuxHistoryLock) {
-                if (!stopped && attachedConnection === connection) controller.publishHerdrHistory(snapshot)
+                if (!stopped && attachedConnection === connection) {
+                    // Herdr's pane revision is metadata, not a terminal-content revision.
+                    // Reuse idle live rows only without new output. A latest overlay must
+                    // poll: output below a scrolled remote viewport may emit no Mosh frame.
+                    if (snapshot != null && !pinned) herdrCapturedOutputRevision = revision
+                    controller.publishHerdrHistory(snapshot)
+                }
             }
             return
         }

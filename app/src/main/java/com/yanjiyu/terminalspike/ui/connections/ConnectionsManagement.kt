@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.ui.connections
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRule
+import com.yanjiyu.terminalspike.core.model.PortForwardRules
 import androidx.annotation.StringRes
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
@@ -63,6 +65,7 @@ internal data class HostEditorDraft(
     val startupCommand: String = "",
     val keepaliveMode: HostKeepaliveMode = HostKeepaliveMode.INHERIT,
     val keepaliveSeconds: String = "30",
+    val portForwards: List<PortForwardRule> = emptyList(),
     val reconnectMode: HostReconnectMode = HostReconnectMode.INHERIT,
     val moshPortMode: MoshPortMode = MoshPortMode.AUTOMATIC,
     val moshPort: String = "",
@@ -83,6 +86,7 @@ internal data class HostEditorErrors(
     val tag: UiText? = null,
     val startupCommand: UiText? = null,
     val keepalive: UiText? = null,
+    val portForwards: UiText? = null,
     val moshPort: UiText? = null,
     val moshServerCommand: UiText? = null,
     val moshLocale: UiText? = null,
@@ -98,6 +102,7 @@ internal data class HostEditorErrors(
             tag,
             startupCommand,
             keepalive,
+            portForwards,
             moshPort,
             moshServerCommand,
             moshLocale,
@@ -125,6 +130,7 @@ internal data class ValidatedHostEditor(
     val moshPort: Int?,
     val moshPortRange: MoshPortRange?,
     val moshServerCommand: String?,
+    val portForwards: List<PortForwardRule> = emptyList(),
     val moshLocale: String? = null,
     val moshFallbackPolicy: MoshFallbackPolicy = MoshFallbackPolicy.NEVER,
 ) {
@@ -146,6 +152,7 @@ internal data class ValidatedHostEditor(
         tag = tag,
         startupCommand = startupCommand,
         keepaliveIntervalSeconds = keepaliveIntervalSeconds,
+        portForwards = portForwards,
         reconnectPolicy = reconnectPolicy,
         moshPort = moshPort,
         moshPortRange = moshPortRange,
@@ -270,6 +277,7 @@ internal fun TerminalDataCatalog.toConnectionsEditorCatalog(): ConnectionsEditor
                     moshRangeLast = profile.moshPortRange?.last?.toString() ?: "60010",
                     moshServerCommand = profile.moshServerCommand ?: "mosh-server",
                     moshLocale = profile.moshLocale.orEmpty(),
+                    portForwards = profile.portForwards,
                     moshFallbackPolicy = profile.moshFallbackPolicy,
                 ),
                 savedSecretAvailable = credential?.savedSecretAvailability ==
@@ -429,6 +437,8 @@ internal fun validateHostEditor(
         tag = tagError,
         startupCommand = startupError,
         keepalive = keepaliveError,
+        portForwards = if (runCatching { PortForwardRules.validate(draft.portForwards) }.isFailure)
+            uiText(R.string.port_forward_invalid) else null,
         moshPort = moshPortError,
         moshServerCommand = moshCommandError,
         moshLocale = moshLocaleError,
@@ -452,6 +462,7 @@ internal fun validateHostEditor(
             tag = tag,
             startupCommand = startupCommand,
             keepaliveIntervalSeconds = keepalive,
+            portForwards = draft.portForwards,
             reconnectPolicy = reconnect,
             moshPort = moshPort,
             moshPortRange = moshRange,

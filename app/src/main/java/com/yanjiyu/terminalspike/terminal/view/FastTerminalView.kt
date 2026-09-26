@@ -287,7 +287,7 @@ class FastTerminalView @JvmOverloads constructor(
         }
         if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
         herdrScroll.updateSource(controller.herdrHistory.takeIf { controller.isHerdrNativeHistoryVisible() })
-        controller.herdrHistoryReading = herdrScroll.reader.snapshot != null
+        publishHerdrReaderState(controller)
         val previousProfile = appliedRendererProfile
         val previousScrollY = controller.viewport.scrollY
         applyRendererProfile(controller.rendererProfile)
@@ -763,7 +763,7 @@ class FastTerminalView @JvmOverloads constructor(
                 }
                 herdrTouchConsumed = event.actionMasked != MotionEvent.ACTION_UP &&
                     event.actionMasked != MotionEvent.ACTION_CANCEL
-                herdrController?.herdrHistoryReading = herdrScroll.reader.snapshot != null
+                herdrController?.let(::publishHerdrReaderState)
                 parent?.requestDisallowInterceptTouchEvent(herdrTouchConsumed)
                 postInvalidateOnAnimation()
                 return true
@@ -897,9 +897,20 @@ class FastTerminalView @JvmOverloads constructor(
         terminalController?.reportFocus(gainFocus)
     }
 
+    internal fun herdrVisibleRowsForTesting(): List<String> {
+        val snapshot = herdrScroll.reader.snapshot ?: return emptyList()
+        val rows = herdrScroll.reader.viewport.visibleRows(0)
+        return snapshot.lines.subList(rows.first, rows.lastExclusive).map { it.text }
+    }
+
+    private fun publishHerdrReaderState(controller: TerminalController) {
+        controller.herdrHistoryReading = herdrScroll.reader.snapshot != null
+        controller.herdrHistoryPinned = controller.herdrHistoryReading && !herdrScroll.reader.holdingLatest
+    }
+
     override fun computeScroll() {
         if (herdrScroll.animate()) {
-            terminalController?.herdrHistoryReading = herdrScroll.reader.snapshot != null
+            terminalController?.let(::publishHerdrReaderState)
             postInvalidateOnAnimation()
         }
         if (!scroller.computeScrollOffset()) {
@@ -1098,7 +1109,8 @@ class FastTerminalView @JvmOverloads constructor(
             return false
         }
         val controller = terminalController
-        if (directInputEnabled && controller != null && x.isFinite() && y.isFinite() &&
+        // A buffered draft owns keyboard input, but terminal navigation still needs mouse clicks.
+        if (controller != null && x.isFinite() && y.isFinite() &&
             x >= horizontalPaddingPx && x < width - horizontalPaddingPx &&
             y >= verticalPaddingPx && y < height - verticalPaddingPx
         ) {

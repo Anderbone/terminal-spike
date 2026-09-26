@@ -557,4 +557,26 @@
     <string name="terminal_escape_short">ESC</string>
     <string name="terminal_enter_short">↵</string>
     <string name="terminal_key_shift_left">Shift Left</string>
+    <string name="port_forward_title">Port forwarding</string>
+    <string name="port_forward_summary">TCP tunnels start when this connection opens. Changes apply next time you connect. Mosh uses its companion SSH connection for tunnels; reconnect if that SSH connection is interrupted.</string>
+    <string name="port_forward_local">Local</string>
+    <string name="port_forward_remote">Remote</string>
+    <string name="port_forward_local_help">Listen on this phone and reach a destination from the SSH server.</string>
+    <string name="port_forward_remote_help">Listen on the SSH server and reach a destination from this phone. The server must allow remote forwarding.</string>
+    <string name="port_forward_bind">Listen address</string>
+    <string name="port_forward_bind_help">127.0.0.1 or ::1 keeps access on the listening device. 0.0.0.0 or :: allows other devices; remote exposure also depends on the server GatewayPorts setting.</string>
+    <string name="port_forward_listen">Listen port</string>
+    <string name="port_forward_destination_host">Destination host</string>
+    <string name="port_forward_destination_port">Destination port</string>
+    <string name="port_forward_add">Add port forward</string>
+    <string name="port_forward_edit">Edit</string>
+    <string name="port_forward_remove">Remove</string>
+    <string name="port_forward_save">Save rule</string>
+    <string name="port_forward_cancel">Cancel</string>
+    <string name="port_forward_invalid">Use valid addresses and ports from 1 to 65535, with no overlapping enabled listen ports.</string>
+    <string name="port_forward_settings_summary">Local and remote TCP tunnels for SSH and Mosh</string>
+    <string name="port_forward_settings_detail">Save forwarding rules per connection in Advanced settings. Local forwarding opens a port on your phone; remote forwarding opens a port on the server. Rules use that connection’s SSH credentials and host verification.\n\nFor a website running on your computer’s localhost:5173, edit its connection and choose “Example: localhost:5173” under Advanced → Port forwarding. Save the rule and connection, reconnect, then open http://127.0.0.1:5173 in your phone browser.</string>
+    <string name="port_forward_website_example">Example: localhost:5173</string>
+    <string name="port_forward_website_example_help">Fills a local forward from this phone’s port 5173 to the connected computer’s localhost:5173. Save the rule and connection, reconnect, then open http://127.0.0.1:5173 on your phone.</string>
+    <string name="port_forward_manage">Manage connections</string>
 </resources>

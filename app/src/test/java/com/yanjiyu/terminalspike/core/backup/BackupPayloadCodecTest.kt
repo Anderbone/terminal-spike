@@ -646,6 +646,14 @@ private fun assertSnapshotEquals(expected: BackupPayloadSnapshot, actual: Backup
 private fun hostA(): HostProfile = HostProfile(
     id = HOST_A_ID,
     displayName = "Production Mosh",
+    portForwards = listOf(
+        com.yanjiyu.terminalspike.core.model.PortForwardRule(listenPort = 8080, destinationPort = 80),
+        com.yanjiyu.terminalspike.core.model.PortForwardRule(
+            direction = com.yanjiyu.terminalspike.core.model.PortForwardDirection.REMOTE,
+            bindAddress = "::1", listenPort = 9090, destinationHost = "::1", destinationPort = 9000,
+            enabled = false,
+        ),
+    ),
     hostname = "shell.example.com",
     port = 22,
     username = "operator",

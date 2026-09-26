@@ -33,6 +33,7 @@ data class HostProfile(
     val startupCommand: String? = null,
     /** Null inherits the global value, zero disables it, otherwise this is an interval in seconds. */
     val keepaliveIntervalSeconds: Int? = null,
+    val portForwards: List<PortForwardRule> = emptyList(),
     /** Null inherits the global reconnect policy. */
     val reconnectPolicy: ReconnectPolicy? = null,
     val moshPort: Int? = null,
@@ -45,6 +46,7 @@ data class HostProfile(
     val updatedAtEpochMillis: Long,
 ) {
     init {
+        PortForwardRules.validate(portForwards)
         requireCanonicalUuid(id, "host profile ID")
         requirePlainText(displayName, "display name", ModelLimits.MAX_DISPLAY_NAME_LENGTH)
         requireHost(hostname, "hostname")

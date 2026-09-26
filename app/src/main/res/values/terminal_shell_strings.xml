@@ -190,7 +190,7 @@
     <string name="terminal_key_settings_label">KEYS</string>
     <string name="terminal_key_hide_label">KB</string>
     <string name="terminal_key_paste_description">Paste from clipboard</string>
-    <string name="terminal_key_select_images_description">Select images</string>
+    <string name="terminal_key_select_images_description">Select images and videos</string>
     <string name="terminal_key_snippets_description">Open snippets</string>
     <string name="terminal_key_settings_description">Open keyboard settings</string>
     <string name="terminal_key_control_shift_tab_unsupported">Control+Shift+Tab has no configured terminal sequence.</string>

@@ -1513,7 +1513,7 @@ fun TerminalSpikeScreen(
                                                 imagePickerTargetSessionId = state.activeSessionId
                                                 imagePickerLauncher.launch(
                                                     PickVisualMediaRequest(
-                                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                                        ActivityResultContracts.PickVisualMedia.ImageAndVideo,
                                                     ),
                                                 )
                                             }
@@ -1574,6 +1574,7 @@ fun TerminalSpikeScreen(
                     onOpenConnections = { showTerminal(target) },
                     onOpenSettings = { destination = AppRoute.SETTINGS },
                     onOpenSshKeys = { showSettingsCatalog(ConnectionsTab.KEYS) },
+                    onOpenPortForwards = { showSettingsCatalog(ConnectionsTab.HOSTS) },
                     onOpenSnippets = { showSettingsCatalog(ConnectionsTab.SNIPPETS) },
                     onUseProfile = { profile ->
                         showNewConnection(profile.id)

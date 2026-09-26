@@ -683,7 +683,7 @@ internal fun uploadPastedImageViaSftp(
 private const val IMAGE_UPLOAD_CHANNEL_TIMEOUT_MS = 10_000
 private const val REMOTE_PRIVATE_DIRECTORY_MODE = 448 // 0700
 private const val REMOTE_PRIVATE_FILE_MODE = 384 // 0600
-private val PASTED_IMAGE_FILE_NAME = Regex("[a-f0-9-]{36}\\.(png|jpe?g|webp|gif)")
+private val PASTED_IMAGE_FILE_NAME = Regex("[a-f0-9-]{36}\\.(png|jpe?g|webp|gif|mp4|webm|mov|mkv|3gp|3g2|mpeg|avi)")
 
 private fun ChannelSftp.ensureDirectory(parent: String, name: String): String {
     val path = childPath(parent, name)
@@ -723,6 +723,7 @@ internal fun sshFailure(
     HostKeyFailure.REJECTED -> ConnectionState.Failed("Host key was not trusted.")
     HostKeyFailure.STORE_FAILED -> ConnectionState.Failed("Could not save the trusted host key.")
     null -> when (error) {
+        is PortForwardStartException -> ConnectionState.Failed(checkNotNull(error.message))
         is CredentialStoreException -> ConnectionState.Failed(storedCredentialFailureMessage(error))
         is JSchException -> safeJschFailure(error.message).let { safe ->
             if (

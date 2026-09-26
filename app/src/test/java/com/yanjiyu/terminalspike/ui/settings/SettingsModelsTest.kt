@@ -34,6 +34,7 @@ class SettingsModelsTest {
                 SettingsCategory.KEYBOARD,
                 SettingsCategory.SSH_KEYS,
                 SettingsCategory.SNIPPETS,
+                SettingsCategory.PORT_FORWARDING,
                 SettingsCategory.SESSIONS_BACKGROUND,
                 SettingsCategory.NOTIFICATIONS,
                 SettingsCategory.BACKUP_RESTORE,

@@ -10,8 +10,8 @@ class HerdrInputContextTest {
     private fun response(command: String, name: String = "codex", paneId: String = "w1:p2"): TmuxExecOutput {
         val body = when {
             "'layout'" in command -> """{"layout":{"focused_pane_id":"$paneId","tab_id":"w1:t1"}}"""
-            "'get'" in command -> """{"pane":{"pane_id":"w1:p2","tab_id":"w1:t1","terminal_id":"term1","agent":"codex"}}"""
-            "'process-info'" in command -> """{"process_info":{"pane_id":"w1:p2","foreground_processes":[{"name":"$name"}]}}"""
+            "'get'" in command -> """{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"codex"}}"""
+            "'process-info'" in command -> """{"process_info":{"pane_id":"$paneId","foreground_processes":[{"name":"$name"}]}}"""
             else -> error("Unexpected command: $command")
         }
         return TmuxExecOutput("""{"result":$body}""".toByteArray(), 0)
@@ -24,6 +24,11 @@ class HerdrInputContextTest {
         assertEquals(4, commands.size)
         assertTrue(commands.all { it.startsWith("'/usr/bin/herdr' '--session' 'work '\\'' quoted'") })
         assertTrue(commands.any { "'process-info' '--pane' 'w1:p2'" in it })
+    }
+
+    @Test fun letterPaneNumberPreservesAgentInputContext() {
+        val result = captureHerdrInputContext({ response(it, paneId = "w6:pC") }, choice)
+        assertEquals(TerminalInputContext("herdr/work ' quoted/w6:pC/term1", true), result)
     }
 
     @Test fun returningToShellOrAnotherProgramDoesNotInheritAnAgentLabel() {

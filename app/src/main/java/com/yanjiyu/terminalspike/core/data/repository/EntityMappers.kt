@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.core.data.repository
 
+import com.yanjiyu.terminalspike.core.model.PortForwardRules
 import com.yanjiyu.terminalspike.core.data.db.HostProfileEntity
 import com.yanjiyu.terminalspike.core.data.db.CustomTerminalThemeEntity
 import com.yanjiyu.terminalspike.core.data.db.KeyboardProfileEntity
@@ -178,6 +179,7 @@ internal fun HostProfileEntity.toDomainModel(): HostProfile = decodeStored(
         moshPortRange = mosh.range,
         moshServerCommand = moshServerCommand,
         moshLocale = moshLocale,
+        portForwards = PortForwardRules.decode(portForwards),
         moshFallbackPolicy = MoshFallbackPolicy.fromWireCode(moshFallbackPolicyCode),
         createdAtEpochMillis = createdAtEpochMillis,
         updatedAtEpochMillis = updatedAtEpochMillis,
@@ -212,6 +214,7 @@ internal fun HostProfile.toEntity(): HostProfileEntity = encodeDomain(
         moshPortEnd = moshEnd,
         moshServerCommand = valid.moshServerCommand,
         moshLocale = valid.moshLocale,
+        portForwards = PortForwardRules.encode(valid.portForwards),
         moshFallbackPolicyCode = valid.moshFallbackPolicy.wireCode,
         createdAtEpochMillis = valid.createdAtEpochMillis,
         updatedAtEpochMillis = valid.updatedAtEpochMillis,

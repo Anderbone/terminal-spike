@@ -88,6 +88,8 @@ class TerminalController(
         private set
     @Volatile
     var herdrHistoryReading: Boolean = false
+    @Volatile
+    var herdrHistoryPinned: Boolean = false
 
     internal fun isHerdrNativeHistoryVisible(): Boolean =
         herdrSidebarLayout.value?.allowsNativeHistory(

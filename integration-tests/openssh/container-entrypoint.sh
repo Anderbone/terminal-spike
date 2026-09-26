@@ -13,4 +13,7 @@ install -m 0600 -o terminal -g terminal /fixtures/id_ed25519.pub /home/terminal/
 install -d -m 0755 /run
 
 /usr/sbin/sshd -t -f /etc/ssh/sshd_config
-exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config
+# Forwarding stays disabled unless the dedicated acceptance fixture explicitly enables it.
+forwarding=${TERMINAL_SPIKE_TEST_FORWARDING:-no}
+case "$forwarding" in yes|no) ;; *) exit 2 ;; esac
+exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config -o "AllowTcpForwarding=$forwarding"

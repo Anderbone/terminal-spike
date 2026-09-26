@@ -66,14 +66,40 @@ class HerdrNativeScrollTest {
         gesture.cancel()
     }
 
+    @Test fun remoteOffsetStillHasSubRowDragReleaseFlingAndTouchCatch() = onMain {
+        val gesture = Gesture(offset = 6)
+        gesture.down()
+        gesture.move(200f + gesture.distance)
+        val viewport = gesture.scroll.reader.viewport
+        val before = viewport.scrollY
+        gesture.move(203.25f + gesture.distance)
+        assertEquals(before - 3.25f, viewport.scrollY, 0.01f)
+        gesture.move(300f + gesture.distance)
+        gesture.up(340f + gesture.distance)
+        val released = viewport.scrollY
+        android.os.SystemClock.sleep(32)
+        assertTrue(gesture.scroll.animate())
+        assertTrue("Motion must continue after release", viewport.scrollY < released)
+        gesture.down()
+        val caught = viewport.scrollY
+        android.os.SystemClock.sleep(32)
+        assertFalse(gesture.scroll.animate())
+        assertEquals(caught, viewport.scrollY, 0f)
+        gesture.move(-30000f)
+        assertTrue(gesture.scroll.reader.holdingLatest)
+        gesture.up(-30000f)
+        assertNotNull("Bottom cannot fall back to the older remote screen", gesture.scroll.reader.snapshot)
+        gesture.cancel()
+    }
+
     private fun onMain(block: () -> Unit) =
         InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
 
-    private class Gesture {
+    private class Gesture(offset: Int = 0) {
         private val context = InstrumentationRegistry.getInstrumentation().targetContext
         val scroll = HerdrNativeScroll(context)
         val distance = ViewConfiguration.get(context).scaledTouchSlop + 40f
-        val source = HerdrPaneHistory("default/w1:p1/term1", 0, 0, 80, 24, 0,
+        val source = HerdrPaneHistory("default/w1:p1/term1", 0, 0, 80, 24, offset,
             (1..1000).map { TerminalLine.plain("row $it") })
         private var time = 1000L
         private var downTime = time

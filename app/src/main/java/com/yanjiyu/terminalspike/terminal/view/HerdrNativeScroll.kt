@@ -91,8 +91,8 @@ internal class HerdrNativeScroll(context: Context) {
                     if (abs(speed) >= configuration.scaledMinimumFlingVelocity) {
                         scroller.fling(0, reader.viewport.scrollY.toInt(), 0, speed, 0, 0,
                             0, reader.viewport.maximumScrollY.toInt())
-                    } else if (reader.viewport.autoFollow) reader.clear()
-                } else if (caughtReader) reader.clear()
+                    }
+                } else if (caughtReader && !reader.holdingLatest) reader.clear()
                 velocity?.recycle()
                 velocity = null
                 dragging = false
@@ -106,10 +106,9 @@ internal class HerdrNativeScroll(context: Context) {
 
     fun animate(): Boolean {
         if (!scroller.computeScrollOffset()) return false
-        reader.viewport.scrollTo(scroller.currY.toFloat())
+        reader.scrollTo(scroller.currY.toFloat())
         if (reader.viewport.autoFollow) {
             scroller.forceFinished(true)
-            reader.clear()
         }
         return true
     }

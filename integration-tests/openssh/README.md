@@ -181,3 +181,11 @@ output, and revokes
 and shreds the temporary identity on every exit. Retained log evidence is generated through a
 field whitelist and contains no terminal rows, prompts, host names, credentials, or raw logcat. It
 never targets the Wi-Fi foldable.
+
+## TCP forwarding acceptance
+
+TCP forwarding remains disabled by default. The dedicated
+`scripts/run-port-forward-device-tests.py` runner opts in using
+`TERMINAL_SPIKE_TEST_FORWARDING=yes` for its disposable fixture and restores the default by
+tearing it down. See [port forwarding](../../docs/port-forwarding.md) for the USB old-phone
+acceptance command and traffic assertions.
