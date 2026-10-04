@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.terminal.selection
 
 import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
+import com.yanjiyu.terminalspike.terminal.model.TerminalStyle
 import java.net.URI
 import java.util.Locale
 
@@ -78,7 +79,10 @@ object TerminalLinkResolver {
     ): TerminalLinkTarget? {
         if (source.selectionLineAt(row) == null) return null
         if (osc8Enabled) findWrappedOsc8(source, row, column)?.let { return it }
-        if (plainTextUrlsEnabled) return findWrappedPlainTextUrl(source, row, column)
+        if (plainTextUrlsEnabled) {
+            findPaintedPlainTextUrl(source, row, column)?.let { return it }
+            return findWrappedPlainTextUrl(source, row, column)
+        }
         return null
     }
 
@@ -146,6 +150,106 @@ object TerminalLinkResolver {
             endColumn = lastSpan.endColumn,
             endLine = last.anchor,
         )
+    }
+
+    /** TUIs repaint wrapped links at explicit coordinates, so VT autowrap is absent.
+     * Only join matching underlined tokens at the right/left edges of the content pane.
+     * This is bounded hit testing, not work performed by the renderer.
+     */
+    private fun findPaintedPlainTextUrl(
+        source: TerminalSelectionSource,
+        row: Int,
+        column: Int,
+    ): TerminalLinkTarget? {
+        val hitLine = source.selectionLineAt(row)?.line ?: return null
+        val hit = TerminalLineGeometry.positionAtColumn(hitLine, column).textOffset
+        for (startRow in maxOf(0, row - MAX_PAINTED_LINK_ROWS + 1)..row) {
+            val first = source.selectionLineAt(startRow) ?: continue
+            for (initial in underlinedTokens(first.line)) {
+                if (!initial.text.hasHttpSchemeAt(0)) continue
+                val text = StringBuilder(initial.text)
+                var last = first
+                var token = initial
+                var currentRow = startRow
+                var containsHit = currentRow == row && hit in token.start until token.end
+                while (currentRow + 1 < source.selectionLineCount &&
+                    currentRow - startRow + 1 < MAX_PAINTED_LINK_ROWS &&
+                    text.length < MAX_PLAIN_URL_SCAN &&
+                    last.line.text.substring(token.end).isBlank() &&
+                    token.text.lastOrNull() != ')'
+                ) {
+                    val next = source.selectionLineAt(currentRow + 1) ?: break
+                    val continuation = underlinedTokens(next.line).firstOrNull { candidate ->
+                        val prefix = next.line.text.substring(0, candidate.start)
+                        // A full-screen TUI may have an unrelated sidebar to the left.
+                        prefix.substringAfterLast('│').substringAfterLast('┃')
+                            .substringAfterLast('║').substringAfterLast('|').isBlank()
+                    } ?: break
+                    if (continuation.style != initial.style ||
+                        continuation.text.hasHttpSchemeAt(0) ||
+                        TerminalLineGeometry.columnAtOffset(next.line, continuation.start) >
+                        TerminalLineGeometry.columnAtOffset(last.line, token.start)
+                    ) break
+                    text.append(continuation.text)
+                    currentRow += 1
+                    last = next
+                    token = continuation
+                    containsHit = containsHit || (currentRow == row && hit in token.start until token.end)
+                }
+                if (currentRow == startRow || !containsHit || text.length > MAX_PLAIN_URL_SCAN) continue
+                val match = plainTextUrlAt(text, 0) ?: continue
+                if (match.endOffset <= text.length - token.text.length) continue
+                return TerminalLinkTarget(
+                    uri = match.uri,
+                    id = null,
+                    source = TerminalLinkSource.PLAIN_TEXT,
+                    line = first.anchor,
+                    startColumn = TerminalLineGeometry.columnAtOffset(first.line, initial.start),
+                    endColumn = TerminalLineGeometry.columnAtOffset(
+                        last.line, token.end - (text.length - match.endOffset),
+                    ),
+                    endLine = last.anchor,
+                )
+            }
+        }
+        return null
+    }
+
+    private data class UnderlinedToken(
+        val start: Int,
+        val end: Int,
+        val text: String,
+        val style: TerminalStyle,
+    )
+
+    private fun underlinedTokens(line: TerminalLine): List<UnderlinedToken> {
+        val result = ArrayList<UnderlinedToken>()
+        var offset = 0
+        for (run in line.runs) {
+            if (run.style.underline && run.hyperlink == null) {
+                var local = 0
+                while (local < run.text.length) {
+                    if (isUrlBoundary(run.text[local]) ||
+                        (run.text[local] == '(' && run.text.hasHttpSchemeAt(local + 1))
+                    ) {
+                        local += 1
+                        continue
+                    }
+                    val start = local
+                    while (local < run.text.length && !isUrlBoundary(run.text[local])) local += 1
+                    val previous = result.lastOrNull()
+                    if (previous != null && previous.end == offset + start && previous.style == run.style) {
+                        result[result.lastIndex] = previous.copy(
+                            end = offset + local, text = previous.text + run.text.substring(start, local),
+                        )
+                    } else {
+                        result += UnderlinedToken(offset + start, offset + local, run.text.substring(start, local), run.style)
+                    }
+                }
+            }
+            offset += run.text.length
+        }
+        return result
     }
 
     private fun findPlainTextUrl(
@@ -239,21 +343,26 @@ object TerminalLinkResolver {
         val pivot = if (hit == text.length) hit - 1 else hit
         if (pivot < 0 || isUrlBoundary(text[pivot])) return null
         var start = pivot
-        var end = pivot + 1
         while (
             start > 0 && pivot - start < MAX_PLAIN_URL_SCAN &&
             !isUrlLeadingBoundary(text, start - 1)
         ) {
             start -= 1
         }
+        var end = start
+        var parentheses = 0
         while (
-            end < text.length && end - pivot < MAX_PLAIN_URL_SCAN &&
+            end < text.length && end - start < MAX_PLAIN_URL_SCAN &&
             !isUrlBoundary(text[end])
         ) {
+            when (text[end]) {
+                '(' -> parentheses += 1
+                ')' -> if (parentheses == 0) break else parentheses -= 1
+            }
             end += 1
         }
         while (end > start && text[end - 1] in TRAILING_PUNCTUATION) end -= 1
-        if (end <= start) return null
+        if (end <= start || pivot !in start until end) return null
         val candidate = text.subSequence(start, end).toString()
         if (!TerminalLinkPolicy.canOpen(candidate)) return null
         return PlainTextUrlMatch(candidate, start, end)
@@ -342,10 +451,11 @@ object TerminalLinkResolver {
         regionMatches(index, "http://", 0, 7, ignoreCase = true) ||
             regionMatches(index, "https://", 0, 8, ignoreCase = true)
 
+    private const val MAX_PAINTED_LINK_ROWS = 16
     private const val MAX_PLAIN_URL_SCAN = 1_024
     private const val MAX_WRAPPED_LINK_ROWS = 4_096
-    private const val URL_BOUNDARIES = "\"'<>[]{}"
-    private const val TRAILING_PUNCTUATION = ".,;:!?)]}"
+    private const val URL_BOUNDARIES = "\"'<>[]{}，。；：！？、（）【】《》“”‘’"
+    private const val TRAILING_PUNCTUATION = ".,;:!?]}"
 }
 
 private data class MeasuredLinkRun(

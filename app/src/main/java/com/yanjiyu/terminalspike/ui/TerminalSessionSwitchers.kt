@@ -53,6 +53,8 @@ internal fun AppSessionSwitcherDialog(
     onSelect: (Long) -> Unit,
     onClose: (Long) -> Unit,
     onNewSession: () -> Unit,
+    filesTitle: String? = null,
+    onSelectFiles: () -> Unit = {},
 ) {
     WindowSwitcherDialog(
         title = stringResource(R.string.app_session_switcher_title),
@@ -69,6 +71,13 @@ internal fun AppSessionSwitcherDialog(
         },
     ) {
         SwitcherGrid {
+            if (filesTitle != null) {
+                item(key = "files") {
+                    TextButton(onClick = { onDismiss(); onSelectFiles() }) {
+                        Text(stringResource(R.string.files_session_title, filesTitle))
+                    }
+                }
+            }
             items(sessions, key = SessionTabUi::id) { session ->
                 TerminalTabTile(
                     session = session,

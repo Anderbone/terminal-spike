@@ -1,6 +1,50 @@
 # Native scrolling for Codex inside Herdr
 
-Status: bounded native history implemented, checks passed, installed and launched on the foldable.
+## 2026-09-29: fullscreen Codex consumes gestures without native history
+
+User RED: all Codex panes in Mosh → Herdr on the fold stop scrolling; agy still
+scrolls. The terminal itself shows `Back to bottom` / `Esc`. Host Codex is 0.159.0;
+Herdr remains 0.8.2 (installed September 10, no later package upgrade recorded).
+[Codex's official changelog](https://learn.chatgpt.com/docs/changelog) records
+fullscreen transcripts becoming the default in 0.157.0 on September 25.
+
+Host pane metadata reports `max_offset_from_bottom=0`, `offset_from_bottom=0`,
+`viewport_rows=17` for the observed Codex panes, versus 60 older rows for agy.
+The production `recent --format ansi` read returns only 16–17 rows for Codex
+panes w6:pF, wD:p7 and w9:pB. This is a visible screen, not native history.
+The old capture accepts it, pads it to the pane height, and enables the native
+gesture handler even though its scroll range is zero. That handler consumes
+MOVE/UP, preventing the live application from receiving negotiated mouse wheels.
+
+The repair rejects snapshots with no rows above the visible pane. Existing
+bounded native history retains its fractional scrolling, fling and pinned boundary;
+this does not switch a native reader to remote wheels at its cached oldest row.
+For a screen-only pane, the existing remote mouse policy can deliver the gesture
+to Codex. This restores gesture routing, **not native smoothness for fullscreen
+transcripts**. Passive styled history from that UI remains unavailable through
+the observed Herdr ANSI interface. Codex's installed help documents
+`--no-alt-screen` for inline mode with terminal scrollback; no user configuration
+or running conversation was changed to force that mode.
+
+The screen-only host regression failed before the fix. A production native-view
+test covers delivery of both older/newer wheels with no local overlay; existing
+zero-wheel native-history tests remain intact. Device execution and completed
+fold deployment are pending: no authorized phone appears in `adb devices -l`.
+Wireless fold discovery advertises an endpoint but connection fails. No phone
+tests or gestures were executed. This is not actual-Codex physical acceptance.
+One diagnostic text-format read of the existing numbered-row pane returned a
+longer transcript; Herdr can actively harvest alternate-screen text using wheel
+input, so that result is excluded from passive-history evidence and is not used
+by this patch. No further text harvesting was attempted.
+
+Verification for the September 29 candidate: `scripts/verify-android.sh` passed;
+125 tooling tests and 1,128 JVM tests passed, lint and debug/release builds passed,
+and the new Android test compiled. Herdr history tests: 17/17 passing.
+APK SHA-256: `63c7f780df1f0eb99511b4290454df34fa3f8b529065c6d147846c7c914c9273`.
+Evidence: `build/codex-scroll-regression/`. Device tests and deployment remain
+unavailable; this candidate has not been installed on the fold.
+
+Earlier bounded-reader implementation and deployment history follows.
 
 ## Bounded implementation approved by the user
 
@@ -313,3 +357,116 @@ This ID repair does not itself close the broader tmux smooth-scroll acceptance r
 ### User acceptance and regression protection
 
 2026-09-26T17:15:34.392631+00:00 — User ACCEPTED pane-ID fix on installed fold build 3d41521901ff05e0b1f796fddcfe283dd9155caa04b36b5e81b5dbc1072febbe: "ok smooth now". Follow-up regression audit confirms host coverage for pC/pA1/numeric IDs, malformed rejection, bounded ordered history and pinned pixel anchor; native tests cover 3.25px drag, post-release motion, immediate touch catch, zero outbound wheel/input for pC recovery, latest-input refresh without Mosh frames, bottom handoff and mobile switcher routing. Reused unchanged-source passing evidence: full unit/lint/debug/release gate (450 tasks, JVM1097/11/8) and old USB SM-S911B seven native methods passed. Methods are present in exact Android test inventory; CI configuration validates complete API26/API35 runtime membership. Hosted CI was not run or claimed green. This confirms the specific Herdr letter-pane smoothness repair, not every item in the broader tmux Definition of Solved. No new device actions or application changes this follow-up.
+
+
+2026-09-29T20:25:25.232198+00:00 — Fold deployment completed at user request. Paired through discovered wireless endpoint (pairing code not retained), resolved exact serial192.168.0.33:36121 and verified modelSM-F976B immediately before full non-incremental install. Verified APK SHA25663c7f780df1f0eb99511b4290454df34fa3f8b529065c6d147846c7c914c9273 matches the prior passing local gate. Install Success; cold launch Status ok; MainActivity topResumedActivity confirmed. No fold tests or injected gestures. Reused unchanged-source unit/lint/build evidence; old-phone regression remains UNRUN. Actual user gesture route/reason and wheel count UNMEASURED; tmux metadata N/A. User no-scroll confirmation and fullscreen smoothness remain open.
+
+
+## 2026-09-29: user confirms scrolling; inline smoothness feasibility
+
+2026-09-29T21:04:30.581337+00:00 — User confirmed the installed no-scroll fix works. Added regression tests
+for exactly one older row retaining a 3.25 px local offset and for a changed
+screen-only capture releasing the reader before later inline history restores it.
+`HerdrPaneHistoryTest` passes 19/19. The shared build gate passes all 1,130 JVM
+tests, lint, debug/release/AAB builds and Android-test compilation (450 tasks,
+16 seconds). The debug APK remains byte-identical to the installed candidate.
+
+Only the fold is connected. The compiled older/newer-wheel native-view regression
+and existing zero-wheel fractional/fling/catch tests still need SM_S911B; none
+were run on the fold. User no-scroll confirmation does not close smoothness.
+
+An isolated host Herdr 0.8.2 server ran actual Codex 0.159.0 with
+`--no-alt-screen`, waited for the input, and asked Codex for 200 numbered lines.
+The passive `recent --format ansi` read returned all 200 markers in order,
+226 physical rows, with `viewport_rows=39`, `max_offset_from_bottom=187`, and
+`offset_from_bottom=0`. No gesture wheels or active text harvesting were used.
+The owned server/pane and temporary configuration were removed. An initial
+fixture attempt left the prompt unsubmitted because Enter immediately followed
+paste; delaying submission by one second produced the verified result.
+Evidence: `build/codex-smooth-followup/`.
+
+This establishes a viable history source for the existing Android native reader
+when Codex uses inline mode. It does not prove real-phone smoothness. Keeping
+fullscreen requires passive styled history that the observed Herdr ANSI path
+does not supply; injecting wheel events or harvesting screens cannot meet the
+zero-wheel native-scroll acceptance contract. No real Codex mode/configuration
+was changed. The documented per-launch compatibility option is
+`codex --no-alt-screen`; [official TUI configuration](https://learn.chatgpt.com/docs/config-file/config-advanced) also documents
+`tui.alternate_screen = "never"` to retain terminal scrollback.
+
+
+## 2026-09-29: isolated inline Codex passes on the old phone
+
+2026-09-29T21:43:16.068628+00:00 — Paired the authorized SM-S911B over wireless ADB, exact serial
+`192.168.0.175:44387`; USB was absent. User approved testing inline mode in an
+isolated session. No existing Codex conversation or global Codex setting changed.
+
+The eight controlled Herdr native/recovery/switcher methods passed, including
+fullscreen older/newer wheel delivery and the existing zero-wheel native cases.
+The new opt-in `HerdrInlineRealEndToEndTest` then passed with actual Codex 0.159.0
+`--no-alt-screen` inside a uniquely named, runner-owned Herdr 0.8.2 session. It
+uses production SSH startup selection, passive history capture, terminal controller,
+and FastTerminalView on the real phone. The phone could not reach workstation
+SSH directly, so this run used SSH over an ADB TCP tunnel. It is **not Mosh
+end-to-end acceptance**. The phone remained in landscape; no zoom was applied.
+
+After actual Codex's input appeared, Codex itself generated all 200 markers. The
+test waited for visible output to settle, never for native history readiness.
+Before touch, row 200 was visible and row 001 absent. The first gesture acquired
+the native Herdr reader; capture held 229 rows with viewport 16 and remote offset
+0 (outer grid 91×17, pane width 65). Assertions proved every marker in order,
+3.25 px movement, continued motion after release, immediate touch catch, and real
+MotionEvent traversal to row 001. Outbound SGR wheel reports remained zero.
+Herdr's reader has no generic route-reason enum; the observed route was its
+active native reader backed by the passive snapshot. Tmux metadata is inapplicable.
+
+Preserved RED evidence: the initial test had a non-void JUnit return; direct LAN
+SSH timed out; a pasted carriage return did not submit the prompt. An immediate
+gesture after row 200 first appeared pinned a snapshot ending at row 195. The
+settled-output run retained all 200; this does not prove the immediate-output
+capture lag is fixed. A later bottom assertion incorrectly inspected TerminalLine
+objects rather than their text; scalar indices proved row 200 was in range, and
+correcting the test oracle passed. No scrolling production code changed here.
+
+Final shared gate passed: 1,130 JVM tests, lint, debug/release/AAB builds and
+Android-test compilation; 125 tooling tests passed earlier, and final exact
+Android inventory validation passed. Base `081ae4b`, existing concurrent changes
+preserved. APK SHA-256 remains
+`63c7f780df1f0eb99511b4290454df34fa3f8b529065c6d147846c7c914c9273`.
+Evidence: `build/old-phone-smooth/`, including the eight-test result, one-test
+actual-Codex result, scalar checkpoints, retained failures, and build logs.
+Owned server/session, temporary SSH authorization and ADB tunnel were removed.
+
+The same completed APK was full-installed on model-verified SM-F976B
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`, launch returned Status ok.
+Foreground proof is blocked by its lock screen (`showing=true`,
+`inputRestricted=true`); MainActivity is paused. No fold tests or gestures ran.
+
+This verifies inline-mode feasibility and physical native motion for this isolated
+SSH path. Fullscreen native history, actual Mosh acceptance, immediate-output
+refresh behavior, and user validation remain separate open items. The opt-in
+test requires `herdrE2eSession` beginning with `terminal-spike-inline-` plus the
+existing `sshE2eHost`, `sshE2ePort`, `sshE2eUsername`,
+`sshE2ePrivateKeyBase64` and `sshE2eCodexCommandBase64` arguments. Supply secret
+arguments through ADB stdin, and create/clean up only an owned named fixture.
+
+
+### Fold feedback after isolated inline test
+
+2026-09-29T22:03:54.118926+00:00 — User RED: scrolling on fold still feels per-row. Prior isolated inline SSH green did not change existing Codex sessions or global mode; do not describe it as a delivered fullscreen fix. Read-only host focused Codex pane w6:p7 reports max_offset0/offset0/viewport17, while agy has201 older rows. This supports the fullscreen-history limitation but is not exact fold gesture attribution. No fold gestures/tests, no phone route/wheel measurement; tmux metadata N/A. User config tui.alternate_screen is unset; installed help and official advanced configuration confirm --no-alt-screen / tui.alternate_screen="never" preserves terminal scrollback. Proposed concrete change: add alternate_screen="never" under existing [tui] in ~/.codex/config.toml for subsequent launches; no current-session restart. Await user scope choice because previous authorization was isolated testing only. No new application changes or builds; unchanged prior evidence retained.
+
+
+### Saved-host Mosh acceptance and Codex configuration
+
+2026-09-29T22:38:13.541121+00:00 — Saved-host physical follow-up, base `081ae4b`, unchanged APK SHA-256 `63c7f780df1f0eb99511b4290454df34fa3f8b529065c6d147846c7c914c9273`. User authorized testing their saved host and fixing scrolling. Exact model-verified old phone `192.168.0.175:44387` / SM-S911B, portrait, saved host `100.102.70.20`, actual MOSH with app-selected owned Herdr session. Fullscreen Codex 0.159.0 reproduced RED: first reader=false, cached=0. The 70px probe reported wheels=0 but was below the remote-wheel threshold; this is not proof of smooth fullscreen scrolling. Explicit --no-alt-screen GREEN: 233 captured rows, viewport28, offset0, all200 markers in order, first-gesture native reader, 3.25px drag, fling/catch, oldest001, zero outbound wheels. No history-ready wait; actual Codex generated the markers after its input box appeared.
+
+Host-only raw_output_mode=true probe remained RED (max_offset0, only30 markers); it is not a scrolling solution. Global tui.alternate_screen="never" alone also remained RED on the saved-Mosh ordinary-launch test. Installed binary identified the separate tui.fullscreen_transcript key. Backed-up ~/.codex/config.toml now has tui.fullscreen_transcript=false and tui.alternate_screen="never". With no UI command-line overrides, actual saved-Mosh test GREEN (49.271s): first reader=true,236 cached rows, viewport28,offset0; all200 ordered, initial bottom includes200/excludes001,3.25px drag,fling/catch,MotionEvent traversal to001,wheels0. This run used --no-daemon; the normal-daemon path is checked separately. Route=native-herdr-reader because passive history now exists; tmux metadata N/A. Existing running Codex conversations were not restarted and retain their old mode.
+
+Added opt-in savedHostCodexHasOrderedHistoryAndNativeMotion alongside the isolated SSH gate, requiring herdrE2eSavedHost, an owned terminal-spike-inline-* herdrE2eSession, and sshE2eCodexCommandBase64. Saved credentials remain on-device; only the owned test session is closed. Preserved test setup failures (wrong display label, Mosh runtime readiness race) and corrected setup. Shared verification passed: unit tests, lint, debug/release builds and Android-test compilation; exact inventory validation passed. Evidence in build/saved-host-smooth includes fullscreen, inline, default-alternate-only-red, default-no-daemon-green, logs and isolated raw probe. No production Android code changed in this follow-up; concurrent source edits preserved.
+
+2026-09-29T22:42:05.825246+00:00 — Normal startup (without --no-daemon or UI-mode flags) produced one preserved first-gesture RED: cached226 but reader=false,wheels0. No root cause or fix is claimed for that transient failure. Added scalar pre-touch diagnostics only; unchanged gesture/readiness assertions then passed twice (49.717s and48.905s): visible=true,follow=true,outer41x30,pane0,2,41,28,view1080x1833; captured233/234 rows,viewport28,offset0; first native reader,all200 ordered,3.25px drag,fling/catch,oldest001,wheels0. Evidence: default-normal-first-gesture-red/, default-normal-green/, default/. These greens confirm host configuration works for normal launch but do not erase the intermittent first-swipe red. Final unit/lint/build/test compilation and exact inventory passed after diagnostic change. Same completed APK full-installed and launched on model-verified fold SM-F976B adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp; topResumedActivity=MainActivity, unlocked, no tests or gestures. Evidence fold-deployment.json. Existing running Codex conversations retain fullscreen until reopened/resumed; none were terminated. Living record remains open for intermittent first-swipe diagnosis, bounded-history limits, and user acceptance.
+
+
+### New-tab user feedback
+
+2026-10-02T20:20:37.907001+00:00 — User RED: a newly opened Herdr tab still feels unsmooth on the fold. No new success claim. Host config still has tui.fullscreen_transcript=false and alternate_screen="never"; installed Codex0.159.0/Herdr0.8.2 unchanged. Read-only default-server metadata: terminal-spike pane w6:pH (Output 200 rows), agent=codex,history max_offset200,offset0,viewport32,revision30. Exact phone-tested pane not yet confirmed. Server global focused pane is wH:p1 agent=agy with427 older rows; current capture code explicitly requires agent=codex, so this is another possible unsupported path, not confirmed attribution. Native phone route/reason and outbound wheels unmeasured; tmux metadata N/A. Only SM_F976B is connected; old SM_S911B absent from adb and mDNS, previous wireless address192.168.0.175:44387 returns No route to host. No fold tests, gestures, install, or changes. Requested old-phone USB connection and identification of tested tab. No application source changes or new Android verification needed for this read-only investigation.

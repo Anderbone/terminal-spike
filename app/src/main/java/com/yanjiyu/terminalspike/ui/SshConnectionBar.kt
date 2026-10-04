@@ -119,6 +119,10 @@ fun SessionChrome(
         tmuxSessionId: String,
     ) -> Unit = { _, _, _ -> },
     showLocalTerminalSession: Boolean = true,
+    filesTitle: String? = null,
+    filesSelected: Boolean = false,
+    onSelectFiles: () -> Unit = {},
+    onCloseFiles: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val newSessionDescription = stringResource(R.string.session_add_saved_connection_description)
@@ -155,7 +159,7 @@ fun SessionChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                if (visibleSessions.isEmpty()) {
+                if (visibleSessions.isEmpty() && filesTitle == null) {
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier
@@ -170,7 +174,7 @@ fun SessionChrome(
                         )
                     }
                 }
-                if (visibleSessions.isEmpty()) {
+                if (visibleSessions.isEmpty() && filesTitle == null) {
                     Text(
                         text = stringResource(R.string.navigation_terminal),
                         modifier = Modifier
@@ -184,11 +188,24 @@ fun SessionChrome(
                         modifier = Modifier
                             .weight(1f)
                             .testTag(TerminalSessionStripTestTag),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
+                        if (filesTitle != null) {
+                            val closeFilesDescription = stringResource(R.string.files_session_close)
+                            SessionTabSurface(
+                                title = stringResource(R.string.files_session_title, filesTitle),
+                                selected = filesSelected,
+                                modifier = Modifier.weight(1f).testTag("files-session-tab"),
+                                onSelect = onSelectFiles,
+                                onClose = onCloseFiles,
+                                closeDescription = closeFilesDescription,
+                            )
+                        }
                         visibleSessions.forEach { session ->
                             SessionTab(
                                 session = session,
-                                selected = session.id == activeSessionId,
+                                selected = !filesSelected && session.id == activeSessionId,
                                 modifier = Modifier.weight(1f),
                                 onSelect = { onSelectSession(session.id) },
                                 onDuplicate = if (!session.isLocalTerminal && canAddSession) {
@@ -260,7 +277,9 @@ fun SessionChrome(
         AppSessionSwitcherDialog(
             sessions = visibleSessions,
             previews = appSessionPreviews,
-            activeSessionId = activeSessionId,
+            activeSessionId = if (filesSelected) Long.MIN_VALUE else activeSessionId,
+            filesTitle = filesTitle,
+            onSelectFiles = onSelectFiles,
             canAddSession = canAddSession && settingsReady,
             onDismiss = { appSessionSwitcherVisible = false },
             onSelect = onSelectSession,
@@ -271,7 +290,7 @@ fun SessionChrome(
 
     // Approval dialogs belong to a specific terminal tab. Showing an arbitrary background
     // session's prompt can cover the active session's prompt and leave both connections waiting.
-    val promptSession = activeApprovalSession(sessions, activeSessionId)
+    val promptSession = if (filesSelected) null else activeApprovalSession(sessions, activeSessionId)
     val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
     val hostPrompt = pendingPrompt as? HostIdentityPrompt
     val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge
@@ -762,69 +781,79 @@ private fun SessionTab(
     onActions: (() -> Unit)?,
 ) {
     val tabTitle = session.displayedTerminalTabTitle()
-    val background by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
-        label = "session-tab",
-    )
-    val stateDescription = session.connectionState.accessibilityLabel()
-    val closeDescription = onClose?.let {
-        stringResource(R.string.session_close_tab_description, tabTitle)
-    }
-    Surface(
-        modifier = modifier
-            .heightIn(min = 28.dp)
-            .testTag("$TerminalSessionTabTestTagPrefix${session.id}")
-            .combinedClickable(
-                onClickLabel = "Open $tabTitle terminal",
-                onClick = onSelect,
-                onDoubleClick = onDuplicate,
-                onLongClickLabel = onActions?.let { "Session actions for $tabTitle" },
-                onLongClick = onActions,
-            )
+    SessionTabSurface(
+        title = tabTitle,
+        selected = selected,
+        modifier = modifier.testTag("$TerminalSessionTabTestTagPrefix${session.id}")
             .semantics {
                 contentDescription = buildString {
                     append(tabTitle)
                     append(" terminal tab, ")
-                    append(stateDescription)
+                    append(session.connectionState.accessibilityLabel())
                     if (selected) append(", selected")
                 }
             },
-        shape = RoundedCornerShape(8.dp),
+        onSelect = onSelect,
+        onDuplicate = onDuplicate,
+        onActions = onActions,
+        onClose = onClose,
+        closeDescription = onClose?.let {
+            stringResource(R.string.session_close_tab_description, tabTitle)
+        },
+        indicator = { TerminalTaskIndicator(session.taskStatus) },
+    )
+}
+
+@Composable
+private fun SessionTabSurface(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onSelect: () -> Unit,
+    onClose: (() -> Unit)?,
+    closeDescription: String?,
+    onDuplicate: (() -> Unit)? = null,
+    onActions: (() -> Unit)? = null,
+    indicator: @Composable () -> Unit = {},
+) {
+    val background by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+        label = "session-tab",
+    )
+    Surface(
+        modifier = modifier.heightIn(min = 48.dp).combinedClickable(
+            onClick = onSelect,
+            onDoubleClick = onDuplicate,
+            onLongClick = onActions,
+        ),
+        shape = RoundedCornerShape(10.dp),
         color = background,
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = tabTitle,
+                text = title,
                 modifier = Modifier.weight(1f),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                fontFamily = if (session.isLocalTerminal) FontFamily.Default else FontFamily.Monospace,
-                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            TerminalTaskIndicator(session.taskStatus)
+            indicator()
             if (onClose != null) {
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clickable(onClick = onClose)
-                        .clearAndSetSemantics {
-                            contentDescription = requireNotNull(closeDescription)
-                        },
-                    contentAlignment = Alignment.Center,
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(48.dp).semantics {
+                        contentDescription = requireNotNull(closeDescription)
+                    },
                 ) {
                     ConnectionsGlyphIcon(
                         glyph = ConnectionsGlyph.CLOSE,
-                        modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }

@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +80,7 @@ internal fun SftpScreen(
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val previewScope = rememberCoroutineScope()
     val uploadFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
@@ -148,10 +152,28 @@ internal fun SftpScreen(
                 selectedItem = selectedItem,
                 onClose = onClose,
                 onUp = controller::goUp,
+                onRefresh = controller::refresh,
                 onOpen = controller::openDirectory,
                 onOpenFile = { file ->
-                    controller.select(file.path)
-                    saveToPhoneFolder.launch(null)
+                    previewScope.launch {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val destination = PhoneDownloadsDestination(context.contentResolver)
+                            controller.downloadForViewing(file, destination, "Downloads").onSuccess {
+                                try {
+                                    openSftpDownload(
+                                        context,
+                                        android.net.Uri.parse(destination.downloadedItems.single()),
+                                        file.name,
+                                    )
+                                } catch (error: Exception) {
+                                    controller.reportFailure(error)
+                                }
+                            }
+                        } else {
+                            controller.select(file.path)
+                            saveToPhoneFolder.launch(null)
+                        }
+                    }
                 },
                 onSelect = controller::select,
                 onCopy = { controller.copySelection(false) },
@@ -181,6 +203,7 @@ internal fun SftpScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SftpBrowser(
     state: SftpUiState.Browsing,
@@ -201,6 +224,7 @@ internal fun SftpBrowser(
     onDownload: () -> Unit,
     onSaveTo: () -> Unit,
     onDismissMessage: () -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     var dialog by remember { mutableStateOf<SftpEditDialog?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -253,12 +277,19 @@ internal fun SftpBrowser(
             }
         }
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag(SftpBusyTestTag))
-        if (state.files.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                CenterMessage("This folder is empty")
-            }
-        } else {
-            LazyColumn(Modifier.weight(1f)) {
+        PullToRefreshBox(
+            isRefreshing = state.busy,
+            onRefresh = { if (!state.busy) onRefresh() },
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag("sftp-pull-refresh"),
+        ) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                if (state.files.isEmpty()) {
+                    item {
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("This folder is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 items(state.files, key = SftpFile::path) { file ->
                     SftpFileRow(
                         file = file,

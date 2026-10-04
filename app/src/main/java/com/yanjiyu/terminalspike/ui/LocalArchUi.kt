@@ -35,33 +35,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
-import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.localarch.ArchEnvironmentState
 import com.yanjiyu.terminalspike.localarch.ArchInstallPhase
 import com.yanjiyu.terminalspike.localarch.ArchRootfsManifest
 import kotlinx.coroutines.launch
-
-@Composable
-internal fun NewSessionDialog(onRemote: (ConnectionProtocol) -> Unit, onLocalArch: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.testTag("new-session-picker"),
-        title = { Text(stringResource(R.string.local_arch_new_session)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ConnectionProtocol.entries.forEach { protocol ->
-                    OutlinedButton(onClick = { onRemote(protocol) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(protocol.name)
-                    }
-                }
-                Button(onClick = onLocalArch, modifier = Modifier.fillMaxWidth().testTag("new-local-arch")) {
-                    Text(stringResource(R.string.local_arch_title))
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
-}
 
 @Composable
 internal fun LocalArchInstallDialog(state: ArchEnvironmentState, onInstall: () -> Unit, onDismiss: () -> Unit) {

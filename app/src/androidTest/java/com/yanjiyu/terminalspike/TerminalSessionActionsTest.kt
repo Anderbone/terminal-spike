@@ -39,6 +39,43 @@ class TerminalSessionActionsTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun filesTabCanSwitchToTerminalAndCloseIndependently() {
+        val target = session(11L, "Server")
+        var filesSelected by mutableStateOf(true)
+        var filesOpen by mutableStateOf(true)
+        var selectedTerminal: Long? = null
+        composeRule.setContent {
+            MaterialTheme {
+                SessionChrome(
+                    sessions = listOf(target), activeSessionId = target.id,
+                    notice = null, canAddSession = true, settingsReady = true,
+                    onSelectSession = { selectedTerminal = it; filesSelected = false },
+                    onDuplicateSession = {}, onCloseSession = {},
+                    onDisconnect = {}, onHostIdentityAnswer = { _, _, _ -> },
+                    onNavigateBack = {}, onNewSession = {}, onOpenConnections = {},
+                    filesTitle = "Server".takeIf { filesOpen },
+                    filesSelected = filesSelected,
+                    onSelectFiles = { filesSelected = true },
+                    onCloseFiles = { filesOpen = false },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Files · Server").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal-session-tab-11").performClick()
+        // combinedClickable waits for a possible double tap before selecting a terminal.
+        composeRule.waitUntil(timeoutMillis = 5_000) { selectedTerminal == target.id }
+        composeRule.runOnIdle {
+            assertEquals(11L, selectedTerminal)
+            assertTrue(!filesSelected && filesOpen)
+        }
+        composeRule.onNodeWithTag("files-session-tab").performClick()
+        composeRule.runOnIdle { assertTrue(filesSelected) }
+        composeRule.onNodeWithContentDescription("Close files tab").performClick()
+        composeRule.runOnIdle { assertTrue(!filesOpen) }
+        composeRule.onNodeWithTag("terminal-session-tab-11").assertIsDisplayed()
+    }
+
+    @Test
     fun herdrSessionsAppearAboveTmuxAndAttachFromTheConnectionChooser() {
         val target = session(11L, "Server").copy(
             connectionState = ConnectionState.AwaitingApproval(

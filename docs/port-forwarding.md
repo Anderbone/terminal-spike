@@ -21,10 +21,16 @@ the existing identical rule instead of adding a duplicate.
 
 Rules use the session's existing host-key verification and credentials. A rule that
 cannot bind or register fails connection setup with its rule number and closes all
-previously created listeners. A local listener can start even if its destination is
-currently unavailable; destination connections are opened on demand. Closing a session
-releases its listeners. Automatic SSH reconnect reapplies the same rules, when the
-session's authentication supports reconnect. Two sessions cannot own the same phone port.
+listeners created exclusively for that attempt. A local listener can start even if its
+destination is currently unavailable; destination connections are opened on demand.
+
+Multiple authenticated windows for the exact same SSH host, port and username share
+identical forwarding rules, including their direction, bind address and destination.
+Closing the first window keeps its forwarding transport alive for the other windows;
+the last user releases the listener and any otherwise unused transport. Different
+accounts, servers or destinations are never silently substituted when a port is occupied.
+Automatic SSH reconnect reapplies the rules, when authentication supports reconnect;
+a disconnected transport is not reused for a new forwarding lease.
 
 Mosh uses the retained SSH companion connection to forward TCP; terminal data still uses
 Mosh/UDP. Forwarding is not transported by Mosh and does not inherit its roaming.
@@ -37,7 +43,10 @@ hosts without changing their connection behavior. No new dependencies are used.
 ## Verification
 
 Run `scripts/verify-android.sh` for unit tests, lint and debug/release artifacts. The tests
-cover validation, Room mapping, backup round trips and host-editor validation. The
+cover validation, Room mapping, backup round trips and host-editor validation.
+`SharedPortForwardsTest` covers simultaneous acquisition, both forwarding directions,
+owner-first close, idempotent release, partial-failure rollback, endpoint/destination
+isolation and replacement of a disconnected owner. The
 instrumented gate checks migration from old databases, persisted rules after reopening,
 and adding/editing/removing a rule through Compose.
 

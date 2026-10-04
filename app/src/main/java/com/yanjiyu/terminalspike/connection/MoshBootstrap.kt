@@ -399,7 +399,7 @@ internal class MoshBootstrapExecutor(
             val result = session.numericAddress.toBootstrapResult(
                 port = parsed.port,
                 key = parsed.key,
-                sshSideChannel = session,
+                sshSideChannel = MoshImageUploadSession(session, request.ssh, sessionFactory),
                 initialTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
                 startedInTmux = tmuxChoice != null,
                 tmuxExecutable = tmuxChoice?.executable,

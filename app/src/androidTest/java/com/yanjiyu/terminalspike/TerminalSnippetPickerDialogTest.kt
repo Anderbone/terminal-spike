@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage
@@ -99,6 +100,43 @@ class TerminalSnippetPickerDialogTest {
         composeRule.onNodeWithText("New Codex").performClick()
         composeRule.onNodeWithTag("snippet-editor-save").assertDoesNotExist()
         composeRule.runOnIdle { assertEquals(1, starts) }
+    }
+
+    @Test
+    fun accessoryDragPersistsOrderWithoutSending() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+        val previous = preferences.getString("order", null)
+        preferences.edit().remove("order").commit()
+        try {
+            composeRule.setContent {
+                TerminalSpikeTheme {
+                    TerminalSnippetsPage(
+                        listOf(snippet(31, "First", false), snippet(32, "Second", false)),
+                        true, true,
+                        onSend = { error("Dragging must not send") },
+                        onNewCodex = { error("Dragging must not start Codex") },
+                        onSave = { Result.success(Unit) }, onEditorClosed = {},
+                    )
+                }
+            }
+            val first = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
+            val second = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
+            composeRule.onNodeWithText("First").performTouchInput {
+                down(center)
+                advanceEventTime(700)
+                moveTo(center + (second.center - first.center), delayMillis = 200)
+                up()
+            }
+            composeRule.runOnIdle {
+                assertEquals("32,31,0", preferences.getString("order", null))
+            }
+            val movedFirst = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
+            val movedSecond = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
+            org.junit.Assert.assertTrue(movedSecond.left < movedFirst.left)
+        } finally {
+            preferences.edit().putString("order", previous).commit()
+        }
     }
 
     private fun snippet(

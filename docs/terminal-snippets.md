@@ -1,7 +1,11 @@
 # Keyboard snippets
 
 Swipe left across the keyboard helper area to reach Snippets. Snippets wrap to the available width
-and scroll vertically when needed. **Add snippet** opens the same encrypted snippet
+and scroll vertically when needed. Each action has a bordered button. Long-press a button,
+then drag it onto another button and release to move it to that position. The order,
+including **New Codex**, is remembered on this device across app restarts. Accessibility
+actions also allow moving a button earlier or later. **Add snippet** is a separate,
+contrasting button at the top right. **Add snippet** opens the same encrypted snippet
 editor used by the catalog. **New Codex** immediately runs the built-in sequence below in the active terminal,
 without opening an editor or saving a snippet. It is disabled when terminal input is unavailable.
 Saved snippets keep their existing confirmation policy.

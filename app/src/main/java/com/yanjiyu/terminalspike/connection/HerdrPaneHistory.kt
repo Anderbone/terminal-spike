@@ -81,6 +81,9 @@ internal fun captureHerdrPaneHistory(
     require(layout == finalLayout && before["revision"] == after["revision"] &&
         before["terminal_id"] == after["terminal_id"] && before["scroll"] == after["scroll"])
     val lines = parseHerdrHistoryRows(content, columns, rows) ?: return null
+    // Full-screen Codex can own its transcript while Herdr's ANSI read contains only
+    // the visible grid. An empty native scroll range would swallow its mouse gestures.
+    require(lines.size > rows)
     require(offset >= 0 && offset <= (lines.size - rows).coerceAtLeast(0))
     HerdrPaneHistory(identity, x, y, columns, rows, offset, lines, revision)
 }.getOrNull()

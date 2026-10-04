@@ -26,6 +26,155 @@ import org.junit.Test
 
 class MoshBootstrapTest {
     @Test
+    fun healthySshUploadsWithoutReauthentication() {
+        val original = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        val unused = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        MoshImageUploadSession(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
+            assertEquals("/home/user/image.png", it.uploadPastedImage(
+                "image.png", ByteArrayInputStream(byteArrayOf(1, 2)),
+            ))
+            assertArrayEquals(byteArrayOf(1, 2), original.uploadedBytes)
+            assertEquals(null, unused.uploadedBytes)
+            assertFalse(unused.closeCalled)
+        }
+    }
+
+    @Test
+    fun originalUploadFailureAfterReadingDoesNotRetryTruncatedFile() {
+        val original = object : MoshSshExecSession by FakeExecSession(
+            ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()),
+        ) {
+            override fun uploadPastedImage(fileName: String, source: InputStream): String {
+                source.use { assertEquals(1, it.read()) }
+                throw java.io.IOException("Connection lost during upload")
+            }
+        }
+        val unused = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        MoshImageUploadSession(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
+            assertThrows(java.io.IOException::class.java) {
+                it.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1, 2)))
+            }
+            assertEquals(null, unused.uploadedBytes)
+            assertFalse(unused.closeCalled)
+        }
+    }
+
+    @Test
+    fun failedUploadClosesFreshConnectionAndDoesNotReplayConsumedFile() {
+        val original = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        val fresh = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        var uploads = 0
+        val failing = object : MoshSshExecSession by fresh {
+            override fun uploadPastedImage(fileName: String, source: InputStream): String {
+                uploads++
+                assertEquals(1, source.read())
+                throw java.io.IOException("Upload interrupted")
+            }
+        }
+        val owner = MoshImageUploadSession(disconnectedUploadSession(original), reloadableUploadConfig(), FakeExecSessionFactory(failing))
+        owner.use {
+            assertThrows(java.io.IOException::class.java) {
+                it.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+            }
+            assertEquals(1, uploads)
+            assertTrue(fresh.closeCalled)
+            assertFalse(original.closeCalled)
+        }
+        assertTrue(original.closeCalled)
+    }
+
+    @Test
+    fun closingMoshDuringUploadAuthenticationClosesPendingConnectionAndPreventsUpload() {
+        val original = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        val fresh = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        lateinit var owner: MoshImageUploadSession
+        val factory = object : MoshSshExecSessionFactory {
+            override suspend fun open(
+                config: SshConnectionConfig,
+                onPrompt: (HostIdentityPrompt) -> Unit,
+                onKeyboardInteractiveChallenge: (KeyboardInteractiveChallenge) -> Unit,
+                onRepositoryReady: (VerifyingHostKeyRepository) -> Unit,
+                registerConnectingSession: (AutoCloseable) -> Boolean,
+            ): MoshSshExecSession {
+                assertTrue(registerConnectingSession(fresh))
+                owner.close()
+                assertTrue(fresh.closeCalled)
+                return fresh
+            }
+        }
+        owner = MoshImageUploadSession(disconnectedUploadSession(original), reloadableUploadConfig(), factory)
+        assertThrows(IllegalStateException::class.java) {
+            owner.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1)))
+        }
+        assertEquals(null, fresh.uploadedBytes)
+        assertTrue(original.closeCalled)
+    }
+
+    private fun disconnectedUploadSession(original: MoshSshExecSession) =
+        object : MoshSshExecSession by original {
+            override fun uploadPastedImage(fileName: String, source: InputStream): String =
+                error("SSH disconnected")
+        }
+
+    private fun reloadableUploadConfig() = SshConnectionConfig(
+        host = "example.com", port = 22, username = "user",
+        authentication = SshAuthentication.StoredPassword { "saved".toByteArray() },
+    )
+
+    @Test
+    fun attachmentAfterBootstrapSshDropsUsesFreshSshWithoutRestartingMosh() = runTest {
+        val bootstrapSession = object : MoshSshExecSession by FakeExecSession(
+            ipv4(192, 0, 2, 44),
+            FakeExecChannel("MOSH CONNECT 60004 $VALID_KEY\n".toByteArray()),
+        ) {
+            override fun uploadPastedImage(fileName: String, source: InputStream): String =
+                error("The original SSH connection has dropped while Mosh is still running.")
+        }
+        val uploadSession = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
+        var opens = 0
+        val factory = object : MoshSshExecSessionFactory {
+            override suspend fun open(
+                config: SshConnectionConfig,
+                onPrompt: (HostIdentityPrompt) -> Unit,
+                onKeyboardInteractiveChallenge: (KeyboardInteractiveChallenge) -> Unit,
+                onRepositoryReady: (VerifyingHostKeyRepository) -> Unit,
+                registerConnectingSession: (AutoCloseable) -> Boolean,
+            ): MoshSshExecSession? {
+                opens++
+                val session = if (opens == 1) bootstrapSession else uploadSession
+                if (opens > 1) {
+                    assertTrue(config.portForwards.isEmpty())
+                    assertFalse(config.tmuxSessionSelectorEnabled)
+                    assertEquals(null, config.startupCommand)
+                }
+                return session.takeIf { registerConnectingSession(it) }
+            }
+        }
+        val executor = MoshBootstrapExecutor(factory)
+        val result = executor.bootstrap(
+            MoshBootstrapRequest(ssh = SshConnectionConfig(
+                host = "example.com", port = 22, username = "user",
+                authentication = SshAuthentication.StoredPassword { "saved".toByteArray() },
+                startupCommand = "do-not-run-again",
+            )),
+        ) {}
+        result.use {
+            assertEquals("/home/user/image.png", it.uploadPastedImage(
+                "00000000-0000-0000-0000-000000000001.png",
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+            ))
+            assertArrayEquals(byteArrayOf(1, 2, 3), uploadSession.uploadedBytes)
+            assertEquals(2, opens)
+            assertEquals(null, uploadSession.command)
+            assertTrue(uploadSession.closeCalled)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            result.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf()))
+        }
+        assertEquals(2, opens)
+    }
+
+    @Test
     fun selectedHerdrIsLaunchedByBootstrapAndDoesNotOwnTmuxHistory() = runTest {
         val commands = mutableListOf<String>()
         val session = object : MoshSshExecSession by FakeExecSession(

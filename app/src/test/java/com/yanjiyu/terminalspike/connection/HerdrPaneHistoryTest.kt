@@ -6,6 +6,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrPaneHistoryTest {
+    @Test fun screenOnlyCodexCaptureDoesNotClaimNativeScrollOwnership() {
+        for (lineCount in listOf(1, 23, 24)) {
+            val captured = captureHerdrPaneHistory({ command ->
+                if ("'read'" in command) TmuxExecOutput(
+                    (1..lineCount).joinToString("\n", postfix = "\n") { "visible $it" }.toByteArray(), 0,
+                ) else fixtureResponse(command)
+            }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+            assertNull("A screen-only capture must leave scrolling to the live application", captured)
+        }
+    }
+
+    @Test fun oneOlderRowStillProvidesFractionalNativeHistory() {
+        val captured = requireNotNull(captureHerdrPaneHistory({ command ->
+            if ("'read'" in command) TmuxExecOutput(
+                (1..25).joinToString("\n", postfix = "\n") { "row $it" }.toByteArray(), 0,
+            ) else fixtureResponse(command)
+        }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false))
+        val reader = HerdrHistoryViewport()
+        reader.beginScroll(captured, 20f, -3.25f)
+        reader.scrollBy(-3.25f)
+        assertEquals(20f, reader.viewport.maximumScrollY, 0f)
+        assertEquals(16.75f, reader.viewport.scrollY, 0f)
+        assertEquals((1..25).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+    }
+
+    @Test fun switchingToScreenOnlyReleasesHistoryAndLaterInlineOutputRestoresIt() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        val initial = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it) }, choice, null, false))
+        val screenOnly = captureHerdrPaneHistory({ command ->
+            if ("'read'" in command) TmuxExecOutput(
+                (1..24).joinToString("\n", postfix = "\n") { "screen $it" }.toByteArray(), 0,
+            ) else fixtureResponse(command, revision = 2)
+        }, choice, initial, false)
+        assertNull("A changed screen-only pane must not reuse an older idle capture", screenOnly)
+        val reader = HerdrHistoryViewport()
+        reader.begin(initial, 20f)
+        reader.scrollBy(-3.25f)
+        assertFalse(reader.retainSource(screenOnly))
+        assertNull(reader.snapshot)
+        val restored = requireNotNull(captureHerdrPaneHistory(
+            { fixtureResponse(it, revision = 3) }, choice, screenOnly, false,
+        ))
+        reader.beginScroll(restored, 20f, -3.25f)
+        reader.scrollBy(-3.25f)
+        assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
+        assertEquals((1..1000).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+    }
+
     @Test fun unchangedIdlePaneReusesItsSnapshotWithoutDownloadingAnotherThousandRows() {
         val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
         val first = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it) }, choice, null, false))

@@ -156,8 +156,6 @@ class LocalArchUiDeviceTest {
     private fun openLocal() {
         compose.onNodeWithTag(NewTerminalSessionTestTag).performClick()
         compose.onNodeWithTag("new-session-picker").assertIsDisplayed()
-        compose.onNodeWithText("SSH").assertIsDisplayed()
-        compose.onNodeWithText("MOSH").assertIsDisplayed()
         compose.onNodeWithTag("new-local-arch").performClick()
     }
 

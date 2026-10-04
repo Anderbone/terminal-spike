@@ -23,6 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.width
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.ui.resolve
@@ -53,6 +55,8 @@ internal fun SavedConnectionPickerDialog(
     onOpenConnections: () -> Unit,
     onSelectHost: (HostEditorSeed) -> Unit,
     protocol: ConnectionProtocol? = null,
+    onOpenFiles: ((HostEditorSeed) -> Unit)? = null,
+    onLocalArch: (() -> Unit)? = null,
 ) {
     val catalog = (loadState as? ConnectionsLoadState.Ready)?.editorCatalog
     val hosts = catalog?.hosts.orEmpty().filter { protocol == null || it.draft.protocol == protocol }.sortedWith(
@@ -61,8 +65,8 @@ internal fun SavedConnectionPickerDialog(
     )
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.testTag(SavedConnectionPickerTestTag),
-        title = { Text(stringResource(R.string.terminal_saved_connection_picker_title)) },
+        modifier = Modifier.testTag(if (onLocalArch != null) "new-session-picker" else SavedConnectionPickerTestTag),
+        title = { Text(stringResource(if (onLocalArch != null) R.string.local_arch_new_session else R.string.terminal_saved_connection_picker_title)) },
         text = {
             when {
                 loadState is ConnectionsLoadState.Loading -> Row(
@@ -101,36 +105,42 @@ internal fun SavedConnectionPickerDialog(
                                 R.string.connections_connect_to,
                                 host.draft.displayName,
                             )
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelectHost(host) }
-                                    .semantics { contentDescription = connectDescription }
-                                    .testTag(SavedConnectionPickerHostTestTagPrefix + hostId)
-                                    .padding(vertical = 12.dp, horizontal = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onSelectHost(host) }
+                                        .semantics { contentDescription = connectDescription }
+                                        .testTag(SavedConnectionPickerHostTestTagPrefix + hostId)
+                                        .padding(vertical = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
                                 ) {
                                     Text(
                                         text = host.draft.displayName,
-                                        modifier = Modifier.weight(1f),
                                         style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
-                                        text = host.draft.protocol.name,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.labelMedium,
+                                        text = host.draft.endpointLabel(),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                                 Text(
-                                    text = host.draft.endpointLabel(),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = host.draft.protocol.name,
+                                    modifier = Modifier.width(56.dp).padding(start = 8.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium,
                                 )
+                                if (onOpenFiles != null) {
+                                    TextButton(
+                                        onClick = { onOpenFiles(host) },
+                                        modifier = Modifier.testTag("saved-connection-files-$hostId"),
+                                    ) { Text(stringResource(R.string.connections_action_open_files)) }
+                                }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -139,14 +149,23 @@ internal fun SavedConnectionPickerDialog(
             }
         },
         confirmButton = {
-            if (catalog != null && hosts.isEmpty()) {
-                TextButton(onClick = onOpenConnections) {
-                    Text(stringResource(R.string.terminal_saved_connection_picker_open_connections))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (onLocalArch != null) {
+                    TextButton(onClick = onLocalArch, modifier = Modifier.fillMaxWidth().testTag("new-local-arch")) {
+                        Text(stringResource(R.string.local_arch_title))
+                    }
                 }
+                if (catalog != null) {
+                    TextButton(onClick = onOpenConnections, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.terminal_saved_connection_picker_open_connections))
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

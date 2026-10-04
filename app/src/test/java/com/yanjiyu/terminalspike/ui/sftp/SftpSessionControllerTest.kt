@@ -29,6 +29,32 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SftpSessionControllerTest {
     @Test
+    fun refreshFindsNewFilesAndClearsRemovedSelectionWithoutLosingClipboard() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        val first = SftpFile("first", "/work/first", false, 3, 0)
+        client.files = listOf(first)
+        controller.refresh()
+        assertTrue((controller.state.value as SftpUiState.Browsing).busy)
+        runCurrent()
+        assertEquals(listOf(first), (controller.state.value as SftpUiState.Browsing).files)
+        controller.select(first.path)
+        controller.copySelection(false)
+        controller.select(first.path)
+        client.files = emptyList()
+        controller.refresh()
+        runCurrent()
+        val state = controller.state.value as SftpUiState.Browsing
+        assertEquals("/work", state.path)
+        assertTrue(state.files.isEmpty())
+        assertEquals(null, state.selectedPath)
+        assertEquals(SftpClipboard(first.path, false), state.clipboard)
+        assertFalse(state.busy)
+    }
+
+    @Test
     fun authenticationRequestCarriesOnlyNonSecretMetadataAndCloseClearsIt() = runTest {
         val controller = controller { error("No client expected") }
 
@@ -219,6 +245,73 @@ class SftpSessionControllerTest {
         assertTrue(second.all { it == '\u0000' })
     }
 
+    @Test
+    fun previewDownloadsClickedFileWithoutSelectionAndClearsBusyState() = runTest {
+        val file = SftpFile("photo.jpg", "/photo.jpg", false, 3, 0)
+        val client = FakeSftpSession(completedPath = "/").apply {
+            files = listOf(file)
+            onDownload = { path, output ->
+                assertEquals(file.path, path)
+                output.write(byteArrayOf(1, 2, 3))
+            }
+        }
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        val root = java.nio.file.Files.createTempDirectory("sftp-preview-test").toFile()
+        try {
+            val result = controller.downloadForViewing(file, root).getOrThrow()
+            assertEquals(3, result.readBytes().size)
+            assertFalse((controller.state.value as SftpUiState.Browsing).busy)
+            assertEquals(null, (controller.state.value as SftpUiState.Browsing).selectedPath)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun failedPreviewReportsErrorAndRemovesPartialDownload() = runTest {
+        val file = SftpFile("clip.mp4", "/clip.mp4", false, 3, 0)
+        val client = FakeSftpSession(completedPath = "/").apply {
+            files = listOf(file)
+            onDownload = { _, output ->
+                output.write(1)
+                throw java.io.IOException("Connection lost")
+            }
+        }
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        val root = java.nio.file.Files.createTempDirectory("sftp-preview-test").toFile()
+        try {
+            assertTrue(controller.downloadForViewing(file, root).isFailure)
+            val state = controller.state.value as SftpUiState.Browsing
+            assertFalse(state.busy)
+            assertEquals("Connection lost", state.message)
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun closingSessionDuringPreviewDiscardsDownloadInsteadOfOpeningIt() = runTest {
+        val file = SftpFile("clip.mp4", "/clip.mp4", false, 1, 0)
+        val client = FakeSftpSession(completedPath = "/").apply { files = listOf(file) }
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        client.onDownload = { _, output -> output.write(1); controller.close() }
+        val root = java.nio.file.Files.createTempDirectory("sftp-preview-test").toFile()
+        try {
+            var cancelled = false
+            try {
+                controller.downloadForViewing(file, root)
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                cancelled = true
+            }
+            assertTrue(cancelled)
+            assertSame(SftpUiState.Closed, controller.state.value)
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
     private fun kotlinx.coroutines.test.TestScope.controller(
         factory: () -> SftpSession,
     ): SftpSessionController = SftpSessionController(
@@ -250,6 +343,8 @@ private class FakeSftpSession(
     private val acceptedKeyboardToken: Long? = null,
 ) : SftpSession {
     private val connection = CompletableDeferred<Result<String>>()
+    var files: List<SftpFile> = emptyList()
+    var onDownload: (String, OutputStream) -> Unit = { _, _ -> }
     var closed = false
         private set
     var beforeAcceptedKeyboardAnswer: (() -> Unit)? = null
@@ -287,14 +382,14 @@ private class FakeSftpSession(
         return result.getOrThrow()
     }
 
-    override fun list(path: String): List<SftpFile> = emptyList()
+    override fun list(path: String): List<SftpFile> = files
     override fun createDirectory(parent: String, name: String) = Unit
     override fun rename(path: String, newName: String) = Unit
     override suspend fun delete(path: String) = Unit
     override fun move(path: String, destinationDirectory: String) = Unit
     override suspend fun copy(path: String, destinationDirectory: String) = Unit
     override fun upload(parent: String, name: String, source: InputStream) = Unit
-    override fun download(path: String, destination: OutputStream) = Unit
+    override fun download(path: String, destination: OutputStream) = onDownload(path, destination)
     override suspend fun downloadRecursively(
         path: String,
         destination: SftpDownloadDestination,

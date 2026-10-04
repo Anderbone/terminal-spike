@@ -9,6 +9,7 @@ import com.yanjiyu.terminalspike.connection.SftpSession
 import com.yanjiyu.terminalspike.connection.SftpUploadSource
 import com.yanjiyu.terminalspike.connection.SshConnectionConfig
 import com.yanjiyu.terminalspike.connection.parentPath
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.CoroutineScope
@@ -143,6 +144,18 @@ internal class SftpSessionController(
         showDirectory(state.hostName, path, active, state.clipboard, ownerGeneration)
     }
 
+    fun refresh() = mutate { state, active, ownerGeneration ->
+        val files = active.list(state.path)
+        publishIfOwned(ownerGeneration, active) {
+            state.copy(
+                files = files,
+                busy = false,
+                selectedPath = state.selectedPath?.takeIf { path -> files.any { it.path == path } },
+                message = null,
+            )
+        }
+    }
+
     fun goUp() {
         val current = _state.value as? SftpUiState.Browsing ?: return
         if (current.path != "/") openDirectory(parentPath(current.path))
@@ -244,6 +257,44 @@ internal class SftpSessionController(
             val current = _state.value as? SftpUiState.Browsing ?: owned.state
             current.copy(selectedPath = null, busy = false)
         }
+    }
+
+    suspend fun downloadForViewing(file: SftpFile, cacheRoot: File): Result<File> = transfer { owned ->
+        require(!file.isDirectory && file in owned.state.files) { "This file is no longer available." }
+        publishIfOwned(owned.generation, owned.active) {
+            owned.state.copy(busy = true, message = "Downloading ${file.name} to open…")
+        }
+        var downloaded: File? = null
+        try {
+            withContext(operationContext) {
+                downloaded = SftpPreviewCache(cacheRoot).download(file.name) { output ->
+                    owned.active.download(file.path, output)
+                }
+            }
+            if (!owns(owned.generation, owned.active)) throw CancellationException("File session changed.")
+            requireNotNull(downloaded)
+        } catch (error: Throwable) {
+            withContext(kotlinx.coroutines.NonCancellable + operationContext) {
+                downloaded?.parentFile?.deleteRecursively()
+            }
+            throw error
+        } finally {
+            publishIfOwned(owned.generation, owned.active) {
+                val current = _state.value as? SftpUiState.Browsing ?: owned.state
+                current.copy(busy = false, message = null)
+            }
+        }
+    }
+
+    suspend fun downloadForViewing(
+        file: SftpFile,
+        destination: SftpDownloadDestination,
+        destinationLabel: String,
+    ): Result<Unit> = transfer { owned ->
+        require(!file.isDirectory && file in owned.state.files) { "This file is no longer available." }
+        withContext(operationContext) { owned.active.downloadRecursively(file.path, destination) }
+        if (!owns(owned.generation, owned.active)) throw CancellationException("File session changed.")
+        showMessageIfOwned("Downloaded ${file.name} to $destinationLabel", owned)
     }
 
     suspend fun downloadSelected(

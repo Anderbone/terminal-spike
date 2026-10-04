@@ -71,8 +71,10 @@ class SftpLocalDestinationTest {
         pending.commit()
 
         assertFalse(store.items.values.single().published)
+        assertTrue(destination.downloadedItems.isEmpty())
         destination.complete()
         assertTrue(store.items.values.single().published)
+        assertEquals(store.items.keys.toList(), destination.downloadedItems)
     }
 
     @Test
@@ -91,6 +93,7 @@ class SftpLocalDestinationTest {
 
         assertEquals(emptyMap<String, FakeMediaItem>(), store.items)
         assertEquals(2, store.deleted.size)
+        assertTrue(destination.downloadedItems.isEmpty())
     }
 }
 

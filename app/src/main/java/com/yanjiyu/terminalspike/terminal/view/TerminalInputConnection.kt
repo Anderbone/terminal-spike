@@ -5,7 +5,6 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import java.nio.charset.StandardCharsets
@@ -38,31 +37,7 @@ internal class TerminalInputConnection(
         opts: android.os.Bundle?,
     ): Boolean {
         val callback = imageContentCallback ?: return super.commitContent(inputContentInfo, flags, opts)
-        val description = inputContentInfo.description
-        val mimeType = (0 until description.mimeTypeCount)
-            .map(description::getMimeType)
-            .firstOrNull { pastedImageExtension(it) != null }
-            ?: return super.commitContent(inputContentInfo, flags, opts)
-        val ownsPermission = flags and InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION != 0
-        if (ownsPermission && runCatching { inputContentInfo.requestPermission() }.isFailure) return false
-        var permissionReleased = false
-        val releasePermission = {
-            if (!permissionReleased) {
-                permissionReleased = true
-                if (ownsPermission) runCatching { inputContentInfo.releasePermission() }
-            }
-        }
-        val accepted = runCatching {
-            callback.onImageContent(
-                TerminalImageContentRequest(
-                    uri = inputContentInfo.contentUri,
-                    mimeType = mimeType,
-                    releasePermission = releasePermission,
-                ),
-            )
-        }.getOrDefault(false)
-        if (!accepted) releasePermission()
-        return accepted
+        return receiveTerminalImageContent(inputContentInfo, flags, callback)
     }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {

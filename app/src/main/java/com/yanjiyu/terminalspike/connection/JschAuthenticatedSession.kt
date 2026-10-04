@@ -3,6 +3,9 @@ package com.yanjiyu.terminalspike.connection
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.SocketFactory
+import com.yanjiyu.terminalspike.core.model.PortForwardDirection
+import com.yanjiyu.terminalspike.core.model.PortForwardRule
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The one place where a JSch session receives this application's SSH trust and authentication
@@ -70,10 +73,7 @@ internal class JschAuthenticatedSessionFactory(
                 return null
             }
             opened.startPortForwards(config.portForwards)
-            if (opened.isClosed()) {
-                session.disconnect()
-                return null
-            }
+            if (opened.isClosed()) return null
             connected = true
             return opened
         } finally {
@@ -94,7 +94,7 @@ internal class JschAuthenticatedSessionFactory(
     }
 }
 
-/** Owns the authenticated JSch session and every identity copied into its JSch instance. */
+/** Terminal lease on an authenticated transport, retained while shared forwards still use it. */
 internal class AuthenticatedJschSession(
     private val jsch: JSch,
     val session: Session,
@@ -103,12 +103,36 @@ internal class AuthenticatedJschSession(
 ) : AutoCloseable, KeyboardInteractivePromptController {
     private val lock = Any()
     private var closed = false
+    private var forwards: AutoCloseable? = null
+    private val transportReferences = AtomicInteger(1)
+    private val forwardingTransport = object : PortForwardTransport {
+        override val endpoint = PortForwardEndpoint(session.host, session.port, session.userName)
+        override val connected get() = session.isConnected
+        override fun retain() { transportReferences.incrementAndGet() }
+        override fun release() = releaseTransport()
+        override fun start(rule: PortForwardRule) = session.startPortForwards(listOf(rule))
+        override fun stop(rule: PortForwardRule) {
+            when (rule.direction) {
+                PortForwardDirection.LOCAL -> session.delPortForwardingL(rule.bindAddress, rule.listenPort)
+                PortForwardDirection.REMOTE -> session.delPortForwardingR(rule.bindAddress, rule.listenPort)
+            }
+        }
+    }
+
+    private fun releaseTransport() {
+        if (transportReferences.decrementAndGet() == 0) {
+            runCatching { session.disconnect() }
+            runCatching { jsch.removeAllIdentity() }
+        }
+    }
 
     fun isClosed(): Boolean = synchronized(lock) { closed }
 
-    fun startPortForwards(rules: List<com.yanjiyu.terminalspike.core.model.PortForwardRule>) = synchronized(lock) {
+    fun startPortForwards(rules: List<PortForwardRule>) = synchronized(lock) {
         // Close cannot race listener creation, including a partially completed remote registration.
-        if (!closed) session.startPortForwards(rules)
+        if (!closed && forwards == null) {
+            forwards = SharedPortForwards.process.acquire(forwardingTransport, rules)
+        }
     }
 
     override fun answerKeyboardInteractiveChallenge(
@@ -132,8 +156,8 @@ internal class AuthenticatedJschSession(
         if (!shouldClose) return
         keyboardInteractive?.close()
         runCatching(onClose)
-        runCatching { session.disconnect() }
-        runCatching { jsch.removeAllIdentity() }
+        forwards?.close()
+        releaseTransport()
     }
 }
 

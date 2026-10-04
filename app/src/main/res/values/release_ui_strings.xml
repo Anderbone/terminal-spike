@@ -579,7 +579,7 @@
     <string name="session_new_description">New terminal session</string>
     <string name="session_add_saved_connection_description">Add saved connection to terminal</string>
     <string name="terminal_saved_connection_picker_title">Open saved connection</string>
-    <string name="terminal_saved_connection_picker_detail">Choose a saved connection to open in a new terminal session.</string>
+    <string name="terminal_saved_connection_picker_detail">Tap a connection for a terminal, or Open files to browse in a separate tab.</string>
     <string name="terminal_saved_connection_picker_empty">No saved connections yet. Add one from the Connections workspace first.</string>
     <string name="terminal_saved_connection_picker_open_connections">Go to Connections</string>
     <string name="session_close_title">Close %1$s?</string>
@@ -624,4 +624,6 @@
     <string name="ssh_connect_forget_password_detail">This permanently removes the device-encrypted password for %1$s. The saved host details are kept.</string>
     <string name="ssh_connect_forget_password_action">Forget password</string>
     <string name="default_option">Default</string>
+    <string name="files_session_title">Files · %1$s</string>
+    <string name="files_session_close">Close files tab</string>
 </resources>

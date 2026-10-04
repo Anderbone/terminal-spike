@@ -642,6 +642,16 @@ fun TerminalSpikeScreen(
     val terminalClipboardAction = remember(terminalClipboardWriter) {
         TerminalClipboardActionCallback { request -> terminalClipboardWriter.write(request) != null }
     }
+    val terminalImageContent = TerminalImageContentCallback { request ->
+        val accepted = viewModel.pasteImage(
+            sessionId = state.activeSessionId,
+            mimeType = request.mimeType,
+            open = { rootView.context.contentResolver.openInputStream(request.uri) },
+            onFinished = request.releasePermission,
+        )
+        if (!accepted) request.releasePermission()
+        accepted
+    }
     val systemBarsController = remember(rootView) {
         rootView.context.findActivity()?.window?.let { window ->
             AndroidTerminalSystemBarsController(window, rootView)
@@ -662,14 +672,27 @@ fun TerminalSpikeScreen(
     var toolsSection by rememberSaveable { mutableStateOf(ToolSection.PROFILES) }
     var connectDialogRequest by remember { mutableStateOf<SshConnectDialogRequest?>(null) }
     var pendingWorkspaceAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
-    var savedConnectionPickerVisible by rememberSaveable { mutableStateOf(false) }
     var newSessionPickerVisible by rememberSaveable { mutableStateOf(false) }
-    var newSessionProtocol by rememberSaveable { mutableStateOf<ConnectionProtocol?>(null) }
+    var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
+    var filesSelected by rememberSaveable { mutableStateOf(false) }
+    val filesOpen = sftpState !is SftpUiState.Closed
+    val filesVisible = filesSelected && filesOpen && destination == AppRoute.TERMINAL_DETAIL
+    val filesHostName = when (val files = sftpState) {
+        is SftpUiState.AuthenticationRequired -> files.hostName
+        is SftpUiState.Connecting -> files.hostName
+        is SftpUiState.Browsing -> files.hostName
+        is SftpUiState.Failed -> files.hostName
+        SftpUiState.Closed -> ""
+    }
+    var previousTerminalId by rememberSaveable { mutableStateOf(state.activeSessionId) }
+    LaunchedEffect(state.activeSessionId) {
+        if (previousTerminalId != state.activeSessionId) filesSelected = false
+        previousTerminalId = state.activeSessionId
+    }
     var localArchInstallVisible by rememberSaveable { mutableStateOf(false) }
     val localArchState by viewModel.localArchState.collectAsStateWithLifecycle()
     val localArchRuntime by viewModel.localArchRuntime.collectAsStateWithLifecycle()
     var pendingTerminalAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
-    var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
     var terminalOwner by rememberSaveable { mutableStateOf(TerminalOwner.WORKSPACE) }
     var catalogReturnDestination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
     var settingsReturnDestination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
@@ -948,6 +971,7 @@ fun TerminalSpikeScreen(
         source: AppRoute = destination,
         rendererLab: Boolean = false,
     ) {
+        filesSelected = false
         if (rendererLab) {
             state.sessions.firstOrNull(SessionTabUi::isLocalTerminal)?.let { localSession ->
                 viewModel.selectSession(localSession.id)
@@ -1149,7 +1173,7 @@ fun TerminalSpikeScreen(
     // The terminal uses overlay priority so an active IME cannot consume the first system Back.
     // The AndroidX handlers remain the compatibility and programmatic-dispatch path.
     BackHandler(enabled = focusMode) { focusSessionId = null }
-    TerminalPriorityBackHandler(
+    if (!filesVisible) TerminalPriorityBackHandler(
         currentRoute = destination,
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
@@ -1164,7 +1188,7 @@ fun TerminalSpikeScreen(
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
         settingsReturnDestination = settingsReturnDestination,
-        enabled = !focusMode,
+        enabled = !focusMode && !filesVisible,
         onPreviewChanged = { backPreview = it },
         onNavigate = { destination = it },
     )
@@ -1285,6 +1309,9 @@ fun TerminalSpikeScreen(
                             viewModel.connectionsHostName(hostId)?.let { host ->
                                 runWithLocalNetworkAccess(host) {
                                     viewModel.openSftp(hostId)
+                                    filesSelected = true
+                                    focusSessionId = null
+                                    destination = AppRoute.TERMINAL_DETAIL
                                     LocalNetworkActionEffect()
                                 }
                             }
@@ -1388,7 +1415,11 @@ fun TerminalSpikeScreen(
                                 notice = null,
                                 canAddSession = state.canAddSshSession,
                                 settingsReady = state.settingsReady,
-                                onSelectSession = viewModel::selectSession,
+                                onSelectSession = { filesSelected = false; viewModel.selectSession(it) },
+                                filesTitle = filesHostName.takeIf { filesOpen },
+                                filesSelected = filesVisible,
+                                onSelectFiles = { filesSelected = true },
+                                onCloseFiles = { viewModel.sftp.close(); filesSelected = false },
                                 onDuplicateSession = ::duplicateTerminalSession,
                                 onCloseSession = viewModel::closeSession,
                                 onDisconnect = viewModel::disconnectSsh,
@@ -1408,164 +1439,163 @@ fun TerminalSpikeScreen(
                                 showLocalTerminalSession = BuildConfig.DEBUG && rendererLabVisible,
                             )
                         }
-                        if (rendererLabVisible && !focusMode) {
-                            TerminalBuildTopSlot(
-                                state = state,
-                                feature = viewModel.terminalBuildFeature,
-                                autoFollow = performance.autoFollow,
+                        if (filesVisible) {
+                            SftpScreen(
+                                controller = viewModel.sftp,
+                                scope = screenScope,
+                                onSubmitAuthentication = viewModel::submitSftpAuthentication,
+                                onClose = { viewModel.sftp.close(); filesSelected = false },
+                                modifier = Modifier.weight(1f),
                             )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.background),
-                        ) {
-                            if (terminalSurfaceVisible) {
-                                TerminalViewBridge(
-                                    controller = activeController,
-                                    inputFocusRequester = terminalInputFocusRequester,
-                                    onPreImeBack = {
-                                        if (focusMode) {
-                                            focusSessionId = null
-                                        } else {
-                                            navigateBack()
-                                        }
-                                    },
-                                    clipboardActionCallback = terminalClipboardAction,
-                                    imageContentCallback = TerminalImageContentCallback { request ->
-                                        val accepted = viewModel.pasteImage(
-                                            sessionId = state.activeSessionId,
-                                            mimeType = request.mimeType,
-                                            open = {
-                                                rootView.context.contentResolver
-                                                    .openInputStream(request.uri)
-                                            },
-                                            onFinished = request.releasePermission,
-                                        )
-                                        if (!accepted) request.releasePermission()
-                                        accepted
-                                    },
-                                )
-                            } else {
-                                TerminalEmptyState(
-                                    canOpenConnection = state.canAddSshSession,
-                                    onOpenConnection = { newSessionPickerVisible = true },
-                                    modifier = Modifier.align(Alignment.Center),
-                                )
-                            }
-                            if (rendererLabVisible) {
-                                TerminalBuildCanvasSlot(
+                        } else {
+                            if (rendererLabVisible && !focusMode) {
+                                TerminalBuildTopSlot(
                                     state = state,
-                                    snapshot = performance,
                                     feature = viewModel.terminalBuildFeature,
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                                    autoFollow = performance.autoFollow,
                                 )
                             }
-                            JumpToLatestAction(
-                                visible = terminalSurfaceVisible && !performance.autoFollow,
-                                onJumpToLatest = viewModel::jumpToBottom,
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-                            )
-                        }
-                        if (terminalSurfaceVisible && !focusMode) {
-                            TerminalAccessoryBar(
-                                snippetsContent = {
-                                    com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage(
-                                        snippets = state.snippets,
-                                        canSave = state.settingsReady,
-                                        canSend = state.canSendTerminalInput,
-                                        onSend = { id ->
-                                            terminalInputFocusRequester.resetComposingInput()
-                                            viewModel.sendSnippet(id, state.activeSessionId)
-                                        },
-                                        onNewCodex = {
-                                            terminalInputFocusRequester.resetComposingInput()
-                                            viewModel.startNewCodex()
-                                        },
-                                        onSave = viewModel::saveConnectionsSnippet,
-                                        onEditorClosed = { restoreTerminalFocusAfterSnippetPicker = true },
-                                    )
-                                },
-                                actions = state.accessoryActions,
-                                modifiers = AccessoryModifierSnapshot(
-                                    control = accessoryModifierState(
-                                        state.ctrlArmed,
-                                        state.ctrlLocked,
-                                    ),
-                                    alt = accessoryModifierState(
-                                        state.altArmed,
-                                        state.altLocked,
-                                    ),
-                                    shift = accessoryModifierState(
-                                        state.shiftArmed,
-                                        state.shiftLocked,
-                                    ),
-                                ),
-                                layout = state.keyboardLayout,
-                                inputMode = state.terminalInputMode,
-                                hapticFeedbackEnabled = state.keyboardHapticsEnabled,
-                                keyRepeatEnabled = state.keyRepeatEnabled,
-                                multilinePasteConfirmationEnabled =
-                                    state.multilinePasteConfirmationEnabled,
-                                voiceInputLanguageTag = state.voiceInputLanguageTag,
-                                customizationEnabled = state.settingsReady,
-                                inputTargetId = state.activeSessionId,
-                                bufferedInputSendEnabled = state.canSendTerminalInput,
-                                bufferedInputDraftState = viewModel.bufferedInputDraftState,
-                                inputContext = inputContext,
-                                onAction = { action ->
-                                    if (action is TerminalAccessoryAction.Local) {
-                                        when (action.action) {
-                                            TerminalLocalAccessoryAction.PASTE ->
-                                                pasteClipboardInto(state.activeSessionId)
-                                            TerminalLocalAccessoryAction.SELECT_IMAGES -> {
-                                                imagePickerTargetSessionId = state.activeSessionId
-                                                imagePickerLauncher.launch(
-                                                    PickVisualMediaRequest(
-                                                        ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                                                    ),
-                                                )
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.background),
+                            ) {
+                                if (terminalSurfaceVisible) {
+                                    TerminalViewBridge(
+                                        controller = activeController,
+                                        inputFocusRequester = terminalInputFocusRequester,
+                                        onPreImeBack = {
+                                            if (focusMode) {
+                                                focusSessionId = null
+                                            } else {
+                                                navigateBack()
                                             }
-                                            TerminalLocalAccessoryAction.SNIPPETS ->
-                                                showTools(ToolSection.SNIPPETS, state.activeSessionId)
-                                            TerminalLocalAccessoryAction.TMUX_SESSIONS ->
-                                                openTmuxSessionSwitcher(state.activeSessionId)
-                                            TerminalLocalAccessoryAction.KEYBOARD_SETTINGS ->
-                                                showTools(ToolSection.KEYS, state.activeSessionId)
-                                            TerminalLocalAccessoryAction.HIDE_KEYBOARD ->
-                                                terminalInputFocusRequester.toggleSoftwareKeyboard()
+                                        },
+                                        clipboardActionCallback = terminalClipboardAction,
+                                        imageContentCallback = terminalImageContent,
+                                    )
+                                } else {
+                                    TerminalEmptyState(
+                                        canOpenConnection = state.canAddSshSession,
+                                        onOpenConnection = { newSessionPickerVisible = true },
+                                        modifier = Modifier.align(Alignment.Center),
+                                    )
+                                }
+                                if (rendererLabVisible) {
+                                    TerminalBuildCanvasSlot(
+                                        state = state,
+                                        snapshot = performance,
+                                        feature = viewModel.terminalBuildFeature,
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                                    )
+                                }
+                                JumpToLatestAction(
+                                    visible = terminalSurfaceVisible && !performance.autoFollow,
+                                    onJumpToLatest = viewModel::jumpToBottom,
+                                    modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                                )
+                            }
+                            if (terminalSurfaceVisible && !focusMode) {
+                                TerminalAccessoryBar(
+                                    snippetsContent = {
+                                        com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage(
+                                            snippets = state.snippets,
+                                            canSave = state.settingsReady,
+                                            canSend = state.canSendTerminalInput,
+                                            onSend = { id ->
+                                                terminalInputFocusRequester.resetComposingInput()
+                                                viewModel.sendSnippet(id, state.activeSessionId)
+                                            },
+                                            onNewCodex = {
+                                                terminalInputFocusRequester.resetComposingInput()
+                                                viewModel.startNewCodex()
+                                            },
+                                            onSave = viewModel::saveConnectionsSnippet,
+                                            onEditorClosed = { restoreTerminalFocusAfterSnippetPicker = true },
+                                        )
+                                    },
+                                    actions = state.accessoryActions,
+                                    modifiers = AccessoryModifierSnapshot(
+                                        control = accessoryModifierState(
+                                            state.ctrlArmed,
+                                            state.ctrlLocked,
+                                        ),
+                                        alt = accessoryModifierState(
+                                            state.altArmed,
+                                            state.altLocked,
+                                        ),
+                                        shift = accessoryModifierState(
+                                            state.shiftArmed,
+                                            state.shiftLocked,
+                                        ),
+                                    ),
+                                    layout = state.keyboardLayout,
+                                    inputMode = state.terminalInputMode,
+                                    hapticFeedbackEnabled = state.keyboardHapticsEnabled,
+                                    keyRepeatEnabled = state.keyRepeatEnabled,
+                                    multilinePasteConfirmationEnabled =
+                                        state.multilinePasteConfirmationEnabled,
+                                    voiceInputLanguageTag = state.voiceInputLanguageTag,
+                                    customizationEnabled = state.settingsReady,
+                                    inputTargetId = state.activeSessionId,
+                                    bufferedInputSendEnabled = state.canSendTerminalInput,
+                                    bufferedInputDraftState = viewModel.bufferedInputDraftState,
+                                    inputContext = inputContext,
+                                    onAction = { action ->
+                                        if (action is TerminalAccessoryAction.Local) {
+                                            when (action.action) {
+                                                TerminalLocalAccessoryAction.PASTE ->
+                                                    pasteClipboardInto(state.activeSessionId)
+                                                TerminalLocalAccessoryAction.SELECT_IMAGES -> {
+                                                    imagePickerTargetSessionId = state.activeSessionId
+                                                    imagePickerLauncher.launch(
+                                                        PickVisualMediaRequest(
+                                                            ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                                                        ),
+                                                    )
+                                                }
+                                                TerminalLocalAccessoryAction.SNIPPETS ->
+                                                    showTools(ToolSection.SNIPPETS, state.activeSessionId)
+                                                TerminalLocalAccessoryAction.TMUX_SESSIONS ->
+                                                    openTmuxSessionSwitcher(state.activeSessionId)
+                                                TerminalLocalAccessoryAction.KEYBOARD_SETTINGS ->
+                                                    showTools(ToolSection.KEYS, state.activeSessionId)
+                                                TerminalLocalAccessoryAction.HIDE_KEYBOARD ->
+                                                    terminalInputFocusRequester.toggleSoftwareKeyboard()
+                                            }
+                                        } else {
+                                            terminalInputFocusRequester.resetComposingInput()
+                                            viewModel.activateTerminalAccessoryAction(action)
                                         }
-                                    } else {
-                                        terminalInputFocusRequester.resetComposingInput()
-                                        viewModel.activateTerminalAccessoryAction(action)
-                                    }
-                                },
-                                onCustomize = { showTools(ToolSection.KEYS) },
-                                onSendBufferedInput = { sessionId, text ->
-                                    viewModel.sendBufferedInput(sessionId, text)
-                                },
-                                onSubmitBufferedInput = { sessionId, text ->
-                                    viewModel.sendBufferedInput(sessionId, text, appendEnter = true)
-                                },
-                                onBufferedInputModeChanged = { active ->
-                                    terminalInputFocusRequester.setDirectInputEnabled(!active)
-                                },
-                                onDirectInputMode = {
-                                    terminalInputFocusRequester.requestFocus(showKeyboard = false)
-                                },
-                            )
-                        }
-                        if (!terminalSurfaceVisible) {
-                            WorkspaceBottomBar(
-                                selected = AppDestination.TERMINAL,
-                                onWorkspace = { destination = AppRoute.WORKSPACE },
-                                onConnections = {},
-                                onSettings = {
-                                    showSettingsCategories(AppRoute.TERMINAL_DETAIL)
-                                },
-                                windowInsets = WindowInsets(0, 0, 0, 0),
-                            )
+                                    },
+                                    onCustomize = { showTools(ToolSection.KEYS) },
+                                    imageContentCallback = terminalImageContent,
+                                    onSendBufferedInput = { sessionId, text ->
+                                        viewModel.sendBufferedInput(sessionId, text)
+                                    },
+                                    onSubmitBufferedInput = { sessionId, text ->
+                                        viewModel.sendBufferedInput(sessionId, text, appendEnter = true)
+                                    },
+                                    onBufferedInputModeChanged = { active ->
+                                        terminalInputFocusRequester.setDirectInputEnabled(!active)
+                                    },
+                                    onDirectInputMode = {
+                                        terminalInputFocusRequester.requestFocus(showKeyboard = false)
+                                    },
+                                )
+                            }
+                            if (!terminalSurfaceVisible) {
+                                WorkspaceBottomBar(
+                                    selected = AppDestination.TERMINAL,
+                                    onWorkspace = { destination = AppRoute.WORKSPACE },
+                                    onConnections = {},
+                                    onSettings = {
+                                        showSettingsCategories(AppRoute.TERMINAL_DETAIL)
+                                    },
+                                    windowInsets = WindowInsets(0, 0, 0, 0),
+                                )
+                            }
                         }
                     }
                 }
@@ -1831,31 +1861,8 @@ fun TerminalSpikeScreen(
                 .padding(bottom = snackbarBottomPadding),
         )
 
-        if (sftpState !is SftpUiState.Closed) {
-            SftpScreen(
-                controller = viewModel.sftp,
-                scope = screenScope,
-                onSubmitAuthentication = viewModel::submitSftpAuthentication,
-                onClose = viewModel.sftp::close,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
     }
 
-    if (newSessionPickerVisible) NewSessionDialog(
-        onDismiss = { newSessionPickerVisible = false },
-        onRemote = { protocol ->
-            newSessionPickerVisible = false
-            newSessionProtocol = protocol
-            savedConnectionPickerVisible = true
-        },
-        onLocalArch = {
-            newSessionPickerVisible = false
-            if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
-                if (viewModel.openLocalArch()) destination = AppRoute.TERMINAL_DETAIL
-            } else localArchInstallVisible = true
-        },
-    )
     if (localArchInstallVisible) LocalArchInstallDialog(
         state = localArchState,
         onInstall = {
@@ -1867,18 +1874,36 @@ fun TerminalSpikeScreen(
         onDismiss = { localArchInstallVisible = false },
     )
 
-    if (savedConnectionPickerVisible) {
+    if (newSessionPickerVisible) {
         SavedConnectionPickerDialog(
             loadState = connectionsState.loadState,
-            protocol = newSessionProtocol,
-            onDismiss = { savedConnectionPickerVisible = false },
+            onLocalArch = {
+                newSessionPickerVisible = false
+                filesSelected = false
+                if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
+                    if (viewModel.openLocalArch()) destination = AppRoute.TERMINAL_DETAIL
+                } else localArchInstallVisible = true
+            },
+            onOpenFiles = { host ->
+                newSessionPickerVisible = false
+                val hostId = requireNotNull(host.draft.persistentId)
+                runWithLocalNetworkAccess(host.draft.hostname) {
+                    viewModel.openSftp(hostId)
+                    filesSelected = true
+                    focusSessionId = null
+                    destination = AppRoute.TERMINAL_DETAIL
+                    LocalNetworkActionEffect()
+                }
+            },
+            onDismiss = { newSessionPickerVisible = false },
             onOpenConnections = {
-                savedConnectionPickerVisible = false
+                newSessionPickerVisible = false
                 viewModel.selectConnectionsTab(ConnectionsTab.HOSTS)
                 destination = AppRoute.WORKSPACE
             },
             onSelectHost = { host ->
-                savedConnectionPickerVisible = false
+                newSessionPickerVisible = false
+                filesSelected = false
                 val catalog = (connectionsState.loadState as? ConnectionsLoadState.Ready)
                     ?.editorCatalog
                     ?: return@SavedConnectionPickerDialog

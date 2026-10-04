@@ -97,6 +97,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryDispatch
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryModifier
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.terminal.view.TerminalImageContentCallback
 import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.resolve
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
@@ -256,6 +257,7 @@ fun TerminalAccessoryBar(
     onSubmitBufferedInput: (Long, String) -> Boolean = onSendBufferedInput,
     onBufferedInputModeChanged: (Boolean) -> Unit,
     onDirectInputMode: () -> Unit,
+    imageContentCallback: TerminalImageContentCallback? = null,
     snippetsContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -330,19 +332,21 @@ fun TerminalAccessoryBar(
                         snippetsContent()
                     } else if (bufferedInputMode) {
                         Row(Modifier.fillMaxSize()) {
-                            BufferedInputPage(
-                                keyWidth = keyWidth,
-                                inputTargetId = inputTargetId,
-                                sendEnabled = bufferedInputSendEnabled,
-                                draftState = bufferedInputDraftState,
-                                active = keyboardVisible && bufferedInputPageActive,
-                                multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
-                                voiceInputLanguageTag = voiceInputLanguageTag,
-                                onSend = onSendBufferedInput,
-                                onSubmit = onSubmitBufferedInput,
-                                onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
-                                onToggleTyping = { manualInputMode = false },
-                            )
+                            BufferedImageInput(imageContentCallback) {
+                                BufferedInputPage(
+                                    keyWidth = keyWidth,
+                                    inputTargetId = inputTargetId,
+                                    sendEnabled = bufferedInputSendEnabled,
+                                    draftState = bufferedInputDraftState,
+                                    active = keyboardVisible && bufferedInputPageActive,
+                                    multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
+                                    voiceInputLanguageTag = voiceInputLanguageTag,
+                                    onSend = onSendBufferedInput,
+                                    onSubmit = onSubmitBufferedInput,
+                                    onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
+                                    onToggleTyping = { manualInputMode = false },
+                                )
+                            }
                         }
                     } else {
                         Row(Modifier.fillMaxSize()) {

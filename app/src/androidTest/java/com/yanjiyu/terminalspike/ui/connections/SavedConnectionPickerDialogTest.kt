@@ -61,6 +61,41 @@ class SavedConnectionPickerDialogTest {
         composeRule.runOnIdle { assertTrue(openedConnections) }
     }
 
+    @Test
+    fun newSessionListsBothProtocolsAndFilesDoNotOpenATerminal() {
+        var selectedHostId: String? = null
+        var filesHostId: String? = null
+        var localOpened = false
+        val ssh = host("ssh", "SSH server")
+        val mosh = host("mosh", "Mosh server").let {
+            it.copy(draft = it.draft.copy(protocol = ConnectionProtocol.MOSH))
+        }
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                SavedConnectionPickerDialog(
+                    loadState = readyState(ssh, mosh),
+                    onDismiss = {},
+                    onOpenConnections = {},
+                    onSelectHost = { selectedHostId = it.draft.persistentId },
+                    onOpenFiles = { filesHostId = it.draft.persistentId },
+                    onLocalArch = { localOpened = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("new-session-picker").assertIsDisplayed()
+        composeRule.onNodeWithText("SSH server").assertIsDisplayed()
+        composeRule.onNodeWithText("Mosh server").assertIsDisplayed()
+        composeRule.onNodeWithTag("saved-connection-files-mosh").performClick()
+        composeRule.runOnIdle {
+            assertEquals("mosh", filesHostId)
+            assertEquals(null, selectedHostId)
+        }
+        composeRule.onNodeWithContentDescription("Connect to SSH server").performClick()
+        composeRule.runOnIdle { assertEquals("ssh", selectedHostId) }
+        composeRule.onNodeWithTag("new-local-arch").performClick()
+        composeRule.runOnIdle { assertTrue(localOpened) }
+    }
+
     private fun readyState(vararg hosts: HostEditorSeed) = ConnectionsLoadState.Ready(
         hosts = emptyList(),
         keys = emptyList(),

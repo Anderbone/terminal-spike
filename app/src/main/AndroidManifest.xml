@@ -40,6 +40,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <provider
+            android:name=".ui.sftp.SftpPreviewProvider"
+            android:authorities="${applicationId}.sftp-preview"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/sftp_preview_paths" />
+        </provider>
         <service
             android:name=".SessionForegroundService"
             android:exported="false"

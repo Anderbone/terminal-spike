@@ -54,6 +54,63 @@ class BufferedInputPagerTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test
+    fun typingModeImagePastePreservesDraftAndUsesLatestReceiver() {
+        val draft = BufferedInputDraftState()
+        draft.update(androidx.compose.ui.text.input.TextFieldValue("keep this draft"), 1L)
+        val received = mutableListOf<Long>()
+        val target = androidx.compose.runtime.mutableStateOf(1L)
+        var connection: android.view.inputmethod.InputConnection? = null
+        val attributes = EditorInfo()
+        composeRule.setContent {
+            val sessionId = target.value
+            androidx.compose.ui.platform.InterceptPlatformTextInput(
+                interceptor = { request, _ ->
+                    connection = request.createInputConnection(attributes)
+                    kotlinx.coroutines.awaitCancellation()
+                },
+            ) {
+                com.yanjiyu.terminalspike.ui.BufferedImageInput(
+                    com.yanjiyu.terminalspike.terminal.view.TerminalImageContentCallback {
+                        received += sessionId
+                        it.releasePermission()
+                        true
+                    },
+                ) {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = draft.value,
+                        onValueChange = { draft.update(it, sessionId) },
+                        modifier = Modifier.testTag("image_paste_draft"),
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithTag("image_paste_draft").performClick()
+        composeRule.waitUntil { connection != null }
+        composeRule.runOnIdle { target.value = 2L }
+        composeRule.runOnIdle {
+            assertTrue(attributes.contentMimeTypes?.contains("image/png") == true)
+            assertTrue(connection!!.commitContent(
+                android.view.inputmethod.InputContentInfo(
+                    android.net.Uri.parse("content://terminal-spike-test/image.png"),
+                    android.content.ClipDescription("image", arrayOf("image/png")),
+                    null,
+                ), 0, null,
+            ))
+            assertEquals(listOf(2L), received)
+            assertEquals("keep this draft", draft.value.text)
+            org.junit.Assert.assertFalse(connection!!.commitContent(
+                android.view.inputmethod.InputContentInfo(
+                    android.net.Uri.parse("content://terminal-spike-test/file.pdf"),
+                    android.content.ClipDescription("document", arrayOf("application/pdf")),
+                    null,
+                ), 0, null,
+            ))
+            assertEquals(listOf(2L), received)
+        }
+    }
+
     private fun withSoftwareKeyboard(block: () -> Unit) {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(

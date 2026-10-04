@@ -173,6 +173,8 @@ internal class PhoneDownloadsDestination(
     }
     private val pendingFiles = mutableListOf<PhonePendingDownload>()
     private var finished = false
+    var downloadedItems: List<String> = emptyList()
+        private set
 
     override fun createDirectory(relativePath: String) = Unit
 
@@ -201,6 +203,7 @@ internal class PhoneDownloadsDestination(
         pendingFiles.forEach { pending ->
             check(store.publish(pending.item)) { "Cannot publish a downloaded file in Downloads." }
         }
+        downloadedItems = pendingFiles.map { it.item }
         finished = true
         pendingFiles.clear()
     }
