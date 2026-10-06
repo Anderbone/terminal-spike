@@ -46,9 +46,9 @@
       ]
     },
     {
-      "id": "documents-provider-shell-permission-api-28",
-      "max_api": 27,
-      "reason": "UiAutomation scoped shell-permission adoption requires API 28.",
+      "id": "documents-provider-shell-permission-api-29",
+      "max_api": 28,
+      "reason": "UiAutomation scoped shell-permission adoption requires API 29.",
       "suites": [
         "full"
       ],

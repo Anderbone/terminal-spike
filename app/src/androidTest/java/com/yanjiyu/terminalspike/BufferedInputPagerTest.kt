@@ -3,7 +3,6 @@ package com.yanjiyu.terminalspike
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,7 +51,7 @@ import org.junit.Test
 
 class BufferedInputPagerTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
+    val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test
@@ -134,6 +133,25 @@ class BufferedInputPagerTest {
         }
     }
 
+    private fun awaitBufferedKeyboard(terminal: FastTerminalView) {
+        try {
+            composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            var diagnostic = ""
+            composeRule.runOnUiThread {
+                val decor = composeRule.activity.window.decorView
+                val frame = android.graphics.Rect()
+                decor.getWindowVisibleDisplayFrame(frame)
+                val insets = androidx.core.view.ViewCompat.getRootWindowInsets(decor)
+                diagnostic = "directInput=${terminal.onCheckIsTextEditor()} mode=${composeRule.activity.window.attributes.softInputMode} " +
+                    "decorHeight=${decor.height} visibleFrame=$frame " +
+                    "ime=${insets?.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())} " +
+                    "focus=${composeRule.activity.currentFocus?.javaClass?.simpleName}"
+            }
+            throw AssertionError("Buffered keyboard did not own input: $diagnostic", failure)
+        }
+    }
+
     @Test
     fun bufferedDraftKeepsFocusWhileHerdrTabsAndSpacesReceiveFirstTap() = withSoftwareKeyboard {
         val sent = mutableListOf<String>()
@@ -180,7 +198,7 @@ class BufferedInputPagerTest {
             composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         composeRule.onNodeWithTag("buffered_terminal_input").performClick().performTextInput("keep my draft")
-        composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
+        awaitBufferedKeyboard(terminal)
         composeRule.runOnIdle {
             controller.updateTerminalFrame(
                 TerminalFrameUpdate(
@@ -277,7 +295,7 @@ class BufferedInputPagerTest {
             composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         composeRule.onNodeWithTag("buffered_terminal_input").performClick().performTextInput("keep my draft")
-        composeRule.waitUntil(5_000) { !terminal.onCheckIsTextEditor() }
+        awaitBufferedKeyboard(terminal)
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
         composeRule.onNodeWithText("Insert prompt").performClick()
         composeRule.runOnIdle {

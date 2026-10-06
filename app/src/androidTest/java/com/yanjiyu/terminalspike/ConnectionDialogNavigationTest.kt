@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -15,6 +16,9 @@ class ConnectionDialogNavigationTest {
     @Test
     fun cancellingAddHostKeepsConnectionsVisible() {
         composeRule.onNodeWithContentDescription("Add host").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onNodeWithText("Add host").isDisplayed()
+        }
         composeRule.onNodeWithText("Add host").assertIsDisplayed()
 
         composeRule.onNodeWithText("Cancel").performClick()

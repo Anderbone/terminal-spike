@@ -169,6 +169,7 @@ class SshTrustAuthenticationFlowTest {
         composeRule.onNodeWithText("Hidden response").assertIsDisplayed()
         repeat(2) { index ->
             onView(withTagValue(equalTo("$KeyboardInteractiveFieldTestTagPrefix$index")))
+                .inRoot(isDialog())
                 .check { view, noViewFoundException ->
                     if (noViewFoundException != null) throw noViewFoundException
                     val field = requireNotNull(view as? EditText)
@@ -183,8 +184,10 @@ class SshTrustAuthenticationFlowTest {
                 }
         }
         onView(withTagValue(equalTo("${KeyboardInteractiveFieldTestTagPrefix}0")))
+            .inRoot(isDialog())
             .perform(replaceText("alice"))
         onView(withTagValue(equalTo("${KeyboardInteractiveFieldTestTagPrefix}1")))
+            .inRoot(isDialog())
             .perform(replaceText("123456"))
         composeRule.onNodeWithText("Continue").performClick()
 
@@ -349,8 +352,10 @@ class SshTrustAuthenticationFlowTest {
             }
 
             onView(withTagValue(equalTo("${HostTestKeyboardInteractiveFieldTestTagPrefix}0")))
+                .inRoot(isDialog())
                 .perform(replaceText("alice"))
             onView(withTagValue(equalTo("${HostTestKeyboardInteractiveFieldTestTagPrefix}1")))
+                .inRoot(isDialog())
                 .perform(replaceText("654321"))
             composeRule.onNodeWithText("Continue").performClick()
             composeRule.waitForIdle()
@@ -453,6 +458,7 @@ class SshTrustAuthenticationFlowTest {
                     ConnectionState.AwaitingApproval(firstChallenge)
             }
             onView(withTagValue(equalTo("${KeyboardInteractiveFieldTestTagPrefix}1")))
+                .inRoot(isDialog())
                 .perform(replaceText("must-be-dropped"))
             closeSoftKeyboard()
 

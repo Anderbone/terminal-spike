@@ -184,8 +184,8 @@ class BackupDocumentsProviderIntegrationTest {
     @Test
     fun replaceRestoreAppliesExportedSnippetThroughOpaqueProviderStream() = runBlocking {
         assumeTrue(
-            "UiAutomation scoped shell-permission adoption requires API 28.",
-            Build.VERSION.SDK_INT >= 28,
+            "UiAutomation scoped shell-permission adoption requires API 29.",
+            Build.VERSION.SDK_INT >= 29,
         )
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         // Keep the fixture addressable by URI without allowing DocumentsUI to
@@ -282,8 +282,8 @@ class BackupDocumentsProviderIntegrationTest {
     @Test
     fun standardAndFullArchivesRoundTripThroughOpaqueProviderStreams() = runBlocking {
         assumeTrue(
-            "UiAutomation scoped shell-permission adoption requires API 28.",
-            Build.VERSION.SDK_INT >= 28,
+            "UiAutomation scoped shell-permission adoption requires API 29.",
+            Build.VERSION.SDK_INT >= 29,
         )
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val application = instrumentation.targetContext.applicationContext as TerminalSpikeApplication

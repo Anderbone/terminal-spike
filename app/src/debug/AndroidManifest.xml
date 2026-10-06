@@ -6,7 +6,8 @@
             android:exported="false" />
         <activity
             android:name=".TerminalSpikeComponentTestActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <provider
             android:name=".backup.LocalBackupDocumentsProvider"
             android:authorities="com.yanjiyu.terminalspike.test.backup.documents"
