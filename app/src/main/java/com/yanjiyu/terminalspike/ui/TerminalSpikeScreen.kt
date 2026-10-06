@@ -31,6 +31,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +40,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
@@ -148,6 +151,7 @@ internal fun TerminalEmptyState(
     Column(
         modifier = modifier
             .widthIn(max = 360.dp)
+            .verticalScroll(rememberScrollState())
             .padding(MaterialTheme.spacing.extraLarge)
             .testTag(TerminalEmptyStateTestTag),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -181,7 +185,7 @@ internal fun TerminalEmptyState(
         Button(
             onClick = onOpenConnection,
             enabled = canOpenConnection,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = MaterialTheme.iconMetrics.minimumTouchTarget),
             shape = MaterialTheme.shapes.large,
         ) {
             Text(stringResource(R.string.terminal_saved_connection_picker_title))

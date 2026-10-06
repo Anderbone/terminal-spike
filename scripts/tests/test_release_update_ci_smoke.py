@@ -51,7 +51,8 @@ class ReleaseUpdateCiSmokeTest(unittest.TestCase):
 
         self.write_tool(
             sdk / "cmdline-tools/latest/bin/android",
-            "log('android ' + ' '.join(sys.argv[1:]))\n",
+            "log('android ' + ' '.join(sys.argv[1:]))\n"
+            "raise SystemExit(int(os.environ.get('FAKE_ANDROID_INSTALL_FAIL', '0')))\n",
         )
         self.write_tool(
             sdk / "cmdline-tools/latest/bin/avdmanager",
@@ -203,7 +204,7 @@ if os.environ.get('FAKE_SMOKE_FAIL') == '1':
     print('RELEASE_APP_UPDATE_SMOKE stage=fixture status=start')
     print('RELEASE_APP_UPDATE_SMOKE stage=secret-value status=pass')
     print('private credential=secret-value', file=sys.stderr)
-    print('Timed out waiting for a privacy-safe terminal marker.', file=sys.stderr)
+    print(os.environ.get('FAKE_SMOKE_ERROR', 'Timed out waiting for a privacy-safe terminal marker.'), file=sys.stderr)
     raise SystemExit(1)
 values = [
     'ssh_before=pass',
@@ -410,6 +411,38 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
         result = self.run_runner(extra=("--port", "5555"))
         self.assertNotEqual(0, result.returncode)
         self.assertEqual([], self.commands())
+
+    def test_input_failures_are_classified_without_exposing_private_output(self) -> None:
+        for message, reason in (
+            ("Timed out waiting for UI node content-desc=Buffered terminal input.", "buffered_input"),
+            ("Timed out waiting for UI node content-desc=Send text and press Enter.", "submit_input"),
+            ("Timed out waiting for UI node content-desc=Type.", "typing_toggle"),
+            ("UI hierarchy remained incomplete after three captures.", "ui_hierarchy"),
+        ):
+            with self.subTest(reason=reason):
+                result = self.run_runner(env=self.fresh_env(FAKE_SMOKE_FAIL="1", FAKE_SMOKE_ERROR=message))
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(f"stage=black_box_failure status=fail reason={reason}", result.stdout)
+                self.assertNotIn("secret-value", result.stdout + result.stderr)
+                self.assert_clean()
+                self.reset()
+
+    def test_installer_cache_failure_uses_same_image_fallback(self) -> None:
+        self.write_tool(
+            self.root / "sdk/cmdline-tools/latest/bin/sdkmanager",
+            "log('sdkmanager ' + ' '.join(sys.argv[1:]))\n"
+            "raise SystemExit(int(os.environ.get('FAKE_SDKMANAGER_FAIL', '0')))\n",
+        )
+        result = self.run_runner(env=self.fresh_env(FAKE_ANDROID_INSTALL_FAIL="1"))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("sdkmanager system-images;android-35;google_apis;x86_64", self.commands())
+        self.reset()
+        result = self.run_runner(env=self.fresh_env(
+            FAKE_ANDROID_INSTALL_FAIL="1", FAKE_SDKMANAGER_FAIL="1",
+        ))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("fallback installation failed", result.stderr)
+        self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
 
     def test_signal_exit_removes_emulator_signing_and_release_outputs(self) -> None:
         environment = self.fresh_env(

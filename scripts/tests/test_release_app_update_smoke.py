@@ -232,6 +232,36 @@ wait_for_terminal_ready || exit 1
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_marker_input_opens_typing_only_when_needed_and_accepts_edittext(self) -> None:
+        source = self.runner.read_text(encoding="utf-8")
+        helper = "ensure_buffered_input() {" + source.split("ensure_buffered_input() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        probe = r'''
+ui_xml=$1
+typing=$2
+dump_ui() {
+    if [ "$typing" = yes ]; then
+        printf '<hierarchy><node content-desc="Buffered terminal input" class="android.widget.EditText" /></hierarchy>' > "$ui_xml"
+    else
+        printf '<hierarchy><node content-desc="Type" class="android.widget.Button" /></hierarchy>' > "$ui_xml"
+    fi
+}
+tap_node() {
+    [ "$#" -eq 2 ] || return 1
+    printf '%s\n' "$2"
+    if [ "$2" = Type ]; then typing=yes; fi
+    [ "$typing" = yes ]
+}
+''' + helper + '\nensure_buffered_input\n'
+        for typing, expected in (("yes", ["Buffered terminal input"]),
+                                 ("no", ["Type", "Buffered terminal input"])):
+            with self.subTest(typing=typing):
+                result = subprocess.run(
+                    ["sh", "-ec", probe, "input-probe", str(self.root / "ui.xml"), typing],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(expected, result.stdout.splitlines())
+
     def test_ui_capture_recovers_one_truncated_transfer_but_bounds_persistent_failure(self) -> None:
         source = self.runner.read_text(encoding="utf-8")
         capture = "dump_ui() {" + source.split("dump_ui() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"

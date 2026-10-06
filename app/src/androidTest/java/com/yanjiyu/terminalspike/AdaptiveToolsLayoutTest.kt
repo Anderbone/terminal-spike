@@ -25,6 +25,7 @@ import com.yanjiyu.terminalspike.ui.ExpandedToolDetailTestTag
 import com.yanjiyu.terminalspike.ui.ExpandedToolSectionListTestTag
 import com.yanjiyu.terminalspike.ui.LocalToolsScreen
 import com.yanjiyu.terminalspike.ui.toUiState
+import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -58,7 +59,9 @@ class AdaptiveToolsLayoutTest {
         composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertIsDisplayed()
         val categories = composeRule.onNodeWithTag(ExpandedToolSectionListTestTag)
-        categories.performScrollToNode(hasText("Mosh"))
+        categories.performScrollToNode(hasText("Advanced options"))
+        composeRule.onNodeWithText("Advanced options").performClick()
+        composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Mosh"))
         composeRule.onNodeWithText("Mosh").performClick()
         composeRule.onNodeWithText("Unavailable").performScrollTo().assertIsDisplayed()
         categories.performScrollToNode(hasText("About"))

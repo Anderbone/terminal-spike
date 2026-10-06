@@ -345,12 +345,23 @@ connect_new_saved_host() {
     wait_for_terminal_ready
 }
 
+ensure_buffered_input() {
+    dump_ui
+    if ! grep -Fq -- 'content-desc="Buffered terminal input"' "$ui_xml"; then
+        # Fresh installs open the extra-key panel. Explicitly choose typing
+        # instead of depending on a previous version's default panel.
+        tap_node content-desc "Type"
+    fi
+    # Compose text fields expose EditText, not necessarily android.view.View.
+    tap_node content-desc "Buffered terminal input"
+}
+
 send_marker() {
     marker=$1
-    # The default typing panel stages text; its explicit Enter action submits it to SSH.
-    tap_node content-desc "Buffered terminal input" 0 android.view.View
+    # The typing panel stages text; its explicit Enter action submits it to SSH.
+    ensure_buffered_input
     adb shell input text "printf%s$marker"
-    tap_node content-desc "Send text and press Enter" 0 android.view.View
+    tap_node content-desc "Send text and press Enter"
 }
 
 send_marker_and_verify() {

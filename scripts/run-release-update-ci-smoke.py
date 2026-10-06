@@ -331,12 +331,24 @@ class ReleaseSmokeRunner:
             if self.executable(self.android_bin)
             else [self.sdkmanager_bin, image]
         )
-        self.command(
+        installed = self.command(
             installer,
             label="Android system-image installation",
             environment=environment,
             timeout=600,
+            input_text="y\n",
+            check=False,
         )
+        if installed.returncode != 0:
+            if installer[0] != self.android_bin or not self.executable(self.sdkmanager_bin):
+                raise ReleaseSmokeFailure("Android system-image installation failed")
+            self.command(
+                [self.sdkmanager_bin, image],
+                label="Android system-image fallback installation",
+                environment=environment,
+                timeout=600,
+                input_text="y\n",
+            )
         self.command(
             [
                 self.avdmanager_bin,
@@ -454,6 +466,10 @@ class ReleaseSmokeRunner:
                 ("Timed out waiting for UI node content-desc=Native terminal renderer.", "terminal_renderer"),
                 ("Timed out waiting for privacy-safe UI marker: Terminal", "terminal_screen"),
                 ("Timed out waiting for the terminal or notification rationale.", "terminal_ready"),
+                ("Timed out waiting for UI node content-desc=Buffered terminal input.", "buffered_input"),
+                ("Timed out waiting for UI node content-desc=Send text and press Enter.", "submit_input"),
+                ("Timed out waiting for UI node content-desc=Type.", "typing_toggle"),
+                ("UI hierarchy remained incomplete after three captures.", "ui_hierarchy"),
             ):
                 if message in result.stderr.splitlines():
                     failure_reason = reason

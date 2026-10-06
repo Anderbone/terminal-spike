@@ -33,6 +33,7 @@ import com.yanjiyu.terminalspike.ui.NewTerminalSessionTestTag
 import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
 import com.yanjiyu.terminalspike.ui.TerminalChromeTitleTestTag
 import com.yanjiyu.terminalspike.ui.TerminalEmptyStateTestTag
+import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -196,7 +197,9 @@ class MainScreenSmokeTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Developer"))
+            .performScrollToNode(hasText("Advanced options"))
+        composeRule.onNodeWithText("Advanced options").performClick()
+        composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Developer"))
         composeRule.onNodeWithText("Developer").performClick()
         composeRule.onNodeWithContentDescription("Open renderer lab").performClick()
     }

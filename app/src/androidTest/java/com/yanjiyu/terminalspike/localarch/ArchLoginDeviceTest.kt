@@ -9,6 +9,7 @@ import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
+import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -26,7 +27,9 @@ class ArchLoginDeviceTest {
         assertTrue("Install Arch starter tools before running this opt-in gate", repository.environment.state.value.starterToolsInstalled)
         compose.onNodeWithContentDescription("Open settings").performClick()
         compose.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Local Arch Linux"))
+            .performScrollToNode(hasText("Advanced options"))
+        compose.onNodeWithText("Advanced options").performClick()
+        compose.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Local Arch Linux"))
         compose.onNodeWithText("Local Arch Linux").performClick()
         for (provider in ArchLoginProvider.entries) {
             try {

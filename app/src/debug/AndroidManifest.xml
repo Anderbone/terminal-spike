@@ -12,10 +12,8 @@
             android:authorities="com.yanjiyu.terminalspike.test.backup.documents"
             android:exported="true"
             android:grantUriPermissions="true"
-            android:permission="android.permission.MANAGE_DOCUMENTS">
-            <intent-filter>
-                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
-            </intent-filter>
-        </provider>
+            android:permission="android.permission.MANAGE_DOCUMENTS" />
+        <!-- Tests address this provider by URI. Advertising it to DocumentsUI makes
+             root discovery race Orchestrator's process teardown and data clearing. -->
     </application>
 </manifest>

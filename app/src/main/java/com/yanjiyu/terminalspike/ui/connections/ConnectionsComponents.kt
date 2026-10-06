@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.ui.connections
 
+import com.yanjiyu.terminalspike.ui.theme.appSearchFieldColors
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -168,11 +169,6 @@ internal fun ConnectionsHeader(
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(
-                        text = stringResource(R.string.connections_subtitle),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
                 }
                 ConnectionsAddButton(actions = addActions)
             }
@@ -197,7 +193,8 @@ internal fun ConnectionsHeader(
                         },
                     enabled = catalogReady,
                     singleLine = true,
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.medium,
+                    colors = appSearchFieldColors(),
                     placeholder = { Text(searchDescription) },
                     leadingIcon = {
                         ConnectionsGlyphIcon(
@@ -295,7 +292,7 @@ private fun ConnectionsAddButton(actions: List<CatalogAddAction>) {
         stringResource(R.string.connections_add_item)
     }
     Box {
-        FilledTonalButton(
+        Button(
             onClick = {
                 if (actions.size == 1) actions.single().onClick() else expanded = true
             },
@@ -304,6 +301,7 @@ private fun ConnectionsAddButton(actions: List<CatalogAddAction>) {
                 .semantics {
                     contentDescription = buttonDescription
                 },
+            shape = MaterialTheme.shapes.small,
             contentPadding = PaddingValues(horizontal = MaterialTheme.spacing.medium),
         ) {
             ConnectionsGlyphIcon(
@@ -904,7 +902,7 @@ private fun HostCatalogRow(
     val favouriteDescription = stringResource(R.string.connections_favourite_host)
     val detailsDescription = stringResource(R.string.connections_show_details, host.displayName)
     val container by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = androidx.compose.animation.core.tween(MaterialTheme.motion.standardDurationMillis),
         label = "host-selection",
     )
@@ -1033,7 +1031,7 @@ private fun KeyCatalogRow(
 ) {
     val detailsDescription = stringResource(R.string.connections_show_details, key.name)
     val container by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = androidx.compose.animation.core.tween(MaterialTheme.motion.standardDurationMillis),
         label = "key-selection",
     )
@@ -1117,7 +1115,7 @@ private fun SnippetCatalogRow(
 ) {
     val favouriteDescription = stringResource(R.string.connections_favourite_snippet)
     val container by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = androidx.compose.animation.core.tween(MaterialTheme.motion.standardDurationMillis),
         label = "snippet-selection",
     )
@@ -1192,11 +1190,11 @@ private fun SnippetCatalogRow(
 @Composable
 private fun CatalogIconContainer(glyph: ConnectionsGlyph, active: Boolean) {
     Surface(
-        color = if (active) MaterialTheme.statusColors.connectedContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = Color.Transparent,
         contentColor = if (active) MaterialTheme.statusColors.onConnectedContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         shape = MaterialTheme.shapes.medium,
     ) {
-        Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
             ConnectionsGlyphIcon(glyph, Modifier.size(MaterialTheme.iconMetrics.standard))
         }
     }

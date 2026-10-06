@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike.backup
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -187,6 +188,16 @@ class BackupDocumentsProviderIntegrationTest {
             Build.VERSION.SDK_INT >= 28,
         )
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        // Keep the fixture addressable by URI without allowing DocumentsUI to
+        // restart the app during Orchestrator's between-test data clearing.
+        val context = instrumentation.targetContext
+        val advertisedProviders = context.packageManager.queryIntentContentProviders(
+            Intent(DocumentsContract.PROVIDER_INTERFACE).setPackage(context.packageName),
+            0,
+        )
+        assertTrue(advertisedProviders.none {
+            it.providerInfo.authority == LocalBackupDocumentsProvider.AUTHORITY
+        })
         val application = instrumentation.targetContext.applicationContext as TerminalSpikeApplication
         val container = application.container
         container.authoritativeData.awaitReady()

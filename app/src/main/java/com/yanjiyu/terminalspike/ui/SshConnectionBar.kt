@@ -821,16 +821,16 @@ private fun SessionTabSurface(
         label = "session-tab",
     )
     Surface(
-        modifier = modifier.heightIn(min = 48.dp).combinedClickable(
+        modifier = modifier.heightIn(min = 36.dp).combinedClickable(
             onClick = onSelect,
             onDoubleClick = onDuplicate,
             onLongClick = onActions,
         ),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         color = background,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -839,7 +839,7 @@ private fun SessionTabSurface(
                 modifier = Modifier.weight(1f),
                 color = if (selected) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -847,7 +847,7 @@ private fun SessionTabSurface(
             if (onClose != null) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(48.dp).semantics {
+                    modifier = Modifier.size(36.dp).semantics {
                         contentDescription = requireNotNull(closeDescription)
                     },
                 ) {

@@ -859,7 +859,7 @@ internal fun WorkspaceBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(CompactPrimaryNavigationTestTag),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         windowInsets = windowInsets,
     ) {
         WorkspaceNavigationItem(
@@ -900,15 +900,15 @@ private fun RowScope.WorkspaceNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            PrimaryNavigationIcon(glyph)
+            PrimaryNavigationIcon(glyph, selected)
         },
-        label = { Text(label) },
+        label = { Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium) },
         colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+            selectedIconColor = MaterialTheme.colorScheme.primary,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+            indicatorColor = Color.Transparent,
         ),
     )
 }
@@ -924,7 +924,7 @@ private fun WorkspaceNavigationRail(
 ) {
     NavigationRail(
         modifier = modifier.testTag(ExpandedPrimaryNavigationTestTag),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         windowInsets = windowInsets,
     ) {
         WorkspaceRailNavigationItem(
@@ -965,24 +965,30 @@ private fun ColumnScope.WorkspaceRailNavigationItem(
         onClick = onClick,
         modifier = Modifier.semantics { contentDescription = description },
         icon = {
-            PrimaryNavigationIcon(glyph)
+            PrimaryNavigationIcon(glyph, selected)
         },
-        label = { Text(label) },
+        label = { Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium) },
         alwaysShowLabel = true,
         colors = NavigationRailItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+            selectedIconColor = MaterialTheme.colorScheme.primary,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+            indicatorColor = Color.Transparent,
         ),
     )
 }
 
 @Composable
-private fun PrimaryNavigationIcon(glyph: AppGlyph) {
-    Box {
-        AppGlyphIcon(glyph = glyph, modifier = Modifier.size(24.dp))
+private fun PrimaryNavigationIcon(glyph: AppGlyph, selected: Boolean) {
+    Box(Modifier.size(32.dp)) {
+        AppGlyphIcon(glyph = glyph, modifier = Modifier.size(22.dp).align(Alignment.TopCenter))
+        if (selected) {
+            Box(
+                Modifier.align(Alignment.BottomCenter).size(width = 22.dp, height = 2.dp)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
         if (glyph == AppGlyph.TERMINAL && LocalHasConnectedTerminal.current) {
             val description = stringResource(R.string.workspace_status_connected)
             Box(

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.espresso.Espresso.pressBack
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
+import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -23,7 +24,9 @@ class DeveloperSettingsNavigationTest {
         composeRule.onNodeWithText("Renderer lab").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Developer"))
+            .performScrollToNode(hasText("Advanced options"))
+        composeRule.onNodeWithText("Advanced options").performClick()
+        composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Developer"))
         composeRule.onNodeWithText("Developer").performClick()
         composeRule.onNodeWithContentDescription("Open renderer lab")
             .assertIsDisplayed()

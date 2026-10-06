@@ -3,21 +3,21 @@ package com.yanjiyu.terminalspike.ui.terminal
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -25,22 +25,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.zIndex
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.Snippet
@@ -108,18 +110,9 @@ internal fun TerminalSnippetsPage(
     }
     val moveEarlier = stringResource(R.string.snippet_move_earlier)
     val moveLater = stringResource(R.string.snippet_move_later)
-    Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        FilledTonalButton(
-            enabled = canSave,
-            onClick = { editorVisible = true },
-            modifier = Modifier.align(Alignment.End),
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            ),
-        ) { Text(stringResource(R.string.snippet_accessory_add)) }
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().weight(1f)
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 36.dp) {
+        CompactSnippetLayout(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
                 .onGloballyPositioned { viewport = it.boundsInRoot() }
                 .verticalScroll(scroll, enabled = dragging == null)
                 .onGloballyPositioned { origin = it.positionInRoot() }
@@ -151,9 +144,15 @@ internal fun TerminalSnippetsPage(
                         onDragCancel = { dragging = null; dropTarget = null },
                     )
                 },
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            val addDescription = stringResource(R.string.snippet_accessory_add)
+            FilledTonalButton(
+                enabled = canSave,
+                onClick = { editorVisible = true },
+                modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp)
+                    .semantics { contentDescription = addDescription },
+                contentPadding = PaddingValues(4.dp),
+            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
             order.forEachIndexed { index, id ->
                 key(id) {
                     OutlinedButton(
@@ -168,7 +167,9 @@ internal fun TerminalSnippetsPage(
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ),
-                        modifier = Modifier.onGloballyPositioned { bounds[id] = it.boundsInRoot() }
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 32.dp)
+                            .onGloballyPositioned { bounds[id] = it.boundsInRoot() }
                             .zIndex(if (dragging == id) 1f else 0f)
                             .graphicsLayer {
                                 if (dragging == id) {
@@ -188,8 +189,11 @@ internal fun TerminalSnippetsPage(
                                 }
                             },
                     ) {
-                        Text(if (id == 0L) stringResource(R.string.snippet_accessory_example)
-                        else snippets.first { it.id == id }.label)
+                        Text(
+                            text = if (id == 0L) stringResource(R.string.snippet_accessory_example)
+                            else snippets.first { it.id == id }.label,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                     }
                 }
             }
@@ -201,5 +205,38 @@ internal fun TerminalSnippetsPage(
             onDismiss = { editorVisible = false; onEditorClosed() },
             onSave = onSave,
         )
+    }
+}
+
+// Reserve space for Add only in the first row, leaving later rows the full width.
+@Composable
+private fun CompactSnippetLayout(modifier: Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val gap = 4.dp.roundToPx()
+        val rowGap = 2.dp.roundToPx()
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val add = measurables.first().measure(childConstraints)
+        val width = constraints.maxWidth
+        val placements = mutableListOf<Triple<androidx.compose.ui.layout.Placeable, Int, Int>>()
+        var x = 0
+        var y = 0
+        var rowHeight = add.height
+        var rowWidth = (width - add.width - gap).coerceAtLeast(0)
+        measurables.drop(1).forEach { measurable ->
+            val child = measurable.measure(childConstraints)
+            if (x + child.width > rowWidth && (x > 0 || y == 0)) {
+                y += rowHeight + rowGap
+                x = 0
+                rowHeight = 0
+                rowWidth = width
+            }
+            placements.add(Triple(child, x, y))
+            x += child.width + gap
+            rowHeight = maxOf(rowHeight, child.height)
+        }
+        layout(width, constraints.constrainHeight(y + rowHeight)) {
+            add.placeRelative(width - add.width, 0)
+            placements.forEach { (child, left, top) -> child.placeRelative(left, top) }
+        }
     }
 }

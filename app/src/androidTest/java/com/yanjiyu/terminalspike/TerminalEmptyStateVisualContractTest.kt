@@ -22,6 +22,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.ui.TerminalEmptyState
@@ -63,6 +64,7 @@ class TerminalEmptyStateVisualContractTest {
         composeRule.onNodeWithTag(TerminalEmptyStateTestTag).assertIsDisplayed()
         composeRule.onNodeWithText("No terminal session is open.").assertIsDisplayed()
         composeRule.onNodeWithText("Open saved connection")
+            .performScrollTo()
             .assertIsDisplayed()
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)

@@ -72,7 +72,7 @@ class ConnectionsScreenTest {
         composeRule.onNode(
             hasText("Connections") and hasAnyAncestor(hasTestTag(ConnectionsHeaderTestTag)),
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("Hosts, keys, and snippets", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Hosts, keys, and snippets", substring = true).assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
     }
 

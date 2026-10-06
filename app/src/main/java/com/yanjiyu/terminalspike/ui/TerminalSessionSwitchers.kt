@@ -264,18 +264,18 @@ private fun SwitcherTile(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.large,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
             MaterialTheme.colorScheme.surfaceContainerHigh
         },
         border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
+            width = 1.dp,
             color = if (selected) {
                 MaterialTheme.colorScheme.primary
             } else {
-                MaterialTheme.colorScheme.outlineVariant
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             },
         ),
     ) {

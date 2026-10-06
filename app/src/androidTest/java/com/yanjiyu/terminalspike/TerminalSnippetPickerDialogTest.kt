@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
@@ -76,7 +77,7 @@ class TerminalSnippetPickerDialogTest {
                     onSave = { saved = it; Result.success(Unit) }, onEditorClosed = {})
             }
         }
-        composeRule.onNodeWithText("+ Add snippet").performClick()
+        composeRule.onNodeWithContentDescription("+ Add snippet").performClick()
         composeRule.onNodeWithTag("snippet-editor-name").performTextInput("Greeting")
         composeRule.onNodeWithTag("snippet-editor-command").performTextInput("hello")
         composeRule.onNodeWithTag("snippet-editor-save").performClick()

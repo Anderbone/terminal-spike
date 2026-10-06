@@ -23,7 +23,8 @@ class HerdrAdaptiveTerminalTest {
 
     @Test fun productionBridgeKeepsActualWindowWidthAcrossMetadataResizesAndSessions() {
         val width = mutableStateOf(400)
-        val controller = TerminalController()
+        // A sentinel distinguishes the first native size report from the 80x24 default.
+        val controller = TerminalController().apply { reportTerminalSize(1, 1) }
         val active = mutableStateOf(controller)
         lateinit var root: android.view.View
         composeRule.setContent {
@@ -46,6 +47,10 @@ class HerdrAdaptiveTerminalTest {
         var initialColumns = 0
         var initialRows = 0
         lateinit var native: FastTerminalView
+        // Compose idleness does not include FastTerminalView's delayed resize report.
+        composeRule.waitUntil(5_000) {
+            composeRule.runOnUiThread { controller.terminalColumns > 1 && controller.terminalRows > 1 }
+        }
         composeRule.runOnIdle {
             native = requireNotNull(find(root)).terminal
             initialColumns = controller.terminalColumns

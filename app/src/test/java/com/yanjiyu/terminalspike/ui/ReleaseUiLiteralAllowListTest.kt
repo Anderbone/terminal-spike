@@ -53,6 +53,7 @@ class ReleaseUiLiteralAllowListTest {
             "session-tab",
             "host-filter-colour",
             "host-selection",
+            "settings-selection",
             "key-selection",
             "snippet-selection",
             "primary-workspace",

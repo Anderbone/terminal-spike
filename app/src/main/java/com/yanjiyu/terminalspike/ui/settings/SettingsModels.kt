@@ -96,6 +96,11 @@ internal enum class SettingsCategory(
         R.string.settings_category_about_summary,
         "about version privacy notices licences licenses open source",
     ),
+    ADVANCED(
+        R.string.settings_category_advanced,
+        R.string.settings_category_advanced_summary,
+        "advanced options 高级选项",
+    ),
     DEVELOPER(
         R.string.settings_category_developer,
         R.string.settings_category_developer_summary,
@@ -768,6 +773,7 @@ internal fun settingsCategoriesForSearch(
     val normalizedTerms = query.trim().lowercase().split(Regex("\\s+")).filter(String::isNotEmpty)
     return SettingsCategory.entries.filter { category ->
         category in userFacingSettingsCategories &&
+        (normalizedTerms.isNotEmpty() || category !in advancedSettingsCategories) &&
         (includeDeveloper || category != SettingsCategory.DEVELOPER) &&
             normalizedTerms.all { term -> term in category.searchTerms }
     }
@@ -787,6 +793,16 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.LOCAL_ARCH,
     SettingsCategory.MOSH,
     SettingsCategory.ABOUT,
+    SettingsCategory.DEVELOPER,
+    SettingsCategory.ADVANCED,
+)
+
+internal val advancedSettingsCategories: Set<SettingsCategory> = setOf(
+    SettingsCategory.TERMINAL,
+    SettingsCategory.NOTIFICATIONS,
+    SettingsCategory.PORT_FORWARDING,
+    SettingsCategory.LOCAL_ARCH,
+    SettingsCategory.MOSH,
     SettingsCategory.DEVELOPER,
 )
 

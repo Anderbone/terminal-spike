@@ -97,6 +97,11 @@ if [[ "$api" == "37" ]]; then
     platform_version="37.0"
 fi
 system_image="system-images;android-${platform_version};google_apis;x86_64"
+if [[ "$api" == "27" ]]; then
+    # Google APIs only publishes x86/arm64 for 27. Use the stable AOSP x86_64
+    # image so the app's x86_64 native libraries remain covered on Android 8.1.
+    system_image="system-images;android-27;default;x86_64"
+fi
 if [[ "$dry_run" == true ]]; then
     isolation="orchestrator"
     [[ "$suite" == "backup-clean-install" ]] && isolation="uninstall-reinstall"
@@ -188,9 +193,15 @@ sdk_install_log="$avd_workspace/sdk-install.txt"
 # legacy preview-license identifier; unattended installers otherwise skip it.
 if [[ -x "$android_cli_bin" ]]; then
     if ! printf 'y\n' | "$android_cli_bin" sdk install "$system_image" >"$sdk_install_log" 2>&1; then
-        echo "Android system-image installation failed:" >&2
-        sed -n '1,120p' "$sdk_install_log" >&2
-        exit 4
+        # The new CLI can fail reading its object cache for legacy AOSP images
+        # that sdkmanager installs successfully. Keep the same exact image.
+        echo "Android CLI installation failed; trying sdkmanager for the same image." >&2
+        if [[ ! -x "$sdkmanager_bin" ]] ||
+            ! printf 'y\n' | "$sdkmanager_bin" "$system_image" >>"$sdk_install_log" 2>&1; then
+            echo "Android system-image installation failed:" >&2
+            sed -n '1,120p' "$sdk_install_log" >&2
+            exit 4
+        fi
     fi
 elif ! printf 'y\n' | "$sdkmanager_bin" "$system_image" >"$sdk_install_log" 2>&1; then
     echo "Android system-image installation failed:" >&2

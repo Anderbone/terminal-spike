@@ -193,6 +193,11 @@ esac
         self.assertIn("isolation=orchestrator", result.stdout)
         self.assertEqual([], self.commands())
 
+    def test_api27_selects_published_64_bit_aosp_image(self) -> None:
+        result = self.run_runner("--api", "27", "--suite", "full", "--dry-run")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("image=system-images;android-27;default;x86_64", result.stdout)
+
     def test_rejects_unknown_api_and_suite_before_sdk_access(self) -> None:
         for args in (("--api", "25", "--suite", "full"), ("--api", "35", "--suite", "tiny")):
             with self.subTest(args=args):
@@ -336,6 +341,17 @@ esac
         result = self.run_runner("--api", "32", "--suite", "boundary")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("sdkmanager system-images;android-32;google_apis;x86_64", self.commands())
+
+    def test_android_cli_cache_failure_falls_back_to_same_image_and_still_fails_closed(self) -> None:
+        self.write_tool(self.root / "sdk/cmdline-tools/latest/bin/android", 'exit 1\n')
+        result = self.run_runner("--api", "27", "--suite", "full")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("sdkmanager system-images;android-27;default;x86_64", self.commands())
+        self.write_tool(self.root / "sdk/cmdline-tools/latest/bin/sdkmanager", 'exit 1\n')
+        self.log.unlink()
+        result = self.run_runner("--api", "27", "--suite", "full")
+        self.assertEqual(4, result.returncode)
+        self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
 
     def test_old_image_logcat_clear_failure_does_not_suppress_tests(self) -> None:
         env = self.env.copy()

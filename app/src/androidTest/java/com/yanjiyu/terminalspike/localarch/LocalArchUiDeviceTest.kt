@@ -21,6 +21,7 @@ import com.yanjiyu.terminalspike.ui.TerminalSpikeViewModel
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
+import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
 
@@ -126,7 +127,9 @@ class LocalArchUiDeviceTest {
     private fun verifySettingsReset(repository: LocalSessionRepository, delete: Boolean) {
         compose.onNodeWithContentDescription("Open settings").performClick()
         compose.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Local Arch Linux"))
+            .performScrollToNode(hasText("Advanced options"))
+        compose.onNodeWithText("Advanced options").performClick()
+        compose.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Local Arch Linux"))
         compose.onNodeWithText("Local Arch Linux").performClick()
         compose.onNodeWithText("Installed").assertIsDisplayed()
         compose.onNodeWithText("Reset Arch environment").performScrollTo().performClick()

@@ -33,8 +33,8 @@ internal val AppLightColourScheme = lightColorScheme(
     inversePrimary = AppDarkPrimary,
     secondary = AppLightSecondary,
     onSecondary = AppLightOnSecondary,
-    secondaryContainer = AppLightSecondaryContainer,
-    onSecondaryContainer = AppLightOnSecondaryContainer,
+    secondaryContainer = AppLightPrimaryContainer,
+    onSecondaryContainer = AppLightOnPrimaryContainer,
     tertiary = AppLightTertiary,
     onTertiary = AppLightOnTertiary,
     tertiaryContainer = AppLightTertiaryContainer,
@@ -72,8 +72,8 @@ internal val AppDarkColourScheme = darkColorScheme(
     inversePrimary = AppLightPrimary,
     secondary = AppDarkSecondary,
     onSecondary = AppDarkOnSecondary,
-    secondaryContainer = AppDarkSecondaryContainer,
-    onSecondaryContainer = AppDarkOnSecondaryContainer,
+    secondaryContainer = AppDarkPrimaryContainer,
+    onSecondaryContainer = AppDarkOnPrimaryContainer,
     tertiary = AppDarkTertiary,
     onTertiary = AppDarkOnTertiary,
     tertiaryContainer = AppDarkTertiaryContainer,
@@ -124,6 +124,8 @@ internal fun appColourScheme(
         onPrimaryContainer = colors.onPrimaryContainer,
         inversePrimary = colors.inversePrimary,
         surfaceTint = colors.primary,
+        secondaryContainer = colors.primaryContainer,
+        onSecondaryContainer = colors.onPrimaryContainer,
     )
 }
 

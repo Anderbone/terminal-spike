@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -86,7 +88,9 @@ class SessionDestructiveConfirmationTest {
         val firstBounds = firstTab.assertHeightIsAtLeast(28.dp).fetchSemanticsNode().boundsInRoot
         val thirdBounds = thirdTab.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertEquals(firstBounds.width, thirdBounds.width, 1f)
-        thirdTab.performClick()
+        // The tab centre can fall inside the nested close button's touch target.
+        // Exercise selection by tapping the label side of the tab.
+        thirdTab.performTouchInput { click(Offset(width * 0.2f, center.y)) }
         // combinedClickable waits through the double-tap window before dispatching a single tap.
         composeRule.waitUntil(timeoutMillis = 1_000) { selectedSessionId == 14L }
 

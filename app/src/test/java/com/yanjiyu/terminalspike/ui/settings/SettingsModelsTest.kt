@@ -42,6 +42,7 @@ class SettingsModelsTest {
                 SettingsCategory.LOCAL_ARCH,
                 SettingsCategory.MOSH,
                 SettingsCategory.ABOUT,
+                SettingsCategory.ADVANCED,
                 SettingsCategory.DEVELOPER,
             ),
             SettingsCategory.entries,
@@ -66,6 +67,21 @@ class SettingsModelsTest {
         assertTrue(SettingsCategory.SECURITY in settingsCategoriesForSearch("", includeDeveloper = true))
         assertTrue(SettingsCategory.SSH_KEYS in settingsCategoriesForSearch("", includeDeveloper = true))
         assertTrue(SettingsCategory.SNIPPETS in settingsCategoriesForSearch("", includeDeveloper = true))
+    }
+
+    @Test
+    fun advancedOptionsAreLastAndDetailsRemainSearchable() {
+        val main = settingsCategoriesForSearch("", includeDeveloper = true)
+        assertEquals(SettingsCategory.ADVANCED, main.last())
+        assertTrue(main.none { it in advancedSettingsCategories })
+        assertEquals(
+            listOf(SettingsCategory.TERMINAL),
+            settingsCategoriesForSearch("links paste", includeDeveloper = false),
+        )
+        assertEquals(
+            userFacingSettingsCategories,
+            (main + advancedSettingsCategories).toSet(),
+        )
     }
 
     @Test

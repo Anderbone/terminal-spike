@@ -16,6 +16,7 @@ import android.text.Spanned
 import android.text.style.StyleSpan
 import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.animateColorAsState
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -154,6 +155,7 @@ import com.yanjiyu.terminalspike.ui.resolve
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
 import com.yanjiyu.terminalspike.ui.theme.iconMetrics
+import com.yanjiyu.terminalspike.ui.theme.appSearchFieldColors
 import com.yanjiyu.terminalspike.ui.theme.spacing
 import kotlin.math.roundToInt
 
@@ -401,12 +403,16 @@ internal fun SettingsScreen(
     val screenDescription = stringResource(R.string.settings_screen_description)
     val categories = settingsCategoriesForSearch(query, includeDeveloper = BuildConfig.DEBUG)
     LaunchedEffect(categories) {
-        if (selectedCategory != null && selectedCategory !in categories && categories.isNotEmpty()) {
+        if (selectedCategory != null && selectedCategory !in categories && query.isNotBlank() && categories.isNotEmpty()) {
             selectedCategory = categories.first()
         }
     }
     BackHandler(enabled = selectedCategory != null) {
-        selectedCategory = null
+        selectedCategory = if (selectedCategory in advancedSettingsCategories && query.isBlank()) {
+            SettingsCategory.ADVANCED
+        } else {
+            null
+        }
     }
 
     val selectCategory: (SettingsCategory) -> Unit = { category -> selectedCategory = category }
@@ -434,7 +440,11 @@ internal fun SettingsScreen(
                         SettingsCategoryList(
                             categories = categories,
                             state = state,
-                            selected = selectedCategory ?: SettingsCategory.APPEARANCE,
+                            selected = if (query.isBlank() && selectedCategory in advancedSettingsCategories) {
+                                SettingsCategory.ADVANCED
+                            } else {
+                                selectedCategory ?: SettingsCategory.APPEARANCE
+                            },
                             query = query,
                             onQueryChange = { query = it },
                             onSelected = selectCategory,
@@ -451,6 +461,7 @@ internal fun SettingsScreen(
                         )
                         SettingsDetail(
                             category = selectedCategory ?: SettingsCategory.APPEARANCE,
+                            onSelectCategory = selectCategory,
                             state = state,
                             knownHosts = knownHosts,
                             moshExtension = moshExtension,
@@ -483,6 +494,7 @@ internal fun SettingsScreen(
                 } else {
                     SettingsDetail(
                         category = requireNotNull(selectedCategory),
+                        onSelectCategory = selectCategory,
                         state = state,
                         knownHosts = knownHosts,
                         moshExtension = moshExtension,
@@ -548,7 +560,7 @@ private fun SettingsCategoryList(
             contentDescription = listDescription
         },
         contentPadding = PaddingValues(
-            horizontal = MaterialTheme.spacing.medium,
+            horizontal = MaterialTheme.spacing.large,
             vertical = MaterialTheme.spacing.medium,
         ),
     ) {
@@ -569,6 +581,8 @@ private fun SettingsCategoryList(
                 value = query,
                 onValueChange = { onQueryChange(it.take(80)) },
                 modifier = Modifier.fillMaxWidth().testTag(SettingsSearchTestTag),
+                shape = MaterialTheme.shapes.medium,
+                colors = appSearchFieldColors(),
                 placeholder = { Text(stringResource(R.string.settings_search_hint)) },
                 leadingIcon = {
                     ConnectionsGlyphIcon(
@@ -616,10 +630,10 @@ private fun SettingsCategoryList(
         items(categories, key = SettingsCategory::name) { category ->
             SettingsCategoryRow(
                 category = category,
-                state = state,
                 selected = category == selected,
                 onClick = { onSelected(category) },
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
     }
 }
@@ -627,28 +641,30 @@ private fun SettingsCategoryList(
 @Composable
 private fun SettingsCategoryRow(
     category: SettingsCategory,
-    state: SettingsUiState,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        label = "settings-selection",
+    )
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AppGlyphIcon(
                 glyph = category.glyph,
-                modifier = Modifier
-                    .padding(end = MaterialTheme.spacing.medium)
-                    .size(MaterialTheme.iconMetrics.standard),
+                modifier = Modifier.size(20.dp),
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(category.titleRes),
@@ -656,10 +672,10 @@ private fun SettingsCategoryRow(
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 )
                 Text(
-                    text = settingsCategorySummary(category, state).resolve(),
+                    text = stringResource(category.summaryRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f)
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -674,7 +690,7 @@ private fun SettingsCategoryRow(
                     .graphicsLayer(rotationZ = 180f)
                     .size(MaterialTheme.iconMetrics.compact),
                 color = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
+                    MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -698,16 +714,19 @@ private val SettingsCategory.glyph: AppGlyph
         SettingsCategory.LOCAL_ARCH -> AppGlyph.TERMINAL
         SettingsCategory.MOSH -> AppGlyph.SIGNAL
         SettingsCategory.ABOUT -> AppGlyph.INFO
+        SettingsCategory.ADVANCED -> AppGlyph.LAB
         SettingsCategory.DEVELOPER -> AppGlyph.LAB
     }
 
 internal const val SettingsSearchTestTag = "settings-search"
 internal const val SettingsCategoryTitleTestTag = "settings-category-title"
 internal const val SettingsCategoryListContentDescription = "Settings categories"
+internal const val AdvancedSettingsListTestTag = "advanced-settings-list"
 
 @Composable
 private fun SettingsDetail(
     category: SettingsCategory,
+    onSelectCategory: (SettingsCategory) -> Unit,
     state: SettingsUiState,
     knownHosts: List<KnownHostSummary>,
     moshExtension: MoshExtensionUiState,
@@ -725,6 +744,22 @@ private fun SettingsDetail(
 ) {
     Box(modifier = modifier) {
         when (category) {
+            SettingsCategory.ADVANCED -> LazyColumn(
+                modifier = Modifier.fillMaxSize().testTag(AdvancedSettingsListTestTag),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                item {
+                    DetailHeading(R.string.settings_category_advanced, R.string.settings_category_advanced_summary)
+                }
+                items(advancedSettingsCategories.filter { BuildConfig.DEBUG || it != SettingsCategory.DEVELOPER }) { advanced ->
+                    SettingsCategoryRow(
+                        category = advanced,
+                        selected = false,
+                        onClick = { onSelectCategory(advanced) },
+                    )
+                }
+            }
             SettingsCategory.APPEARANCE -> AppearanceSettings(state, actions)
             SettingsCategory.TERMINAL -> TerminalSettings(state, actions)
             SettingsCategory.KEYBOARD -> KeyboardSettings(state, actions)
@@ -1240,11 +1275,6 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
         } else {
             item { SectionLabel(R.string.settings_links_clipboard_heading) }
             item {
-                ReadOnlySettingRow(
-                    title = stringResource(R.string.settings_url_detection),
-                    summary = stringResource(R.string.settings_url_detection_summary),
-                    value = stringResource(R.string.settings_negotiated_automatically),
-                )
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_terminal_copy_on_selection),
                     summary = stringResource(R.string.settings_terminal_copy_on_selection_summary),
@@ -2608,7 +2638,10 @@ private fun backgroundDataSettingsIntent(context: Context) = Intent(
 
 @Composable
 private fun DetailHeading(@StringRes title: Int, @StringRes summary: Int) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        modifier = Modifier.padding(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text(
             text = stringResource(title),
             style = MaterialTheme.typography.titleLarge,
