@@ -28,7 +28,13 @@ their features; never run tests on the foldable.
   isolation unchanged. Each shard enforces exact membership and skip identity. The
   existing `required-runtime (26)` and `(35)` gate names now aggregate the shards;
   they reject failed shards, missing reports, duplicates, missing tests and incorrect
-  skips. Boundary APIs, weekly full API coverage and all end-to-end gates remain.
+  skips. Boundary APIs and all end-to-end gates remain.
+- Weekly/manual full API 26–37 coverage uses four class shards per API, with the same
+  exact combined membership and skip checks. This bounds emulator lifetime: a local
+  unsharded API 27 run grew past 18 GiB of host RSS while its tests kept passing;
+  hosted full runs suffered runner shutdowns and an Android system watchdog crash.
+  Each shard starts a fresh emulator. No tests or assertions are removed, and the
+  `scheduled-runtime (API)` gates reject missing, duplicate or failed results.
 - Runtime jobs download the verified APKs without restoring Gradle caches they do not
   use. The release update job verifies the source revision and SHA-256 manifest of the
   first build's unsigned APK/AAB, signs copies with its temporary key, verifies both

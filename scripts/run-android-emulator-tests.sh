@@ -81,9 +81,9 @@ fi
 
 contract_shard_arguments=()
 if [[ -n "$shard_index" || -n "$shard_count" ]]; then
-    if [[ "$suite" != full || ! "$api" =~ ^(26|35)$ || -n "$requested_test_filter" ||
+    if [[ "$suite" != full || -n "$requested_test_filter" ||
           ! "$shard_index" =~ ^[0-9]+$ || ! "$shard_count" =~ ^[1-9][0-9]*$ ]]; then
-        echo "Shards require full API 26/35, both numeric shard arguments, and no custom filter." >&2
+        echo "Shards require the full suite, both numeric shard arguments, and no custom filter." >&2
         exit 2
     fi
     test_filter="$(python3 "$project_dir/scripts/verify-android-test-contract.py" \

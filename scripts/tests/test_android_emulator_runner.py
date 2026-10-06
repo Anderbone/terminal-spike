@@ -226,21 +226,22 @@ esac
         self.assertIn("fixed required test lists", blocked_lan.stderr)
 
     def test_shard_uses_exact_filter_without_disabling_membership_verification(self) -> None:
-        result = self.run_runner("--api", "35", "--suite", "full",
-                                 "--shard-index", "0", "--shard-count", "1")
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("membership=exact", result.stdout)
+        for api in range(26, 38):
+            with self.subTest(api=api):
+                result = self.run_runner("--api", str(api), "--suite", "full",
+                                         "--shard-index", "0", "--shard-count", "1")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("membership=exact", result.stdout)
 
-    def test_shards_cannot_bypass_api37_or_custom_filter_gates(self) -> None:
+    def test_shards_cannot_bypass_suite_or_custom_filter_gates(self) -> None:
         for args in (
-            ("--api", "37", "--suite", "full"),
             ("--api", "35", "--suite", "full", "--test-filter", "com.example.FakeTest"),
             ("--api", "35", "--suite", "boundary"),
         ):
             with self.subTest(args=args):
                 result = self.run_runner(*args, "--shard-index", "0", "--shard-count", "2", "--dry-run")
                 self.assertNotEqual(0, result.returncode)
-                self.assertIn("Shards require full API 26/35", result.stderr)
+                self.assertIn("Shards require the full suite", result.stderr)
 
     def test_focus_evidence_is_filtered_redacted_and_keeps_test_failure(self) -> None:
         env = self.env.copy()

@@ -155,6 +155,23 @@ class AndroidTestContractTest(unittest.TestCase):
         duplicate = self.run_validator(self.valid_cases() + self.valid_cases()[:1])
         self.assertNotEqual(0, duplicate.returncode)
 
+    def test_four_scheduled_shards_cover_the_real_inventory_exactly_once(self) -> None:
+        contract = json.loads(CHECKED_IN_CONTRACT.read_text())
+        required = set(contract["suites"]["full"]["required_tests"])
+        seen: set[str] = set()
+        for index in range(4):
+            result = subprocess.run(
+                [sys.executable, str(VALIDATOR), "--filter", str(CHECKED_IN_CONTRACT),
+                 "full", str(index), "4"], capture_output=True, text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            classes = set(result.stdout.strip().split(","))
+            selected = {test for test in required if test.split("#", 1)[0] in classes}
+            self.assertTrue(selected)
+            self.assertFalse(seen & selected)
+            seen.update(selected)
+        self.assertEqual(required, seen)
+
     def test_shards_reject_invalid_or_empty_partitions(self) -> None:
         self.contract_path.write_text(json.dumps(self.contract))
         for index, count in [(0, 0), (-1, 2), (2, 2), (0, 3)]:
