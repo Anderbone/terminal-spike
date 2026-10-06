@@ -111,7 +111,7 @@ case "$*" in
   *"exec-out run-as com.yanjiyu.terminalspike cat files/backup-documents/clean-install-"*)
     printf 'opaque-encrypted-archive-bytes'
     ;;
-  *"logcat -d") printf 'password=hidden 192.168.1.2\n' ;;
+  *"logcat -d") [[ "${FAKE_STUCK_LOGCAT:-0}" != "1" ]] || sleep 300; printf 'password=hidden 192.168.1.2\n' ;;
   *"shell pm grant com.yanjiyu.terminalspike android.permission.ACCESS_LOCAL_NETWORK") touch "$FAKE_STATE_DIR/permission" ;;
   *"shell pm revoke com.yanjiyu.terminalspike android.permission.ACCESS_LOCAL_NETWORK") rm -f "$FAKE_STATE_DIR/permission" "$FAKE_STATE_DIR/pid" ;;
   *"shell dumpsys package com.yanjiyu.terminalspike")
@@ -242,6 +242,15 @@ esac
                 result = self.run_runner(*args, "--shard-index", "0", "--shard-count", "2", "--dry-run")
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("Shards require the full suite", result.stderr)
+
+    def test_dead_emulator_logcat_does_not_hang_or_lose_test_evidence(self) -> None:
+        env = self.env.copy()
+        env["FAKE_STUCK_LOGCAT"] = "1"
+        env["FAKE_INSTRUMENTATION_OUTPUT"] = "INSTRUMENTATION_FAILED: emulator crashed"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("logcat collection failed or timed out", result.stderr)
+        self.assertIn("emulator crashed", (self.output / "instrumentation-api35-full.txt").read_text())
 
     def test_focus_evidence_is_filtered_redacted_and_keeps_test_failure(self) -> None:
         env = self.env.copy()

@@ -481,9 +481,12 @@ unset private_key_base64 2>/dev/null || true
 python3 "$project_dir/scripts/redact-android-test-log.py" <"$private_result" >"$raw_result"
 python3 "$project_dir/scripts/redact-android-test-log.py" <"$private_focus" \
     >"$output_dir/focus-api${api}-${suite}.txt"
-"$adb_bin" -s "$serial" logcat -d | \
+timeout --kill-after=1 5 "$adb_bin" -s "$serial" logcat -d | \
     python3 "$project_dir/scripts/redact-android-test-log.py" \
-    >"$output_dir/logcat-api${api}-${suite}.txt"
+    >"$output_dir/logcat-api${api}-${suite}.txt" || {
+        echo "Android logcat collection failed or timed out; instrumentation evidence was preserved." >&2
+        [[ $instrumentation_status -ne 0 ]] || exit 4
+    }
 [[ $instrumentation_status -eq 0 ]] || {
     echo "Android instrumentation command failed." >&2
     exit "$instrumentation_status"
