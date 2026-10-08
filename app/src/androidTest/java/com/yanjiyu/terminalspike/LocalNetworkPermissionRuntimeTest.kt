@@ -91,7 +91,7 @@ class LocalNetworkPermissionRuntimeTest {
 
     @Test
     fun nearbySystemPickerDoesNotRequestBroadLocalAccess() {
-        composeRule.onNodeWithContentDescription("Add host").performClick()
+        openHostEditor()
         composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag)
             .performScrollTo()
@@ -152,7 +152,7 @@ class LocalNetworkPermissionRuntimeTest {
     }
 
     private fun submitSavedHostConnection(name: String, hostname: String) {
-        composeRule.onNodeWithContentDescription("Add host").performClick()
+        openHostEditor()
         composeRule.onNodeWithTag(HostEditorNameTestTag).performTextReplacement(name)
         composeRule.onNodeWithTag(HostEditorHostnameTestTag).performTextReplacement(hostname)
         composeRule.onNodeWithTag(HostEditorUsernameTestTag).performTextReplacement("terminal")
@@ -173,6 +173,14 @@ class LocalNetworkPermissionRuntimeTest {
             onView(withTagValue(equalTo(HostConnectSecretTestTag))).perform(replaceText("session secret"))
             closeSoftKeyboard()
             composeRule.onNodeWithText("Connect").performClick()
+        }
+    }
+
+    private fun openHostEditor() {
+        composeRule.onNodeWithContentDescription("Add host").performClick()
+        // The editor is rendered only after the asynchronously loaded catalog is ready.
+        composeRule.waitUntil(timeoutMillis = UI_TIMEOUT_MILLIS) {
+            composeRule.onAllNodesWithTag(HostEditorNameTestTag).fetchSemanticsNodes().size == 1
         }
     }
 
