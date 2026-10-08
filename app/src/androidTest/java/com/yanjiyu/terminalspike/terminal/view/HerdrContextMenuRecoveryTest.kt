@@ -169,6 +169,98 @@ class HerdrContextMenuRecoveryTest {
         }
     }
 
+    @Test fun desktopMenusRecoverFromMobileAndOtherClientHeightInBothInputModes() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val connection = FailingSideChannel()
+            lateinit var view: FastTerminalView
+            val metrics = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics
+            val desktopWidth = metrics.widthPixels * 9 / 10
+            val mobileWidth = metrics.widthPixels / 2
+            val height = metrics.heightPixels * 2 / 3
+            try {
+                scenario.onActivity { activity ->
+                    terminal.attach(connection)
+                    view = FastTerminalView(activity)
+                    val container = FrameLayout(activity)
+                    container.addView(view, FrameLayout.LayoutParams(desktopWidth, height))
+                    activity.setContentView(container)
+                    view.attachController(controller)
+                }
+                await { connection.resizeReports.get() > 0 && controller.terminalRows > 8 }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { terminal.accept("\u001B[?1000;1006hhello".toByteArray(), {}) }
+                await { controller.isMouseTrackingEnabled() }
+                // pane layout may describe the last desktop client with its keyboard open,
+                // rather than this phone's height. Top tabs and sidebar still belong here.
+                connection.layout = HerdrSidebarLayout(4, controller.terminalColumns, 1, controller.terminalRows / 2)
+                await { controller.herdrSidebarLayout.value?.terminalColumns == controller.terminalColumns }
+                val desktopColumns = controller.terminalColumns
+                for (direct in listOf(true, false, true)) {
+                    scenario.onActivity { view.setDirectInputEnabled(direct) }
+                    assertMenu(scenario, view, controller, connection, 6, 0)
+                    assertMenu(scenario, view, controller, connection, 1, 3)
+                    scenario.onActivity { view.layoutParams = FrameLayout.LayoutParams(mobileWidth, height) }
+                    await { controller.terminalColumns != desktopColumns }
+                    connection.layout = HerdrSidebarLayout(0, controller.terminalColumns, 2, controller.terminalRows - 2)
+                    await { controller.herdrSidebarLayout.value == connection.layout }
+                    connection.failure = 2
+                    scenario.onActivity { view.layoutParams = FrameLayout.LayoutParams(desktopWidth, height) }
+                    await { controller.terminalColumns == desktopColumns }
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    assertMenu(scenario, view, controller, connection, 6, 0)
+                    assertMenu(scenario, view, controller, connection, 1, 3)
+                    if (!direct) scenario.onActivity {
+                        assertFalse("Buffered typing must keep ownership of keyboard input", view.onCheckIsTextEditor())
+                        assertFalse(view.hasFocus())
+                    }
+                    connection.failure = 0
+                }
+            } finally {
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
+    @Test fun mobileSwitcherLongPressUsesRemoteMenuInBothInputModes() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val connection = FailingSideChannel()
+            lateinit var view: FastTerminalView
+            try {
+                scenario.onActivity { activity ->
+                    terminal.attach(connection)
+                    view = FastTerminalView(activity)
+                    activity.setContentView(view)
+                    view.attachController(controller)
+                }
+                await { connection.resizeReports.get() > 0 && controller.terminalRows > 8 }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                connection.layout = HerdrSidebarLayout(0, controller.terminalColumns, 2, controller.terminalRows - 2)
+                await { controller.herdrSidebarLayout.value == connection.layout }
+                for (direct in listOf(true, false)) {
+                    scenario.onActivity {
+                        view.setDirectInputEnabled(direct)
+                        terminal.accept("\u001B[?1000;1006h\u001B[2;${controller.terminalColumns - 9}H│    ×    ".toByteArray(), {})
+                    }
+                    await { controller.isHerdrContextMenuCell(6, 4) }
+                    assertMenu(scenario, view, controller, connection, 6, 4)
+                    connection.failure = 2
+                    assertMenu(scenario, view, controller, connection, 6, 7)
+                    scenario.onActivity {
+                        terminal.accept("\u001B[2;${controller.terminalColumns - 9}H│ switch  ".toByteArray(), {})
+                    }
+                    await { !controller.isHerdrContextMenuCell(6, 4) }
+                    connection.failure = 0
+                }
+            } finally {
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
     private fun assertMenu(
         scenario: ActivityScenario<MainActivity>,
         view: FastTerminalView,

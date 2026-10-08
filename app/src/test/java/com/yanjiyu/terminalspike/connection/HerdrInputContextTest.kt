@@ -17,6 +17,29 @@ class HerdrInputContextTest {
         return TmuxExecOutput("""{"result":$body}""".toByteArray(), 0)
     }
 
+    @Test fun onlyConfirmedFullscreenPiReceivesPaneScopedPaging() {
+        for ((name, agent, maxOffset, expected) in listOf(
+            listOf("pi", "pi", "0", "true"),
+            listOf("pi", "pi", "80", "false"),
+            listOf("bash", "pi", "0", "false"),
+            listOf("codex", "codex", "0", "false"),
+        )) {
+            val context = captureHerdrInputContext({ command ->
+                val output = response(command, name)
+                output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                    .replace("\"agent\":\"codex\"", "\"agent\":\"$agent\",\"scroll\":{\"max_offset_from_bottom\":$maxOffset}")
+                    .replace("\"focused_pane_id\":\"w1:p2\"", "\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"pane_id\":\"w1:p2\",\"rect\":{\"x\":26,\"y\":1,\"width\":62,\"height\":32}}]")
+                    .toByteArray())
+            }, choice)
+            assertEquals(expected.toBoolean(), context.herdrPiScrollPane != null)
+            context.herdrPiScrollPane?.let { pane ->
+                assertTrue(pane.contains(26, 1))
+                assertFalse(pane.contains(25, 10))
+                assertFalse(pane.contains(30, 0))
+            }
+        }
+    }
+
     @Test fun focusedCodexUsesMetadataWithoutReadingHistoryOrSendingInput() {
         val commands = mutableListOf<String>()
         val result = captureHerdrInputContext({ commands += it; response(it) }, choice)

@@ -1,1 +1,3 @@
-Release-candidate update for Terminal Spike: strengthens SSH, SFTP, tmux and optional Mosh workflows; hardens session recovery, encrypted backup, privacy and clipboard handling; improves adaptive UI and terminal input; and expands release, device, lifecycle and performance verification.
+More reliable Herdr navigation menus on phones and after resizing, in direct and buffered input modes.
+Improved Pi transcript scrolling and fullscreen page gestures.
+Refreshed store images highlighting tmux, Herdr, SSH and built-in Mosh, plus keys, snippets, themes, SFTP and tunnels.

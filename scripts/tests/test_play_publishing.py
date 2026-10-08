@@ -25,7 +25,7 @@ class PlayPublishingTest(unittest.TestCase):
                          "versionName": "0.0.7", "source": "fingerprint",
                          "sha256": hashlib.sha256(self.bundle.read_bytes()).hexdigest()}
         self.state.write_text(json.dumps(self.manifest))
-        self.args = argparse.Namespace(require_green_ci=False, credential=self.root / "external.json",
+        self.args = argparse.Namespace(require_green_ci=False, with_store_assets=False, credential=self.root / "external.json",
                                        signing_dir=self.root / "signing", version_name="0.0.7")
         self.patches = [patch.object(PLAY, "ROOT", self.root), patch.object(PLAY, "STATE", self.state),
                         patch.object(PLAY, "source_fingerprint", return_value="fingerprint"),
@@ -103,6 +103,57 @@ class PlayPublishingTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "already started"):
                 PLAY.publish(self.args, {9})
             api.assert_not_called()
+
+    def test_store_assets_preserve_upload_order_and_verify_readback(self):
+        listing = {"title": "Terminal Spike", "shortDescription": "tmux and Herdr"}
+        images = {"phoneScreenshots": [b"first picture", b"second picture"], "featureGraphic": [b"graphic"]}
+        uploaded = {kind: [] for kind in images}
+        calls = []
+
+        def api(method, url, data=None, token=None, content_type=None):
+            calls.append((method, url, data))
+            if method == "GET" and url.endswith("en-US"):
+                return listing
+            kind = url.split("/")[-1].split("?")[0]
+            if method == "POST":
+                image = {"sha256": hashlib.sha256(data).hexdigest()}
+                uploaded[kind].append(image)
+                self.assertEqual("image/png", content_type)
+                return {"image": image}
+            if method == "GET":
+                return {"images": uploaded[kind]}
+            return {}
+
+        with patch.object(PLAY, "request", side_effect=api):
+            hashes = PLAY.upload_store_assets("token", "edit", listing, images)
+        self.assertEqual([hashlib.sha256(content).hexdigest() for content in images["phoneScreenshots"]],
+                         hashes["phoneScreenshots"])
+        self.assertEqual(listing, calls[0][2])
+        self.assertEqual("PATCH", calls[0][0])
+        self.assertTrue(all("/listings/en-US" in url for _, url, _ in calls))
+        self.assertEqual(2, sum(method == "DELETE" for method, _, _ in calls))
+
+    def test_listing_or_image_order_mismatch_blocks_readback(self):
+        listing = {"title": "Terminal Spike"}
+        images = {"phoneScreenshots": [b"first", b"second"]}
+        reversed_images = [{"sha256": hashlib.sha256(content).hexdigest()} for content in reversed(images["phoneScreenshots"])]
+        for actual_listing, actual_images in (({}, reversed_images), (listing, reversed_images)):
+            with self.subTest(listing=actual_listing), patch.object(PLAY, "request", side_effect=[
+                    actual_listing, {"images": actual_images}]):
+                with self.assertRaises(RuntimeError):
+                    PLAY.verify_store_assets("token", "edit", listing, images)
+
+    def test_store_upload_failure_cannot_commit_bundle_or_retry(self):
+        self.args.with_store_assets = True
+        with patch.object(PLAY, "command", side_effect=self.git), patch.object(PLAY, "request", side_effect=self.api), \
+                patch.object(PLAY, "store_assets", return_value=({}, {})), \
+                patch.object(PLAY, "upload_store_assets", side_effect=RuntimeError("image upload failed")):
+            with self.assertRaisesRegex(RuntimeError, "image upload failed"):
+                PLAY.publish(self.args, {9})
+            with self.assertRaisesRegex(RuntimeError, "already started"):
+                PLAY.publish(self.args, {9})
+        self.assertFalse(any(url.endswith(":commit") or url.endswith(":validate") for _, url, _ in self.calls))
+        self.assertEqual(1, sum("uploadType=media" in url for _, url, _ in self.calls))
 
     def test_prepare_bumps_only_main_and_records_verified_source(self):
         (self.root / "app").mkdir()

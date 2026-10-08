@@ -252,6 +252,22 @@ esac
         self.assertIn("logcat collection failed or timed out", result.stderr)
         self.assertIn("emulator crashed", (self.output / "instrumentation-api35-full.txt").read_text())
 
+    def test_optional_logcat_timeout_does_not_fail_validated_tests(self) -> None:
+        env = self.env.copy()
+        env["FAKE_STUCK_LOGCAT"] = "1"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("WARNING: Android logcat", result.stderr)
+        self.assertIn("membership=exact", result.stdout)
+        self.assertTrue((self.output / "TEST-api35-full.xml").exists())
+
+    def test_optional_logcat_timeout_cannot_hide_missing_tests(self) -> None:
+        env = self.env.copy()
+        env["FAKE_STUCK_LOGCAT"] = "1"
+        env["FAKE_INSTRUMENTATION_OUTPUT"] = "OK (0 tests)\nINSTRUMENTATION_CODE: -1"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertNotEqual(0, result.returncode)
+
     def test_focus_evidence_is_filtered_redacted_and_keeps_test_failure(self) -> None:
         env = self.env.copy()
         env["FAKE_INSTRUMENTATION_DELAY"] = "2"

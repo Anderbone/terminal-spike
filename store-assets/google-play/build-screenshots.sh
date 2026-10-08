@@ -2,7 +2,6 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-phone_sources="$root_dir/sources/phone"
 tablet_sources="$root_dir/sources/tablet-unfolded"
 phone_output="$root_dir/screenshots/phone"
 tablet_7_output="$root_dir/screenshots/tablet-7"
@@ -17,19 +16,15 @@ command -v magick >/dev/null || {
 
 mkdir -p "$phone_output" "$tablet_7_output" "$tablet_10_output"
 
-# Keep the phone app bar and session tabs visible. Cropping from the bottom removes only
-# excess keyboard/blank space and preserves the source pixels at their native 1080px width.
-phone_shot() {
-  local source="$1"
-  local destination="$2"
-  magick "$source" -crop 1080x1920+0+0 +repage -strip "PNG24:$destination"
-}
+# English marketing artwork uses real, privacy-reviewed S23 captures and short headlines.
+python3 "$root_dir/build-phone-artwork.py"
 
-phone_shot "$phone_sources/terminal-colour.jpg" "$phone_output/01-colour-terminal.png"
-phone_shot "$phone_sources/tmux-session-picker.jpg" "$phone_output/02-tmux-session-picker.png"
-phone_shot "$phone_sources/connections-dark.jpg" "$phone_output/03-connections.png"
-phone_shot "$phone_sources/settings-dark.jpg" "$phone_output/04-settings.png"
-phone_shot "$phone_sources/add-host-mosh.jpg" "$phone_output/05-add-host.png"
+command -v rsvg-convert >/dev/null || {
+  echo "librsvg (rsvg-convert) is required." >&2
+  exit 1
+}
+rsvg-convert "$root_dir/graphics/feature-graphic.svg" -o "$work_dir/feature-graphic.png"
+magick "$work_dir/feature-graphic.png" -strip "PNG24:$root_dir/graphics/feature-graphic-1024x500.png"
 
 # The supplied unfolded-device captures are close to square. Preserve every UI pixel inside a
 # Play-compliant 16:9 canvas, using a darkened blur of the same capture as non-semantic fill.
@@ -71,4 +66,8 @@ build_tablet_set() {
 build_tablet_set "$tablet_7_output"
 build_tablet_set "$tablet_10_output"
 
-echo "Built five phone screenshots and five screenshots for each tablet class."
+# Review artifact only: never upload this collage as an app screenshot.
+magick montage "$phone_output"/*.png -thumbnail 270x480 -tile 4x2 \
+  -geometry +12+12 -background '#0b1110' "$root_dir/preview-phone.jpg"
+
+echo "Built phone artwork, feature graphic, and five screenshots for each tablet class."

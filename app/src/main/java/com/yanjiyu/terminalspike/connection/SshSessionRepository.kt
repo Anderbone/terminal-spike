@@ -2335,12 +2335,9 @@ private class DefaultSshSessionTerminal(
                 // Mosh can remain live while its auxiliary SSH channel fails. A failed read
                 // does not mean the visible navigation disappeared: retain the last valid
                 // layout until a successful refresh or session detach. Hit testing still
-                // rejects stale grid dimensions; also ignore another client's resize here.
-                val capturedBottom = layout?.terminalTop?.let { top -> layout.terminalHeight?.let { top + it } }
-                if (layout != null && layout.terminalColumns == controller.terminalColumns &&
-                    capturedBottom != null && capturedBottom in (controller.terminalRows - 1)..controller.terminalRows
-                ) {
-                    controller.publishHerdrSidebarLayout(layout)
+                // rejects unknown widths; top-anchored chrome can follow this client's height.
+                layout?.forTerminalGrid(controller.terminalColumns, controller.terminalRows)?.let {
+                    controller.publishHerdrSidebarLayout(it)
                 }
             }
             val (revision, previous, pinned) = synchronized(tmuxHistoryLock) {

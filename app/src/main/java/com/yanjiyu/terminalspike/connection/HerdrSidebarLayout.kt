@@ -24,20 +24,40 @@ data class HerdrSidebarLayout(
         return if (resizedHeight > 0) copy(terminalColumns = columns, terminalHeight = resizedHeight) else this
     }
 
+    /** The API may report another client's height; a top tab row remains anchored at row zero. */
+    fun forTerminalGrid(columns: Int, rows: Int): HerdrSidebarLayout? {
+        if (terminalColumns != columns || rows < 2) return null
+        val top = terminalTop ?: return null
+        val height = terminalHeight ?: return null
+        return when {
+            top == 1 && height > 0 -> copy(terminalHeight = rows - 1)
+            top + height in (rows - 1)..rows -> this
+            else -> null
+        }
+    }
+
     /** Mobile overlays keep the pane geometry even while covering its output. */
     fun allowsNativeHistory(columns: Int, mobileHeader: String?): Boolean {
         if (terminalTop != 2 || sidebarColumns != 0) return true
         if (columns != terminalColumns) return false
         // Herdr 0.8.x shows “switch” in the live two-row header and “close” / “×”
         // in the switcher. Require the live affordance; unknown overlays stay remote.
-        return mobileHeader?.takeLast(10)?.substringAfterLast('│', "")?.trim() == "switch"
+        return mobileHeaderButton(mobileHeader) == "switch"
     }
 
+    private fun mobileHeaderButton(header: String?): String? =
+        header?.takeLast(10)?.substringAfterLast('│', "")?.trim()
+
     /** Only desktop navigation chrome; never infer controls inside a pane or mobile overlay. */
-    fun isContextMenuCell(column: Int, row: Int, columns: Int, rows: Int): Boolean {
+    fun isContextMenuCell(column: Int, row: Int, columns: Int, rows: Int, mobileHeader: String? = null): Boolean {
         if (columns != terminalColumns || column !in 0 until columns || row !in 0 until rows) return false
         val top = terminalTop ?: return false
         val height = terminalHeight ?: return false
+        if (top == 2 && sidebarColumns == 0 && height > 0) {
+            val button = mobileHeaderButton(mobileHeader)
+            // The live pane and unknown modals must keep long-press text selection.
+            return row >= 2 && button in listOf("×", "close")
+        }
         val bottom = top + height
         // Desktop tabs occupy exactly one top or bottom row; hidden tabs occupy neither.
         // Herdr's separate mobile layout has a two-row header and its own menu.

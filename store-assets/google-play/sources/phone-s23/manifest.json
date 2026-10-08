@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-10-06",
+  "device": "Samsung Galaxy S23 / SM-S911B / USB",
+  "build": "0.0.8 (versionCode 12), debug",
+  "status": "Release-preparation draft; compare with final release UI before upload",
+  "screenshots": [
+    {
+      "source": "terminal.png",
+      "output": "01-colour-terminal.png",
+      "headline": [
+        "tmux + Herdr.",
+        "Anywhere."
+      ],
+      "subtitle": "SSH + built-in Mosh. Your remote workspace.",
+      "alt": "Atlas workspace in a real SSH terminal, with colourful shell output and a customizable extra-key bar.",
+      "crop": "1080x2295+0+0",
+      "source_sha256": "f78ac4d970b74b737b5e4f8ef89dc376e60e06add950c4f820d5367d79deb0b7"
+    },
+    {
+      "source": "session-picker.png",
+      "output": "02-tmux-session-picker.png",
+      "headline": [
+        "Pick up where",
+        "you left off."
+      ],
+      "subtitle": "Choose and resume your tmux sessions.",
+      "alt": "Terminal Spike session picker showing the demo tmux sessions atlas, docs and workbench.",
+      "crop": "1080x2295+0+0",
+      "source_sha256": "a37a41a5de91ff3ae34415bc4a790cbd2d9ae874ac7a238b5e5a3e390c2c9b52"
+    },
+    {
+      "source": "snippets.png",
+      "output": "03-snippets.png",
+      "headline": [
+        "Less typing.",
+        "More doing."
+      ],
+      "subtitle": "Keep everyday commands a tap away.",
+      "alt": "Saved snippets for working-tree status, disk space, recent commits and listening ports.",
+      "crop": "1080x2197+0+98",
+      "source_sha256": "65c3bfdacc9546b64f2345868004d8a2903e4b1b892979159dec268023829084"
+    },
+    {
+      "source": "ssh-keys.png",
+      "output": "04-ssh-keys.png",
+      "headline": [
+        "Your keys.",
+        "Your access."
+      ],
+      "subtitle": "Import or generate your SSH identities.",
+      "alt": "SSH key generation dialog with an Atlas demo key name, Ed25519 and RSA 4096 options, and passphrase fields.",
+      "crop": "1080x2197+0+98",
+      "source_sha256": "4fdaa39d7faaf0679a83206561ec1d1e25914540ee101eca542c684e7ab7578a"
+    },
+    {
+      "source": "themes.png",
+      "output": "05-themes.png",
+      "headline": [
+        "Make it",
+        "your terminal."
+      ],
+      "subtitle": "Themes, colours and fonts that suit you.",
+      "alt": "Appearance settings with terminal colour choices and a live terminal preview.",
+      "crop": "1080x2197+0+98",
+      "source_sha256": "2687d2fc55f6b94f6197a18b1014ffddf0c72f4224b087d45412de1975d7480a"
+    },
+    {
+      "source": "port-forwarding.png",
+      "output": "06-port-forwarding.png",
+      "headline": [
+        "Local ports.",
+        "Remote work."
+      ],
+      "subtitle": "Save SSH tunnels for your dev servers.",
+      "alt": "Local TCP forwarding configuration for port 5173, with loopback listen and destination addresses.",
+      "crop": "1080x2197+0+98",
+      "source_sha256": "f776b7f2b7119552653640ebe13bc16afede7c4436781f01ed5a0da8ea082d81"
+    },
+    {
+      "source": "sftp.png",
+      "output": "07-sftp.png",
+      "headline": [
+        "Files within",
+        "reach."
+      ],
+      "subtitle": "Browse and transfer files over SFTP.",
+      "alt": "SFTP browser showing folders, a README, Makefile and example configuration in the Atlas demo workspace.",
+      "crop": "1080x2295+0+0",
+      "source_sha256": "0abfde161f40a302268a3db6e6547fca174c319d6624ccbe54ef4d4c6bbd5bc9"
+    }
+  ],
+  "installed_apk_sha256": "8923eb95b40e0d9ec36a462be4c443a459cc77b3b2264ada8efe7b245641515f"
+}

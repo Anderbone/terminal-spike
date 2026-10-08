@@ -1,5 +1,133 @@
 # Herdr sidebar on narrow screens
 
+## Switch list retained behind mobile context menus (2026-10-08)
+
+The user's phone screenshots showed that a long press opened the correct menu,
+but the underlying Switch list disappeared and the live terminal returned.
+The local Herdr fork changed from Navigate to ContextMenu while rendering the
+mobile panel only in Navigate. Its mobile ContextMenu branch now draws the
+existing panel before the menu, preserving the current scroll offset and list.
+Android source and gesture routing are unchanged by this fix.
+
+`mobile_context_menu_keeps_switcher_list_visible` failed before the rendering
+fix and passed afterward. Pinned Rust 1.96.1 nextest passed 3,485 tests with
+one existing manual profile skip; clippy and the release build passed. A real
+isolated 44-column PTY verified list retention behind the menu, closing the
+exact unfocused tab, surviving tabs, and shell PID preservation during handoff.
+The first live assertion used a label covered by the menu; the retained evidence
+shows the list rendered correctly, and the corrected assertion checks exposed
+list rows. Logs: ignored `build/herdr-switcher-{red,green,lint,build,live}.log`.
+
+The installed local Herdr SHA-256 is
+`960b6714a4e865c23069b8dc4849a37a3f172ee1f46d5748e6158760b3e79eab`.
+Default-session live handoff retained all recorded pane IDs and shell PIDs;
+see `build/herdr-switcher-deployment.json`. Existing clients need reattachment.
+The previous executable is retained at
+`/home/jiyu/.local/lib/herdr-mobile-menu/herdr-0.8.2-before-switcher-backdrop`.
+No Android APK changed or phone tests ran in this session; phone workflow
+confirmation remains pending. No upstream publication was performed.
+
+## Remote mobile context menus (2026-10-07)
+
+The user rejected the native tab-panel prototype because it looked poor, loaded
+slowly and showed no useful content in the actual connection. That prototype,
+its catalog/mutation side-channel calls and its Switch interception were removed.
+The earlier prototype checks did not establish real saved-connection UX acceptance.
+
+Switch now opens Herdr's own original list. The app sends a secondary mouse click
+on a hold only when a verified mobile layout and the live header's `×`/`close`
+affordance identify that list. The live `switch` header, unknown overlays and
+pane text retain local selection. Direct and buffered input share this behavior;
+failed layout reads retain the verified geometry. No tab-list query or Android
+dialog runs on this gesture.
+
+The local Herdr 0.8.2 fork at `/home/jiyu/git/herdr-mobile-menu` handles the formerly
+swallowed right press in its mobile Navigate mode. It uses its existing scrolled,
+grouped switcher hit testing to open existing Space, Tab and agent-pane context
+menus. Existing close/rename handlers and worktree confirmation safeguards remain
+in use. Render loops and session persistence have no new state or work. Its two
+new regression methods fail against the old right-click swallowing behavior;
+they cover scrolled exact targets and closing an unfocused tab without closing
+the currently active or remaining tabs. App unit/native tests guard overlay
+routing, both input modes, stale metadata, desktop menus and pane selection.
+
+Android shared gate passed:132 tooling tests, exact instrumentation inventory,
+1,155 JVM tests (app/API/core1136/11/8) with no failures/errors/skips, debug/release
+lint and builds, instrumentation compilation (450 tasks139s). Model-verified USB
+SM-S911B `RZCW81JZ9CP` passed all24 menu/mobile/selection/buffered/paste methods
+in84.308s. Installed USB APK matches SHA-256 `f49de77925e0db8b168a2741abb53195a2bd03c2c48df9f8d7f593ad921a075c`.
+Herdr pinned Rust1.96.1 fmt/clippy/release checks passed; nextest passed3484 tests
+in91.438s with one pre-existing manual render-profile skip. The plain cargo-test
+shared-process workspace-ID counter failure and newer Rust1.99 clippy warnings
+are retained in ignored logs; using the repository's pinned toolchain and its
+intended process-isolated runner passed without weakening source or assertions.
+
+The actual isolated44-column TUI test verified stock→candidate live handoff,
+same shell PID, reattachment, Switch rendering, menu opening and exact unfocused
+Tab close with both survivors. Local default-session deployment retained all15
+pane IDs and15 shell PIDs. The installed local executable is
+`/home/jiyu/.local/lib/herdr-mobile-menu/herdr-0.8.2`, selected by a local-bin
+symlink; `/usr/bin/herdr` and Herdr config remain unchanged. Candidate SHA-256
+`2a861db67acfd8a0420e6f6f90c4eb519b1facc8bf3e51c268e855b086120e66`.
+Live handoff disconnects clients once; reconnect/reattach the existing session.
+Source, regression tests and rollback instructions are retained in the local
+fork's `LOCAL-MOBILE-MENU.md`; preserve this patch during Herdr self-updates.
+
+Fold rollout completed 2026-10-07T16:57:30.231593+00:00: model-verified SM-F976B `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`
+received the latest debug APK through full non-incremental install. Installed SHA-256
+`54231272159618f7bcfd5a433f5d17ba5e2884f9b743b19885dfd70f9a7469f3` matches the latest artifact exactly. Cold launch returned Status ok;
+a later launch brought MainActivity to front and independent top-resumed verification
+passed. The initial delayed foreground check found ChatGPT in front; this was corrected
+by relaunching, without gestures or tests. Previous native-panel APK `c5692e62…e158`
+is replaced. Passing shared verification for this artifact was reused (450 tasks110s).
+No tests ran on the fold. Evidence: ignored `build/fold-latest-20261007/`.
+User real-workflow confirmation remains pending.
+Current evidence: ignored `build/herdr-mobile-close-investigation/remote-*`,
+`herdr-nextest.log`, `herdr-pinned-clippy.log`, `herdr-red-menu-test.log`,
+`live-mobile-menu-smoke.log` and `local-herdr-deployment.json`. Real phone SSH/Mosh
+workflow acceptance remains distinct from these controlled/native/host-TUI gates.
+
+## Mobile round trips and cross-client height (2026-10-07)
+
+The user reported that both Space and Tab menus stopped working in every input
+mode on the foldable. Read-only inspection found a live 88-column, 32-row grid
+with a cached 41-column mobile layout and no native history overlay. The remote
+`pane layout` API also returned desktop geometry at different heights as clients
+redrew. The existing acceptance tests never published a successful mobile layout
+between desktop resizes, and required the API height to match the phone exactly.
+
+The controller now retains the most recent verified desktop chrome separately
+from the current mobile layout. Returning to that verified width or wider restores
+the sidebar and top/bottom tab anchors before another SSH read; narrower unknown
+widths stay guarded, and detach clears both caches. Same-width top-tab metadata
+uses this phone's height because row zero is its fixed anchor. Unknown widths and
+ambiguous bottom/hidden-tab height mismatches are still rejected. Buffered input
+keeps keyboard ownership while allowing the same navigation right-click as direct
+input. Pane-output long presses remain local selection.
+
+Regression coverage includes three desktop/mobile/desktop round trips with
+failed refreshes, top/bottom/hidden tab layouts, detach isolation, another
+client's top-tab height, and direct/buffered input. The new native test checks
+exactly one secondary press/release per hold and no local selection, including
+the first hold after unfolding. It is registered in the exact CI inventory.
+
+Validation: both new regression layers failed before repair (unit sidebar
+restoration assertion; native metadata-read timeout). Shared verification passed:
+132 tooling tests, exact Android inventory, 1,154 JVM tests without failures or
+skips, debug/release lint, debug/release builds and instrumentation compilation
+(450 Gradle tasks). On model-verified USB SM-S911B `RZCW81JZ9CP`, all five focused
+menu/selection/mobile-switcher tests passed in 69.884 seconds; all 18 buffered
+input/paste tests passed in 11.009 seconds. The new native method checked twelve
+holds through three mobile round trips and direct/buffered/direct input changes.
+APK SHA-256 `9d75153cb351a948ba41822e18b5df9f2dfbef7f4b90781b10e48976f50acae1` matches the installed old-phone and foldable packages.
+Full non-incremental install on model-verified SM-F976B
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp` succeeded, launch returned
+`Status: ok`, and MainActivity was top-resumed. No foldable tests or injected
+gestures ran. Logs and scalar diagnostics are under ignored
+`build/herdr-menu-20261007/`. Hosted CI was not run. Controlled native transport
+checks prove mouse dispatch; the real remote Herdr menu remains for user
+confirmation in the original session.
+
 ## Repeated menu regression coverage (2026-09-23)
 
 The user confirmed the width-change fix works on the foldable. Follow-up coverage

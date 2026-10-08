@@ -28,6 +28,14 @@
 - If another session edits the workspace during release, preserve its changes but do not silently expand the reviewed release. Use an isolated checkout of the reviewed source when needed; report concurrent edits separately.
 - These instruction-only Markdown edits need diff/skill validation, not Android builds. The unit-test/lint/build requirement applies to application, build, dependency, and test-code changes.
 
+## Efficient CI repair
+
+- Diagnose completed failed jobs from their artifacts before rerunning anything. Separate assertion failures, instrumentation crashes/timeouts, SDK download failures, and optional diagnostic collection failures.
+- Reproduce the affected class/API or harness test first. Group confirmed fixes into one reviewed patch and one shared verification run; retain passing evidence for unchanged inputs.
+- Retry a demonstrated transient infrastructure failure at most once using the failed job ID. Preserve the same run's passing jobs and verified APKs; never dispatch another full workflow merely to retry a job. Repeated failure requires diagnosis.
+- Full API 26–37 coverage remains weekly/manual. Do not add it to ordinary push gates or launch it repeatedly during diagnosis. When full hosted verification is explicitly requested, run one final compatibility sweep after focused repairs pass.
+- Report milestones, actionable failures, and final evidence concisely. Avoid repeated unchanged-status narration and repeated full log reads. Do not claim a speed or billing improvement without measurements.
+
 ## Google Play internal publishing
 
 - External production upload-signing material, verified release artifacts, and the Google Play Developer API service-account credential live in `/home/jiyu/git/app_sign`. Read its `README.txt` before publishing. Never print credential or password contents, copy them into this repository, or commit them.

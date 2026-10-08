@@ -24,11 +24,22 @@ class HerdrRemoteScrollRecoveryTest {
 
     @Test fun letterPaneNumberKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("w6:pC")
 
-    @Test fun screenOnlyCodexPaneReceivesOlderAndNewerScrollGestures() {
+    @Test fun piPaneKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("wK:p4", agent = "pi")
+
+    @Test fun screenOnlyCodexPaneReceivesOlderAndNewerScrollGestures() = verifyScreenOnlyGestures("codex")
+
+    @Test fun fullscreenPiPaneReceivesPageGesturesInBothInputModes() = verifyScreenOnlyGestures("pi")
+
+    @Test fun fullscreenPiExplicitRemoteKeepsWheelRouting() = verifyScreenOnlyGestures("pi", remote = true)
+
+    private fun verifyScreenOnlyGestures(agent: String, remote: Boolean = false) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
             val controller = requireNotNull(terminal.controller)
-            val connection = ScrolledHerdr("w6:pF", screenOnly = true)
+            val connection = ScrolledHerdr("w6:pF", screenOnly = true, agent = agent)
+            if (remote) controller.updateRendererProfile(controller.rendererProfile.copy(
+                touchScrollMode = com.yanjiyu.terminalspike.core.model.TouchScrollMode.REMOTE_MOUSE,
+            ))
             lateinit var view: FastTerminalView
             try {
                 scenario.onActivity { activity ->
@@ -38,29 +49,40 @@ class HerdrRemoteScrollRecoveryTest {
                     view.attachController(controller)
                     terminal.accept("\u001B[?1000;1006hLIVE".toByteArray(), {})
                 }
-                await { connection.reads.get() >= 2 && controller.isMouseTrackingEnabled() }
+                await { connection.reads.get() >= 2 && controller.isMouseTrackingEnabled() &&
+                    (agent != "pi" || controller.inputContext.value.herdrPiScrollPane != null) }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-                for (older in listOf(true, false)) {
-                    connection.sent.clear()
-                    val now = SystemClock.uptimeMillis()
-                    val start = if (older) 4f else 12f
-                    val end = if (older) 12f else 4f
-                    for ((action, row, elapsed) in listOf(
-                        Triple(MotionEvent.ACTION_DOWN, start, 0L),
-                        Triple(MotionEvent.ACTION_MOVE, (start + end) / 2, 80L),
-                        Triple(MotionEvent.ACTION_MOVE, end, 160L),
-                        Triple(MotionEvent.ACTION_UP, end, 320L),
-                    )) scenario.onActivity {
-                        val event = MotionEvent.obtain(now, now + elapsed, action,
-                            view.width / 2f, row * controller.viewport.lineHeightPx, 0)
-                        try { view.onTouchEvent(event) } finally { event.recycle() }
-                    }
-                    val button = if (older) 64 else 65
-                    assertTrue("Live Codex must receive the $button wheel gesture",
-                        connection.sent.any { it.startsWith("\u001B[<$button;") })
-                    scenario.onActivity {
-                        assertNull(controller.herdrHistory)
-                        assertFalse(controller.herdrHistoryReading)
+                for (directInput in listOf(true, false)) {
+                    scenario.onActivity { view.setDirectInputEnabled(directInput) }
+                    for (older in listOf(true, false)) {
+                        connection.sent.clear()
+                        val now = SystemClock.uptimeMillis()
+                        val start = if (older) 4f else 12f
+                        val end = if (older) 12f else 4f
+                        for ((action, row, elapsed) in listOf(
+                            Triple(MotionEvent.ACTION_DOWN, start, 0L),
+                            Triple(MotionEvent.ACTION_MOVE, (start + end) / 2, 80L),
+                            Triple(MotionEvent.ACTION_MOVE, end, 160L),
+                            Triple(MotionEvent.ACTION_UP, end, 320L),
+                        )) scenario.onActivity {
+                            val event = MotionEvent.obtain(now, now + elapsed, action,
+                                view.width / 2f, row * controller.viewport.lineHeightPx, 0)
+                            try { view.onTouchEvent(event) } finally { event.recycle() }
+                        }
+                        val button = if (older) 64 else 65
+                        assertTrue("Live $agent must receive the $button wheel gesture",
+                            connection.sent.any {
+                                if (agent == "pi" && !remote) it == (if (older) "\u001B[5~" else "\u001B[6~")
+                                else it.startsWith("\u001B[<$button;")
+                            })
+                        if (agent == "pi" && !remote) assertEquals(
+                            "One classified swipe pages once, including release",
+                            listOf(if (older) "\u001B[5~" else "\u001B[6~"), connection.sent.toList(),
+                        )
+                        scenario.onActivity {
+                            assertNull(controller.herdrHistory)
+                            assertFalse(controller.herdrHistoryReading)
+                        }
                     }
                 }
             } finally {
@@ -69,11 +91,11 @@ class HerdrRemoteScrollRecoveryTest {
         }
     }
 
-    private fun verifyNativeRecovery(paneId: String) {
+    private fun verifyNativeRecovery(paneId: String, agent: String = "codex") {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
             val controller = requireNotNull(terminal.controller)
-            val connection = ScrolledHerdr(paneId)
+            val connection = ScrolledHerdr(paneId, agent = agent)
             lateinit var view: FastTerminalView
             try {
                 scenario.onActivity { activity ->
@@ -143,7 +165,7 @@ class HerdrRemoteScrollRecoveryTest {
         assertTrue("Timed out waiting for capture", condition())
     }
 
-    private class ScrolledHerdr(private val paneId: String, private val screenOnly: Boolean = false) : Connection {
+    private class ScrolledHerdr(private val paneId: String, private val screenOnly: Boolean = false, private val agent: String = "codex") : Connection {
         @Volatile private var columns = 80
         @Volatile private var rows = 24
         @Volatile var latestInput = "INPUT_READY"
@@ -151,11 +173,15 @@ class HerdrRemoteScrollRecoveryTest {
         val reads = AtomicInteger()
         val sent = CopyOnWriteArrayList<String>()
         override val isHerdrSession = true
+        override fun captureInputContext() = com.yanjiyu.terminalspike.terminal.TerminalInputContext(
+            "herdr/scroll-test/$paneId/term1", true,
+            if (screenOnly && agent == "pi") com.yanjiyu.terminalspike.terminal.HerdrPiScrollPane(0, 0, columns, rows) else null,
+        )
         override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
             val result = captureHerdrPaneHistory({ command ->
                 val value = when {
                     "'layout'" in command -> """{"result":{"layout":{"focused_pane_id":"$paneId","tab_id":"w1:t1","panes":[{"pane_id":"$paneId","rect":{"x":0,"y":0,"width":$columns,"height":$rows}}]}}}"""
-                    "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"codex","revision":1,"scroll":{"viewport_rows":$rows,"offset_from_bottom":${offset.get()}}}}}"""
+                    "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":1,"scroll":{"viewport_rows":$rows,"offset_from_bottom":${offset.get()}}}}}"""
                     "'read'" in command -> (1..if (screenOnly) rows else 1000).joinToString("\n", postfix = "\n") { if (it == 1000) latestInput else "row $it" }
                     else -> error("Unexpected capture command")
                 }

@@ -61,10 +61,14 @@ internal fun captureHerdrPaneHistory(
     require(x in 0..500 && y in 0..500 && columns in 1..500 && rows in 1..500)
     val before = result("pane", "get", paneId).getValue("pane") as JsonObject
     require(before.string("pane_id") == paneId && before.string("tab_id") == layout.string("tab_id"))
-    // Limit automatic native ownership to the requested Codex terminal, not arbitrary mouse apps.
-    require((before["agent"] as? JsonPrimitive)?.content == "codex")
+    // Only supported transcript UIs may hand passive history to the native reader.
+    require((before["agent"] as? JsonPrimitive)?.content in setOf("codex", "pi"))
     val scroll = before.getValue("scroll") as JsonObject
     require(scroll.integer("viewport_rows") == rows)
+    // Wrapped visible content can exceed the pane height without any real history.
+    // Fullscreen UIs must retain wheel ownership even when their ANSI read looks longer.
+    val maximumOffset = (scroll["max_offset_from_bottom"] as? JsonPrimitive)?.intOrNull
+    require(maximumOffset == null || maximumOffset > 0)
     val offset = scroll.integer("offset_from_bottom")
     require(offset >= 0)
     val terminalId = before.string("terminal_id")

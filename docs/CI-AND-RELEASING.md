@@ -24,6 +24,20 @@ their features; never run tests on the foldable.
 
 ## Hosted CI
 
+- Required push/PR runs and weekly/manual compatibility runs use separate concurrency
+  groups, so starting a compatibility sweep does not cancel normal CI. Newer runs
+  within the same branch and group still supersede older ones.
+- SDK tooling/platform installation retries the identical command once, after ten
+  seconds, only for HTTP 429/502/503/504 or recognized Java socket timeout/reset
+  errors. Missing packages, licensing errors and unknown failures fail immediately.
+  Tests are never automatically retried by this helper.
+- Optional post-test logcat collection is bounded and warns if unavailable. The
+  instrumentation exit status, JUnit conversion, exact membership, skip rules and
+  any subsequent acceptance steps still determine success. A crashed or incomplete
+  test run cannot become green because logcat failed.
+- Artifact uploads replace the prior attempt's same-named artifact within the run,
+  including APKs and release artifacts if the build itself is retried. A job-only
+  retry continues to reuse the existing verified APKs; it does not rebuild them.
 - The full API 26/35 suites each have two deterministic class shards with Orchestrator
   isolation unchanged. Each shard enforces exact membership and skip identity. The
   existing `required-runtime (26)` and `(35)` gate names now aggregate the shards;
@@ -55,6 +69,26 @@ checks. Hosted CI continues independently. Request `$push-main-green` explicitly
 when the task includes waiting for and repairing all hosted checks. Never describe
 pending hosted checks as passed.
 
+### Repair without restarting passing work
+
+1. Read the completed failed job's log/artifact and classify the first failure.
+   Reproduce a test failure with the affected class and API; repair assertions only
+   when the product contract changed, not simply because an assertion is red.
+2. Batch confirmed fixes, run the affected checks and then the shared local gate
+   once. Reuse passing results only when their source, dependencies and configuration
+   are unchanged. A changed commit still needs its own required hosted checks.
+3. For a proven transient infrastructure failure, wait for the run to complete and
+   use `gh run rerun RUN_ID --job JOB_ID` once. This preserves successful jobs and
+   reuses that run's APK artifacts; dependent aggregate checks rerun automatically.
+   Do not use a fresh workflow dispatch or rerun-all to recover one failed shard.
+4. Run the weekly/manual sweep once at the end only when full compatibility
+   verification is requested. Summarize milestone changes and final evidence;
+   repeated status narration adds no diagnostic value.
+
+The concurrency and replacement behavior follows GitHub's
+[concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [artifact overwrite contract](https://github.com/actions/upload-artifact#overwriting-an-artifact).
+
 ## Main-app internal release
 
 Read the external signing directory's `README.txt` and the existing
@@ -76,6 +110,9 @@ python3 scripts/publish-play-internal.py prepare --version-name 0.0.7
 # Review the intended diff, then commit and push using the normal workflow.
 # Publish refuses dirty or changed source and requires this exact commit on origin/main.
 python3 scripts/publish-play-internal.py publish
+
+# When the release explicitly includes the prepared English store refresh:
+python3 scripts/publish-play-internal.py publish --with-store-assets
 ```
 
 Preparation chooses a code above both the current source and every code returned
@@ -83,6 +120,13 @@ by Play. It stores source/artifact hashes in ignored `build/play-release/manifes
 Commit creation does not invalidate that evidence, but source changes do. Publication
 rechecks Play codes and signatures, uploads the frozen bundle once, verifies Play's
 reported hash/code, validates and commits the edit, then rereads the internal track.
+The opt-in `--with-store-assets` flag patches only English listing text, replaces phone
+screenshots in filename order and the English feature graphic, and includes English
+release notes in the same validated edit. Uploaded image SHA-256 values and ordered
+listing readback must match before commit and again after publication. Other locales,
+tablet pictures and the icon remain untouched. An ambiguous image upload leaves the
+same receipt guard as a bundle failure; inspect the saved edit before recovery.
+
 It reports the confirmed track state; store availability can still lag. Retain the
 publish receipt alongside your external release archive. Perform the project-required
 final foldable install/launch separately; this script never selects or installs on a phone.

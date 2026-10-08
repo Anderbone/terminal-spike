@@ -37,6 +37,7 @@ import com.yanjiyu.terminalspike.terminal.TerminalContentListener
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.TerminalBellEvent
 import com.yanjiyu.terminalspike.terminal.TerminalFindResult
+import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
 import com.yanjiyu.terminalspike.terminal.model.TerminalCellWidth
@@ -90,6 +91,8 @@ class FastTerminalView @JvmOverloads constructor(
     private var herdrTouchConsumed = false
     private var herdrGestureStartedOnOverlay = false
     private var herdrTouchMode = TouchScrollMode.AUTO
+    private var herdrPiPagingContext: TerminalInputContext? = null
+    private var herdrPiPageDirection = 0
     private val horizontalPaddingPx = 8f * resources.displayMetrics.density
     private val verticalPaddingPx = 5f * resources.displayMetrics.density
     private var fontMetrics = textPaint.fontMetrics
@@ -736,6 +739,15 @@ class FastTerminalView @JvmOverloads constructor(
         val herdrHistoryVisible = herdrController?.isHerdrNativeHistoryVisible() != false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             herdrGestureStartedOnOverlay = !herdrHistoryVisible
+            herdrPiPageDirection = 0
+            herdrPiPagingContext = herdrController?.inputContext?.value?.takeIf { input ->
+                val pane = input.herdrPiScrollPane
+                herdrTouchMode == TouchScrollMode.AUTO && herdrHistoryVisible &&
+                    herdrController.herdrHistory == null && herdrController.viewport.autoFollow &&
+                    pane != null && pane.x + pane.columns <= herdrController.terminalColumns &&
+                    pane.y + pane.rows <= herdrController.terminalRows &&
+                    pane.contains(terminalColumnAt(event.x), ((event.y - verticalPaddingPx) / lineHeightPx).toInt())
+            }
         }
         if (!herdrHistoryVisible || herdrGestureStartedOnOverlay) {
             herdrScroll.reset()
@@ -1127,8 +1139,8 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun showHerdrContextMenuAt(x: Float, y: Float): Boolean {
         val controller = terminalController ?: return false
-        val layout = controller.herdrSidebarLayout.value ?: return false
-        if (!directInputEnabled || !x.isFinite() || !y.isFinite() ||
+        // Buffered typing owns the IME, not Herdr's navigation context menus.
+        if (!x.isFinite() || !y.isFinite() ||
             x < horizontalPaddingPx || x >= width - horizontalPaddingPx ||
             y < verticalPaddingPx || y >= height - verticalPaddingPx ||
             herdrScroll.reader.snapshot != null
@@ -1136,7 +1148,7 @@ class FastTerminalView @JvmOverloads constructor(
         val column = terminalColumnAt(x)
         val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
         val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
-        if (!layout.isContextMenuCell(column, row, controller.terminalColumns, controller.terminalRows)) return false
+        if (!controller.isHerdrContextMenuCell(column, row)) return false
         if (!controller.sendMouseClick(column, row, secondary = true)) return false
         selection.clear()
         activeLink = null
@@ -1562,6 +1574,20 @@ class FastTerminalView @JvmOverloads constructor(
             tmuxPaneInMode = controller.isTmuxPaneInMode(),
         )
         recordTmuxGestureDecision(controller, decision)
+        val piContext = herdrPiPagingContext
+        if (pointerCount == 1 && piContext != null && controller.inputContext.value == piContext &&
+            decision.reason != TerminalScrollDecisionReason.TWO_FINGER_LOCAL_OVERRIDE &&
+            controller.isHerdrNativeHistoryVisible() && !selection.hasSelection
+        ) {
+            mouseWheelAccumulator.reset()
+            val direction = if (distanceY < 0f) -1 else if (distanceY > 0f) 1 else 0
+            if (direction != 0 && direction != herdrPiPageDirection) {
+                if (controller.sendWithAcceptance((if (direction < 0) "\u001B[5~" else "\u001B[6~").toByteArray())) {
+                    herdrPiPageDirection = direction
+                }
+            }
+            return
+        }
         when (decision.destination) {
             TerminalScrollDestination.LOCAL_SCROLLBACK -> {
                 mouseWheelAccumulator.reset()
@@ -1591,7 +1617,7 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun startFling(velocityY: Float, x: Float, y: Float) {
         val controller = terminalController ?: return
-        if (pinchZoomConsumed) return
+        if (pinchZoomConsumed || herdrPiPageDirection != 0) return
         val decision = scrollGestureRouter.decision(
             remoteMouseTrackingEnabled = controller.isMouseTrackingEnabled(),
             confirmedTmuxSession = controller.isTmuxSession(),

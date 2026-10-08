@@ -2,13 +2,15 @@
 
 All entries are under 140 characters and describe only visible, relevant content.
 
-## Phone
+## Phone (English, 2026-10-06)
 
-- `01-colour-terminal.png`: Terminal with vivid cyan and green system output, session tabs, extra keys, and the on-screen keyboard.
-- `02-tmux-session-picker.png`: Dark tmux session chooser listing seven sessions with open-shell and new-session actions.
-- `03-connections.png`: Connections screen showing one saved Mosh host and two active sessions.
-- `04-settings.png`: Dark settings screen listing appearance, terminal, keyboard, SSH keys, snippets, sessions, and backup controls.
-- `05-add-host.png`: Add-host screen with Mosh selected and fields for host, username, authentication, and connection name.
+- `01-colour-terminal.png`: Atlas workspace in a real SSH terminal, with colourful shell output and a customizable extra-key bar.
+- `02-tmux-session-picker.png`: Terminal Spike session picker showing the demo tmux sessions atlas, docs and workbench.
+- `03-snippets.png`: Saved snippets for working-tree status, disk space, recent commits and listening ports.
+- `04-ssh-keys.png`: SSH key generation dialog with an Atlas demo key name, Ed25519 and RSA 4096 options, and passphrase fields.
+- `05-themes.png`: Appearance settings with terminal colour choices and a live terminal preview.
+- `06-port-forwarding.png`: Local TCP forwarding configuration for port 5173, with loopback listen and destination addresses.
+- `07-sftp.png`: SFTP browser showing folders, a README, Makefile and example configuration in the Atlas demo workspace.
 
 ## 7-inch tablet
 

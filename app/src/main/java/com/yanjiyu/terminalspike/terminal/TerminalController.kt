@@ -79,9 +79,29 @@ class TerminalController(
     val viewport = TerminalViewport()
     private val mutableHerdrSidebarLayout = MutableStateFlow<HerdrSidebarLayout?>(null)
     val herdrSidebarLayout = mutableHerdrSidebarLayout.asStateFlow()
+    private val herdrLayoutLock = Any()
+    private var lastHerdrDesktopLayout: Pair<HerdrSidebarLayout, Int>? = null
 
     internal fun publishHerdrSidebarLayout(layout: HerdrSidebarLayout?) {
-        mutableHerdrSidebarLayout.value = layout
+        synchronized(herdrLayoutLock) {
+            mutableHerdrSidebarLayout.value = layout
+            if (layout == null) {
+                lastHerdrDesktopLayout = null
+            } else if (layout.terminalColumns == terminalColumns &&
+                layout.terminalTop in 0..1 &&
+                layout.terminalHeight?.let { it + requireNotNull(layout.terminalTop) } in (terminalRows - 1)..terminalRows
+            ) {
+                val previous = lastHerdrDesktopLayout
+                val sameChrome = previous?.let { (desktop, rows) ->
+                    desktop.sidebarColumns == layout.sidebarColumns && desktop.terminalTop == layout.terminalTop &&
+                        rows - requireNotNull(desktop.terminalTop) - requireNotNull(desktop.terminalHeight) ==
+                        terminalRows - requireNotNull(layout.terminalTop) - requireNotNull(layout.terminalHeight)
+                } == true
+                if (!sameChrome || requireNotNull(previous).first.terminalColumns > layout.terminalColumns) {
+                    lastHerdrDesktopLayout = layout to terminalRows
+                }
+            }
+        }
     }
     @Volatile
     var herdrHistory: HerdrPaneHistory? = null
@@ -90,6 +110,11 @@ class TerminalController(
     var herdrHistoryReading: Boolean = false
     @Volatile
     var herdrHistoryPinned: Boolean = false
+
+    internal fun isHerdrContextMenuCell(column: Int, row: Int): Boolean =
+        herdrSidebarLayout.value?.isContextMenuCell(
+            column, row, terminalColumns, terminalRows, terminalScreen?.getOrNull(1)?.text,
+        ) == true
 
     internal fun isHerdrNativeHistoryVisible(): Boolean =
         herdrSidebarLayout.value?.allowsNativeHistory(
@@ -466,11 +491,22 @@ class TerminalController(
         val boundedColumns = columns.coerceAtLeast(1)
         val boundedRows = rows.coerceAtLeast(1)
         if (boundedColumns == terminalColumns && boundedRows == terminalRows) return
-        mutableHerdrSidebarLayout.value = mutableHerdrSidebarLayout.value?.resizedDesktop(
-            terminalColumns, terminalRows, boundedColumns, boundedRows,
-        )
-        terminalColumns = boundedColumns
-        terminalRows = boundedRows
+        synchronized(herdrLayoutLock) {
+            val current = mutableHerdrSidebarLayout.value?.resizedDesktop(
+                terminalColumns, terminalRows, boundedColumns, boundedRows,
+            )
+            // A valid mobile read must not erase the last verified desktop anchors.
+            // Restore those only at that desktop width or wider, never guess mobile chrome.
+            val restored = lastHerdrDesktopLayout?.let { (desktop, desktopRows) ->
+                desktop.resizedDesktop(desktop.terminalColumns, desktopRows, boundedColumns, boundedRows)
+                    .takeIf { it.terminalColumns == boundedColumns }
+            }
+            mutableHerdrSidebarLayout.value = if (current?.terminalTop == 2 ||
+                current?.terminalColumns != boundedColumns
+            ) restored ?: current else current
+            terminalColumns = boundedColumns
+            terminalRows = boundedRows
+        }
         terminalSizeListener?.invoke(boundedColumns, boundedRows)
     }
 

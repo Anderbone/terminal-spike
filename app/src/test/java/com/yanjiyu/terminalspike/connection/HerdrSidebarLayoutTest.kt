@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrSidebarLayoutTest {
+    @Test fun onlyConfirmedMobileSwitcherRowsUseRemoteContextMenus() {
+        val mobile = HerdrSidebarLayout(0, 41, 2, 28)
+        for (header in listOf("│    ×    ", "│  close  ")) {
+            assertTrue(mobile.isContextMenuCell(6, 4, 41, 30, header))
+            assertFalse(mobile.isContextMenuCell(6, 1, 41, 30, header))
+            assertFalse(mobile.isContextMenuCell(6, 4, 80, 30, header))
+        }
+        for (header in listOf(null, "", "│ switch  ", "some terminal output")) {
+            assertFalse(mobile.isContextMenuCell(6, 4, 41, 30, header))
+        }
+    }
+
+    @Test fun topTabsUseThisClientsHeightButUnknownWidthAndBottomGeometryStayRejected() {
+        val top = HerdrSidebarLayout(26, 88, 1, 17)
+        assertEquals(HerdrSidebarLayout(26, 88, 1, 31), top.forTerminalGrid(88, 32))
+        assertEquals(HerdrSidebarLayout(26, 88, 1, 11), top.forTerminalGrid(88, 12))
+        assertNull(top.forTerminalGrid(41, 32))
+        assertNull(top.forTerminalGrid(88, 1))
+        assertNull(HerdrSidebarLayout(26, 88).forTerminalGrid(88, 32))
+        assertNull(HerdrSidebarLayout(26, 88, 0, 17).forTerminalGrid(88, 32))
+        assertNull(HerdrSidebarLayout(0, 41, 2, 28).forTerminalGrid(88, 32))
+        val mobile = HerdrSidebarLayout(0, 41, 2, 28)
+        assertEquals(mobile, mobile.forTerminalGrid(41, 30))
+        val bottom = HerdrSidebarLayout(26, 88, 0, 31)
+        assertEquals(bottom, bottom.forTerminalGrid(88, 32))
+    }
+
     @Test fun desktopResizeDoesNotGuessMobileUnknownOrStaleGeometry() {
         for (layout in listOf(
             HerdrSidebarLayout(0, 60, 2, 28),

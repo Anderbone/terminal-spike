@@ -1,9 +1,8 @@
 # Translation review
 
-The `en-US` listing is the source copy. The other locale folders are publication-ready drafts,
-but they were not reviewed by a native-speaking legal or marketing reviewer. Google recommends
-native-speaker review for store listings, and every translation is subject to the same metadata
-policy as the default listing.
+The `en-US` source listing was refreshed on 2026-10-06. Other locale folders contain older drafts.
+Update them against the English source and have a native speaker review them before publication.
+The new phone artwork includes English headlines; localize those alongside the listing text.
 
 Before publishing a locale:
 

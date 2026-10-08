@@ -484,8 +484,7 @@ python3 "$project_dir/scripts/redact-android-test-log.py" <"$private_focus" \
 timeout --kill-after=1 5 "$adb_bin" -s "$serial" logcat -d | \
     python3 "$project_dir/scripts/redact-android-test-log.py" \
     >"$output_dir/logcat-api${api}-${suite}.txt" || {
-        echo "Android logcat collection failed or timed out; instrumentation evidence was preserved." >&2
-        [[ $instrumentation_status -ne 0 ]] || exit 4
+        echo "WARNING: Android logcat collection failed or timed out; instrumentation evidence was preserved. Test validation remains required." >&2
     }
 [[ $instrumentation_status -eq 0 ]] || {
     echo "Android instrumentation command failed." >&2

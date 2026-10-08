@@ -17,6 +17,44 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun herdrDesktopMenusRecoverAfterMobileLayoutAndFailedRefresh() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        for ((top, height) in listOf(1 to 31, 0 to 31, 0 to 32)) {
+            controller.reportTerminalSize(88, 32)
+            controller.publishHerdrSidebarLayout(
+                com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(26, 88, top, height),
+            )
+            // A later successful wider capture must retain the already verified 88-column route.
+            controller.reportTerminalSize(96, 32)
+            controller.publishHerdrSidebarLayout(
+                com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(26, 96, top, height),
+            )
+            repeat(3) {
+                controller.reportTerminalSize(41, 30)
+                controller.publishHerdrSidebarLayout(
+                    com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(0, 41, 2, 28),
+                )
+                assertFalse(requireNotNull(controller.herdrSidebarLayout.value).isContextMenuCell(4, 0, 41, 30))
+                // No new successful SSH read after unfolding; the first hold must work.
+                controller.reportTerminalSize(88, 20)
+                val desktop = requireNotNull(controller.herdrSidebarLayout.value)
+                assertTrue("Desktop sidebar must recover after a confirmed mobile layout", desktop.isContextMenuCell(4, 5, 88, 20))
+                assertEquals(top == 1, desktop.isContextMenuCell(40, 0, 88, 20))
+                assertEquals(top == 0 && height == 31, desktop.isContextMenuCell(40, 19, 88, 20))
+                assertFalse(desktop.isContextMenuCell(40, 5, 88, 20))
+            }
+            controller.resetInputSink()
+            controller.reportTerminalSize(41, 30)
+            controller.publishHerdrSidebarLayout(
+                com.yanjiyu.terminalspike.connection.HerdrSidebarLayout(0, 41, 2, 28),
+            )
+            controller.reportTerminalSize(88, 32)
+            assertFalse("A new connection cannot inherit the previous desktop targets",
+                requireNotNull(controller.herdrSidebarLayout.value).isContextMenuCell(4, 5, 88, 32))
+        }
+    }
+
+    @Test
     fun herdrMenusFollowDesktopWidthAndHeightChangesWithoutAnotherSshRead() {
         val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
         for ((top, height) in listOf(1 to 32, 0 to 32, 0 to 33)) {

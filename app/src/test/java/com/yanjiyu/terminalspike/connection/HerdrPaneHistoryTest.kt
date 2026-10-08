@@ -6,6 +6,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrPaneHistoryTest {
+    @Test fun piRegularModeRetainsOrderedNativeHistory() {
+        val captured = requireNotNull(captureHerdrPaneHistory(
+            { fixtureResponse(it, agent = "pi") },
+            HerdrStartupChoice("/usr/bin/herdr", "default"), null, false,
+        ))
+        assertEquals((1..1000).map { "row $it" }, captured.lines.map { it.text })
+        val reader = HerdrHistoryViewport()
+        reader.beginScroll(captured, 20f, -3.25f)
+        reader.scrollBy(-3.25f)
+        assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
+    }
+
+    @Test fun fullscreenPiDoesNotClaimWrappedVisibleRowsAsNativeHistory() {
+        var reads = 0
+        val captured = captureHerdrPaneHistory({ command ->
+            if ("'read'" in command) reads++
+            val output = fixtureResponse(command, agent = "pi")
+            output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                .replace("\"viewport_rows\":24", "\"max_offset_from_bottom\":0,\"viewport_rows\":24")
+                .toByteArray())
+        }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+        assertNull(captured)
+        assertEquals("Do not read a screen-only pane as history", 0, reads)
+    }
+
     @Test fun screenOnlyCodexCaptureDoesNotClaimNativeScrollOwnership() {
         for (lineCount in listOf(1, 23, 24)) {
             val captured = captureHerdrPaneHistory({ command ->

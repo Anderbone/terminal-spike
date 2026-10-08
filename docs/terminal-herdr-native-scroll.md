@@ -1,4 +1,40 @@
-# Native scrolling for Codex inside Herdr
+# Native scrolling for transcript panes inside Herdr
+
+## 2026-10-07: Pi history support and per-tab investigation
+
+The native reader previously accepted only `agent=codex`. It now also accepts
+`agent=pi` when passive terminal history exists. A reported
+`max_offset_from_bottom=0` prevents native ownership before reading ANSI output:
+wrapped visible rows must not be mistaken for older history. Fullscreen Pi in Auto mode uses the Page Up/Down input path after user feedback
+confirmed PGUP works where swipes do not. Confirmed foreground Pi, zero terminal
+history, stable pane geometry, an output-area gesture, and a live viewport are
+required. Each swipe direction sends one page key; finger-up emits no synthetic
+fling or repeated keys. Explicit Remote mouse mode retains mouse-wheel routing.
+Two-finger local overrides and mobile navigation overlays retain their routes.
+Codex screen-only panes retain the negotiated remote-wheel route.
+Other mouse applications retain their existing route.
+
+User RED: personal-brain Pi tab 4 does not scroll; tab 1 does. Read-only host
+inspection identifies wK:p4 and wK:p1, both running the installed Pi 1.0.4 binary
+and both reporting zero terminal scrollback. This does not establish a difference
+in runtime UI mode or prove the Android swipe reached the failing Pi process.
+Pi's installed documentation describes fullscreen as the default and regular mode
+as the mode that uses terminal scrollback. No global Pi setting or existing
+conversation was changed. Regular-mode native support and controlled wheel
+routing coverage do not prove this per-tab user issue resolved. The user confirmed PGUP moves older output in the failing tab, establishing an
+input-path difference without proving why that Pi process rejects mouse wheels.
+The paging fallback is discrete movement, not native fractional drag/fling.
+Actual failing-tab user acceptance remains open.
+
+Verification: 1,158 JVM tests, lint, debug/release builds and test compilation
+passed. Eleven controlled native gesture methods passed on USB SM-S911B
+`RZCW81JZ9CP`, including fullscreen Pi paging in direct/buffered modes and
+explicit Remote mouse routing. The completed APK
+`ffbad200f7b6e9acee0f641c48ddd9744a5aa5549badd865e6ff18ad9ba0e1d5`
+was full-installed and launched on model-verified SM-F976B; MainActivity was
+top-resumed. No fold tests or injected gestures ran. Evidence: `build/pi-scroll/`.
+These results do not establish actual-Pi fullscreen native smoothness.
+
 
 ## 2026-09-29: fullscreen Codex consumes gestures without native history
 
@@ -61,7 +97,7 @@ the transcript during reading. Tapping the reader or typing returns to live outp
 Explicit Remote mouse mode retains the existing input route.
 
 This implementation supports Herdr sessions selected in the app and panes reported by Herdr as
-Codex. A manually launched, unidentified Herdr client does not gain this adapter. Capture failures,
+Codex or Pi with passive terminal history. A manually launched, unidentified Herdr client does not gain this adapter. Capture failures,
 unsupported metadata and geometry mismatches do not display guessed history. History beyond the
 bounded read remains unavailable in this native reader; this is not full tmux history parity.
 

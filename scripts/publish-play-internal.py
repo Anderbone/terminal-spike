@@ -110,6 +110,46 @@ def verify_bundle(bundle: Path, signing_dir: Path, environment):
         raise RuntimeError("AAB signer differs from the external upload certificate")
 
 
+def store_assets():
+    root = ROOT / "store-assets/google-play"
+    listing = {field: (root / "metadata/en-US" / filename).read_text().rstrip("\n")
+               for field, filename in (("title", "title.txt"), ("shortDescription", "short_description.txt"),
+                                       ("fullDescription", "full_description.txt"))}
+    images = {"phoneScreenshots": sorted((root / "screenshots/phone").glob("*.png")),
+              "featureGraphic": [root / "graphics/feature-graphic-1024x500.png"]}
+    if not 2 <= len(images["phoneScreenshots"]) <= 8:
+        raise RuntimeError("expected 2 to 8 prepared phone screenshots")
+    return listing, {kind: [path.read_bytes() for path in paths] for kind, paths in images.items()}
+
+
+def verify_store_assets(token, edit, listing, images):
+    base = f"{API}/edits/{edit}/listings/en-US"
+    actual = request("GET", base, token=token)
+    if any(actual.get(field) != value for field, value in listing.items()):
+        raise RuntimeError("English listing readback differs from prepared copy")
+    hashes = {}
+    for kind, contents in images.items():
+        expected = [hashlib.sha256(content).hexdigest() for content in contents]
+        actual_images = request("GET", f"{base}/{kind}", token=token).get("images", [])
+        if [image.get("sha256", "").lower() for image in actual_images] != expected:
+            raise RuntimeError(f"{kind} readback differs from prepared images or order")
+        hashes[kind] = expected
+    return hashes
+
+
+def upload_store_assets(token, edit, listing, images):
+    base = f"{API}/edits/{edit}/listings/en-US"
+    request("PATCH", base, listing, token)
+    for kind, contents in images.items():
+        request("DELETE", f"{base}/{kind}", token=token)
+        for content in contents:
+            uploaded = request("POST", f"{UPLOAD}/edits/{edit}/listings/en-US/{kind}?uploadType=media",
+                               content, token, "image/png")["image"]
+            if uploaded.get("sha256", "").lower() != hashlib.sha256(content).hexdigest():
+                raise RuntimeError(f"{kind} upload hash differs; edit was not committed")
+    return verify_store_assets(token, edit, listing, images)
+
+
 def prepare(args, used):
     if not args.version_name or not re.fullmatch(r"\d+\.\d+\.\d+", args.version_name):
         raise RuntimeError("prepare requires --version-name MAJOR.MINOR.PATCH")
@@ -163,6 +203,7 @@ def publish(args, used):
             raise RuntimeError("an upload attempt already started; inspect its saved edit before retrying")
     if code in used:
         raise RuntimeError("version code is already consumed; inspect Play before preparing a new code")
+    listing, images = store_assets() if args.with_store_assets else ({}, {})
     if args.require_green_ci:
         runs = json.loads(command(["gh", "run", "list", "--workflow", "android-ci.yml", "--commit", head,
                                    "--event", "push", "--limit", "1", "--json", "databaseId"], text=True))
@@ -187,15 +228,26 @@ def publish(args, used):
                        "application/octet-stream")
     if int(uploaded["versionCode"]) != code or uploaded.get("sha256", "").lower() != state["sha256"]:
         raise RuntimeError("Play uploaded artifact metadata differs; edit was not committed")
-    request("PUT", f"{API}/edits/{edit}/tracks/internal",
-            {"track": "internal", "releases": [{"name": state["versionName"], "versionCodes": [str(code)], "status": "completed"}]}, token)
+    asset_hashes = upload_store_assets(token, edit, listing, images) if args.with_store_assets else {}
+    release = {"name": state["versionName"], "versionCodes": [str(code)], "status": "completed"}
+    if args.with_store_assets:
+        release["releaseNotes"] = [{"language": "en-US", "text": (
+            ROOT / "store-assets/google-play/release-notes/main-en-US.txt").read_text().rstrip("\n")}]
+    request("PUT", f"{API}/edits/{edit}/tracks/internal", {"track": "internal", "releases": [release]}, token)
     request("POST", f"{API}/edits/{edit}:validate", {}, token)
     request("POST", f"{API}/edits/{edit}:commit", {}, token)
     _, track = inspect_play(token)
     if not any(str(code) in release.get("versionCodes", []) and release.get("status") == "completed"
                for release in track.get("releases", [])):
         raise RuntimeError("internal track did not confirm the uploaded release; inspect before retrying")
-    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "state": "completed", "track": track}, indent=2) + "\n")
+    if args.with_store_assets:
+        readback = request("POST", f"{API}/edits", {}, token)["id"]
+        try:
+            verify_store_assets(token, readback, listing, images)
+        finally:
+            request("DELETE", f"{API}/edits/{readback}", token=token)
+    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "state": "completed",
+                                  "track": track, "storeAssetHashes": asset_hashes}, indent=2) + "\n")
     print(f"Play internal track confirmed {state['versionName']} ({code}); CI {'passed' if args.require_green_ci else 'not checked'}. Store availability may lag.")
 
 
@@ -206,6 +258,8 @@ def main():
     parser.add_argument("--credential", type=Path, help="External Play service-account JSON")
     parser.add_argument("--version-name")
     parser.add_argument("--require-green-ci", action="store_true")
+    parser.add_argument("--with-store-assets", action="store_true",
+                        help="Publish prepared en-US copy, phone screenshots and feature graphic in the same edit")
     args = parser.parse_args()
     args.signing_dir = args.signing_dir.resolve()
     if args.signing_dir.is_relative_to(ROOT):

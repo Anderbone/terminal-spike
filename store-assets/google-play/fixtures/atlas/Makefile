@@ -1,0 +1,2 @@
+inspect:
+	./scripts/workspace.sh

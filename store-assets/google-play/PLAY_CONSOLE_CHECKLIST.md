@@ -3,7 +3,7 @@
 ## Prepared here
 
 - Default `en-US` title, short description, and full description.
-- Six additional store-listing translations, each kept in its own Play locale folder.
+- Six older translation drafts in their own locale folders, awaiting refresh and review.
 - 512 × 512 app icon copied from the project-owned icon master.
 - 1024 × 500 opaque feature graphic derived from the project-owned visual system.
 - Four or more actual in-app screenshots for phone, 7-inch tablet, and 10-inch tablet.
@@ -20,16 +20,18 @@
 - Countries/regions, pricing, target audience, content rating, and app access declarations.
 - Privacy-policy URL and Data safety answers.
 - Foreground-service declaration and demonstration video where requested by Play Console.
-- Whether the separately distributed Mosh-compatible extension will be published. It is
-  deliberately omitted from this main-app listing pending the licensing and trademark decision in
-  `docs/PUBLISHING.md`.
+- Confirm that the release includes built-in Mosh before using the refreshed English copy.
+  This package does not publish or change the separate, archived extension listing.
 
 ## Upload order
 
 1. Add the `en-US` listing and upload `graphics/app-icon-512.png` plus
    `graphics/feature-graphic-1024x500.png`.
-2. Upload the numbered images from each screenshot folder in filename order.
-3. Add each approved locale from `metadata/` and paste its three text files.
+2. Upload the new English phone images in filename order. Review the retained tablet images
+   against the release UI before uploading them.
+3. Use the refreshed `en-US` copy. Update and review the older translations against it before
+   uploading those locales. The new captioned phone artwork is English; localize its headlines
+   before assigning it to other locales.
 4. If Play Console exposes screenshot alt-text fields, paste the matching entry from
    `SCREENSHOT_ALT_TEXT.md`.
 5. Preview phone and tablet pages before saving the draft.
