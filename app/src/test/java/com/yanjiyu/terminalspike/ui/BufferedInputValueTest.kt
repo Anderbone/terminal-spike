@@ -10,6 +10,38 @@ import org.junit.Test
 
 class BufferedInputValueTest {
     @Test
+    fun draftSurvivesRecreationAndOnlyAcceptedSendClearsStorage() {
+        var stored = ""
+        fun reopen() = BufferedInputDraftState(stored) { stored = it }
+        val first = reopen()
+        first.update(TextFieldValue("未发送\nhello 😀"), 11L)
+        val reopened = reopen()
+        assertEquals("未发送\nhello 😀", reopened.value.text)
+        assertEquals(TextRange(stored.length), reopened.value.selection)
+        reopened.dispatch(22L, true) { _, _ -> false }
+        assertEquals(reopened.value.text, reopen().value.text)
+        reopened.dispatch(22L, true) { _, _ -> true }
+        assertEquals("", reopen().value.text)
+        reopened.restoreLastSent()
+        assertEquals("未发送\nhello 😀", reopen().value.text)
+        reopened.update(TextFieldValue(), 22L)
+        assertEquals("", reopen().value.text)
+    }
+
+    @Test
+    fun selectionChangesDoNotRewriteStoredTextAndCompositionRestoresAsPlainText() {
+        var stored = ""
+        var writes = 0
+        val state = BufferedInputDraftState { stored = it; writes++ }
+        state.update(TextFieldValue("nihao", composition = TextRange(0, 5)), 1L)
+        state.update(TextFieldValue("nihao", selection = TextRange(2)), 1L)
+        assertEquals(1, writes)
+        val restored = BufferedInputDraftState(stored)
+        assertEquals("nihao", restored.value.text)
+        assertEquals(null, restored.value.composition)
+    }
+
+    @Test
     fun composingDraftCannotSendUntilTheImeCommitsIt() {
         val draftState = BufferedInputDraftState()
         var dispatched: String? = null

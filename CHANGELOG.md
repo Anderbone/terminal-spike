@@ -3,6 +3,14 @@
 All notable product changes are recorded here. The project is still in development and has not
 assigned a public semantic version to this release candidate.
 
+## 0.0.10 (15) — 2026-10-19
+
+- Browse remote Git projects from SSH/Mosh and Herdr sessions, with multiple project tabs,
+  full files, highlighted changes, source feedback drafts, and explicit paste to the agent.
+- Keep buffered input drafts across app restarts.
+- Reconnect SFTP operations with reusable credentials and reuse completed phone downloads.
+- Open Obsidian links from terminal output, including wrapped and encoded Chinese paths.
+
 ## 0.0.3 (6) — 2026-09-07
 
 ### Added

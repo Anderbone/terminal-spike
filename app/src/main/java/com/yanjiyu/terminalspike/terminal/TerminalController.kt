@@ -259,6 +259,13 @@ class TerminalController(
             applyDirectSendPolicy = false,
         )
 
+    /** Reviews are multiline input: require bracketed paste so a shell cannot execute each line. */
+    fun sendReviewPaste(text: String): Boolean {
+        if (!terminalModes.bracketedPaste || !inputContext.value.agent) return false
+        if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return false
+        return sendPaste(text)
+    }
+
     /** Sends a physical numeric-keypad key using DECKPAM when the remote enabled it. */
     fun sendKeypad(normal: ByteArray, application: ByteArray): Boolean =
         trySendUserInput(

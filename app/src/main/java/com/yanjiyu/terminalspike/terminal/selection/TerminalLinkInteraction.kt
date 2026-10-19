@@ -54,7 +54,7 @@ object TerminalLinkPolicy {
         return scheme in ALLOWED_SCHEMES && !parsed.host.isNullOrBlank()
     }
 
-    private val ALLOWED_SCHEMES = setOf("http", "https")
+    private val ALLOWED_SCHEMES = setOf("http", "https", "obsidian")
 }
 
 object TerminalLinkResolver {
@@ -166,7 +166,7 @@ object TerminalLinkResolver {
         for (startRow in maxOf(0, row - MAX_PAINTED_LINK_ROWS + 1)..row) {
             val first = source.selectionLineAt(startRow) ?: continue
             for (initial in underlinedTokens(first.line)) {
-                if (!initial.text.hasHttpSchemeAt(0)) continue
+                if (!initial.text.hasSupportedSchemeAt(0)) continue
                 val text = StringBuilder(initial.text)
                 var last = first
                 var token = initial
@@ -186,7 +186,7 @@ object TerminalLinkResolver {
                             .substringAfterLast('║').substringAfterLast('|').isBlank()
                     } ?: break
                     if (continuation.style != initial.style ||
-                        continuation.text.hasHttpSchemeAt(0) ||
+                        continuation.text.hasSupportedSchemeAt(0) ||
                         TerminalLineGeometry.columnAtOffset(next.line, continuation.start) >
                         TerminalLineGeometry.columnAtOffset(last.line, token.start)
                     ) break
@@ -230,7 +230,7 @@ object TerminalLinkResolver {
                 var local = 0
                 while (local < run.text.length) {
                     if (isUrlBoundary(run.text[local]) ||
-                        (run.text[local] == '(' && run.text.hasHttpSchemeAt(local + 1))
+                        (run.text[local] == '(' && run.text.hasSupportedSchemeAt(local + 1))
                     ) {
                         local += 1
                         continue
@@ -444,12 +444,13 @@ object TerminalLinkResolver {
     private fun isUrlLeadingBoundary(text: CharSequence, index: Int): Boolean {
         val character = text[index]
         return isUrlBoundary(character) ||
-            character == '(' && text.hasHttpSchemeAt(index + 1)
+            character == '(' && text.hasSupportedSchemeAt(index + 1)
     }
 
-    private fun CharSequence.hasHttpSchemeAt(index: Int): Boolean =
+    private fun CharSequence.hasSupportedSchemeAt(index: Int): Boolean =
         regionMatches(index, "http://", 0, 7, ignoreCase = true) ||
-            regionMatches(index, "https://", 0, 8, ignoreCase = true)
+            regionMatches(index, "https://", 0, 8, ignoreCase = true) ||
+            regionMatches(index, "obsidian://", 0, 11, ignoreCase = true)
 
     private const val MAX_PAINTED_LINK_ROWS = 16
     private const val MAX_PLAIN_URL_SCAN = 1_024

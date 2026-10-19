@@ -16,6 +16,12 @@
 - Do not copy source from Termius, LobiShell, ConnectBot, Termux, or other terminal applications.
 - Keep SDK paths, signing material, secrets, build outputs, APKs, and machine-specific IDE files out of Git.
 
+## Long-term S10e debug target
+
+- The user explicitly authorized the Galaxy S10e (`SM-G9708`, hardware serial `R28M227XA0E`) as a long-term wireless debug phone, including installs, laptop SSH connection setup, and device tests. It may be used for routine debugging and terminal tests in place of the older S23-only target restriction; retain all scenario-specific acceptance assertions. Existing S23-only runners require an explicit supported-target update before use on the S10e.
+- Resolve its current wireless endpoint with `adb devices -l` / `adb mdns services`, verify `ro.product.model` before every install or test, and explicitly target all ADB commands. Never substitute the foldable. Pairing codes and ports expire; do not store them as durable credentials.
+- Charging stay-awake is enabled. For laptop SSH through wireless ADB, restore `adb -s <verified-S10e-serial> reverse tcp:2222 tcp:22` after reconnecting; the saved app connection uses phone `127.0.0.1:2222`. This route requires an active ADB connection. Its dedicated SSH private key stays inside the app.
+
 ## Routine commit, push, and publish defaults
 
 - Ordinary commit/push/publish requests use required local verification and publication checks as the completion gate. Leave GitHub Actions running; do not poll, wait for, rerun, or repair full hosted CI unless the user explicitly asks for CI to be green. Report CI as unverified/pending, never as passed without evidence. Do not invoke `push-main-green` merely because a request includes pushing main.
@@ -57,3 +63,19 @@
 - Preserve red/green coverage for both boundary cases: a pane whose entire reported `history_size` is cached must stop cleanly at its true oldest row, while an app-truncated capture must expose and load older rows without remote wheel reports, a row-sized jump, or a full-history fetch on the animation path.
 - The user's baseline red evidence is `https://photos.app.goo.gl/WY6cTXeX9wnvbSZ86`: tmux copy-mode rows advance discretely and motion stops on finger-up. Increasing wheel-event frequency or converting fling into tmux wheel reports cannot satisfy the requirement.
 - Do not mark the living record done until all automated gates pass, the completed build is installed and launched on the Wi-Fi foldable under the project rules, and the user confirms that the real workflow meets the Definition of Solved. Never run tests on that foldable.
+
+<!-- BEGIN OBSIDIAN_PROJECT_NOTES -->
+<!-- obsidian-mapping: {"project": "terminal-spike", "link": "obsidian", "plans": "plan"} -->
+## Durable project notes (Obsidian)
+Project: `terminal-spike`. Repository link: `obsidian`. Before writing durable notes,
+check the mapping; invoke `$ensure-obsidian-link` for setup or repair.
+Write plans in `obsidian/plan/`, and other working notes in
+`obsidian/notes/`, `obsidian/research/`, or `obsidian/decisions/` (create on demand).
+Inspect existing notes; continue existing plans, re-read the latest file before edits,
+and preserve unrelated content. Keep one canonical copy in Obsidian; verify writes
+and report the resolved Obsidian file path. This covers English/Chinese requests
+such as “列个计划”, “更新计划”, “记录一下”, “write a plan”, “document this decision”.
+Conversational answers and temporary checklists do not require a saved note.
+Keep source, configuration, AGENTS instructions, and repository-required docs in
+this repository; honor explicit destinations in the current request.
+<!-- END OBSIDIAN_PROJECT_NOTES -->

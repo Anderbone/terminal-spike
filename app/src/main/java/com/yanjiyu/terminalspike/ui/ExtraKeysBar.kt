@@ -115,8 +115,13 @@ private const val SHORTCUT_KEY_SPACING_DP = 2f
 private const val SHORTCUT_HORIZONTAL_PADDING_DP = 3f
 
 @Stable
-class BufferedInputDraftState {
-    var value by mutableStateOf(TextFieldValue())
+class BufferedInputDraftState(
+    initialText: String = "",
+    private val persistText: (String) -> Unit = {},
+) {
+    var value by mutableStateOf(
+        TextFieldValue(initialText, selection = TextRange(initialText.length)),
+    )
         private set
 
     private var lastSentValue by mutableStateOf<TextFieldValue?>(null)
@@ -137,12 +142,15 @@ class BufferedInputDraftState {
         }
         validationMessage = null
         lastSentValue = null
+        val textChanged = value.text != nextValue.text
         value = nextValue
+        if (textChanged) persistText(value.text)
     }
 
     fun restoreLastSent() {
         val restored = lastSentValue ?: return
         value = restored.copy(selection = TextRange(restored.text.length))
+        persistText(value.text)
         lastSentValue = null
         validationMessage = null
     }
@@ -163,6 +171,7 @@ class BufferedInputDraftState {
         val accepted = onSend(activeSessionId, value.text)
         value = value.afterBufferedSend(accepted)
         if (accepted) {
+            persistText(value.text)
             lastSentValue = sentValue
             validationMessage = null
         }

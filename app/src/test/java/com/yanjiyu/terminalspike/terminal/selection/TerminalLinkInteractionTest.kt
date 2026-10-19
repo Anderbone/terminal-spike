@@ -122,9 +122,13 @@ class TerminalLinkInteractionTest {
     }
 
     @Test
-    fun openingPolicyAllowsOnlyAbsoluteHttpAndHttpsHosts() {
+    fun openingPolicyAllowsAbsoluteWebAndObsidianUris() {
         assertTrue(TerminalLinkPolicy.canOpen("https://example.test/a"))
         assertTrue(TerminalLinkPolicy.canOpen("http://127.0.0.1:8080"))
+        assertTrue(TerminalLinkPolicy.canOpen("obsidian://open?vault=Obsjiyu&file=note"))
+        assertFalse(TerminalLinkPolicy.canOpen("obsidian:///missing-action"))
+        assertFalse(TerminalLinkPolicy.canOpen("obsidian://open?file=%B"))
+        assertFalse(TerminalLinkPolicy.canOpen("intent://open#Intent;scheme=obsidian;end"))
         assertFalse(TerminalLinkPolicy.canOpen("javascript:alert(1)"))
         assertFalse(TerminalLinkPolicy.canOpen("file:///etc/passwd"))
         assertFalse(TerminalLinkPolicy.canOpen("https:///missing-host"))
@@ -262,6 +266,43 @@ class TerminalLinkInteractionTest {
         val source = linkSource(paintedLink("  ", "https://example.test/a", ")"), paintedLink("  ", "unrelated"))
         assertEquals("https://example.test/a", TerminalLinkResolver.find(source, 0, 5, true, true)?.uri)
         assertNull(TerminalLinkResolver.find(source, 1, 5, true, true))
+    }
+
+    @Test
+    fun obsidianLinkPreservesEncodedChinesePathAcrossCodexAndHerdrRows() {
+        val parts = listOf(
+            "obsidian://open?vault=Obsjiyu&file=projects%2FCable-flow%2F",
+            "code-review%2Fphase-2%2F%E6%96%87%E4%BB%B6",
+            "%E5%9C%B0%E5%9B%BE",
+        )
+        val uri = parts.joinToString("")
+        val plain = TerminalSelectableLine(anchor, TerminalLine.plain("(2026: $uri)"))
+        // Codex's Markdown link presentation can place a URL directly after '('.
+        val parenthesized = TerminalSelectableLine(anchor, TerminalLine.plain("[note]($uri)"))
+        assertEquals(uri, TerminalLinkResolver.find(plain, 20, false, true)?.uri)
+        assertEquals(uri, TerminalLinkResolver.find(parenthesized, 20, false, true)?.uri)
+        assertTrue(TerminalLinkPolicy.canOpen(uri))
+        val wrapped = linkSource(
+            TerminalLine.plain(parts[0], softWrappedToNext = true),
+            TerminalLine.plain(parts[1], softWrappedToNext = true),
+            TerminalLine.plain(parts[2]),
+        )
+        val painted = linkSource(
+            paintedLink("  (", parts[0]),
+            paintedLink("  ", parts[1]),
+            paintedLink("  ", parts[2], ")"),
+        )
+        for (source in listOf(wrapped, painted)) {
+            for (row in 0..2) {
+                val target = TerminalLinkResolver.find(source, row, 8, true, true)
+                assertEquals(uri, target?.uri)
+                val selection = TerminalSelectionModel()
+                assertTrue(selection.selectLink(source, requireNotNull(target)))
+                if (source === wrapped) assertEquals(uri, selection.selectedText(source))
+                assertEquals(source.selectionLineAt(0)?.anchor, target.line)
+                assertEquals(source.selectionLineAt(2)?.anchor, target.endLine)
+            }
+        }
     }
 
     private fun paintedLink(prefix: String, url: String, suffix: String = ""): TerminalLine =

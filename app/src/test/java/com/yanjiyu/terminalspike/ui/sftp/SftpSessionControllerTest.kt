@@ -320,6 +320,75 @@ class SftpSessionControllerTest {
         newClient = factory,
     )
 
+    @Test
+    fun disconnectedFileTransferReconnectsToSameEndpointWithReloadableCredentials() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        val config = SshConnectionConfig(
+            host = "100.64.0.10", port = 2222, username = "tester",
+            authentication = SshAuthentication.StoredPassword { byteArrayOf(1) },
+        )
+        controller.connect("Mosh host", config)
+        runCurrent()
+        client.isConnected = false
+        controller.select("/work/report.txt")
+        assertTrue(controller.download { java.io.ByteArrayOutputStream() }.isSuccess)
+        assertEquals(2, client.connectCount)
+        assertSame(config, client.lastConfig)
+        assertEquals(listOf("/work/report.txt"), client.downloads)
+        assertTrue(controller.state.value is SftpUiState.Browsing)
+    }
+
+    @Test
+    fun reconnectFailureKeepsFileListingAndDoesNotStartDownload() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", SshConnectionConfig(
+            host = "host", port = 22, username = "tester",
+            authentication = SshAuthentication.StoredPassword { byteArrayOf(1) },
+        ))
+        runCurrent()
+        client.isConnected = false
+        client.reconnectFailure = IllegalStateException("SSH unavailable")
+        controller.select("/work/report.txt")
+        assertTrue(controller.download { java.io.ByteArrayOutputStream() }.isFailure)
+        assertTrue(client.downloads.isEmpty())
+        val state = controller.state.value as SftpUiState.Browsing
+        assertFalse(state.busy)
+        assertEquals("SSH unavailable", state.message)
+    }
+
+    @Test
+    fun disconnectedSessionDoesNotReuseOneShotPassword() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        client.isConnected = false
+        controller.select("/work/report.txt")
+        assertTrue(controller.download { java.io.ByteArrayOutputStream() }.isFailure)
+        assertEquals(1, client.connectCount)
+        assertTrue(client.downloads.isEmpty())
+    }
+
+    @Test
+    fun refreshAlsoReconnectsWithoutDiscardingCurrentDirectory() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", SshConnectionConfig(
+            host = "host", port = 22, username = "tester",
+            authentication = SshAuthentication.StoredPassword { byteArrayOf(1) },
+        ))
+        runCurrent()
+        client.isConnected = false
+        controller.refresh()
+        runCurrent()
+        assertEquals(2, client.connectCount)
+        val state = controller.state.value as SftpUiState.Browsing
+        assertEquals("/work", state.path)
+        assertFalse(state.busy)
+    }
+
     private fun config(host: String) = SshConnectionConfig(
         host = host,
         port = 22,
@@ -342,6 +411,11 @@ private class FakeSftpSession(
     private val initialKeyboardChallenges: List<KeyboardInteractiveChallenge> = emptyList(),
     private val acceptedKeyboardToken: Long? = null,
 ) : SftpSession {
+    override var isConnected = true
+    var connectCount = 0
+    var lastConfig: SshConnectionConfig? = null
+    var reconnectFailure: Exception? = null
+    val downloads = mutableListOf<String>()
     private val connection = CompletableDeferred<Result<String>>()
     var files: List<SftpFile> = emptyList()
     var onDownload: (String, OutputStream) -> Unit = { _, _ -> }
@@ -371,6 +445,10 @@ private class FakeSftpSession(
         onHostIdentityPrompt: (HostIdentityPrompt) -> Unit,
         onKeyboardInteractiveChallenge: (KeyboardInteractiveChallenge) -> Unit,
     ): String {
+        connectCount += 1
+        lastConfig = config
+        if (connectCount > 1) reconnectFailure?.let { throw it }
+        isConnected = true
         keyboardChallengeCallback = onKeyboardInteractiveChallenge
         initialKeyboardChallenges.forEach(onKeyboardInteractiveChallenge)
         val result = if (ignoreCancellation) {
@@ -389,7 +467,10 @@ private class FakeSftpSession(
     override fun move(path: String, destinationDirectory: String) = Unit
     override suspend fun copy(path: String, destinationDirectory: String) = Unit
     override fun upload(parent: String, name: String, source: InputStream) = Unit
-    override fun download(path: String, destination: OutputStream) = onDownload(path, destination)
+    override fun download(path: String, destination: OutputStream) {
+        downloads += path
+        onDownload(path, destination)
+    }
     override suspend fun downloadRecursively(
         path: String,
         destination: SftpDownloadDestination,

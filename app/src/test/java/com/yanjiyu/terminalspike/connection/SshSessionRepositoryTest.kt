@@ -35,6 +35,39 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
     @Test
+    fun projectRefreshReconnectsLostSessionWithoutCreatingAnotherTab() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val first = FakeConnection()
+        val second = FakeConnection()
+        val connections = ArrayDeque(listOf(first, second))
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connections.removeFirst() },
+            terminalFactory = SshSessionTerminalFactory { FakeTerminal() },
+        )
+        try {
+            val started = repository.startUserInitiatedSession(reconnectingRequest(
+                authentication = SshAuthentication.StoredPassword { byteArrayOf(1, 2, 3) },
+                policy = RemoteSessionReliabilityPolicy(reconnectEnabled = false),
+            )) as StartSshSessionResult.Started
+            runCurrent()
+            repository.ensureProjectConnected(started.sessionId)
+            assertEquals(1, connections.size)
+            first.emit(ConnectionState.Failed("Overnight disconnect"))
+            repository.ensureProjectConnected(started.sessionId)
+            assertEquals(started.sessionId, repository.sessions.value.single().id)
+            assertEquals(ConnectionState.Connected, repository.sessions.value.single().connectionState)
+            assertTrue(connections.isEmpty())
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
     fun herdrCompletionPublishesWithoutTerminalBytesAndStopsOnDisconnect() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val ownerScope = CoroutineScope(SupervisorJob() + dispatcher)

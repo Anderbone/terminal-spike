@@ -31,3 +31,24 @@ internal fun openSftpDownload(context: Context, uri: Uri, name: String) {
         throw IllegalStateException("File saved to Downloads. No app can open this file type.", error)
     }
 }
+
+internal fun downloadedFileIndex(context: Context): SftpDownloadedFileIndex {
+    val preferences = context.getSharedPreferences("sftp_downloaded_files", Context.MODE_PRIVATE)
+    return SftpDownloadedFileIndex(
+        read = { key -> preferences.getString(key, null) },
+        write = { key, item ->
+            val edit = preferences.edit()
+            if (item == null) edit.remove(key) else edit.putString(key, item)
+            check(edit.commit()) { "Cannot remember the downloaded file." }
+        },
+        readable = { item ->
+            try {
+                context.contentResolver.openFileDescriptor(Uri.parse(item), "r")?.use { true } ?: false
+            } catch (_: java.io.FileNotFoundException) {
+                false
+            } catch (_: SecurityException) {
+                false
+            }
+        },
+    )
+}

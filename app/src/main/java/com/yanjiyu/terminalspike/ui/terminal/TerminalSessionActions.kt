@@ -92,6 +92,8 @@ internal fun TerminalSessionActions(
     onOpenSnippets: (Long) -> Unit,
     onOpenTerminalSettings: (Long) -> Unit,
     onOpenKeyboardSettings: (Long) -> Unit,
+    onOpenProject: ((Long) -> Unit)? = null,
+    onOpenFiles: ((Long) -> Unit)? = null,
 ) {
     LaunchedEffect(session?.id) {
         if (session == null) onDismiss()
@@ -133,6 +135,18 @@ internal fun TerminalSessionActions(
             if (availability.disconnect) {
                 SessionActionRow(R.string.session_action_disconnect) {
                     destructive = DestructiveSessionAction.DISCONNECT
+                }
+            }
+            onOpenProject?.let { openProject ->
+                SessionActionRow(R.string.project_open) {
+                    onDismiss()
+                    openProject(target.id)
+                }
+            }
+            onOpenFiles?.let { openFiles ->
+                SessionActionRow(R.string.connections_action_open_files) {
+                    onDismiss()
+                    openFiles(target.id)
                 }
             }
             SessionActionRow(R.string.session_action_find) {

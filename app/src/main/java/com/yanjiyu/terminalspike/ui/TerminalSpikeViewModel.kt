@@ -1511,7 +1511,11 @@ class TerminalSpikeViewModel(
     private val savedStateHandle: SavedStateHandle,
 ) : AndroidViewModel(application) {
     val controller = TerminalController()
-    val bufferedInputDraftState = BufferedInputDraftState()
+    private val bufferedInputDraftStore = BufferedInputDraftStore(application)
+    val bufferedInputDraftState = BufferedInputDraftState(
+        initialText = bufferedInputDraftStore.load(),
+        persistText = bufferedInputDraftStore::save,
+    )
     private val _uiState = MutableStateFlow(TerminalSpikeUiState())
     val uiState: StateFlow<TerminalSpikeUiState> = _uiState.asStateFlow()
     private var pendingRestoredActiveSessionId =
@@ -1558,6 +1562,31 @@ class TerminalSpikeViewModel(
     private val terminalDataRepository = appContainer.terminalDataRepository
     private val recentSessionRepository = appContainer.recentSessions
     private val knownHostManager = appContainer.knownHostManager
+    internal val project = com.yanjiyu.terminalspike.ui.project.ProjectController(
+        viewModelScope, remoteSessions::projectReader,
+        com.yanjiyu.terminalspike.ui.project.AndroidProjectDraftStore(application),
+        locationsFor = remoteSessions::projectLocations,
+        ensureConnected = remoteSessions::ensureProjectConnected,
+    )
+
+    internal fun openProject(sessionId: Long): Boolean {
+        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return false
+        val seed = connectionSeedForSession(sessionId) ?: return false
+        val endpointKey = listOf(seed.host, seed.port.toString(), seed.username).joinToString("\u0000")
+        project.open(sessionId, session.title, endpointKey)
+        return true
+    }
+
+    internal fun pasteProjectFeedback(sessionId: Long, text: String): Boolean {
+        if (project.state.value.sessionId != sessionId) return false
+        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return false
+        if (session.connectionState !is ConnectionState.Connected) return false
+        val seed = connectionSeedForSession(sessionId) ?: return false
+        if (listOf(seed.host, seed.port.toString(), seed.username).joinToString("\u0000") != project.state.value.endpointKey) return false
+        // Paste only. The user checks the active pane and submits from the actual agent input.
+        return controllerForExistingSession(sessionId)?.sendReviewPaste(text) == true
+    }
+
     internal val sftp = SftpSessionController(viewModelScope) { SftpClient(knownHostManager) }
     private val hostConnectionTester by lazy(LazyThreadSafetyMode.NONE) {
         JschHostConnectionTester(knownHostManager)
@@ -4707,6 +4736,7 @@ class TerminalSpikeViewModel(
     override fun onCleared() {
         cancelLocalNetworkAction()
         sftp.close()
+        project.close()
         cancelConnectionsHostTest()
         cancelTerminalTranscriptExport()
         pendingRemoteClipboardRequest?.let(::discardRemoteClipboardRequest)

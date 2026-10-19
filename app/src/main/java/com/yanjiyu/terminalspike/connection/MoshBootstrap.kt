@@ -69,6 +69,23 @@ internal class MoshBootstrapResult(
     private var tmuxLiveHistoryRefreshPending: Boolean = startedInTmux,
     internal var herdrChoice: HerdrStartupChoice? = null,
 ) : AutoCloseable {
+    fun readProject(command: String): RemoteProjectOutput {
+        val channel = sshSideChannel ?: error("The SSH side channel is unavailable. Reconnect the terminal.")
+        val limits = MoshExecLimits(10_000, 20_000L, 4 * 1024 * 1024,
+            maximumLineBytes = 4 * 1024 * 1024, maximumLines = 100_000)
+        return readBoundedExecOutput(channel.openExec(command), limits).use {
+            RemoteProjectOutput(it.stdout.copyOf(), it.exitStatus)
+        }
+    }
+
+    fun projectLocations(): List<RemoteProjectLocation> {
+        val choice = herdrChoice ?: return emptyList()
+        return captureHerdrProjectLocations(TmuxCommandRunner { command ->
+            val result = readProject(command)
+            TmuxExecOutput(result.stdout, result.exitStatus)
+        }, choice)
+    }
+
     fun captureHerdrAgentStates(): List<HerdrAgentState>? {
         val choice = herdrChoice ?: return null
         val sideChannel = sshSideChannel ?: return null

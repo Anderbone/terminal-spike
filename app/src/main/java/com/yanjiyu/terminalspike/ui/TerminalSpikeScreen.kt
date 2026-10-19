@@ -625,6 +625,7 @@ fun TerminalSpikeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val connectionsState by viewModel.connectionsUiState.collectAsStateWithLifecycle()
+    val projectState by viewModel.project.state.collectAsStateWithLifecycle()
     val sftpState by viewModel.sftp.state.collectAsStateWithLifecycle()
     val localNetworkActionDispatch by
         viewModel.localNetworkActionDispatch.collectAsStateWithLifecycle()
@@ -678,8 +679,10 @@ fun TerminalSpikeScreen(
     var pendingWorkspaceAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
     var newSessionPickerVisible by rememberSaveable { mutableStateOf(false) }
     var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
+    var projectSelected by rememberSaveable { mutableStateOf(false) }
     var filesSelected by rememberSaveable { mutableStateOf(false) }
     val filesOpen = sftpState !is SftpUiState.Closed
+    val projectVisible = projectSelected && projectState.sessionId != null && destination == AppRoute.TERMINAL_DETAIL
     val filesVisible = filesSelected && filesOpen && destination == AppRoute.TERMINAL_DETAIL
     val filesHostName = when (val files = sftpState) {
         is SftpUiState.AuthenticationRequired -> files.hostName
@@ -690,7 +693,7 @@ fun TerminalSpikeScreen(
     }
     var previousTerminalId by rememberSaveable { mutableStateOf(state.activeSessionId) }
     LaunchedEffect(state.activeSessionId) {
-        if (previousTerminalId != state.activeSessionId) filesSelected = false
+        if (previousTerminalId != state.activeSessionId) { filesSelected = false; projectSelected = false }
         previousTerminalId = state.activeSessionId
     }
     var localArchInstallVisible by rememberSaveable { mutableStateOf(false) }
@@ -976,6 +979,7 @@ fun TerminalSpikeScreen(
         rendererLab: Boolean = false,
     ) {
         filesSelected = false
+        projectSelected = false
         if (rendererLab) {
             state.sessions.firstOrNull(SessionTabUi::isLocalTerminal)?.let { localSession ->
                 viewModel.selectSession(localSession.id)
@@ -1176,8 +1180,9 @@ fun TerminalSpikeScreen(
 
     // The terminal uses overlay priority so an active IME cannot consume the first system Back.
     // The AndroidX handlers remain the compatibility and programmatic-dispatch path.
+    BackHandler(enabled = projectVisible) { projectSelected = false }
     BackHandler(enabled = focusMode) { focusSessionId = null }
-    if (!filesVisible) TerminalPriorityBackHandler(
+    if (!filesVisible && !projectVisible) TerminalPriorityBackHandler(
         currentRoute = destination,
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
@@ -1192,7 +1197,7 @@ fun TerminalSpikeScreen(
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
         settingsReturnDestination = settingsReturnDestination,
-        enabled = !focusMode && !filesVisible,
+        enabled = !focusMode && !filesVisible && !projectVisible,
         onPreviewChanged = { backPreview = it },
         onNavigate = { destination = it },
     )
@@ -1313,7 +1318,7 @@ fun TerminalSpikeScreen(
                             viewModel.connectionsHostName(hostId)?.let { host ->
                                 runWithLocalNetworkAccess(host) {
                                     viewModel.openSftp(hostId)
-                                    filesSelected = true
+                                    filesSelected = true; projectSelected = false
                                     focusSessionId = null
                                     destination = AppRoute.TERMINAL_DETAIL
                                     LocalNetworkActionEffect()
@@ -1419,10 +1424,14 @@ fun TerminalSpikeScreen(
                                 notice = null,
                                 canAddSession = state.canAddSshSession,
                                 settingsReady = state.settingsReady,
-                                onSelectSession = { filesSelected = false; viewModel.selectSession(it) },
+                                onSelectSession = { filesSelected = false; projectSelected = false; viewModel.selectSession(it) },
+                                projectTitle = (projectState.snapshot?.root?.substringAfterLast('/') ?: projectState.title).takeIf { projectState.sessionId != null },
+                                projectSelected = projectVisible,
+                                onSelectProject = { projectSelected = true; filesSelected = false },
+                                onCloseProject = { viewModel.project.closeTab(projectState.tabId); projectSelected = viewModel.project.state.value.sessionId != null },
                                 filesTitle = filesHostName.takeIf { filesOpen },
                                 filesSelected = filesVisible,
-                                onSelectFiles = { filesSelected = true },
+                                onSelectFiles = { filesSelected = true; projectSelected = false },
                                 onCloseFiles = { viewModel.sftp.close(); filesSelected = false },
                                 onDuplicateSession = ::duplicateTerminalSession,
                                 onCloseSession = viewModel::closeSession,
@@ -1443,7 +1452,17 @@ fun TerminalSpikeScreen(
                                 showLocalTerminalSession = BuildConfig.DEBUG && rendererLabVisible,
                             )
                         }
-                        if (filesVisible) {
+                        if (projectVisible) {
+                            com.yanjiyu.terminalspike.ui.project.ProjectScreen(
+                                controller = viewModel.project,
+                                onPasteToTerminal = viewModel::pasteProjectFeedback,
+                                onReturnToTerminal = {
+                                    projectState.sessionId?.let(viewModel::selectSession)
+                                    projectSelected = false
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else if (filesVisible) {
                             SftpScreen(
                                 controller = viewModel.sftp,
                                 scope = screenScope,
@@ -1468,6 +1487,15 @@ fun TerminalSpikeScreen(
                                 if (terminalSurfaceVisible) {
                                     TerminalViewBridge(
                                         controller = activeController,
+                                        onOpenHerdrProject = {
+                                            val opened = viewModel.openProject(state.activeSessionId)
+                                            if (opened) {
+                                                projectSelected = true
+                                                filesSelected = false
+                                                focusSessionId = null
+                                            }
+                                            opened
+                                        },
                                         inputFocusRequester = terminalInputFocusRequester,
                                         onPreImeBack = {
                                             if (focusMode) {
@@ -1735,6 +1763,29 @@ fun TerminalSpikeScreen(
                 session = state.sessions.firstOrNull { it.id == targetId },
                 endpoint = viewModel.connectionSeedForSession(targetId),
                 canAddSession = state.canAddSshSession,
+                onOpenProject = if (viewModel.connectionSeedForSession(targetId) != null &&
+                    state.sessions.firstOrNull { it.id == targetId }?.connectionState is ConnectionState.Connected
+                ) {
+                    { id: Long ->
+                        if (viewModel.openProject(id)) {
+                            projectSelected = true
+                            filesSelected = false
+                            focusSessionId = null
+                        }
+                    }
+                } else null,
+                onOpenFiles = viewModel.profileForSession(targetId)?.persistentId?.let { hostId ->
+                    { _: Long ->
+                        viewModel.connectionsHostName(hostId)?.let { host ->
+                            runWithLocalNetworkAccess(host) {
+                                viewModel.openSftp(hostId)
+                                filesSelected = true; projectSelected = false
+                                focusSessionId = null
+                                LocalNetworkActionEffect()
+                            }
+                        }
+                    }
+                },
                 onDismiss = { sessionActionsTargetId = null },
                 onReconnect = { id ->
                     showSessionConnection(id, SshConnectPurpose.RECONNECT)
@@ -1755,6 +1806,8 @@ fun TerminalSpikeScreen(
                 onEnterFocusMode = { id ->
                     if (state.sessions.any { it.id == id }) {
                         viewModel.selectSession(id)
+                        filesSelected = false
+                        projectSelected = false
                         focusSessionId = id
                     }
                 },
@@ -1893,7 +1946,7 @@ fun TerminalSpikeScreen(
                 val hostId = requireNotNull(host.draft.persistentId)
                 runWithLocalNetworkAccess(host.draft.hostname) {
                     viewModel.openSftp(hostId)
-                    filesSelected = true
+                    filesSelected = true; projectSelected = false
                     focusSessionId = null
                     destination = AppRoute.TERMINAL_DETAIL
                     LocalNetworkActionEffect()

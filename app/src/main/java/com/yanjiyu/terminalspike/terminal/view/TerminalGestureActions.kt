@@ -15,6 +15,7 @@ internal class TerminalGestureActions(
     private val startSelection: (Float, Float) -> Boolean,
     private val dragSelection: (TerminalSelectionEndpoint, Float, Float) -> Unit,
     private val finishSelectionDrag: (committed: Boolean) -> Unit,
+    private val handleDoubleTap: (Float, Float) -> Boolean = { _, _ -> false },
     private val canDoubleTapToType: (Float, Float) -> Boolean = { _, _ -> false },
 ) {
     private var tapEligible = false
@@ -72,7 +73,13 @@ internal class TerminalGestureActions(
     }
 
     fun onDoubleTap(x: Float, y: Float): Boolean {
-        if (selectionEndpoint != null || !canDoubleTapToType(x, y)) return false
+        if (selectionEndpoint != null) return false
+        if (handleDoubleTap(x, y)) {
+            tapEligible = false
+            performClick()
+            return true
+        }
+        if (!canDoubleTapToType(x, y)) return false
         tapEligible = false
         showKeyboard()
         performClick()

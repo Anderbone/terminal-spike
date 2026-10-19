@@ -376,6 +376,30 @@ class FastTerminalSelectionInteractionTest {
     }
 
     @Test
+    fun tappingObsidianPlainAndOsc8LinksDispatchesTheOriginalUri() {
+        val uri = "obsidian://open?vault=Obsjiyu&file=projects%2FCable-flow%2Fcode-review%2Fphase-2%2F%E6%96%87%E4%BB%B6%E5%9C%B0%E5%9B%BE"
+        for (line in listOf(
+            TerminalLine.plain(uri),
+            TerminalLine.styled(listOf(TerminalRun(
+                text = "note", hyperlink = TerminalHyperlink(uri), startColumn = 0, columnWidth = 4,
+            ))),
+        )) {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    val controller = TerminalController().apply { buffer.append(line) }
+                    val requests = mutableListOf<TerminalLinkActionRequest>()
+                    val view = attachTerminalView(activity, controller).apply {
+                        setLinkActionCallback { request -> requests += request }
+                    }
+                    tapFirstCell(view)
+                    assertEquals(listOf(uri), requests.map { it.target.uri })
+                    assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+                }
+            }
+        }
+    }
+
+    @Test
     fun tappingCodexParenthesizedPlainUrlOpensItDirectly() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

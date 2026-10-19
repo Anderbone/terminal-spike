@@ -83,6 +83,7 @@ fun TerminalViewBridge(
     linkActionCallback: TerminalLinkActionCallback? = null,
     clipboardActionCallback: TerminalClipboardActionCallback? = null,
     imageContentCallback: TerminalImageContentCallback? = null,
+    onOpenHerdrProject: (() -> Boolean)? = null,
 ) {
     val rendererDescription = stringResource(R.string.terminal_renderer_description)
     val context = LocalContext.current
@@ -114,6 +115,7 @@ fun TerminalViewBridge(
             currentImageContentCallback.value?.onImageContent(request) ?: false
         }
     }
+    val currentOpenHerdrProject = rememberUpdatedState(onOpenHerdrProject)
     val attachedView = remember { arrayOfNulls<FastTerminalView>(1) }
     DisposableEffect(inputFocusRequester) {
         onDispose {
@@ -122,6 +124,7 @@ fun TerminalViewBridge(
         }
     }
     fun configureTerminal(view: FastTerminalView) {
+        view.openHerdrProject = { currentOpenHerdrProject.value?.invoke() ?: false }
         view.attachController(controller)
         view.setLinkActionCallback(dispatchLinkAction)
         view.setClipboardActionCallback(dispatchClipboardAction)

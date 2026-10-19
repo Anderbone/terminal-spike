@@ -53,6 +53,8 @@ internal fun AppSessionSwitcherDialog(
     onSelect: (Long) -> Unit,
     onClose: (Long) -> Unit,
     onNewSession: () -> Unit,
+    projectTitle: String? = null,
+    onSelectProject: () -> Unit = {},
     filesTitle: String? = null,
     onSelectFiles: () -> Unit = {},
 ) {
@@ -71,6 +73,13 @@ internal fun AppSessionSwitcherDialog(
         },
     ) {
         SwitcherGrid {
+            if (projectTitle != null) {
+                item(key = "project") {
+                    TextButton(onClick = { onDismiss(); onSelectProject() }) {
+                        Text(stringResource(R.string.project_session_title, projectTitle))
+                    }
+                }
+            }
             if (filesTitle != null) {
                 item(key = "files") {
                     TextButton(onClick = { onDismiss(); onSelectFiles() }) {

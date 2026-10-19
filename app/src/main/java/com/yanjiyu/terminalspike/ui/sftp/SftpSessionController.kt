@@ -8,6 +8,7 @@ import com.yanjiyu.terminalspike.connection.SftpFile
 import com.yanjiyu.terminalspike.connection.SftpSession
 import com.yanjiyu.terminalspike.connection.SftpUploadSource
 import com.yanjiyu.terminalspike.connection.SshConnectionConfig
+import com.yanjiyu.terminalspike.connection.SshAuthentication
 import com.yanjiyu.terminalspike.connection.parentPath
 import java.io.File
 import java.io.InputStream
@@ -64,6 +65,11 @@ internal class SftpSessionController(
     @Volatile
     private var generation: Long = 0
     private var operation: Job? = null
+    private var downloadEndpoint: List<String>? = null
+    private var reconnectConfig: SshConnectionConfig? = null
+
+    fun downloadedFileKey(file: SftpFile): String =
+        SftpDownloadedFileIndex.key(requireNotNull(downloadEndpoint), file.path)
 
     fun requestAuthentication(hostId: String, hostName: String, kind: SftpSecretKind) {
         supersedeAndCloseClient()
@@ -72,6 +78,13 @@ internal class SftpSessionController(
 
     fun connect(hostName: String, config: SshConnectionConfig) {
         supersedeAndCloseClient()
+        downloadEndpoint = listOf(config.host, config.port.toString(), config.username)
+        reconnectConfig = when (val auth = config.authentication) {
+            is SshAuthentication.StoredPassword,
+            is SshAuthentication.KeyboardInteractive.ReusableResponse -> config
+            is SshAuthentication.PrivateKey -> config.takeIf { auth.passphrase == null }
+            else -> null
+        }
         val next = newClient()
         val ownerGeneration = synchronized(ownershipLock) {
             client = next
@@ -290,7 +303,11 @@ internal class SftpSessionController(
         file: SftpFile,
         destination: SftpDownloadDestination,
         destinationLabel: String,
+        expectedDownloadKey: String? = null,
     ): Result<Unit> = transfer { owned ->
+        require(expectedDownloadKey == null || expectedDownloadKey == downloadedFileKey(file)) {
+            "File session changed."
+        }
         require(!file.isDirectory && file in owned.state.files) { "This file is no longer available." }
         withContext(operationContext) { owned.active.downloadRecursively(file.path, destination) }
         if (!owns(owned.generation, owned.active)) throw CancellationException("File session changed.")
@@ -338,11 +355,14 @@ internal class SftpSessionController(
         _state.value = current.copy(busy = true, message = null)
         operation = scope.launch(operationContext) {
             try {
+                ensureConnected(OwnedBrowsing(current, active, ownerGeneration))
                 block(current, active, ownerGeneration)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                showFailureIfOwned(error, ownerGeneration, active)
+                publishIfOwned(ownerGeneration, active) {
+                    current.copy(busy = false, message = error.safeMessage())
+                }
             }
         }
     }
@@ -361,6 +381,32 @@ internal class SftpSessionController(
         return OwnedBrowsing(current, active, ownerGeneration)
     }
 
+    private suspend fun ensureConnected(owned: OwnedBrowsing) {
+        if (owned.active.isConnected) return
+        val config = reconnectConfig
+            ?: error("Open Files again to reconnect with your password or key passphrase.")
+        publishIfOwned(owned.generation, owned.active) {
+            SftpUiState.Connecting(owned.state.hostName)
+        }
+        withContext(operationContext) {
+            owned.active.connect(
+                config,
+                onHostIdentityPrompt = { prompt ->
+                    publishIfOwned(owned.generation, owned.active) {
+                        currentConnecting(owned.state.hostName).copy(hostIdentityPrompt = prompt)
+                    }
+                },
+                onKeyboardInteractiveChallenge = { challenge ->
+                    publishIfOwned(owned.generation, owned.active) {
+                        currentConnecting(owned.state.hostName).copy(keyboardInteractiveChallenge = challenge)
+                    }
+                },
+            )
+        }
+        if (!owns(owned.generation, owned.active)) throw CancellationException("File session changed.")
+        publishIfOwned(owned.generation, owned.active) { owned.state.copy(busy = true) }
+    }
+
     private suspend fun <T> transfer(block: suspend (OwnedBrowsing) -> T): Result<T> {
         val owned = try {
             beginTransfer()
@@ -369,11 +415,14 @@ internal class SftpSessionController(
             return Result.failure(error)
         }
         return try {
+            ensureConnected(owned)
             Result.success(block(owned))
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            showFailureIfOwned(error, owned.generation, owned.active)
+            publishIfOwned(owned.generation, owned.active) {
+                owned.state.copy(busy = false, message = error.safeMessage())
+            }
             Result.failure(error)
         }
     }
@@ -425,6 +474,7 @@ internal class SftpSessionController(
             previousClient = client
             client = null
         }
+        reconnectConfig = null
         previousOperation?.cancel()
         previousClient?.close()
     }

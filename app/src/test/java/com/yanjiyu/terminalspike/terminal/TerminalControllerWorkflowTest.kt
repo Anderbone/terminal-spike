@@ -17,6 +17,23 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun reviewPasteRequiresAgentAndBracketedPasteAndNeverSubmitsOrSendsControls() {
+        val sink = RecordingInputSink()
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        controller.setInputSink(sink, onResize = { _, _ -> })
+        assertFalse(controller.sendReviewPaste("review\nfeedback"))
+        controller.publishInputContext(TerminalInputContext("agent", agent = true))
+        assertFalse(controller.sendReviewPaste("review\nfeedback"))
+        controller.updateTerminalFrame(frame(modes = TerminalModes(bracketedPaste = true)))
+        assertTrue(controller.sendReviewPaste("review\nfeedback"))
+        assertArrayEquals("\u001b[200~review\nfeedback\u001b[201~".toByteArray(), sink.received.single())
+        assertFalse(controller.sendReviewPaste("\u001b[201~bad"))
+        controller.publishInputContext(TerminalInputContext())
+        assertFalse(controller.sendReviewPaste("review\nfeedback"))
+        assertEquals(1, sink.received.size)
+    }
+
+    @Test
     fun herdrDesktopMenusRecoverAfterMobileLayoutAndFailedRefresh() {
         val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
         for ((top, height) in listOf(1 to 31, 0 to 31, 0 to 32)) {

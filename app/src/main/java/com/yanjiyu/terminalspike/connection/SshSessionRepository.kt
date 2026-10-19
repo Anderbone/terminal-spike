@@ -39,6 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -574,6 +575,74 @@ internal class SshSessionRepository(
     fun controllerFor(sessionId: Long): TerminalController? = synchronized(lock) {
         pendingStarts[sessionId]?.runtime?.terminal?.controller
             ?: runtimes[sessionId]?.terminal?.controller
+    }
+
+    /** User-visible project refresh may recover the same session using reloadable credentials. */
+    internal suspend fun ensureProjectConnected(sessionId: Long) {
+        val request = synchronized(lock) {
+            val source = runtimes[sessionId] ?: error("This terminal was closed. Open its saved host again.")
+            if (!source.connectionState.isTerminal()) null else {
+                val factory = source.reconnectRequestFactory
+                    ?: error("Open the terminal and reconnect to enter its password or key passphrase.")
+                RemoteSessionStartRequest(
+                    title = source.title, workspaceName = source.workspaceName,
+                    connection = factory(), sourceProfileId = source.sourceProfileId,
+                    hostProfileId = source.hostProfileId, terminalProfileId = source.terminalProfileId,
+                    keyboardProfileId = source.keyboardProfileId, replacementSessionId = sessionId,
+                    terminalConfiguration = source.terminalConfiguration,
+                    reliabilityPolicy = source.reliabilityPolicy, moshFallbackPolicy = source.moshFallbackPolicy,
+                )
+            }
+        }
+        if (request != null) {
+            check(startUserInitiatedSession(request) is StartSshSessionResult.Started) {
+                "Could not reconnect this terminal. Open the terminal and try again."
+            }
+        }
+        val ready = withTimeoutOrNull(30_000L) {
+            sessions.first { snapshots ->
+                val state = snapshots.firstOrNull { it.id == sessionId }?.connectionState
+                state == null || state is ConnectionState.Connected || state.isTerminal() ||
+                    state is ConnectionState.AwaitingApproval
+            }.firstOrNull { it.id == sessionId }?.connectionState
+        }
+        check(ready is ConnectionState.Connected) {
+            when (ready) {
+                is ConnectionState.AwaitingApproval -> "Open the terminal to confirm the connection, then refresh the project."
+                is ConnectionState.Failed -> ready.message
+                else -> "The terminal is still offline. Check the network, then pull down to retry."
+            }
+        }
+    }
+
+    /** Captures the exact transport so a reconnect cannot silently retarget an in-flight read. */
+    internal fun projectReader(sessionId: Long): TmuxCommandRunner {
+        val connection = synchronized(lock) {
+            runtimes[sessionId]?.takeIf { !it.terminated && it.connectionState is ConnectionState.Connected }
+                ?.connection
+        } ?: error("Connect the terminal before opening a project.")
+        val reader = connection as? RemoteProjectConnection
+            ?: error("Project browsing requires an SSH or Mosh terminal.")
+        return TmuxCommandRunner { command ->
+            val result = reader.readProject(command)
+            check(synchronized(lock) {
+                runtimes[sessionId]?.let {
+                    !it.terminated && it.connectionState is ConnectionState.Connected && it.connection === connection
+                } == true
+            }) { "The terminal connection changed. Open the project again." }
+            TmuxExecOutput(result.stdout, result.exitStatus)
+        }
+    }
+
+    internal fun projectLocations(sessionId: Long): List<RemoteProjectLocation> {
+        val connection = synchronized(lock) {
+            runtimes[sessionId]?.takeIf { !it.terminated && it.connectionState is ConnectionState.Connected }?.connection
+        } ?: error("Connect the terminal before opening a project.")
+        val locations = (connection as? RemoteProjectConnection)?.projectLocations().orEmpty()
+        check(synchronized(lock) {
+            runtimes[sessionId]?.let { !it.terminated && it.connection === connection } == true
+        }) { "The terminal connection changed. Open the project again." }
+        return locations
     }
 
     /** Uploads through the exact live session's authenticated SSH side channel. */

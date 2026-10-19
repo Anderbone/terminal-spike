@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="project_title">Project</string>
+    <string name="project_session_title">Project · %1$s</string>
+    <string name="project_close">Close project tab</string>
+    <string name="project_open">Open project</string>
+    <string name="project_directory">Directory</string>
+    <string name="project_refresh">Refresh</string>
+    <string name="project_choose_detail">Browse the repository on this terminal’s host, read complete files with highlighted changes, and collect review feedback.</string>
+    <string name="project_path_detail">Enter the absolute path of the remote Git repository or worktree. The app remembers it for this host.</string>
+    <string name="project_path">Repository path</string>
+    <string name="project_changes_count">Changes %1$d</string>
+    <string name="project_all_files">Files</string>
+    <string name="project_changes_scope">Staged + unstaged · compared with HEAD</string>
+    <string name="project_filter_files">Find file</string>
+    <string name="project_no_changes">No changes compared with HEAD.</string>
+    <string name="project_no_files">No matching files.</string>
+    <string name="project_file_list">Files</string>
+    <string name="project_full_file">Full file</string>
+    <string name="project_diff">Diff</string>
+    <string name="project_previous">Previous</string>
+    <string name="project_next">Next</string>
+    <string name="project_wrap">Wrap</string>
+    <string name="project_empty_file">This file is empty.</string>
+    <string name="project_select_hint">Select line numbers to add feedback.</string>
+    <string name="project_comment_range">Comment on %1$d–%2$d</string>
+    <string name="project_add_feedback">Add feedback</string>
+    <string name="project_save_draft">Save draft</string>
+    <string name="project_feedback_count">Feedback %1$d</string>
+    <string name="project_feedback_outdated">File changed since this comment. The original code is retained in feedback.</string>
+    <string name="project_feedback_target">Terminal: %1$s · current pane</string>
+    <string name="project_feedback_draft_detail">Drafts stay on this phone. Paste inserts the review into this terminal without pressing Enter. Check the agent pane and submit there.</string>
+    <string name="project_preview">Preview message</string>
+    <string name="project_comments">Comments</string>
+    <string name="project_no_feedback">Select code and add feedback to start a review.</string>
+    <string name="project_edit">Edit</string>
+    <string name="project_remove">Remove</string>
+    <string name="project_paste_terminal">Paste to terminal</string>
+    <string name="project_paste_failed">Open an agent input that supports bracketed paste, or copy the message. The review was not pasted.</string>
+    <string name="project_copy">Copy</string>
+    <string name="project_current_pane">Current pane</string>
+    <string name="project_enter_path">Enter path manually</string>
+    <string name="project_select_file">Select a file to view code</string>
+</resources>

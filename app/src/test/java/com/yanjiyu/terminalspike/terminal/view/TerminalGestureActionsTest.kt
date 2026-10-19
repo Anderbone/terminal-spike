@@ -9,6 +9,21 @@ import org.junit.Test
 
 class TerminalGestureActionsTest {
     @Test
+    fun projectDoubleTapConsumesTapWithoutKeyboardOrRemoteClick() {
+        val events = mutableListOf<String>()
+        val actions = actions(
+            handleDoubleTap = { x, y -> events += "project:$x:$y"; true },
+            canDoubleTapToType = { _, _ -> true },
+            showKeyboard = { events += "keyboard" },
+            handleTap = { _, _ -> events += "remote"; true },
+        )
+        actions.onTouchDown(12f, 16f)
+        assertTrue(actions.onDoubleTap(12f, 16f))
+        assertFalse(actions.onTapConfirmed(12f, 16f))
+        assertEquals(listOf("project:12.0:16.0"), events)
+    }
+
+    @Test
     fun mouseTapNavigatesWithoutKeyboardAndDoubleTapOpensItWithoutAnotherClick() {
         val events = mutableListOf<String>()
         val actions = actions(
@@ -279,6 +294,7 @@ class TerminalGestureActionsTest {
         startSelection: (Float, Float) -> Boolean = { _, _ -> false },
         dragSelection: (TerminalSelectionEndpoint, Float, Float) -> Unit = { _, _, _ -> },
         finishSelectionDrag: (Boolean) -> Unit = {},
+        handleDoubleTap: (Float, Float) -> Boolean = { _, _ -> false },
         canDoubleTapToType: (Float, Float) -> Boolean = { _, _ -> false },
     ) = TerminalGestureActions(
         stopFling = stopFling,
@@ -293,6 +309,7 @@ class TerminalGestureActionsTest {
         startSelection = startSelection,
         dragSelection = dragSelection,
         finishSelectionDrag = finishSelectionDrag,
+        handleDoubleTap = handleDoubleTap,
         canDoubleTapToType = canDoubleTapToType,
     )
 }

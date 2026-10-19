@@ -49,7 +49,7 @@ internal class MoshConnection(
     private val controlDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val writerCapacity: Int = DEFAULT_WRITER_CAPACITY,
     private val writerPollMillis: Long = DEFAULT_WRITER_POLL_MILLIS,
-) : Connection, MoshNetworkHintReceiver, RemoteImageUploadConnection {
+) : Connection, MoshNetworkHintReceiver, RemoteImageUploadConnection, RemoteProjectConnection {
     constructor(
         bootstrapExecutor: MoshBootstrapExecutor,
         extensionClient: MoshExtensionClient,
@@ -297,6 +297,26 @@ internal class MoshConnection(
                 writer.offer(bytes)
             }
         }
+    }
+
+    override fun readProject(command: String): RemoteProjectOutput {
+        val sideChannel = synchronized(lock) {
+            activeAttempt?.takeIf { it.running && !it.explicitCloseRequested && !it.terminal }
+                ?.sshSideChannel ?: error("Reconnect the terminal to read project files.")
+        }
+        val result = sideChannel.readProject(command)
+        check(synchronized(lock) { activeAttempt?.sshSideChannel === sideChannel }) {
+            "The terminal connection changed. Open the project again."
+        }
+        return result
+    }
+
+    override fun projectLocations(): List<RemoteProjectLocation> {
+        val channel = synchronized(lock) {
+            activeAttempt?.takeIf { it.running && !it.explicitCloseRequested && !it.terminal }?.sshSideChannel
+        } ?: return emptyList()
+        val locations = channel.projectLocations()
+        return synchronized(lock) { locations.takeIf { activeAttempt?.sshSideChannel === channel }.orEmpty() }
     }
 
     override fun uploadPastedImage(fileName: String, source: InputStream): String {

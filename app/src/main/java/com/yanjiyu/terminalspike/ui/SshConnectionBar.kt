@@ -119,6 +119,10 @@ fun SessionChrome(
         tmuxSessionId: String,
     ) -> Unit = { _, _, _ -> },
     showLocalTerminalSession: Boolean = true,
+    projectTitle: String? = null,
+    projectSelected: Boolean = false,
+    onSelectProject: () -> Unit = {},
+    onCloseProject: () -> Unit = {},
     filesTitle: String? = null,
     filesSelected: Boolean = false,
     onSelectFiles: () -> Unit = {},
@@ -159,7 +163,7 @@ fun SessionChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                if (visibleSessions.isEmpty() && filesTitle == null) {
+                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null) {
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier
@@ -174,7 +178,7 @@ fun SessionChrome(
                         )
                     }
                 }
-                if (visibleSessions.isEmpty() && filesTitle == null) {
+                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null) {
                     Text(
                         text = stringResource(R.string.navigation_terminal),
                         modifier = Modifier
@@ -191,6 +195,16 @@ fun SessionChrome(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
+                        if (projectTitle != null) {
+                            SessionTabSurface(
+                                title = stringResource(R.string.project_session_title, projectTitle),
+                                selected = projectSelected,
+                                modifier = Modifier.weight(1f).testTag("project-session-tab"),
+                                onSelect = onSelectProject,
+                                onClose = onCloseProject,
+                                closeDescription = stringResource(R.string.project_close),
+                            )
+                        }
                         if (filesTitle != null) {
                             val closeFilesDescription = stringResource(R.string.files_session_close)
                             SessionTabSurface(
@@ -205,7 +219,7 @@ fun SessionChrome(
                         visibleSessions.forEach { session ->
                             SessionTab(
                                 session = session,
-                                selected = !filesSelected && session.id == activeSessionId,
+                                selected = !filesSelected && !projectSelected && session.id == activeSessionId,
                                 modifier = Modifier.weight(1f),
                                 onSelect = { onSelectSession(session.id) },
                                 onDuplicate = if (!session.isLocalTerminal && canAddSession) {
@@ -277,7 +291,9 @@ fun SessionChrome(
         AppSessionSwitcherDialog(
             sessions = visibleSessions,
             previews = appSessionPreviews,
-            activeSessionId = if (filesSelected) Long.MIN_VALUE else activeSessionId,
+            activeSessionId = if (filesSelected || projectSelected) Long.MIN_VALUE else activeSessionId,
+            projectTitle = projectTitle,
+            onSelectProject = onSelectProject,
             filesTitle = filesTitle,
             onSelectFiles = onSelectFiles,
             canAddSession = canAddSession && settingsReady,
@@ -290,7 +306,7 @@ fun SessionChrome(
 
     // Approval dialogs belong to a specific terminal tab. Showing an arbitrary background
     // session's prompt can cover the active session's prompt and leave both connections waiting.
-    val promptSession = if (filesSelected) null else activeApprovalSession(sessions, activeSessionId)
+    val promptSession = if (filesSelected || projectSelected) null else activeApprovalSession(sessions, activeSessionId)
     val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
     val hostPrompt = pendingPrompt as? HostIdentityPrompt
     val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge

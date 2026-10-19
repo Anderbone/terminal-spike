@@ -142,6 +142,7 @@ class FastTerminalView @JvmOverloads constructor(
     private var linkActionCallback = TerminalLinkActionCallback {
         // Opening is intentionally inert until a surrounding policy callback is installed.
     }
+    var openHerdrProject: (() -> Boolean)? = null
     private var preImeBackCallback: (() -> Unit)? = null
     private val directInputSink = object : TerminalInputSink {
         override fun send(bytes: ByteArray) {
@@ -164,6 +165,17 @@ class FastTerminalView @JvmOverloads constructor(
         startSelection = ::startSelectionAt,
         dragSelection = ::dragSelection,
         finishSelectionDrag = ::finishSelectionDrag,
+        handleDoubleTap = { x, y ->
+            val controller = terminalController
+            if (controller == null || selection.hasSelection || herdrScroll.reader.snapshot != null ||
+                !x.isFinite() || !y.isFinite() || x < horizontalPaddingPx ||
+                x >= width - horizontalPaddingPx || y < verticalPaddingPx || y >= height - verticalPaddingPx
+            ) false else {
+                val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
+                val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
+                controller.isHerdrContextMenuCell(terminalColumnAt(x), row) && openHerdrProject?.invoke() == true
+            }
+        },
         canDoubleTapToType = { x, y ->
             directInputEnabled && terminalController?.isMouseTrackingEnabled() == true &&
                 !selection.hasSelection && linkAt(x, y) == null

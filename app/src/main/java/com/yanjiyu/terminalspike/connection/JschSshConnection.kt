@@ -20,7 +20,7 @@ import kotlin.concurrent.thread
 class JschSshConnection(
     private val knownHostManager: KnownHostManager,
     private val config: SshConnectionConfig,
-) : Connection, RemoteImageUploadConnection {
+) : Connection, RemoteImageUploadConnection, RemoteProjectConnection {
     /** Compatibility constructor for the legacy ViewModel while its owner completes cutover. */
     constructor(
         knownHostsFile: () -> File,
@@ -41,6 +41,29 @@ class JschSshConnection(
     private var startupInputGate: StartupFirstInputGate? = null
     private var tmuxSelector: TmuxSessionSelector? = null
     private var herdrChoice: HerdrStartupChoice? = null
+
+    override fun readProject(command: String): RemoteProjectOutput {
+        val session = synchronized(lock) {
+            authenticatedSession?.session?.takeIf { running && it.isConnected }
+                ?: error("Connect the terminal before opening a project.")
+        }
+        val result = JschTmuxCommandRunner(session, PROJECT_EXEC_LIMITS).run(command)
+        check(synchronized(lock) { running && authenticatedSession?.session === session }) {
+            "The terminal connection changed. Open the project again."
+        }
+        return RemoteProjectOutput(result.stdout, result.exitStatus)
+    }
+
+    override fun projectLocations(): List<RemoteProjectLocation> {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return emptyList()
+            session to (herdrChoice ?: return emptyList())
+        }
+        val locations = captureHerdrProjectLocations(JschTmuxCommandRunner(session, PROJECT_EXEC_LIMITS), choice)
+        return synchronized(lock) {
+            locations.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }.orEmpty()
+        }
+    }
 
     override val isHerdrSession: Boolean get() = synchronized(lock) { running && herdrChoice != null }
 

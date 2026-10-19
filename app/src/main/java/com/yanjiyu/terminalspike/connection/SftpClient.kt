@@ -44,6 +44,8 @@ internal interface SftpUploadSource {
 }
 
 internal interface SftpSession : AutoCloseable {
+    val isConnected: Boolean get() = true
+
     suspend fun connect(
         config: SshConnectionConfig,
         onHostIdentityPrompt: (HostIdentityPrompt) -> Unit,
@@ -72,6 +74,9 @@ internal class SftpClient(
     private val sessionFactory = JschAuthenticatedSessionFactory(knownHostManager)
     private var lease: AuthenticatedJschSession? = null
     private var channel: ChannelSftp? = null
+
+    override val isConnected: Boolean
+        get() = channel?.isConnected == true
 
     override suspend fun connect(
         config: SshConnectionConfig,

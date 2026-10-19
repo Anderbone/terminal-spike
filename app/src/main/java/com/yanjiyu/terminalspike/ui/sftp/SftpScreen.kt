@@ -69,6 +69,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Composable
 internal fun SftpScreen(
@@ -81,6 +83,8 @@ internal fun SftpScreen(
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val previewScope = rememberCoroutineScope()
+    val openingFile = remember { Mutex() }
+    val downloadedFiles = remember(context) { downloadedFileIndex(context) }
     val uploadFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
@@ -157,14 +161,22 @@ internal fun SftpScreen(
                 onOpenFile = { file ->
                     previewScope.launch {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val destination = PhoneDownloadsDestination(context.contentResolver)
-                            controller.downloadForViewing(file, destination, "Downloads").onSuccess {
+                            openingFile.withLock {
                                 try {
-                                    openSftpDownload(
-                                        context,
-                                        android.net.Uri.parse(destination.downloadedItems.single()),
-                                        file.name,
-                                    )
+                                    val key = controller.downloadedFileKey(file)
+                                    val existing = withContext(Dispatchers.IO) { downloadedFiles.find(key) }
+                                    val item = existing ?: run {
+                                        val destination = PhoneDownloadsDestination(context.contentResolver)
+                                        controller.downloadForViewing(
+                                            file, destination, "Downloads", expectedDownloadKey = key,
+                                        ).getOrThrow()
+                                        destination.downloadedItems.single().also { uri ->
+                                            withContext(Dispatchers.IO) { downloadedFiles.remember(key, uri) }
+                                        }
+                                    }
+                                    openSftpDownload(context, android.net.Uri.parse(item), file.name)
+                                } catch (error: kotlinx.coroutines.CancellationException) {
+                                    throw error
                                 } catch (error: Exception) {
                                     controller.reportFailure(error)
                                 }
