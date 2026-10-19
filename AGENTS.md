@@ -21,7 +21,7 @@
 - Ordinary commit/push/publish requests use required local verification and publication checks as the completion gate. Leave GitHub Actions running; do not poll, wait for, rerun, or repair full hosted CI unless the user explicitly asks for CI to be green. Report CI as unverified/pending, never as passed without evidence. Do not invoke `push-main-green` merely because a request includes pushing main.
 - Use `scripts/verify-android.sh` for the shared local/CI gate. For main-app internal releases, use the verified prepare/publish commands in `docs/CI-AND-RELEASING.md`; keep hosted CI waiting opt-in.
 - Inspect the intended diff once. Simplify only when requested and clearly useful; do not turn a release into an audit or feature-development session.
-- Combine required unit tests, lint, and debug/release builds in one Gradle invocation where possible. Preserve incremental caches. Reuse passing evidence for unchanged inputs; rerun affected checks after a fix. Retain all existing signing, artifact, licensing, device-target, and Play version-code safeguards below.
+- Combine required unit tests, lint, and debug/release builds in one Gradle invocation where possible. Preserve incremental caches. Reuse passing evidence for unchanged inputs; rerun affected checks after a fix. Retain the device-target safeguards here and the signing, artifact, licensing, and Play version-code safeguards in `docs/CI-AND-RELEASING.md`.
 - Full emulator suites and real-device acceptance are separate tasks unless explicitly requested or required for the feature being implemented. A routine release does not reopen previously unverified physical acceptance; report its limits. Preserve the required final foldable install/launch without tests.
 - Save verbose output in ignored build logs; inspect concise summaries and relevant error excerpts. Keep updates short and useful. Avoid repeated full-file reads, CI polling, and speculative refactors.
 - Complete release fixes before uploading, aiming for one verified upload. Commit and push the reviewed source, publish the main app to internal testing, re-read the Play track, perform the required final install/launch, and finish. Additional uploads require an actual artifact change or a publishing failure.
@@ -35,15 +35,6 @@
 - Retry a demonstrated transient infrastructure failure at most once using the failed job ID. Preserve the same run's passing jobs and verified APKs; never dispatch another full workflow merely to retry a job. Repeated failure requires diagnosis.
 - Full API 26–37 coverage remains weekly/manual. Do not add it to ordinary push gates or launch it repeatedly during diagnosis. When full hosted verification is explicitly requested, run one final compatibility sweep after focused repairs pass.
 - Report milestones, actionable failures, and final evidence concisely. Avoid repeated unchanged-status narration and repeated full log reads. Do not claim a speed or billing improvement without measurements.
-
-## Google Play internal publishing
-
-- External production upload-signing material, verified release artifacts, and the Google Play Developer API service-account credential live in `/home/jiyu/git/app_sign`. Read its `README.txt` before publishing. Never print credential or password contents, copy them into this repository, or commit them.
-- When the user explicitly requests a main-app internal-test publish, target package `com.yanjiyu.terminalspike` and Play track `internal`. Inspect the track and consumed bundle version codes through the Android Publisher API before building or uploading.
-- Never reuse a version code already consumed by Play. Build the signed AAB from the current source using the external upload key, run the required unit tests, lint, and release build, verify the signed artifact, upload it, commit the Play edit, and re-read the internal track to prove the release state.
-- Version the main app and Mosh extension independently. Never bump or upload the Mosh extension merely to align its version code or version name with the main app. Leave the published Mosh version unchanged unless its own deliverable changes materially, such as native or Kotlin code, the AIDL/API contract, dependencies, manifest or SDK configuration, resources, notices, signing requirements, or compatibility behavior.
-- If a changed or deliberately rebuilt Mosh bundle must be uploaded, use a new unconsumed Mosh version code because Play does not permit reusing one. Choose its version name according to the extension's own release history. Enforce main-app/extension compatibility through the explicit protocol and API contract, never by requiring equal Play version codes.
-- Do not publish the separately packaged Mosh extension unless the user explicitly requests it and its licensing, trademark, signing, source-offer, and listing gates have been satisfied.
 
 ## Terminal scrollback regression gate
 

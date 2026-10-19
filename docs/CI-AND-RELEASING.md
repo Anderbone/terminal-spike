@@ -91,6 +91,21 @@ and [artifact overwrite contract](https://github.com/actions/upload-artifact#ove
 
 ## Main-app internal release
 
+Publish the main app only when explicitly requested, targeting package
+`com.yanjiyu.terminalspike` on track `internal`. Signing material, verified artifacts,
+and the Publisher API credential live outside this repository in
+`/home/jiyu/git/app_sign`. Never print or commit credentials or passwords, or copy
+them into this repository.
+
+Version the main app and standalone Mosh extension independently; matching version
+codes or names are never required for compatibility. Leave the published extension
+unchanged unless its code, API contract, dependencies, manifest/SDK configuration,
+resources, notices, signing requirements, or compatibility behavior changes.
+Publishing it requires an explicit request and completed licensing, trademark,
+signing, source-offer, and listing gates. Any changed or deliberately rebuilt Mosh
+bundle needs a new unconsumed Play version code and a version name based on its own
+release history. Enforce compatibility through the protocol and API contract.
+
 Read the external signing directory's `README.txt` and the existing
 [publishing checklist](PUBLISHING.md) first. This helper implements the established
 main-app internal-test release; it does not approve production distribution or the
