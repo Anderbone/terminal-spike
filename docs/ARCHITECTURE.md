@@ -32,7 +32,18 @@ local. Taps, long-press selection, and link actions do not enter the vertical-sc
 
 `TerminalInputConnection` sends committed UTF-8 immediately, maps deletion to DEL, handles common terminal keys, and advertises a direct-input editor with correction and personalized learning disabled. A two-page Compose strip keeps the shortcut deck as the default and offers a separate bounded `TextFieldValue` editor with ordinary IME composition, correction, and selection. Its explicit Send action uses the active controller's bracketed-paste-aware path without adding Enter, requires an extra confirmation for multiline drafts, clears only after dispatch, and hands focus back to the native View when the user returns to direct input. Hardware keys and the Compose extra-key toolbar also enter through the active controller's byte sink. Terminal size changes are derived from cached native-renderer cell geometry and propagated without Compose terminal-content state.
 
-Direct input also advertises bounded PNG, JPEG, WebP, and GIF rich content. An accepted phone clipboard image never enters the renderer or terminal byte stream: a short-lived SFTP channel on the exact authenticated SSH session streams at most 20 MiB into `~/.cache/terminal-spike/pasted-images`, then the controller bracket-pastes the absolute remote path. Codex consumes that pasted path as its normal `[Image #N]` attachment. A Mosh connection retains its already authenticated SSH bootstrap transport as this private upload side channel for the Mosh session lifetime; terminal bytes continue to use Mosh. Local benchmark sessions reject image paste.
+Direct input also advertises bounded PNG, JPEG, WebP, and GIF rich content. An accepted phone clipboard image never enters the renderer or terminal byte stream: a short-lived SFTP channel on the exact authenticated SSH session streams at most 100 MiB into `~/.cache/terminal-spike/pasted-images`, then the controller bracket-pastes the absolute remote path. The media picker also supports the video MIME types enumerated by `selectedMediaExtension`, under the same byte limit. Codex consumes that pasted image path as its normal `[Image #N]` attachment. A Mosh connection retains its already authenticated SSH bootstrap transport as this private upload side channel for the Mosh session lifetime; terminal bytes continue to use Mosh. Local benchmark sessions reject image paste.
+
+## File browser
+
+`SftpSessionController` owns an independent SFTP client and publishes immutable browsing state.
+Blocking directory listings always run on its injected operation context, including the refresh
+following an upload initiated by the UI. Transfer completion, failure, and cancellation release the
+busy state only while the same client and generation still own the operation. A cancelled older
+transfer cannot overwrite a newly connected host or reopen a closed file browser.
+Multi-file upload metadata is also read inside this transfer boundary on the operation context:
+provider failures become browsing errors, and cancellation releases busy state without becoming
+a reported transfer failure.
 
 ## SSH transport
 
@@ -51,7 +62,7 @@ JSch resolves standard authentication, key-exchange, cipher, MAC, hash, signatur
 
 ## Local data and encryption
 
-Room schema v3 is the relational authority for host, credential metadata, key identity, known-host, snippet, terminal/custom-theme, keyboard, and recent-session data. Proto DataStore owns typed global preferences. `AppContainer` provides one process-wide database, repository set, authority gate, and application I/O scope; startup migration and destructive backup recovery must resolve before catalog mutation. Legacy encrypted settings, password, private-key, and known-host files are retained as read-only migration/recovery inputs and cannot silently repopulate authoritative Room state.
+Room schema v4 is the relational authority for host, credential metadata, key identity, known-host, snippet, terminal/custom-theme, keyboard, and recent-session data. Proto DataStore owns typed global preferences. `AppContainer` provides one process-wide database, repository set, authority gate, and application I/O scope; startup migration and destructive backup recovery must resolve before catalog mutation. Legacy encrypted settings, password, private-key, and known-host files are retained as read-only migration/recovery inputs and cannot silently repopulate authoritative Room state.
 
 `AesGcmCredentialStore` encrypts saved passwords, private-key payloads, and explicitly saved key passphrases with non-exportable app-specific Android Keystore AES-256-GCM keys and immutable UUID/kind associated data. Room contains authenticated ciphertext plus non-secret metadata, never plaintext. Reads return bounded mutable bytes to narrowly scoped transport or backup operations and wipe them on terminal paths. Missing, invalidated, corrupt, or unavailable keys preserve ciphertext and expose typed recovery; clearing credentials or all app data is separately confirmed. Imported fonts live in bounded app-private storage, while portable encrypted backup uses repository snapshots rather than copying Room, DataStore, or Keystore files directly.
 
@@ -63,4 +74,4 @@ Transport parsers publish bounded frames into `TerminalController`, which accept
 
 ## Terminal engine decision
 
-ADR-002 retains the project-owned custom renderer and selects the project-owned bounded VT engine. This avoids adding GPL/AGPL code to the commercial product path and keeps parser/model tests runnable on the JVM. The decision can be revisited with measured evidence and a separate licensing decision, but SSH and future transports now share the same screen contract.
+ADR-002 retains the project-owned custom renderer and selects the project-owned bounded VT engine. This keeps the parser and renderer independent of third-party terminal-app source and keeps parser/model tests runnable on the JVM. The decision can be revisited with measured evidence and a separate licensing decision, but SSH and future transports now share the same screen contract.

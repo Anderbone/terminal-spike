@@ -230,8 +230,9 @@ internal class SftpSessionController(
         )
     }
 
-    suspend fun uploadFiles(files: List<Pair<String, () -> InputStream>>): Result<Unit> = transfer {
+    suspend fun uploadFiles(readFiles: () -> List<Pair<String, () -> InputStream>>): Result<Unit> = transfer {
         owned ->
+        val files = withContext(operationContext) { readFiles() }
         require(files.isNotEmpty()) { "Choose at least one file to upload." }
         withContext(operationContext) {
             files.forEach { (name, open) -> owned.active.upload(owned.state.path, name, open()) }
@@ -424,6 +425,13 @@ internal class SftpSessionController(
                 owned.state.copy(busy = false, message = error.safeMessage())
             }
             Result.failure(error)
+        } finally {
+            // A caller may disappear during the dispatcher handoff after blocking I/O.
+            // Release only this transfer's UI state; a newer session owns its own state.
+            publishIfOwned(owned.generation, owned.active) {
+                val current = _state.value as? SftpUiState.Browsing ?: owned.state
+                current.copy(busy = false)
+            }
         }
     }
 
@@ -434,14 +442,14 @@ internal class SftpSessionController(
         }
     }
 
-    private fun showDirectory(
+    private suspend fun showDirectory(
         hostName: String,
         path: String,
         active: SftpSession,
         clipboard: SftpClipboard? = null,
         ownerGeneration: Long = generation,
     ) {
-        val files = active.list(path)
+        val files = withContext(operationContext) { active.list(path) }
         publishIfOwned(ownerGeneration, active) {
             SftpUiState.Browsing(
                 hostName = hostName,

@@ -135,7 +135,10 @@ Every list, string, blob, nesting level, and total decrypted payload has a hard 
 4. Launch/create the chosen SAF document and stream the envelope.
 5. Close/flush the provider stream and show exact success/failure; never claim success from picker return alone.
 
-Cancellation deletes no app data and leaves no plaintext temporary file. If a provider cannot remove a partial document, the result explicitly warns that the incomplete encrypted file is unusable.
+Cancellation deletes no app data and leaves no plaintext temporary file.
+`BackupTransferCoordinator` wipes its mutable KDF input even if cancellation prevents entry into
+its IO dispatcher. An authenticated unlock result discarded by cancellation during the return
+dispatch is closed rather than retaining its portable credential snapshot without an owner. If a provider cannot remove a partial document, the result explicitly warns that the incomplete encrypted file is unusable.
 
 ## Import flow
 

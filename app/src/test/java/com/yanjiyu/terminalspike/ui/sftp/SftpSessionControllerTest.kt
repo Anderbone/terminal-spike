@@ -14,11 +14,14 @@ import com.yanjiyu.terminalspike.connection.SshConnectionConfig
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +31,81 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SftpSessionControllerTest {
+    @Test
+    fun uploadMetadataFailureIsReportedWithoutStartingUploadOrDiscardingTheListing() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val file = SftpFile("existing", "/work/existing", false, 1, 0)
+        client.files = listOf(file)
+        client.onUpload = { _, _, _ -> error("Provider failure must not start an upload") }
+        val marker = ThreadLocal<String>()
+        val controller = SftpSessionController(this,
+            StandardTestDispatcher(testScheduler) + marker.asContextElement("sftp-io")) { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        val result = controller.uploadFiles {
+            assertEquals("sftp-io", marker.get())
+            throw SecurityException("The document provider denied access.")
+        }
+        assertTrue(result.exceptionOrNull() is SecurityException)
+        val state = controller.state.value as SftpUiState.Browsing
+        assertFalse(state.busy)
+        assertEquals(listOf(file), state.files)
+        assertEquals("The document provider denied access.", state.message)
+    }
+
+    @Test
+    fun cancellingUploadMetadataReadReleasesBusyStateWithoutReportingFailure() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        var cancelled = false
+        try {
+            controller.uploadFiles { throw CancellationException("Picker closed") }
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+        val state = controller.state.value as SftpUiState.Browsing
+        assertFalse(state.busy)
+        assertEquals(null, state.message)
+    }
+
+    @Test
+    fun uploadRefreshListsDirectoryOnTheOperationContext() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val marker = ThreadLocal<String>()
+        val listings = mutableListOf<String?>()
+        client.onList = { listings += marker.get() }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val controller = SftpSessionController(this, dispatcher + marker.asContextElement("sftp-io")) { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        controller.upload("test.txt") { java.io.ByteArrayInputStream(byteArrayOf(1)) }.getOrThrow()
+        assertEquals(listOf("sftp-io", "sftp-io"), listings)
+    }
+
+    @Test
+    fun cancelledUploadReleasesBusyStateAndAllowsRefresh() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        val transfer = launch {
+            controller.upload("cancelled.txt") { java.io.ByteArrayInputStream(byteArrayOf(1)) }
+        }
+        client.onUpload = { _, _, _ -> transfer.cancel() }
+        runCurrent()
+        assertTrue(transfer.isCancelled)
+        val state = controller.state.value as SftpUiState.Browsing
+        assertFalse(state.busy)
+        assertEquals(null, state.message)
+        client.files = listOf(SftpFile("new", "/work/new", false, 1, 0))
+        controller.refresh()
+        runCurrent()
+        assertEquals(client.files, (controller.state.value as SftpUiState.Browsing).files)
+    }
+
     @Test
     fun refreshFindsNewFilesAndClearsRemovedSelectionWithoutLosingClipboard() = runTest {
         val client = FakeSftpSession(completedPath = "/work")
@@ -419,6 +497,8 @@ private class FakeSftpSession(
     private val connection = CompletableDeferred<Result<String>>()
     var files: List<SftpFile> = emptyList()
     var onDownload: (String, OutputStream) -> Unit = { _, _ -> }
+    var onUpload: (String, String, InputStream) -> Unit = { _, _, source -> source.close() }
+    var onList: () -> Unit = {}
     var closed = false
         private set
     var beforeAcceptedKeyboardAnswer: (() -> Unit)? = null
@@ -460,13 +540,16 @@ private class FakeSftpSession(
         return result.getOrThrow()
     }
 
-    override fun list(path: String): List<SftpFile> = files
+    override fun list(path: String): List<SftpFile> {
+        onList()
+        return files
+    }
     override fun createDirectory(parent: String, name: String) = Unit
     override fun rename(path: String, newName: String) = Unit
     override suspend fun delete(path: String) = Unit
     override fun move(path: String, destinationDirectory: String) = Unit
     override suspend fun copy(path: String, destinationDirectory: String) = Unit
-    override fun upload(parent: String, name: String, source: InputStream) = Unit
+    override fun upload(parent: String, name: String, source: InputStream) = onUpload(parent, name, source)
     override fun download(path: String, destination: OutputStream) {
         downloads += path
         onDownload(path, destination)

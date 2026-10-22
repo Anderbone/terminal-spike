@@ -8,6 +8,10 @@ import java.io.OutputStream
 import java.nio.file.Files
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +19,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupTransferCoordinatorTest {
+    @Test
+    fun cancelledCallerStillWipesExportAndUnlockPassphrasesBeforeDispatch() = runTest {
+        withCoordinator { coordinator, provider ->
+            for (export in listOf(true, false)) {
+                val passphrase = "cancelled before IO dispatch".toCharArray()
+                val caller = launch {
+                    currentCoroutineContext().cancel()
+                    expectThrows<CancellationException> {
+                        if (export) coordinator.export(BackupMode.STANDARD, ByteArrayOutputStream(), passphrase, metadata())
+                        else coordinator.unlock(ByteArrayInputStream(byteArrayOf()), passphrase)
+                    }
+                }
+                caller.join()
+                assertTrue(passphrase.all { it == '\u0000' })
+            }
+            assertTrue(provider.requests.isEmpty())
+        }
+    }
+
     @Test
     fun safStyleExportInspectUnlockRoundTripReportsExactSummaryAndBytes() = runTest {
         withCoordinator { coordinator, provider ->

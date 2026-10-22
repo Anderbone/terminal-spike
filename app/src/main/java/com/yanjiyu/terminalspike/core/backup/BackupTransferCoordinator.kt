@@ -140,30 +140,34 @@ class BackupTransferCoordinator(
         passphrase: CharArray,
         metadata: BackupEnvelopeMetadata,
         includeCustomFonts: Boolean = false,
-    ): BackupExportResult = withContext(ioDispatcher) {
-        var snapshot: BackupPayloadSnapshot? = null
-        try {
-            require(metadata.mode == mode) { "Requested and envelope backup modes must match." }
-            beforeExport()
-            val calibratedIterations = kdfIterations.iterations()
-            snapshot = snapshots.create(
-                BackupExportOptions(mode = mode, includeCustomFonts = includeCustomFonts),
-            )
-            val content = snapshot.contentSummary()
-            val counting = CountingBackupOutputStream(output)
-            val header = archives.writeAndWipeSecrets(
-                snapshot = snapshot,
-                output = counting,
-                passphrase = passphrase,
-                metadata = metadata,
-                kdfIterations = calibratedIterations,
-            )
-            counting.flush()
-            BackupExportResult(header, content, counting.count)
-        } finally {
-            passphrase.fill('\u0000')
-            snapshot?.close()
+    ): BackupExportResult = try {
+        withContext(ioDispatcher) {
+            var snapshot: BackupPayloadSnapshot? = null
+            try {
+                require(metadata.mode == mode) { "Requested and envelope backup modes must match." }
+                beforeExport()
+                val calibratedIterations = kdfIterations.iterations()
+                snapshot = snapshots.create(
+                    BackupExportOptions(mode = mode, includeCustomFonts = includeCustomFonts),
+                )
+                val content = snapshot.contentSummary()
+                val counting = CountingBackupOutputStream(output)
+                val header = archives.writeAndWipeSecrets(
+                    snapshot = snapshot,
+                    output = counting,
+                    passphrase = passphrase,
+                    metadata = metadata,
+                    kdfIterations = calibratedIterations,
+                )
+                counting.flush()
+                BackupExportResult(header, content, counting.count)
+            } finally {
+                snapshot?.close()
+            }
         }
+    } finally {
+        // The dispatcher may reject an already cancelled caller before entering its block.
+        passphrase.fill('\u0000')
     }
 
     suspend fun inspect(input: InputStream): BackupEnvelopeHeader = withContext(ioDispatcher) {
@@ -173,13 +177,21 @@ class BackupTransferCoordinator(
     suspend fun unlock(
         input: InputStream,
         passphrase: CharArray,
-    ): PreparedBackupImport = withContext(ioDispatcher) {
+    ): PreparedBackupImport {
+        var prepared: PreparedBackupImport? = null
+        var delivered = false
         try {
-            PreparedBackupImport(
-                archives.readAndWipePassphrase(NoAvailableBackupInputStream(input), passphrase),
-            )
+            val result = withContext(ioDispatcher) {
+                PreparedBackupImport(
+                    archives.readAndWipePassphrase(NoAvailableBackupInputStream(input), passphrase),
+                ).also { prepared = it }
+            }
+            delivered = true
+            return result
         } finally {
             passphrase.fill('\u0000')
+            // Prompt cancellation can discard a successful result on the return dispatch.
+            if (!delivered) prepared?.close()
         }
     }
 }

@@ -136,13 +136,13 @@ Room 2.8.4 owns relational non-secret data:
 
 Foreign keys are explicit and nullable only where the UI can represent “missing reference.” Stable UUID strings are generated at creation and retained across merge/restore. Created/updated/first-seen/last-seen timestamps are epoch milliseconds supplied by an injected clock. Exported Room schemas and explicit migration tests are committed. Destructive fallback is prohibited.
 
-Room schema version 3 uses canonical lowercase UUID `TEXT` primary keys, stable string wire codes rather than Kotlin enum names, and these twelve tables:
+Room schema version 4 uses canonical lowercase UUID `TEXT` primary keys, stable string wire codes rather than Kotlin enum names, and these twelve tables:
 
 The checked-in version 1 and version 2 exports are deliberately identical pre-release
 checkpoints: the privacy-safe Recent token and Mosh locale/fallback columns were already present
 when the first Room schema was captured, so the registered 1→2 migration is a tested no-op rather
 than a fabricated field history. Version 2→3 is the first structural Room migration and adds custom
-themes plus terminal-profile rendering flags. No public or production-signed version 1 artifact
+themes plus terminal-profile rendering flags. Version 3→4 adds `host_profiles.port_forwards` as non-null `TEXT` with an empty-string default, preserving existing hosts without forwarding rules. No public or production-signed version 1 artifact
 exists; future migrations must preserve these exports without rewriting that history.
 
 | Table | Purpose and key columns |

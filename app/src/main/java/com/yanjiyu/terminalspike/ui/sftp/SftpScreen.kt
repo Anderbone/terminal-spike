@@ -88,8 +88,7 @@ internal fun SftpScreen(
     val uploadFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
-            val files = withContext(Dispatchers.IO) { readUploadFiles(context.contentResolver, uris) }
-            controller.uploadFiles(files)
+            controller.uploadFiles { readUploadFiles(context.contentResolver, uris) }
         }
     }
     val uploadFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
