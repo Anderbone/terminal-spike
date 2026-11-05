@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,6 +56,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -263,9 +267,9 @@ internal fun SftpBrowser(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (state.path != "/") TextButton(onClick = onUp) { Text("Up") }
+            if (state.path != "/") TextButton(onClick = onUp, enabled = !state.busy) { Text("Up") }
         }
-        HorizontalDivider()
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -287,14 +291,16 @@ internal fun SftpBrowser(
                 }
             }
         }
-        if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag(SftpBusyTestTag))
+        Box(Modifier.fillMaxWidth().height(4.dp)) {
+            if (state.busy) LinearProgressIndicator(Modifier.fillMaxSize().testTag(SftpBusyTestTag))
+        }
         PullToRefreshBox(
             isRefreshing = state.busy,
             onRefresh = { if (!state.busy) onRefresh() },
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("sftp-pull-refresh"),
         ) {
             LazyColumn(Modifier.fillMaxSize()) {
-                if (state.files.isEmpty()) {
+                if (state.files.isEmpty() && !state.busy) {
                     item {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                             Text("This folder is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -309,7 +315,10 @@ internal fun SftpBrowser(
                         onOpen = { if (file.isDirectory) onOpen(file.path) else onOpenFile(file) },
                         onSelect = { onSelect(file.path) },
                     )
-                    HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
                 }
             }
         }
@@ -351,12 +360,16 @@ internal fun SftpBrowser(
                         onClick = { confirmDelete = true },
                         enabled = !state.busy,
                         contentPadding = SftpActionPadding,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) { Text("Delete") }
                 }
             }
         }
         state.message?.let {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            ) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -370,6 +383,7 @@ internal fun SftpBrowser(
     dialog?.let { mode ->
         NameDialog(
             title = if (mode == SftpEditDialog.NewFolder) "New folder" else "Rename",
+            initialName = if (mode == SftpEditDialog.Rename) selectedItem?.name.orEmpty() else "",
             onDismiss = { dialog = null },
             onConfirm = { name ->
                 dialog = null
@@ -381,7 +395,13 @@ internal fun SftpBrowser(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Delete selected item?") },
         text = { Text("Folders and all of their contents will be deleted permanently.") },
-        confirmButton = { Button(onClick = { confirmDelete = false; onDelete() }) { Text("Delete") } },
+        confirmButton = {
+            Button(
+                onClick = { confirmDelete = false; onDelete() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError),
+            ) { Text("Delete") }
+        },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
     )
     if (chooseUpload) AlertDialog(
@@ -445,11 +465,7 @@ internal fun SftpFileRow(
                 modifier = Modifier
                     .size(24.dp)
                     .testTag(if (file.isDirectory) SftpFolderIconTestTag else SftpFileIconTestTag),
-                tint = if (file.isDirectory) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
@@ -475,8 +491,8 @@ internal fun SftpFileRow(
 private enum class SftpEditDialog { NewFolder, Rename }
 
 @Composable
-private fun NameDialog(title: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var value by remember { mutableStateOf("") }
+private fun NameDialog(title: String, initialName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var value by remember(title, initialName) { mutableStateOf(initialName) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

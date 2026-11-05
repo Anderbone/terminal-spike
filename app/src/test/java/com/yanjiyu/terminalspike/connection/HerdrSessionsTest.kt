@@ -105,6 +105,7 @@ class HerdrSessionsTest {
             assertTrue(executable.setExecutable(true))
             val process = ProcessBuilder("/bin/sh", "-c", HERDR_LIST_COMMAND).apply {
                 environment()["PATH"] = directory.toString()
+                environment()["HOME"] = directory.toString()
             }.start()
             assertTrue(process.waitFor(5, TimeUnit.SECONDS))
             val catalog = parseHerdrSessionCatalog(TmuxExecOutput(process.inputStream.readBytes(), process.exitValue()))
@@ -113,6 +114,31 @@ class HerdrSessionsTest {
         } finally {
             executable.delete()
             Files.deleteIfExists(directory)
+        }
+    }
+
+    @Test
+    fun probePrefersUserInstallWhenSshPutsTheSystemBinaryFirst() {
+        val directory = Files.createTempDirectory("herdr-user-probe-")
+        try {
+            val systemDirectory = Files.createDirectories(directory.resolve("system"))
+            val userDirectory = Files.createDirectories(directory.resolve(".local/bin"))
+            for (path in listOf(systemDirectory.resolve("herdr"), userDirectory.resolve("herdr"))) {
+                path.toFile().apply {
+                    writeText("#!/bin/sh\nprintf '%s\\n' '{\"sessions\":[{\"name\":\"work\",\"running\":true}]}'\n")
+                    assertTrue(setExecutable(true))
+                }
+            }
+            val process = ProcessBuilder("/bin/sh", "-c", HERDR_LIST_COMMAND).apply {
+                environment()["PATH"] = "$systemDirectory:$userDirectory"
+                environment()["HOME"] = directory.toString()
+            }.start()
+            assertTrue(process.waitFor(5, TimeUnit.SECONDS))
+            val catalog = parseHerdrSessionCatalog(TmuxExecOutput(process.inputStream.readBytes(), process.exitValue()))
+            assertEquals(userDirectory.resolve("herdr").toString(), catalog.executable)
+            assertEquals(listOf(HerdrSession("work")), catalog.sessions)
+        } finally {
+            directory.toFile().deleteRecursively()
         }
     }
 

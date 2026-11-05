@@ -76,9 +76,9 @@
     <string name="settings_category_ssh_keys_summary">Import and manage your keys</string>
     <string name="settings_category_snippets">Snippets</string>
     <string name="settings_category_snippets_summary">Your saved commands</string>
-    <string name="settings_ssh_keys_management_detail">Import, generate, rename, and remove SSH identities using the same connection data manager as saved hosts.</string>
+    <string name="settings_ssh_keys_management_detail">Import or generate SSH keys for your connections.</string>
     <string name="settings_ssh_keys_management_action">Manage SSH keys</string>
-    <string name="settings_snippets_management_detail">Create, edit, organise, and remove reusable terminal commands using the same connection data manager as saved hosts.</string>
+    <string name="settings_snippets_management_detail">Save commands for quick access from the terminal.</string>
     <string name="settings_snippets_management_action">Manage snippets</string>
     <string name="settings_category_sessions_background">Sessions &amp; Background</string>
     <string name="settings_category_sessions_background_summary">Keep connections running</string>
@@ -95,7 +95,7 @@
     <string name="settings_category_developer">Developer</string>
     <string name="settings_category_developer_summary">Debug-only renderer diagnostics</string>
 
-    <string name="settings_appearance_intro">App colour stays separate from terminal palettes. Changes are saved immediately and previews use the active terminal profile.</string>
+    <string name="settings_appearance_intro">Preview colours and fonts. Changes save automatically.</string>
     <string name="settings_app_appearance_heading">App appearance</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
@@ -110,6 +110,8 @@
     <string name="settings_accent_amber">Amber</string>
     <string name="settings_accent_coral">Coral</string>
     <string name="settings_voice_input_heading">Voice input</string>
+    <string name="settings_voice_input_enabled">Show voice input button</string>
+    <string name="settings_voice_input_enabled_summary">Show the microphone button in the terminal input field.</string>
     <string name="settings_voice_input_summary">Choose the language used by the microphone in the terminal composer.</string>
     <string name="settings_voice_input_privacy">Recognition requests offline processing. Availability and processing are controlled by your installed Android speech service.</string>
     <string name="settings_voice_language_device">Device language</string>
@@ -164,7 +166,7 @@
     <string name="settings_font_imported">Font imported and selected.</string>
     <string name="settings_font_unavailable">That imported font is no longer available.</string>
 
-    <string name="settings_terminal_intro">These values belong to the default terminal profile and persist across app restarts.</string>
+    <string name="settings_terminal_intro">Adjust scrolling, links and terminal behaviour.</string>
     <string name="settings_scrollback_heading">Scrollback</string>
     <string name="settings_custom_lines">Custom lines</string>
     <string name="settings_scrollback_range">0 to 200,000 lines</string>
@@ -218,7 +220,7 @@
     <string name="settings_reset_terminal_title">Reset terminal behaviour?</string>
     <string name="settings_reset_terminal_message">Restore safe cursor, scrollback, link, clipboard, scrolling and TERM defaults for this profile.</string>
 
-    <string name="settings_keyboard_intro">Choose a preset or tune the default keyboard profile. The general preset is exactly 20 keys in two rows.</string>
+    <string name="settings_keyboard_intro">Choose your shortcut keys and typing behaviour.</string>
     <string name="settings_keyboard_preset_heading">Preset</string>
     <string name="settings_keyboard_preset_general">General terminal</string>
     <string name="settings_keyboard_preset_tmux_codex">tmux/Codex</string>
@@ -281,7 +283,11 @@
     <string name="tmux_selector_empty">No tmux sessions yet. Start one to keep programs running after disconnecting.</string>
     <string name="tmux_selector_not_installed">tmux is not available on this server.</string>
     <string name="tmux_selector_check_failed">Could not check tmux sessions. You can still open the shell.</string>
-    <string name="tmux_selector_session_metadata">%1$d windows · %2$d attached</string>
+    <string name="tmux_selector_session_metadata">%1$s · %2$d attached</string>
+    <plurals name="tmux_session_windows">
+        <item quantity="one">%d window</item>
+        <item quantity="other">%d windows</item>
+    </plurals>
     <string name="tmux_selector_attach">Attach</string>
     <string name="tmux_selector_start_new">Start new session</string>
     <string name="tmux_selector_delete">Delete</string>
@@ -298,6 +304,7 @@
     <string name="tmux_session_switcher_empty">No active tmux sessions on this server.</string>
     <string name="tmux_session_switcher_refresh">Refresh</string>
     <string name="tmux_session_switcher_close_description">Close tmux session %1$s</string>
+    <string name="session_actions_for">Actions for %1$s</string>
     <string name="tmux_session_switcher_switch_failed">That tmux client could not be switched. Refresh and try again.</string>
     <string name="settings_keepalive_interval">SSH protocol keepalive</string>
     <string name="settings_keepalive_interval_summary">Encrypted protocol probes detect a dead SSH connection without typing into the shell. Saved hosts can override this.</string>
@@ -579,4 +586,8 @@
     <string name="port_forward_website_example">Example: localhost:5173</string>
     <string name="port_forward_website_example_help">Fills a local forward from this phone’s port 5173 to the connected computer’s localhost:5173. Save the rule and connection, reconnect, then open http://127.0.0.1:5173 on your phone.</string>
     <string name="port_forward_manage">Manage connections</string>
+    <string name="settings_snippets_display">Display mode</string>
+    <string name="settings_snippets_display_swipe">Swipe to show</string>
+    <string name="settings_snippets_display_above">Above keyboard keys</string>
+    <string name="settings_snippets_display_summary">Keep snippets above the shortcut keys, using only the space they need. The typing button replaces the keys with an input field.</string>
 </resources>

@@ -1,7 +1,9 @@
 package com.yanjiyu.terminalspike.terminal
 
+import com.yanjiyu.terminalspike.connection.Connection
 import com.yanjiyu.terminalspike.connection.HerdrPaneHistory
 import com.yanjiyu.terminalspike.connection.HerdrSidebarLayout
+import com.yanjiyu.terminalspike.connection.HerdrHistoryRead
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
@@ -81,6 +83,8 @@ class TerminalController(
     val herdrSidebarLayout = mutableHerdrSidebarLayout.asStateFlow()
     private val herdrLayoutLock = Any()
     private var lastHerdrDesktopLayout: Pair<HerdrSidebarLayout, Int>? = null
+    @Volatile
+    internal var herdrSessionActive: Boolean = false
 
     internal fun publishHerdrSidebarLayout(layout: HerdrSidebarLayout?) {
         synchronized(herdrLayoutLock) {
@@ -106,15 +110,61 @@ class TerminalController(
     @Volatile
     var herdrHistory: HerdrPaneHistory? = null
         private set
+
+    private val herdrHistoryProjection = HerdrHistoryProjection()
+
+    internal fun herdrHistoryForDisplay(): HerdrPaneHistory? = herdrHistoryProjection.project(
+        herdrHistory, terminalScreen, terminalColumns, terminalRows,
+    )
     @Volatile
     var herdrHistoryReading: Boolean = false
     @Volatile
     var herdrHistoryPinned: Boolean = false
 
-    internal fun isHerdrContextMenuCell(column: Int, row: Int): Boolean =
-        herdrSidebarLayout.value?.isContextMenuCell(
-            column, row, terminalColumns, terminalRows, terminalScreen?.getOrNull(1)?.text,
-        ) == true
+    private val mutableHerdrProjectPicker = MutableStateFlow<Connection?>(null)
+    internal val herdrProjectPicker = mutableHerdrProjectPicker.asStateFlow()
+
+    internal fun dismissHerdrProjectPicker() { mutableHerdrProjectPicker.value = null }
+
+    internal fun showHerdrProjectPickerAt(column: Int, row: Int): Boolean {
+        val screen = terminalScreen ?: return false
+        val connection = inputSink as? Connection ?: return false
+        if (!herdrSessionActive || !connection.isHerdrSession || !viewport.autoFollow ||
+            !HerdrNavigationChrome.isNewSpaceCell(screen, terminalColumns, terminalRows, column, row)
+        ) return false
+        mutableHerdrProjectPicker.value = connection
+        return true
+    }
+
+    internal fun isHerdrContextMenuCell(column: Int, row: Int): Boolean {
+        val screen = terminalScreen
+        if (herdrSidebarLayout.value?.isContextMenuCell(
+                column, row, terminalColumns, terminalRows, screen?.getOrNull(1)?.text,
+            ) == true
+        ) return true
+        return herdrSessionActive && screen != null &&
+            HerdrNavigationChrome.isContextMenuCell(screen, terminalColumns, terminalRows, column, row)
+    }
+
+    internal fun closeHerdrTabAt(column: Int, row: Int): Boolean = closeHerdrNavigationAt(column, row, tabsOnly = true)
+
+    internal fun closeHerdrNavigationAt(column: Int, row: Int, tabsOnly: Boolean = false): Boolean {
+        val screen = terminalScreen ?: return false
+        if (!herdrSessionActive || !terminalModes.mouseTracking || !viewport.autoFollow) return false
+        val tab = HerdrNavigationChrome.isTabCell(screen, terminalColumns, terminalRows, column, row)
+        val space = !tabsOnly && HerdrNavigationChrome.isSpaceCell(screen, terminalColumns, terminalRows, column, row)
+        if (!tab && !space) return false
+        // Herdr 0.9.x tab context menu: New tab, Rename, Close (initial index zero).
+        // Target the clicked tab through its own menu, preserving Herdr's close semantics.
+        val menu = TerminalMouseSequences.click(
+            column, row, terminalModes.sgrMouseEncoding,
+            reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10,
+            secondary = true,
+        )
+        // Spaces: Rename, Close; tabs: New tab, Rename, Close. Confirmation stays remote.
+        val close = if (space) "\u001B[B\r" else "\u001B[B\u001B[B\r"
+        return trySendUserInput(menu + close.toByteArray(Charsets.US_ASCII), applyDirectSendPolicy = true)
+    }
 
     internal fun isHerdrNativeHistoryVisible(): Boolean =
         herdrSidebarLayout.value?.allowsNativeHistory(
@@ -126,6 +176,36 @@ class TerminalController(
         if (herdrHistory === snapshot) return
         herdrHistory = snapshot
         frameScheduler.postFrame { notifyContentChanged() }
+    }
+
+    internal fun publishHerdrHistoryRead(
+        result: HerdrHistoryRead,
+        sourceAtCapture: HerdrPaneHistory?,
+    ) {
+        when (result) {
+            is HerdrHistoryRead.Available -> {
+                val current = herdrHistory
+                val screen = terminalScreen
+                // A shared Herdr server can report another client's grid. Keep
+                // this client's valid snapshot until a compatible read arrives;
+                // never stretch the other grid or discard a working reader for it.
+                if (current != null && current.identity == result.history.identity &&
+                    projectHerdrHistory(result.history, screen, terminalColumns, terminalRows) == null &&
+                    projectHerdrHistory(current, screen, terminalColumns, terminalRows) != null
+                ) return
+                publishHerdrHistory(result.history)
+            }
+            HerdrHistoryRead.Unavailable -> publishHerdrHistory(null)
+            is HerdrHistoryRead.Retry -> {
+                val current = herdrHistory ?: return
+                val target = result.target
+                val contextIdentity = inputContext.value.identity
+                val retain = if (target != null) target.matches(current) else
+                    (contextIdentity.isEmpty() && herdrHistoryReading && herdrHistoryPinned && current === sourceAtCapture) ||
+                        contextIdentity == "herdr/${current.identity}"
+                if (!retain) publishHerdrHistory(null)
+            }
+        }
     }
     @Volatile
     var rendererProfile: TerminalRendererProfile = TerminalRendererProfile()
@@ -452,6 +532,7 @@ class TerminalController(
         requestOlderTmuxHistory: (TmuxHistoryPageRequest) -> Unit = {},
         trustTmuxStreamScrollback: Boolean = true,
     ) {
+        dismissHerdrProjectPicker()
         inputSink = sink
         terminalSizeListener = onResize
         inputAcceptedListener = onInputAccepted
@@ -464,6 +545,8 @@ class TerminalController(
     }
 
     fun resetInputSink() {
+        dismissHerdrProjectPicker()
+        herdrSessionActive = false
         publishHerdrSidebarLayout(null)
         publishHerdrHistory(null)
         herdrHistoryReading = false

@@ -1012,7 +1012,7 @@ internal fun AppGlyphIcon(
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
-        val strokeWidth = minOf(w, h) * 0.095f
+        val strokeWidth = minOf(w, h) * 0.075f
         val stroke = Stroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
         when (glyph) {

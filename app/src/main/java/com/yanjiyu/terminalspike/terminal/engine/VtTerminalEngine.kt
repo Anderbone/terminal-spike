@@ -1446,7 +1446,7 @@ class VtTerminalEngine(
         private const val REPLACEMENT_CHARACTER = '\uFFFD'
         private const val ZERO_WIDTH_JOINER = 0x200D
         private const val REPLACEMENT = "\uFFFD"
-        private val ALLOWED_HYPERLINK_SCHEMES = setOf("http", "https")
+        private val ALLOWED_HYPERLINK_SCHEMES = setOf("http", "https", "obsidian")
         private val SAFE_CLIPBOARD_CONTROLS = setOf('\t'.code, '\n'.code, '\r'.code)
         private val CSI_STATUS_OK = "\u001B[0n".toByteArray()
         private val PRIMARY_DEVICE_ATTRIBUTES = "\u001B[?1;2c".toByteArray()

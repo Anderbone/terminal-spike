@@ -7,7 +7,11 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasSetTextAction
 import com.yanjiyu.terminalspike.connection.SftpFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +123,7 @@ class SftpScreenTest {
             size = 0,
             modifiedAtEpochSeconds = 0,
         )
+        var renamed: String? = null
         composeRule.setContent {
             MaterialTheme {
                 SftpBrowser(
@@ -138,7 +143,7 @@ class SftpScreenTest {
                     onCut = {},
                     onPaste = {},
                     onMkdir = {},
-                    onRename = {},
+                    onRename = { renamed = it },
                     onDelete = {},
                     onUploadFiles = {},
                     onUploadFolder = {},
@@ -151,6 +156,11 @@ class SftpScreenTest {
 
         composeRule.onNodeWithText("Download").assertExists()
         composeRule.onNodeWithText("Save to…").assertExists()
+        composeRule.onNodeWithText("Rename").performScrollTo().performClick()
+        composeRule.onNode(hasSetTextAction()).assertTextContains("projects")
+            .performTextReplacement("renamed-projects")
+        composeRule.onNodeWithText("Save").performClick()
+        composeRule.runOnIdle { check(renamed == "renamed-projects") }
     }
 
     @Test

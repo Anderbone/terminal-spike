@@ -1,0 +1,9 @@
+<resources>
+    <string name="herdr_recent_projects">Recent projects</string>
+    <string name="herdr_project_search">Search projects</string>
+    <string name="herdr_projects_loading">Loading projects…</string>
+    <string name="herdr_projects_unavailable">Could not load projects. Check the SSH connection and that zoxide is installed on this host.</string>
+    <string name="herdr_projects_empty">No unopened projects in zoxide history.</string>
+    <string name="herdr_project_opening">Opening project…</string>
+    <string name="herdr_project_open_failed">Could not open this project. It may already be open or its directory may be unavailable. Reopen the list to refresh.</string>
+</resources>

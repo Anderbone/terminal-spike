@@ -272,6 +272,12 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun setVoiceInputLanguage(language: VoiceInputLanguage) =
         updateGlobal { it.setVoiceInputLanguageTag(language.languageTag) }
 
+    fun setSnippetsAboveKeyboard(enabled: Boolean) =
+        updateGlobal { it.setSnippetsAboveKeyboard(enabled) }
+
+    fun setVoiceInputEnabled(enabled: Boolean) =
+        updateGlobal { it.setVoiceInputDisabled(!enabled) }
+
     fun setTerminalTheme(themeId: String) {
         val supported = TerminalThemes.presets.any { it.id == themeId } ||
             _uiState.value.customTerminalThemes.any { it.id == themeId }

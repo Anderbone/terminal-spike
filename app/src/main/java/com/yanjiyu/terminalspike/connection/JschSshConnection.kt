@@ -95,6 +95,25 @@ class JschSshConnection(
         }
     }
 
+    override fun recentHerdrProjects(): List<String>? {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
+            session to (herdrChoice ?: return null)
+        }
+        val projects = recentHerdrProjects(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
+        return synchronized(lock) {
+            projects.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
+        }
+    }
+
+    override fun openHerdrProject(path: String): Boolean {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return false
+            session to (herdrChoice ?: return false)
+        }
+        return openHerdrProject(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice, path)
+    }
+
     override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
         val (session, choice) = synchronized(lock) {
             val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
@@ -107,15 +126,21 @@ class JschSshConnection(
     }
 
     override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
+        return (readHerdrHistory(previous, reading) as? HerdrHistoryRead.Available)?.history
+    }
+
+    override fun readHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrHistoryRead {
         val (session, choice) = synchronized(lock) {
-            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
-            session to (herdrChoice ?: return null)
+            if (!running) return HerdrHistoryRead.Unavailable
+            val session = authenticatedSession?.session?.takeIf { it.isConnected } ?: return HerdrHistoryRead.Retry()
+            session to (herdrChoice ?: return HerdrHistoryRead.Unavailable)
         }
-        val captured = captureHerdrPaneHistory(
+        val captured = readHerdrPaneHistory(
             JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice, previous, reading,
         )
         return synchronized(lock) {
             captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
+                ?: HerdrHistoryRead.Unavailable
         }
     }
     private var attachedTmuxSessionId: String? = null

@@ -17,6 +17,14 @@ import android.text.style.StyleSpan
 import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -185,6 +193,8 @@ internal data class SettingsActions(
     val onAlternateHistory: (Boolean) -> Unit,
     val onMultilinePasteConfirmation: (Boolean) -> Unit,
     val onVoiceInputLanguage: (VoiceInputLanguage) -> Unit = {},
+    val onSnippetsAboveKeyboard: (Boolean) -> Unit = {},
+    val onVoiceInputEnabled: (Boolean) -> Unit = {},
     val onResetTerminal: () -> Unit,
     val onKeyboardPreset: (String) -> Unit,
     val onKeyboardActions: (List<KeyboardAction>) -> Unit,
@@ -319,6 +329,8 @@ internal fun SettingsDestination(
             onAlternateHistory = settingsViewModel::updateAlternateHistory,
             onMultilinePasteConfirmation = settingsViewModel::setMultilinePasteConfirmation,
             onVoiceInputLanguage = settingsViewModel::setVoiceInputLanguage,
+            onSnippetsAboveKeyboard = settingsViewModel::setSnippetsAboveKeyboard,
+            onVoiceInputEnabled = settingsViewModel::setVoiceInputEnabled,
             onResetTerminal = settingsViewModel::resetTerminalBehavior,
             onKeyboardPreset = settingsViewModel::applyKeyboardPreset,
             onKeyboardActions = settingsViewModel::updateKeyboardActions,
@@ -398,6 +410,7 @@ internal fun SettingsScreen(
         .union(WindowInsets.displayCutout),
 ) {
     var selectedCategory by rememberSaveable(initialCategory) { mutableStateOf(initialCategory) }
+    val categoryStates = rememberSaveableStateHolder()
     var query by rememberSaveable { mutableStateOf("") }
     var pendingKnownHost by remember { mutableStateOf<KnownHostSummary?>(null) }
     val screenDescription = stringResource(R.string.settings_screen_description)
@@ -481,35 +494,50 @@ internal fun SettingsScreen(
                                 .testTag(ExpandedToolDetailTestTag),
                         )
                     }
-                } else if (selectedCategory == null) {
-                    SettingsCategoryList(
-                        categories = categories,
-                        state = state,
-                        selected = null,
-                        query = query,
-                        onQueryChange = { query = it },
-                        onSelected = selectCategory,
-                        modifier = Modifier.fillMaxSize(),
-                    )
                 } else {
-                    SettingsDetail(
-                        category = requireNotNull(selectedCategory),
-                        onSelectCategory = selectCategory,
-                        state = state,
-                        knownHosts = knownHosts,
-                        moshExtension = moshExtension,
-                        actions = actions,
-                        onForgetKnownHost = { pendingKnownHost = it },
-                        onRefreshMoshExtension = onRefreshMoshExtension,
-                        onOpenRendererLab = onOpenRendererLab,
-                        onOpenSshKeys = onOpenSshKeys,
-                        onOpenSnippets = onOpenSnippets,
-                        onOpenPortForwards = onOpenPortForwards,
-                        backupState = backupState,
-                        backupActions = backupActions,
-                        savedCredentialClearState = savedCredentialClearState,
+                    AnimatedContent(
+                        targetState = selectedCategory,
+                        transitionSpec = {
+                            val direction = if (targetState == null) -1 else 1
+                            (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { it / 12 * direction })
+                                .togetherWith(fadeOut(tween(100)) + slideOutHorizontally(tween(220)) { -it / 12 * direction })
+                        },
                         modifier = Modifier.fillMaxSize(),
-                    )
+                        label = "settings-detail",
+                    ) { category ->
+                        categoryStates.SaveableStateProvider(category?.name ?: "categories") {
+                            if (category == null) {
+                                SettingsCategoryList(
+                                    categories = categories,
+                                    state = state,
+                                    selected = null,
+                                    query = query,
+                                    onQueryChange = { query = it },
+                                    onSelected = selectCategory,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                SettingsDetail(
+                                    category = category,
+                                    onSelectCategory = selectCategory,
+                                    state = state,
+                                    knownHosts = knownHosts,
+                                    moshExtension = moshExtension,
+                                    actions = actions,
+                                    onForgetKnownHost = { pendingKnownHost = it },
+                                    onRefreshMoshExtension = onRefreshMoshExtension,
+                                    onOpenRendererLab = onOpenRendererLab,
+                                    onOpenSshKeys = onOpenSshKeys,
+                                    onOpenSnippets = onOpenSnippets,
+                                    onOpenPortForwards = onOpenPortForwards,
+                                    backupState = backupState,
+                                    backupActions = backupActions,
+                                    savedCredentialClearState = savedCredentialClearState,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -632,6 +660,7 @@ private fun SettingsCategoryList(
                 category = category,
                 selected = category == selected,
                 onClick = { onSelected(category) },
+                summary = settingsCategorySummary(category, state).resolve(),
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
@@ -643,6 +672,7 @@ private fun SettingsCategoryRow(
     category: SettingsCategory,
     selected: Boolean,
     onClick: () -> Unit,
+    summary: String? = null,
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -650,13 +680,13 @@ private fun SettingsCategoryRow(
     )
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AppGlyphIcon(
@@ -672,14 +702,14 @@ private fun SettingsCategoryRow(
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 )
                 Text(
-                    text = stringResource(category.summaryRes),
+                    text = summary ?: stringResource(category.summaryRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (selected) {
                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -774,6 +804,19 @@ private fun SettingsDetail(
                 detail = R.string.settings_snippets_management_detail,
                 action = R.string.settings_snippets_management_action,
                 onOpen = onOpenSnippets,
+                extraSettings = {
+                    Text(stringResource(R.string.settings_snippets_display), style = MaterialTheme.typography.titleSmall)
+                    HorizontalChoices {
+                        listOf(false, true).forEach { above ->
+                            FilterChip(
+                                selected = state.preferences.snippetsAboveKeyboard == above,
+                                onClick = { actions.onSnippetsAboveKeyboard(above) },
+                                label = { Text(stringResource(if (above) R.string.settings_snippets_display_above else R.string.settings_snippets_display_swipe)) },
+                            )
+                        }
+                    }
+                    Text(stringResource(R.string.settings_snippets_display_summary), style = MaterialTheme.typography.bodySmall)
+                },
             )
             SettingsCategory.PORT_FORWARDING -> DataManagementSettings(
                 category = SettingsCategory.PORT_FORWARDING,
@@ -823,6 +866,7 @@ private fun DataManagementSettings(
     @StringRes detail: Int,
     @StringRes action: Int,
     onOpen: () -> Unit,
+    extraSettings: (@Composable () -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -830,6 +874,7 @@ private fun DataManagementSettings(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item { DetailHeading(category.titleRes, category.summaryRes) }
+        if (extraSettings != null) item { Column { extraSettings() } }
         item {
             Text(
                 text = stringResource(detail),
@@ -864,6 +909,13 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { DetailHeading(R.string.settings_category_appearance, R.string.settings_appearance_intro) }
+        item {
+            TerminalProfilePreview(
+                profile = profile,
+                theme = selectedTheme,
+                importedFont = state.importedFonts.firstOrNull { it.id == profile?.fontId },
+            )
+        }
         item { SectionLabel(R.string.settings_app_appearance_heading) }
         item {
             HorizontalChoices {
@@ -906,13 +958,6 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                     ) { Text(stringResource(R.string.settings_terminal_theme_edit)) }
                 }
             }
-        }
-        item {
-            TerminalProfilePreview(
-                profile = profile,
-                theme = selectedTheme,
-                importedFont = state.importedFonts.firstOrNull { it.id == profile?.fontId },
-            )
         }
         item { SectionLabel(R.string.settings_font_heading) }
         item {
@@ -1433,6 +1478,14 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
             item { SectionDivider() }
             item { SectionLabel(R.string.settings_voice_input_heading) }
             item {
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_voice_input_enabled),
+                    summary = stringResource(R.string.settings_voice_input_enabled_summary),
+                    checked = state.preferences.voiceInputEnabled,
+                    onCheckedChange = actions.onVoiceInputEnabled,
+                )
+            }
+            item {
                 Text(
                     text = stringResource(R.string.settings_voice_input_summary),
                     style = MaterialTheme.typography.bodySmall,
@@ -1443,6 +1496,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                     VoiceInputLanguage.entries.forEach { language ->
                         FilterChip(
                             selected = state.preferences.voiceInputLanguage == language,
+                            enabled = state.preferences.voiceInputEnabled,
                             onClick = { actions.onVoiceInputLanguage(language) },
                             label = { Text(stringResource(language.labelRes)) },
                         )

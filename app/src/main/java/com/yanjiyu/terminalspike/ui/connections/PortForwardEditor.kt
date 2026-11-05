@@ -4,10 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppEditorDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -122,11 +120,11 @@ private fun PortForwardRuleDialog(
         PortForwardRule(direction, bind, listen.toInt(), host.trim(), destination.toInt(), initial?.enabled ?: true)
             .also { PortForwardRules.validate(otherRules + it) }
     }.getOrNull()
-    AlertDialog(
+    AppEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.port_forward_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PortForwardDirection.entries.forEach { option ->
                         FilterChip(selected = direction == option, onClick = { direction = option }, label = {

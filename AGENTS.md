@@ -15,6 +15,7 @@
 - Do not broaden scope without an explicit task.
 - Do not copy source from Termius, LobiShell, ConnectBot, Termux, or other terminal applications.
 - Keep SDK paths, signing material, secrets, build outputs, APKs, and machine-specific IDE files out of Git.
+- Main-app debug builds explicitly use `~/.android/debug.keystore`, independent of XDG/Android environment paths. Preserve this key across environments and machine restores. On an install signature mismatch, compare certificates and recover the matching key; do not uninstall or clear app data as a workaround. See `docs/DEVELOPING.md`.
 
 ## Long-term S10e debug target
 

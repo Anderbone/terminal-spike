@@ -1191,7 +1191,7 @@ private fun SnippetCatalogRow(
 private fun CatalogIconContainer(glyph: ConnectionsGlyph, active: Boolean) {
     Surface(
         color = Color.Transparent,
-        contentColor = if (active) MaterialTheme.statusColors.onConnectedContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        contentColor = if (active) MaterialTheme.statusColors.connected else MaterialTheme.colorScheme.onSurfaceVariant,
         shape = MaterialTheme.shapes.medium,
     ) {
         Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
@@ -1238,7 +1238,7 @@ private fun HostActiveStatusLabel(host: HostRowUi) {
         HostActiveSessionStatus.RECONNECTING -> MaterialTheme.statusColors.reconnectingContainer to
             MaterialTheme.statusColors.onReconnectingContainer
     }
-    val label = if (host.activeSessionCount > 1) {
+    val label = if (status == HostActiveSessionStatus.CONNECTED && host.activeSessionCount > 1) {
         pluralStringResource(
             R.plurals.connections_active_sessions,
             host.activeSessionCount,
@@ -1248,11 +1248,16 @@ private fun HostActiveStatusLabel(host: HostRowUi) {
         stringResource(status.labelResId)
     }
     Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.extraSmall) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = MaterialTheme.spacing.small, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (status != HostActiveSessionStatus.CONNECTED) {
+                CircularProgressIndicator(modifier = Modifier.size(10.dp), color = content, strokeWidth = 1.dp)
+            }
+            Text(text = label, style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 

@@ -31,6 +31,8 @@ data class HerdrSidebarLayout(
         val height = terminalHeight ?: return null
         return when {
             top == 1 && height > 0 -> copy(terminalHeight = rows - 1)
+            // Client-owned Herdr 0.9.x chrome is outside the API's pane surface.
+            top == 0 && sidebarColumns == 0 && height == rows - 2 -> this
             top + height in (rows - 1)..rows -> this
             else -> null
         }
@@ -53,7 +55,8 @@ data class HerdrSidebarLayout(
         if (columns != terminalColumns || column !in 0 until columns || row !in 0 until rows) return false
         val top = terminalTop ?: return false
         val height = terminalHeight ?: return false
-        if (top == 2 && sidebarColumns == 0 && height > 0) {
+        val clientOwnedMobileSurface = top == 0 && height == rows - 2
+        if ((top == 2 || clientOwnedMobileSurface) && sidebarColumns == 0 && height > 0) {
             val button = mobileHeaderButton(mobileHeader)
             // The live pane and unknown modals must keep long-press text selection.
             return row >= 2 && button in listOf("×", "close")

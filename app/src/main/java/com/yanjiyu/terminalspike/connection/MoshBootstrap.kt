@@ -103,6 +103,18 @@ internal class MoshBootstrapResult(
         return captureHerdrInputContext(runner, choice)
     }
 
+    fun recentHerdrProjects(): List<String>? {
+        val choice = herdrChoice ?: return null
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
+        return recentHerdrProjects(runner, choice)
+    }
+
+    fun openHerdrProject(path: String): Boolean {
+        val choice = herdrChoice ?: return false
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return false
+        return openHerdrProject(runner, choice, path)
+    }
+
     fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
         val choice = herdrChoice ?: return null
         val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
@@ -110,9 +122,13 @@ internal class MoshBootstrapResult(
     }
 
     fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
-        val choice = herdrChoice ?: return null
-        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
-        return captureHerdrPaneHistory(runner, choice, previous, reading)
+        return (readHerdrHistory(previous, reading) as? HerdrHistoryRead.Available)?.history
+    }
+
+    fun readHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrHistoryRead {
+        val choice = herdrChoice ?: return HerdrHistoryRead.Unavailable
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return HerdrHistoryRead.Retry()
+        return readHerdrPaneHistory(runner, choice, previous, reading)
     }
     val addressBytes: ByteArray = addressBytes.copyOf()
     val sessionKey: ByteArray = sessionKey

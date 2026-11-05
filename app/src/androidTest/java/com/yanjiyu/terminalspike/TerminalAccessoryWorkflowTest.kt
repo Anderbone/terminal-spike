@@ -107,7 +107,7 @@ class TerminalAccessoryWorkflowTest {
                     "Control modifier locked",
                 ),
             )
-        composeRule.onNodeWithText("🔒").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal-modifier-lock", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test

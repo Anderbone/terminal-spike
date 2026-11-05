@@ -10,6 +10,7 @@
     <string name="terminal_remote_clipboard_title">Allow remote clipboard write?</string>
     <string name="terminal_remote_clipboard_message">A program in a live terminal wants to replace the Android clipboard. Allow only if you trust the program and expected this request.</string>
     <string name="terminal_remote_clipboard_allow">Allow</string>
+    <string name="terminal_remote_clipboard_allow_connection">Automatically allow until this connection reconnects</string>
     <string name="terminal_remote_clipboard_deny">Deny</string>
     <string name="terminal_selection_copied">Selection copied</string>
     <string name="terminal_link_copied">Link copied</string>
