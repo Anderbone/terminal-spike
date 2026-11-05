@@ -94,7 +94,8 @@ class FastTerminalView @JvmOverloads constructor(
     private var herdrPiPagingContext: TerminalInputContext? = null
     private var herdrPiPageDirection = 0
     private val horizontalPaddingPx = 8f * resources.displayMetrics.density
-    private val verticalPaddingPx = 5f * resources.displayMetrics.density
+    // Keep the first terminal row flush with the session chrome above it.
+    private val verticalPaddingPx = 0f
     private var fontMetrics = textPaint.fontMetrics
     private var lineHeightPx = 1f
     private var cellWidthPx = 1f

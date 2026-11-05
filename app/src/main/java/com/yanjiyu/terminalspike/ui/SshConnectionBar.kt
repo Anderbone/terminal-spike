@@ -171,7 +171,7 @@ fun SessionChrome(
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier
-                            .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                            .size(30.dp)
                             .testTag(TerminalChromeBackTestTag),
                     ) {
                         ConnectionsGlyphIcon(
@@ -249,7 +249,7 @@ fun SessionChrome(
                     IconButton(
                         onClick = { appSessionSwitcherVisible = true },
                         modifier = Modifier
-                            .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                            .size(30.dp)
                             .semantics {
                                 contentDescription = appSessionSwitcherDescription
                             },
@@ -264,7 +264,7 @@ fun SessionChrome(
                     onClick = onNewSession,
                     enabled = canAddSession && settingsReady,
                     modifier = Modifier
-                        .size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                        .size(30.dp)
                         .testTag(NewTerminalSessionTestTag)
                         .semantics { contentDescription = newSessionDescription },
                 ) {
@@ -861,7 +861,7 @@ private fun SessionTabSurface(
         label = "session-tab",
     )
     Surface(
-        modifier = modifier.heightIn(min = 48.dp).combinedClickable(
+        modifier = modifier.heightIn(min = 30.dp).combinedClickable(
             onClick = onSelect,
             onDoubleClick = onDuplicate,
             onLongClick = onActions,
@@ -887,7 +887,7 @@ private fun SessionTabSurface(
             if (onClose != null) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(48.dp).semantics {
+                    modifier = Modifier.size(30.dp).semantics {
                         contentDescription = requireNotNull(closeDescription)
                     },
                 ) {
