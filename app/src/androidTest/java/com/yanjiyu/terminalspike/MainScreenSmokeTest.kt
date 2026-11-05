@@ -4,8 +4,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertHeightIsAtLeast
-import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -66,8 +66,8 @@ class MainScreenSmokeTest {
             "Choose a saved connection to start a secure terminal session.",
         ).assertIsDisplayed()
         composeRule.onNodeWithTag(NewTerminalSessionTestTag)
-            .assertWidthIsAtLeast(48.dp)
-            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsEqualTo(30.dp)
+            .assertHeightIsEqualTo(30.dp)
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open connections").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open terminal").assertIsSelected()

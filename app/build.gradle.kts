@@ -671,8 +671,8 @@ extensions.configure<ApplicationExtension>("android") {
         ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         minSdk = 26
         targetSdk = 37
-        versionCode = 16
-        versionName = "0.0.11"
+        versionCode = 18
+        versionName = "0.0.12"
 
         testInstrumentationRunner = "com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
