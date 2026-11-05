@@ -83,9 +83,15 @@ internal class MoshConnection(
     }
 
     override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
-        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null
-        val captured = attempt.sshSideChannel?.captureHerdrHistory(previous, reading)
-        return synchronized(lock) { captured.takeIf { activeAttempt === attempt && attempt.running } }
+        return (readHerdrHistory(previous, reading) as? HerdrHistoryRead.Available)?.history
+    }
+
+    override fun readHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrHistoryRead {
+        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return HerdrHistoryRead.Unavailable
+        val captured = attempt.sshSideChannel?.readHerdrHistory(previous, reading) ?: HerdrHistoryRead.Retry()
+        return synchronized(lock) {
+            captured.takeIf { activeAttempt === attempt && attempt.running } ?: HerdrHistoryRead.Unavailable
+        }
     }
 
     override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {

@@ -1,5 +1,217 @@
 # Native scrolling for transcript panes inside Herdr
 
+## 2026-10-31: stable cached readers and links in native history
+
+User RED: smooth scrolling still falls back to row-based movement in several
+situations, and Obsidian links cannot be tapped while reading native history.
+The nullable capture result conflated a failed read with confirmed history loss.
+The native reader also consumed taps without link dispatch, and the VT parser
+discarded `obsidian` OSC 8 metadata before it reached the reader.
+
+`HerdrHistoryRead` now separates Available, Retry and Unavailable. SSH and Mosh
+preserve that distinction through their existing authenticated side channels.
+Transport/read errors, changing content revisions, and inconsistent resize/client
+heights are retryable. A cached source is retained only for the verified same
+target, a matching foreground identity, or the existing pinned reader when no
+new identity is known. Missing panes, unsupported live panes, changed pane/
+terminal identity and actual invalidation still release the source. A pinned
+snapshot keeps its already captured rows if live history resets; an idle
+screen-only pane still cannot claim native scrolling.
+
+A successful read of the same pane at another client's incompatible grid no
+longer replaces a snapshot that still projects correctly into this client's
+live chrome. `projectHerdrHistory` performs the same bounds checks used by the
+renderer; no grid is stretched or invented. Cancellation stops touch/fling
+without discarding pinned pixels. Once a one-finger gesture is owned natively,
+remaining MOVE/UP events cannot fall through to remote wheels after a source
+invalidation. These changes replace the earlier one-request publication guard.
+
+`HerdrHistoryViewport` supplies the existing link resolver with snapshot rows,
+generation-scoped anchors and the reader's Float pixel position. Hit testing
+subtracts the pane/sidebar/header offsets and rejects points outside the pane.
+A short stationary history tap dispatches an allowed link locally; dragging,
+cancellation, long holds and the first tap catching a fling do not open links.
+Non-link taps preserve reading and do not click the hidden live terminal.
+Both direct and buffered input use this path. Plain/wrapped Obsidian URLs and
+OSC 8 targets retain their original URI.
+
+The VT OSC 8 parser now retains `http`, `https` and `obsidian`, matching the
+existing external-open allowlist. The original URI length limits, explicit
+user gesture and open-policy validation remain. `file`, `javascript` and other
+schemes remain rejected. No dependency, network feature, host configuration,
+persisted schema, tmux change or per-row Compose state is introduced. The
+1,000-row history cap remains; an initial absent or unsupported history source
+does not gain fabricated local history.
+
+Validation: JVM coverage includes repeated retries, definitive
+invalidations, client-grid changes, live-history resets, fractional link bounds,
+wrapped links and pinned-row identity. A first isolated API-35 controlled native
+run passed 16/17 methods and failed actual history-link dispatch. The added
+ANSI-history test also failed before the parser fix, confirming the lost OSC 8
+metadata; those red logs are preserved. After repair, both controlled classes
+passed all 17 methods on the isolated API-35 emulator `emulator-5586` in 37.927s,
+including native tap/cancel/fling behavior, first-gesture publication and
+Obsidian link dispatch in direct/buffered modes. Exact app and test APK hashes
+matched the final build. This is fake-transport UI evidence, not actual-Codex or
+physical smoothness acceptance.
+
+Final source gate passed: app/API/core JVM1195/11/8 with zero failures/errors/
+skips, debug/release lint/builds, AAB and Android-test compilation, 450 tasks in
+183s. Exact instrumentation membership and 11 host contract tests passed;
+unchanged 141-test tooling evidence was reused. All 697 verification input
+hashes remained unchanged. Evidence: `build/herdr-smooth-followup/`.
+
+Completed APK SHA-256
+`b3cf259a82d70358e0e391690f1b56d37810863a687dfed7331d0a05a099a8d8`
+was full-installed with `--no-incremental -r` on freshly resolved/model-verified
+SM-F976B `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`. Cold launch Status ok
+(802ms), MainActivity top-resumed, keyguard not showing and installed hash match
+were verified. No automated fold tests or injected gestures ran. Authorized
+old-phone acceptance remains deferred; user confirmation of the real workflow
+and the broader Definition of Solved remain open.
+
+## 2026-10-31: preserve the first reader across an older idle result
+
+The user clarified that movement advances by rows. Passive observation of their
+own gestures on the verified APK found fractional native positions followed by
+loss of the raw source and pinned reader. A later attached-view sample also
+showed a correctly projected desktop pane and stable fractional reading. This
+does not establish that every reported gesture followed the same route, or why
+each remote capture failed. The earlier plus-control inference from heap string
+decoding is not established; no tab-detector change is made in this follow-up.
+
+The earlier repair reproduced a publication race: a full idle capture starts before a
+gesture, the user adopts the existing snapshot, and the old capture returns null
+after failing consistency checks. Publishing that null unconditionally destroys
+the newly pinned reader. The earlier `publishHerdrHistoryCapture` discarded that
+older null result only when the same source was still current and a pinned
+reader had started since capture began. It has now been replaced by the typed
+read/publication policy above; that one-shot method is no longer in the source.
+
+That earlier guard still cleared the source after a failed pinned read. The
+current typed policy retains it on a retryable failure while preserving actual
+replacement, live return/input and disconnect invalidation. Screen-only live
+panes do not gain native ownership. Float motion and the history cap are retained.
+
+The new JVM race test failed before repair and passes afterward; the companion
+test preserves release/replacement/disconnect behavior. The controlled native
+regression blocks an idle read, performs the first gesture, releases a failed
+result and requires the subsequent pinned poll to preserve reading with no
+remote input. It is compiled only; old-phone execution remains deferred. Shared
+source verification passed: app/API/core JVM 1187/11/8, zero failures/errors/
+skips; debug/release lint/builds, AAB and Android-test compilation (450 tasks,
+143 seconds). The unchanged prior 141-test tooling gate was reused; the changed
+instrumentation contract passed exact membership and all 11 host contract tests.
+All 696 verification input hashes remained unchanged during the final build.
+
+The completed APK SHA-256
+`7886f62945834b704532879ff8cacf6c35cd9ceb21eabb93acd80b3d77d4bcc4`
+was full-installed with `--no-incremental -r` on freshly resolved/model-verified
+SM-F976B `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`. Cold launch returned
+Status ok (857 ms), MainActivity was top-resumed with keyguard not showing, and
+the installed hash matched. Evidence: `build/herdr-smooth-followup/`.
+No automated fold tests or injected gestures ran. User confirmation of the
+completed repair remains pending; broader smooth-scroll acceptance stays open.
+
+## 2026-10-31 follow-up: user smoothness remains red
+
+The user reports that scrolling still feels unsmooth. Do not treat the coordinate
+repair or its JVM gates as physical smoothness acceptance. Passive inspection
+found that a separate installation at 18:04:25 had replaced the verified APK
+with SHA-256 `4479110b3ba06c1fbd24219fc5cbb8f6330021399b38128c25ad00044f96665b`.
+That is an attribution problem, not proof that replacement alone explains the
+reported movement.
+
+Two passive samples of that replacement had no active native reader; one had
+no raw history and another retained 191 raw rows. Its top-row runs did not match
+the existing separate three-cell plus-control assumption. The exact failing
+gesture was not observed, so no additional detector or fling patch was made.
+Only scalar state was retained; temporary raw heap files were removed.
+
+The unchanged, previously verified `91bb07f9…7544f` APK was full-installed again
+on model-verified SM-F976B and cold-launched successfully. Its installed hash
+was independently rechecked. The phone subsequently became dozing/locked,
+preventing renewed foreground/workflow confirmation. No gestures or tests were
+injected on the fold. Prior local gate evidence remains valid for the unchanged
+build inputs; actual route, drag/fling behavior and user acceptance remain open.
+
+## 2026-10-31: map client-owned chrome before native scrolling
+
+User recording `3cc2febe-aa63-4c79-adc2-42417f74d156.mp4` shows unfolded
+desktop history covering the left navigation, while the far right scrolls by
+remote rows. The folded mobile workflow was reported working. Herdr 0.9.1's
+`pane layout` reports a server surface rooted at `(0,0)`; its client separately
+positions that surface after its sidebar and top/bottom tabs. Those raw API
+coordinates must not be used directly as Android drawing or touch bounds.
+
+`HerdrPaneHistory` now retains the API area as `surface`, checks pane containment,
+and invalidates snapshot reuse when the area changes. `HerdrHistoryProjection`
+maps that raw snapshot into this client's live chrome before both reader updates
+and gesture hit testing. The existing `HerdrNavigationChrome` boundary checks
+identify the desktop sidebar and top/bottom tab row; the mobile live Switch
+header contributes two rows. The projected pane must exactly match the API
+surface dimensions. A smaller server surface is never placed at the screen
+origin when client chrome is unknown, covered or mismatched. Existing
+outer-coordinate adapters remain supported.
+
+The projection caches by immutable frame/snapshot identity and terminal size.
+The raw snapshot remains available to the background capture adapter, so a
+translated reader does not trigger another history download. Split offsets are
+added once. Canvas clipping, Float drag, OverScroller fling/catch, pinned output
+and bounded history remain the existing implementations. No new dependency,
+transport, host configuration or tmux change is introduced.
+
+Verification: the original projection failed five of six new JVM tests; all
+six pass after repair, along with the focused Herdr/controller regressions.
+`scripts/verify-android.sh` passed: 141 tooling tests, app/API/core JVM
+1185/11/8 with zero failures/errors/skips, debug/release lint/builds, AAB and
+Android-test compilation (450 tasks, 232 seconds for Gradle). Build/verification
+inputs remained unchanged. Evidence is in `build/fold-herdr-scroll/`.
+
+The production-view regression adds rightmost-column native routing with zero
+remote input and pixel equality of the sidebar. It compiled; execution on an
+authorized old phone is deferred at the user's request. These fixtures do not
+establish real Codex physical smoothness.
+
+The completed debug APK SHA-256
+`91bb07f9cffbab421e664ea9d0dffc8a559319f7a9981802b0a6d593f937544f`
+was full-installed with `--no-incremental -r` on model-verified SM-F976B
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`. Launch returned Status ok;
+an independent follow-up confirmed MainActivity top-resumed, keyguard not
+showing, and the installed APK hash matching the artifact. No fold tests or
+gestures ran. Actual unfolded-workflow confirmation remains pending.
+
+## 2026-10-26: keep the reader after a tap
+
+User recording `48c56aa7-5cd0-463c-a626-0851437a8b56.mp4` shows a history
+viewport returning to latest after a touch. `HerdrNativeScroll.ACTION_UP` used
+to clear a caught reader whenever the gesture had not crossed touch slop. This
+also discarded history when lifting the finger after catching a fling.
+
+A consumed reader tap now retains the snapshot and exact Float pixel anchor.
+The existing ACTION_DOWN fling interruption, sub-row drag, release fling, and
+scroll-to-live handoff remain in place. Taps inside history remain local and
+do not click unseen live controls. Regression coverage includes repeated taps
+with sub-slop jitter, updates while pinned, catch followed by finger-up, and
+a subsequent fractional drag and live-bottom return. The production-view
+controlled-transport test also checks taps in direct and buffered input modes.
+
+Verification: shared `scripts/verify-android.sh` gate passed (141 host tooling
+tests; app/API/core JVM 1174/11/8 with zero failures/errors/skips; debug/release
+lint/builds, AAB and Android-test compilation; 450 Gradle tasks in 167 seconds).
+The initial attempt failed on `/tmp` quota; moving temporary files to a short
+disk-backed directory also avoided a pre-existing tar test's 100-byte link-path
+limit. Both environmental failures are retained in `build/smooth-history-tap/`.
+No production or test assertion was changed to bypass them.
+
+The new native regressions are compiled but UNRUN: neither authorized old phone
+is connected. Full non-incremental installation on model-verified SM-F976B
+`adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp` succeeded; cold launch returned
+Status ok. APK SHA-256: `ef2967b5cd00de920c8f01b2d5cd6f0f5ac25a20de4d66b88f8f1b9db15d237f`.
+Foreground verification is BLOCKED by keyguard (`showing=true`,
+`inputRestricted=true`); MainActivity is paused. No fold tests or injected terminal
+gestures ran. This bounded tap repair does not close actual-Codex acceptance.
+
 ## 2026-10-07: Pi history support and per-tab investigation
 
 The native reader previously accepted only `agent=codex`. It now also accepts
@@ -93,7 +305,7 @@ ANSI read. It does not introduce another connection, executable helper or librar
 A native Canvas overlay clips history to that pane's rectangle. One-finger vertical drag uses a
 Float viewport, fling uses Android OverScroller, and touch catches fling. The reader pins its
 snapshot while output continues; background checks validate identity/layout without refetching
-the transcript during reading. Tapping the reader or typing returns to live output. The recent-history limit is documented here without interrupting gestures with a toast.
+the transcript during reading. Tapping inside the reader stops any fling and preserves the pinned history position. Typing returns to live output; dragging to the live bottom also releases the reader when the remote pane is at bottom. The recent-history limit is documented here without interrupting gestures with a toast.
 Explicit Remote mouse mode retains the existing input route.
 
 This implementation supports Herdr sessions selected in the app and panes reported by Herdr as

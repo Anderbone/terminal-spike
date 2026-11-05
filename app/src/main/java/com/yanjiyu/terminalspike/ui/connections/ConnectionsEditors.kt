@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.ui.connections
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import com.yanjiyu.terminalspike.ui.theme.AppButtonLabel
+import com.yanjiyu.terminalspike.ui.theme.AppEditorDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.R
@@ -283,9 +287,10 @@ internal fun HostEditorDialog(
         }
     }
 
-    AlertDialog(
+    AppEditorDialog(
         onDismissRequest = ::requestDismiss,
         modifier = Modifier.testTag(HostEditorDialogTestTag),
+        scrollState = editorScrollState,
         title = {
             Text(
                 stringResource(
@@ -300,9 +305,7 @@ internal fun HostEditorDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(editorScrollState),
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 saveFailure?.let {
@@ -374,6 +377,7 @@ internal fun HostEditorDialog(
                     onValueChange = { updateDraft(draft.copy(hostname = it.take(253))) },
                     modifier = Modifier.fillMaxWidth().testTag(HostEditorHostnameTestTag),
                     label = { Text(stringResource(R.string.host_editor_hostname)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next, autoCorrectEnabled = false),
                     supportingText = errors.hostname?.let { message ->
                         ({ Text(message.resolve()) })
                     },
@@ -387,6 +391,7 @@ internal fun HostEditorDialog(
                         onValueChange = { updateDraft(draft.copy(username = it.take(64))) },
                         modifier = Modifier.weight(1f).testTag(HostEditorUsernameTestTag),
                         label = { Text(stringResource(R.string.host_editor_username)) },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false),
                         supportingText = errors.username?.let { message ->
                             ({ Text(message.resolve()) })
                         },
@@ -843,9 +848,10 @@ internal fun HostEditorDialog(
                         Text(stringResource(R.string.connections_delete_host))
                     }
                 }
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (onTest != null) {
                         TextButton(
@@ -865,7 +871,6 @@ internal fun HostEditorDialog(
                             )
                         }
                     }
-                    Spacer(Modifier.weight(1f))
                     TextButton(
                         onClick = ::requestDismiss,
                         enabled = !saving,
@@ -879,10 +884,9 @@ internal fun HostEditorDialog(
                         modifier = Modifier.testTag(HostEditorSaveTestTag),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                     ) {
-                        Text(
-                            stringResource(
-                                if (saving) R.string.host_editor_saving else R.string.host_editor_save,
-                            ),
+                        AppButtonLabel(
+                            stringResource(if (saving) R.string.host_editor_saving else R.string.host_editor_save),
+                            busy = saving,
                         )
                     }
                 }
@@ -1471,7 +1475,7 @@ internal fun SnippetEditorDialog(
         if (saving) return
         if (draft != initial) discardConfirmation = true else onDismiss()
     }
-    AlertDialog(
+    AppEditorDialog(
         onDismissRequest = ::requestDismiss,
         modifier = Modifier.testTag(SnippetEditorDialogTestTag),
         title = {
@@ -1479,7 +1483,7 @@ internal fun SnippetEditorDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedTextField(
@@ -1490,6 +1494,7 @@ internal fun SnippetEditorDialog(
                     supportingText = errors.name?.let { message -> ({ Text(message.resolve()) }) },
                     isError = errors.name != null,
                     singleLine = true,
+                    enabled = !saving,
                 )
                 OutlinedTextField(
                     value = draft.group,
@@ -1499,6 +1504,7 @@ internal fun SnippetEditorDialog(
                     supportingText = errors.group?.let { message -> ({ Text(message.resolve()) }) },
                     isError = errors.group != null,
                     singleLine = true,
+                    enabled = !saving,
                 )
                 OutlinedTextField(
                     value = draft.command,
@@ -1507,6 +1513,7 @@ internal fun SnippetEditorDialog(
                     label = { Text(stringResource(R.string.snippet_editor_command)) },
                     supportingText = errors.command?.let { message -> ({ Text(message.resolve()) }) },
                     isError = errors.command != null,
+                    enabled = !saving,
                     minLines = 4,
                     maxLines = 10,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
@@ -1521,11 +1528,13 @@ internal fun SnippetEditorDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = draft.tapAction == SnippetTapAction.INSERT,
+                            enabled = !saving,
                             onClick = { draft = draft.copy(tapAction = SnippetTapAction.INSERT) },
                             label = { Text(stringResource(R.string.snippet_editor_insert)) },
                         )
                         FilterChip(
                             selected = draft.tapAction == SnippetTapAction.SEND_IMMEDIATELY,
+                            enabled = !saving,
                             onClick = {
                                 draft = draft.copy(
                                     tapAction = SnippetTapAction.SEND_IMMEDIATELY,
@@ -1595,7 +1604,7 @@ internal fun SnippetEditorDialog(
                 },
                 enabled = !saving,
                 modifier = Modifier.testTag(SnippetEditorSaveTestTag),
-            ) { Text(stringResource(if (saving) R.string.host_editor_saving else R.string.snippet_editor_save)) }
+            ) { AppButtonLabel(stringResource(if (saving) R.string.host_editor_saving else R.string.snippet_editor_save), busy = saving) }
         },
         dismissButton = {
             TextButton(onClick = ::requestDismiss, enabled = !saving) { Text(stringResource(R.string.cancel)) }
@@ -1633,6 +1642,7 @@ internal fun GenerateKeyDialog(
     var error by remember { mutableStateOf<UiText?>(null) }
     var generating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val editorScrollState = rememberScrollState()
     val transientPassphraseNeedsReentry = transientPassphraseWasEntered && !passphrase.hasValue
     fun dismissAndClear() {
         if (generating) return
@@ -1641,32 +1651,38 @@ internal fun GenerateKeyDialog(
         transientPassphraseWasEntered = false
         onDismiss()
     }
-    AlertDialog(
+    AppEditorDialog(
         onDismissRequest = ::dismissAndClear,
         modifier = Modifier.testTag(GenerateKeyDialogTestTag),
+        scrollState = editorScrollState,
         title = { Text(stringResource(R.string.key_editor_generate_title)) },
         text = {
             Column(
-                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                error?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it.take(96) },
+                    onValueChange = { name = it.take(96); error = null },
                     modifier = Modifier.fillMaxWidth().testTag(GenerateKeyNameTestTag),
                     label = { Text(stringResource(R.string.key_editor_friendly_name)) },
+                    isError = error != null && name.isBlank(),
                     singleLine = true,
+                    enabled = !generating,
                 )
                 Text(stringResource(R.string.key_editor_algorithm), style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = algorithm == SshKeyGenerationAlgorithm.ED25519,
                         onClick = { algorithmName = SshKeyGenerationAlgorithm.ED25519.name },
+                        enabled = !generating,
                         label = { Text("Ed25519") },
                     )
                     FilterChip(
                         selected = algorithm == SshKeyGenerationAlgorithm.RSA_4096,
                         onClick = { algorithmName = SshKeyGenerationAlgorithm.RSA_4096.name },
+                        enabled = !generating,
                         label = { Text("RSA 4096") },
                     )
                 }
@@ -1677,6 +1693,7 @@ internal fun GenerateKeyDialog(
                 )
                 WipeableSecretInput(
                     state = passphrase,
+                    enabled = !generating,
                     label = stringResource(R.string.key_editor_passphrase_optional),
                     testTag = GenerateKeyPassphraseTestTag,
                     modifier = Modifier.fillMaxWidth(),
@@ -1686,18 +1703,20 @@ internal fun GenerateKeyDialog(
                 )
                 WipeableSecretInput(
                     state = confirmPassphrase,
+                    isError = error != null && !passphrase.contentEquals(confirmPassphrase),
+                    enabled = !generating,
                     label = stringResource(R.string.key_editor_confirm_passphrase),
                     testTag = GenerateKeyConfirmPassphraseTestTag,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = comment,
-                    onValueChange = { comment = it.take(256) },
+                    onValueChange = { comment = it.take(256); error = null },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.key_editor_comment_optional)) },
                     singleLine = true,
+                    enabled = !generating,
                 )
-                error?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 if (transientPassphraseNeedsReentry) {
                     Text(
                         stringResource(R.string.key_editor_passphrase_cleared),
@@ -1718,6 +1737,7 @@ internal fun GenerateKeyDialog(
                         !passphrase.contentEquals(confirmPassphrase) -> uiText(R.string.key_editor_passphrases_mismatch)
                         else -> null
                     }
+                    if (error != null) scope.launch { editorScrollState.animateScrollTo(0) }
                     if (error == null) {
                         val request = KeyGenerationRequest(
                             name = normalizedName,
@@ -1745,13 +1765,14 @@ internal fun GenerateKeyDialog(
                             } else {
                                 error = uiText(R.string.key_editor_generate_failed)
                                 generating = false
+                                editorScrollState.animateScrollTo(0)
                             }
                         }
                     }
                 },
                 enabled = !generating,
                 modifier = Modifier.testTag(GenerateKeySubmitTestTag),
-            ) { Text(stringResource(if (generating) R.string.key_editor_generating else R.string.key_editor_generate)) }
+            ) { AppButtonLabel(stringResource(if (generating) R.string.key_editor_generating else R.string.key_editor_generate), busy = generating) }
         },
         dismissButton = {
             TextButton(onClick = ::dismissAndClear, enabled = !generating) { Text(stringResource(R.string.cancel)) }
@@ -1818,7 +1839,7 @@ internal fun RenameKeyDialog(
                         }
                     }
                 }
-            }, enabled = !saving) { Text(stringResource(if (saving) R.string.host_editor_saving else R.string.save)) }
+            }, enabled = !saving) { AppButtonLabel(stringResource(if (saving) R.string.host_editor_saving else R.string.save), busy = saving) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.cancel)) } },
     )

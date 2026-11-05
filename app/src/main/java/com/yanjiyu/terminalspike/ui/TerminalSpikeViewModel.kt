@@ -127,6 +127,8 @@ import com.yanjiyu.terminalspike.settings.SnippetSequence
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -523,6 +525,8 @@ data class TerminalSpikeUiState(
     val notificationPermissionPromptVisible: Boolean = false,
     val remoteClipboardPrompt: RemoteClipboardPromptUi? = null,
     val multilinePasteConfirmationEnabled: Boolean = false,
+    val snippetsAboveKeyboard: Boolean = false,
+    val voiceInputEnabled: Boolean = true,
     val voiceInputLanguageTag: String = "",
     val settingsReady: Boolean = false,
     val settingsRecoveryFailure: SettingsLoadFailure? = null,
@@ -1540,6 +1544,9 @@ class TerminalSpikeViewModel(
     private var activeScrollbackLines = DEFAULT_RUNTIME_SCROLLBACK_LINES
     @Volatile
     private var activeRemoteClipboardMode = RemoteClipboardMode.ASK
+    private val _automaticClipboardRequests =
+        MutableSharedFlow<RemoteClipboardWriteRequestEvent>(extraBufferCapacity = 1)
+    internal val automaticClipboardRequests = _automaticClipboardRequests.asSharedFlow()
     @Volatile
     private var notificationPermissionEducationConsumed = false
     @Volatile
@@ -1761,6 +1768,8 @@ class TerminalSpikeViewModel(
                                 multilinePasteConfirmationEnabled =
                                     snapshot.appSettings.multilinePasteConfirmationEnabled,
                                 voiceInputLanguageTag = snapshot.appSettings.voiceInputLanguageTag,
+                                snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
+                                voiceInputEnabled = !snapshot.appSettings.voiceInputDisabled,
                             )
                         }
                     }
@@ -1932,6 +1941,15 @@ class TerminalSpikeViewModel(
                     remoteSessions.discardRemoteClipboardRequest(request)
                     return@collect
                 }
+                if (request.automaticallyAllowed) {
+                    if (
+                        _automaticClipboardRequests.subscriptionCount.value == 0 ||
+                        !_automaticClipboardRequests.tryEmit(request)
+                    ) {
+                        remoteSessions.discardRemoteClipboardRequest(request)
+                    }
+                    return@collect
+                }
                 pendingRemoteClipboardRequest?.let(remoteSessions::discardRemoteClipboardRequest)
                 pendingRemoteClipboardRequest = request
                 _uiState.update { state ->
@@ -1962,7 +1980,10 @@ class TerminalSpikeViewModel(
     }
 
     /** Returns text only for the exact dialog the user explicitly allowed. */
-    internal fun allowRemoteClipboardRequest(prompt: RemoteClipboardPromptUi): String? {
+    internal fun allowRemoteClipboardRequest(
+        prompt: RemoteClipboardPromptUi,
+        allowForConnection: Boolean = false,
+    ): String? {
         val request = pendingRemoteClipboardRequest
         if (
             request == null || request.sessionId != prompt.sessionId ||
@@ -1978,8 +1999,11 @@ class TerminalSpikeViewModel(
                 state
             }
         }
-        return remoteSessions.consumeRemoteClipboardRequest(request)
+        return remoteSessions.consumeRemoteClipboardRequest(request, allowForConnection)
     }
+
+    internal fun consumeAutomaticClipboardRequest(request: RemoteClipboardWriteRequestEvent): String? =
+        if (request.automaticallyAllowed) remoteSessions.consumeRemoteClipboardRequest(request) else null
 
     internal fun denyRemoteClipboardRequest(prompt: RemoteClipboardPromptUi) {
         val request = pendingRemoteClipboardRequest

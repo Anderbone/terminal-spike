@@ -110,9 +110,13 @@ internal class MoshBootstrapResult(
     }
 
     fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
-        val choice = herdrChoice ?: return null
-        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
-        return captureHerdrPaneHistory(runner, choice, previous, reading)
+        return (readHerdrHistory(previous, reading) as? HerdrHistoryRead.Available)?.history
+    }
+
+    fun readHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrHistoryRead {
+        val choice = herdrChoice ?: return HerdrHistoryRead.Unavailable
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return HerdrHistoryRead.Retry()
+        return readHerdrPaneHistory(runner, choice, previous, reading)
     }
     val addressBytes: ByteArray = addressBytes.copyOf()
     val sessionKey: ByteArray = sessionKey

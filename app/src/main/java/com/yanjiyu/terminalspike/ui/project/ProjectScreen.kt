@@ -100,7 +100,7 @@ internal fun ProjectScreen(
     val tabs = controller.tabs.collectAsStateWithLifecycle().value
     val saved = rememberSaveableStateHolder()
     MaterialTheme(colorScheme = ProjectReaderColors) {
-        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 32.dp) {
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 48.dp) {
             Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column(Modifier.fillMaxSize()) {
@@ -184,7 +184,9 @@ private fun ProjectWorkspace(
                 ProjectAction(onClick = { directoryDialog = true }, enabled = !state.busy) { Text(stringResource(R.string.project_directory)) }
                 ProjectAction(onClick = controller::refresh, enabled = !state.busy) { Text(stringResource(R.string.project_refresh)) }
             }
-            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Box(Modifier.fillMaxWidth().height(4.dp)) {
+                if (state.busy) LinearProgressIndicator(Modifier.fillMaxSize())
+            }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
             if (state.snapshot == null) {
                 Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

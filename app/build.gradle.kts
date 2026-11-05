@@ -671,11 +671,17 @@ extensions.configure<ApplicationExtension>("android") {
         ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "0.0.10"
+        versionCode = 17
+        versionName = "0.0.11"
 
         testInstrumentationRunner = "com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
+    }
+
+    // AGP's default location can change with XDG_CONFIG_HOME / ANDROID_USER_HOME.
+    // Keep local updates signed by the same key across IDE and shell environments.
+    signingConfigs.getByName("debug") {
+        storeFile = File(providers.systemProperty("user.home").get(), ".android/debug.keystore")
     }
 
     val configuredReleaseSigning = releaseSigningValues?.let { values ->

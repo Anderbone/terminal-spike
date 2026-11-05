@@ -17,6 +17,127 @@ import org.junit.Test
 
 class TerminalControllerWorkflowTest {
     @Test
+    fun repeatedHerdrRetriesRetainHistoryWhileConfirmedInvalidationsReleaseIt() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        val source = com.yanjiyu.terminalspike.connection.HerdrPaneHistory(
+            "default/w1:p1/term1", 26, 1, 62, 30, 0, List(1000) { TerminalLine.plain("row $it") },
+        )
+        val target = com.yanjiyu.terminalspike.connection.HerdrPaneTarget(source.identity, 26, 1, 62, 30, null)
+        controller.publishHerdrHistory(source)
+        repeat(10) {
+            controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(target), source)
+            org.junit.Assert.assertSame(source, controller.herdrHistory)
+        }
+        controller.herdrHistoryReading = true
+        controller.herdrHistoryPinned = true
+        repeat(10) {
+            controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), source)
+            org.junit.Assert.assertSame(source, controller.herdrHistory)
+        }
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(
+            target.copy(identity = "default/w1:p2/term2")), source)
+        assertNull(controller.herdrHistory)
+        controller.publishHerdrHistory(source)
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Unavailable, source)
+        assertNull(controller.herdrHistory)
+        controller.publishHerdrHistory(source)
+        controller.publishInputContext(TerminalInputContext("herdr/default/w1:p2/term2", true))
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), source)
+        assertNull("Known new pane identity must invalidate an old pinned reader even on a failed read", controller.herdrHistory)
+    }
+
+    @Test
+    fun idleCaptureFailureCannotEraseHistoryAdoptedByTheFirstGesture() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        val source = com.yanjiyu.terminalspike.connection.HerdrPaneHistory(
+            "default/w1:p1/term1", 26, 1, 62, 30, 0,
+            (1..1000).map { TerminalLine.plain("row $it") },
+        )
+        controller.publishHerdrHistory(source)
+        // A background full read starts idle, then output changes during its SSH
+        // requests. The user's first gesture adopts the already available source.
+        val sourceAtCapture = controller.herdrHistory
+        val reader = com.yanjiyu.terminalspike.terminal.view.HerdrHistoryViewport()
+        reader.begin(source, 20f)
+        reader.scrollBy(-123.25f)
+        val anchor = reader.viewport.scrollY
+        controller.herdrHistoryReading = true
+        controller.herdrHistoryPinned = true
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), sourceAtCapture)
+        org.junit.Assert.assertSame(source, controller.herdrHistory)
+        assertTrue(reader.retainSource(controller.herdrHistory))
+        assertEquals(anchor, reader.viewport.scrollY, 0f)
+        // The next metadata-only read can still confirm replacement/unavailability.
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Unavailable, source)
+        assertNull(controller.herdrHistory)
+    }
+
+    @Test
+    fun lateIdleCaptureDoesNotRetainHistoryAfterLiveReturnOrAcrossPaneReplacement() {
+        val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())
+        val source = com.yanjiyu.terminalspike.connection.HerdrPaneHistory(
+            "default/w1:p1/term1", 0, 0, 80, 24, 0,
+            (1..100).map { TerminalLine.plain("row $it") },
+        )
+        controller.publishHerdrHistory(source)
+        controller.herdrHistoryPinned = true
+        controller.herdrHistoryReading = false // Input or live-bottom handoff released the reader.
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), source)
+        assertNull(controller.herdrHistory)
+        val replacement = source.copy(identity = "default/w1:p2/term2")
+        controller.publishHerdrHistory(source)
+        controller.herdrHistoryReading = true
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Available(replacement), source)
+        org.junit.Assert.assertSame(replacement, controller.herdrHistory)
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), source)
+        assertNull("A late read cannot protect a different current source", controller.herdrHistory)
+        controller.publishHerdrHistory(source)
+        controller.resetInputSink()
+        controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Retry(), source)
+        assertNull("Disconnect cannot restore an adopted snapshot", controller.herdrHistory)
+    }
+
+    @Test
+    fun clientOwnedHerdrDesktopMenusUseLiveChromeWithoutServerOuterCoordinates() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(), scheduler)
+        controller.reportTerminalSize(88, 31)
+        controller.herdrSessionActive = true
+        val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(88, 31)
+        fun draw(tabRow: Int?) {
+            val output = buildString {
+                append("\u001B[2J\u001B[H spaces")
+                for (row in 1..31) append("\u001B[$row;26H│")
+                append("\u001B[18;2Hagents\u001B[9;41H正文 output + remains selectable")
+                if (tabRow != null) {
+                    append("\u001B[${tabRow + 1};27H   named tab   ")
+                    append("\u001B[38;2;100;150;200m + \u001B[0m")
+                }
+            }
+            controller.updateTerminalFrame(engine.accept(output.toByteArray()))
+            scheduler.drainAll()
+        }
+        for (tabRow in listOf(0, 30, null)) {
+            draw(tabRow)
+            assertNull(controller.herdrSidebarLayout.value)
+            assertTrue("Space rows must work with a server-owned 62x30 pane surface", controller.isHerdrContextMenuCell(4, 5))
+            assertTrue("Agent rows must keep their remote pane menu", controller.isHerdrContextMenuCell(4, 20))
+            assertEquals(tabRow == 0, controller.isHerdrContextMenuCell(40, 0))
+            assertEquals(tabRow == 30, controller.isHerdrContextMenuCell(40, 30))
+            assertFalse("Pane text must retain selection", controller.isHerdrContextMenuCell(40, 8))
+        }
+        controller.updateTerminalFrame(engine.accept("\u001B[12;26H ".toByteArray()))
+        scheduler.drainAll()
+        assertFalse("A partial border or modal must not be inferred as navigation", controller.isHerdrContextMenuCell(4, 5))
+        draw(0)
+        controller.herdrSessionActive = false
+        assertFalse("Ordinary terminals cannot acquire Herdr menus from matching text", controller.isHerdrContextMenuCell(4, 5))
+        controller.herdrSessionActive = true
+        controller.resetInputSink()
+        assertFalse("Session detach must clear Herdr identity", controller.isHerdrContextMenuCell(4, 5))
+    }
+
+    @Test
     fun reviewPasteRequiresAgentAndBracketedPasteAndNeverSubmitsOrSendsControls() {
         val sink = RecordingInputSink()
         val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())

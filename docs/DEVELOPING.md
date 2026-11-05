@@ -51,6 +51,20 @@ scripts/verify-android.sh
 See [CI and releasing](CI-AND-RELEASING.md) for focused UI checks, shared artifacts,
 CI timing and repeatable internal publishing.
 
+### Stable local debug signing
+
+The main app and its instrumentation APK explicitly use `~/.android/debug.keystore`.
+This path stays the same when Android Studio, a shell, or an agent supplies a different
+`XDG_CONFIG_HOME` or `ANDROID_USER_HOME`. Keep this key when moving development machines;
+restore it outside the checkout before building updates for an existing debug install.
+Do not replace it with another automatically generated debug key. Release signing is
+configured separately and is unaffected.
+
+If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, compare the installed APK's
+certificate with `:app:signingReport` and restore the matching debug key before rebuilding.
+Do not uninstall the app or clear its data to work around a signing mismatch. Debug
+keys and all other signing material must stay outside Git.
+
 The following release-manifest block and historical signing/emulator evidence describe the
 pre-bundling release. See ADR-005 for the single-APK verification record.
 
@@ -241,6 +255,28 @@ apply. After installing an update, reconnect the saved Herdr session before test
 Manual acceptance on 2026-09-26: after enabling the existing channel's vibration setting, the user
 confirmed real task-completion vibration on the foldable. A second ten-second task produced one
 vibration and the user accepted the behavior. Automated notification tests ran only on USB SM-S911B.
+
+## Remote text to the phone clipboard
+
+Choose **Settings → Terminal → OSC 52 clipboard writes → Ask**. When a remote program
+sends an OSC 52 write, the permission dialog offers **Automatically allow until this
+connection reconnects**. Check it and tap **Allow** to copy this request and allow
+subsequent writes from that live connection without further prompts. Leaving it
+unchecked allows just one write. The grant is not saved or shared with other tabs;
+a new transport or an app restart requires permission again. Automatic requests
+received while the app UI is not resumed are discarded, not copied on return.
+
+For a direct terminal smoke check, run this on the connected host:
+
+```sh
+printf '\033]52;c;%s\a' "$(printf '%s' 'Phone clipboard test' | base64 | tr -d '\n')"
+```
+
+Run it again with different text after granting automatic access. The phone clipboard
+should change without a second dialog. The remote AI or program must actively emit
+OSC 52; ordinary displayed commands are not copied automatically. A tmux or Mosh
+route must also deliver OSC 52 to the outer app; a filtered request cannot trigger
+this permission or copy path. This change does not configure the remote AI or tmux.
 
 ## Wireless development install
 

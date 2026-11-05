@@ -1,5 +1,8 @@
 package com.yanjiyu.terminalspike.ui.settings
 
+import androidx.test.platform.app.InstrumentationRegistry
+import com.yanjiyu.terminalspike.R
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -72,6 +75,23 @@ import org.hamcrest.CoreMatchers.equalTo
 class SettingsScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun returningFromSettingsDetailRestoresTheCategoryReadingPosition() {
+        composeRule.setContent {
+            TerminalSpikeTheme(updateSystemBarIcons = false) {
+                TestSettingsScreen(Modifier.requiredSize(360.dp, 500.dp))
+            }
+        }
+        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .performScrollToNode(hasText("About"))
+        val position = composeRule.onNodeWithText("About").fetchSemanticsNode().boundsInRoot.top
+        composeRule.onNodeWithText("About").performClick()
+        composeRule.onNodeWithText("About Terminal Spike").performScrollTo().assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        composeRule.onNodeWithText("About").assertIsDisplayed()
+        assertEquals(position, composeRule.onNodeWithText("About").fetchSemanticsNode().boundsInRoot.top, 1f)
+    }
 
     @Test
     fun settingsRetainExpectedSurfacePolarityInLightAndDarkThemes() {
@@ -224,9 +244,11 @@ class SettingsScreenTest {
     fun appearanceAndKeyboardChoicesDispatchRealPersistentModelChanges() {
         var selectedMode: AppearanceMode? = null
         var selectedPreset: String? = null
+        var voiceInputEnabled: Boolean? = null
         val actions = noOpActions().copy(
             onAppearanceMode = { selectedMode = it },
             onKeyboardPreset = { selectedPreset = it },
+            onVoiceInputEnabled = { voiceInputEnabled = it },
         )
         composeRule.setContent {
             MaterialTheme {
@@ -256,6 +278,10 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Keyboard").performScrollTo().performClick()
         composeRule.onNodeWithText("Vim").performScrollTo().performClick()
         assertEquals("vim", selectedPreset)
+        composeRule.onNodeWithText(
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_voice_input_enabled),
+        ).performScrollTo().performClick()
+        assertEquals(false, voiceInputEnabled)
     }
 
     @Test

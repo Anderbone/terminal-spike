@@ -5,7 +5,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -112,7 +112,7 @@ internal fun TerminalSnippetsPage(
     val moveLater = stringResource(R.string.snippet_move_later)
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 36.dp) {
         CompactSnippetLayout(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                 .onGloballyPositioned { viewport = it.boundsInRoot() }
                 .verticalScroll(scroll, enabled = dragging == null)
                 .onGloballyPositioned { origin = it.positionInRoot() }

@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.terminal.view
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.SystemClock
 import android.view.MotionEvent
 import androidx.test.core.app.ActivityScenario
@@ -14,12 +16,23 @@ import com.yanjiyu.terminalspike.connection.HostIdentityDecision
 import com.yanjiyu.terminalspike.connection.TmuxExecOutput
 import com.yanjiyu.terminalspike.connection.captureHerdrPaneHistory
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Test
 
 /** Production capture/routing regression with a fake transport, not real Mosh/Codex acceptance. */
 class HerdrRemoteScrollRecoveryTest {
+    @Test fun pinnedHistoryObsidianLinksOpenLocallyInBothInputModes() =
+        verifyNativeRecovery("w6:pC", historyLinks = true)
+
+    @Test fun firstNativeGestureSurvivesAnOlderIdleCaptureFailure() =
+        verifyNativeRecovery("w6:pC", lateIdleFailure = true)
+
+    @Test fun clientOwnedDesktopKeepsSidebarFixedAndRightEdgeNative() =
+        verifyNativeRecovery("w6:pC", clientOwnedDesktop = true)
+
     @Test fun remotelyScrolledPaneKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("w1:p1")
 
     @Test fun letterPaneNumberKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("w6:pC")
@@ -91,11 +104,20 @@ class HerdrRemoteScrollRecoveryTest {
         }
     }
 
-    private fun verifyNativeRecovery(paneId: String, agent: String = "codex") {
+    private fun verifyNativeRecovery(
+        paneId: String,
+        agent: String = "codex",
+        clientOwnedDesktop: Boolean = false,
+        lateIdleFailure: Boolean = false,
+        historyLinks: Boolean = false,
+    ) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
             val controller = requireNotNull(terminal.controller)
-            val connection = ScrolledHerdr(paneId, agent = agent)
+            val connection = ScrolledHerdr(paneId, agent = agent, clientOwnedDesktop = clientOwnedDesktop)
+            val historyUri = "obsidian://open?vault=Obsjiyu&file=notes%2Fhistory"
+            if (historyLinks) connection.historyMarkup = "\u001B]8;;$historyUri\u001B\\note\u001B]8;;\u001B\\"
+            val openedLinks = CopyOnWriteArrayList<String>()
             lateinit var view: FastTerminalView
             try {
                 scenario.onActivity { activity ->
@@ -103,10 +125,41 @@ class HerdrRemoteScrollRecoveryTest {
                     view = FastTerminalView(activity)
                     activity.setContentView(view)
                     view.attachController(controller)
+                    if (historyLinks) view.setLinkActionCallback { openedLinks += it.target.uri }
                     terminal.accept("\u001B[?1000;1006hLIVE".toByteArray(), {})
                 }
                 await { connection.reads.get() >= 2 && controller.isMouseTrackingEnabled() }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                var sidebarBefore: IntArray? = null
+                fun sidebarPixels(): IntArray {
+                    val density = view.resources.displayMetrics.density
+                    val sidebarWidth = (8f * density + 26 * view.terminalCellWidthPx).toInt()
+                    val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    return try {
+                        view.draw(Canvas(bitmap))
+                        IntArray(sidebarWidth * view.height).also {
+                            bitmap.getPixels(it, 0, sidebarWidth, 0, 0, sidebarWidth, view.height)
+                        }
+                    } finally { bitmap.recycle() }
+                }
+                if (clientOwnedDesktop) {
+                    scenario.onActivity {
+                        terminal.accept(buildString {
+                            append("\u001B[?25l\u001B[2J\u001B[H spaces")
+                            for (row in 1..controller.terminalRows) append("\u001B[$row;26H│")
+                            append("\u001B[1;27H tab \u001B[32m + \u001B[0m")
+                            append("\u001B[5;2Hagents")
+                        }.toByteArray(), {})
+                    }
+                    await { controller.herdrHistoryForDisplay()?.x == 26 }
+                    scenario.onActivity { sidebarBefore = sidebarPixels() }
+                }
+                fun gestureX() = if (clientOwnedDesktop) {
+                    // The fold RED used remote wheels here while the left sidebar
+                    // incorrectly acquired the server-origin native history overlay.
+                    8f * view.resources.displayMetrics.density +
+                        (controller.terminalColumns - 0.5f) * view.terminalCellWidthPx
+                } else view.width / 2f
                 fun drag(older: Boolean) {
                     val now = SystemClock.uptimeMillis()
                     val start = if (older) 4f else 10f
@@ -117,17 +170,60 @@ class HerdrRemoteScrollRecoveryTest {
                         Triple(MotionEvent.ACTION_UP, end, 240L),
                     )) scenario.onActivity {
                         val event = MotionEvent.obtain(now, now + elapsed, action,
-                            view.width / 2f, row * controller.viewport.lineHeightPx, 0)
+                            gestureX(), row * controller.viewport.lineHeightPx, 0)
                         try { view.onTouchEvent(event) } finally { event.recycle() }
                     }
+                }
+                if (lateIdleFailure) {
+                    connection.failOneIdleRead = true
+                    assertTrue(connection.idleReadEntered.await(5, TimeUnit.SECONDS))
                 }
                 // A nonzero remote offset must never force the gesture back to row wheels.
                 drag(older = true)
                 scenario.onActivity {
                     assertTrue(controller.herdrHistoryReading)
                     assertTrue(controller.herdrHistoryPinned)
+                    sidebarBefore?.let { assertArrayEquals("History must not paint over navigation", it, sidebarPixels()) }
                 }
                 assertTrue("The first history gesture must remain native", connection.sent.isEmpty())
+                if (lateIdleFailure) {
+                    connection.releaseIdleRead.countDown()
+                    // This callback starts only after the failed idle result was published.
+                    await { connection.pinnedReads.get() > 0 }
+                    scenario.onActivity {
+                        assertTrue("A late failed idle read must not erase the first reader", controller.herdrHistoryReading)
+                        assertTrue(controller.herdrHistoryPinned)
+                        assertTrue(view.herdrVisibleRowsForTesting().isNotEmpty())
+                    }
+                    assertTrue("No wheel fallback during capture handoff", connection.sent.isEmpty())
+                }
+                // A tap to stop/read must stay on the overlay, including buffered typing.
+                if (historyLinks) scenario.onActivity {
+                    val now = SystemClock.uptimeMillis()
+                    for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                        val event = MotionEvent.obtain(now, now + 40, action,
+                            view.width / 2f, 6f * controller.viewport.lineHeightPx, 0)
+                        try { view.onTouchEvent(event) } finally { event.recycle() }
+                    }
+                    openedLinks.clear()
+                }
+                for (directInput in listOf(true, false)) scenario.onActivity {
+                    view.setDirectInputEnabled(directInput)
+                    val now = SystemClock.uptimeMillis()
+                    val x = if (historyLinks) 8f * view.resources.displayMetrics.density + view.terminalCellWidthPx else gestureX()
+                    val y = 6f * controller.viewport.lineHeightPx
+                    val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+                    try { view.onTouchEvent(down) } finally { down.recycle() }
+                    val visible = view.herdrVisibleRowsForTesting()
+                    assertTrue(visible.isNotEmpty())
+                    val up = MotionEvent.obtain(now, now + 80, MotionEvent.ACTION_UP, x, y, 0)
+                    try { view.onTouchEvent(up) } finally { up.recycle() }
+                    assertTrue("Tap must preserve the reader", controller.herdrHistoryReading)
+                    assertTrue("Tap must preserve the history anchor", controller.herdrHistoryPinned)
+                    assertEquals(visible, view.herdrVisibleRowsForTesting())
+                    if (historyLinks) assertEquals(if (directInput) listOf(historyUri) else listOf(historyUri, historyUri), openedLinks.toList())
+                    assertTrue("History tap must not click the live terminal", connection.sent.isEmpty())
+                }
                 repeat(8) { drag(older = false) }
                 scenario.onActivity {
                     assertTrue("Do not reveal Herdr's older screen at native bottom", controller.herdrHistoryReading)
@@ -154,6 +250,7 @@ class HerdrRemoteScrollRecoveryTest {
                 await { !controller.herdrHistoryReading }
                 assertTrue("Handoff must not synthesize remote input", connection.sent.isEmpty())
             } finally {
+                connection.releaseIdleRead.countDown()
                 scenario.onActivity { terminal.stopAndClear() }
             }
         }
@@ -165,12 +262,22 @@ class HerdrRemoteScrollRecoveryTest {
         assertTrue("Timed out waiting for capture", condition())
     }
 
-    private class ScrolledHerdr(private val paneId: String, private val screenOnly: Boolean = false, private val agent: String = "codex") : Connection {
+    private class ScrolledHerdr(
+        private val paneId: String,
+        private val screenOnly: Boolean = false,
+        private val agent: String = "codex",
+        private val clientOwnedDesktop: Boolean = false,
+    ) : Connection {
         @Volatile private var columns = 80
         @Volatile private var rows = 24
         @Volatile var latestInput = "INPUT_READY"
+        @Volatile var historyMarkup: String? = null
         val offset = AtomicInteger(if (screenOnly) 0 else 6)
         val reads = AtomicInteger()
+        val pinnedReads = AtomicInteger()
+        val idleReadEntered = CountDownLatch(1)
+        val releaseIdleRead = CountDownLatch(1)
+        @Volatile var failOneIdleRead = false
         val sent = CopyOnWriteArrayList<String>()
         override val isHerdrSession = true
         override fun captureInputContext() = com.yanjiyu.terminalspike.terminal.TerminalInputContext(
@@ -178,11 +285,23 @@ class HerdrRemoteScrollRecoveryTest {
             if (screenOnly && agent == "pi") com.yanjiyu.terminalspike.terminal.HerdrPiScrollPane(0, 0, columns, rows) else null,
         )
         override fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? {
+            if (reading) pinnedReads.incrementAndGet()
+            if (!reading && failOneIdleRead) {
+                failOneIdleRead = false
+                idleReadEntered.countDown()
+                check(releaseIdleRead.await(5, TimeUnit.SECONDS))
+                reads.incrementAndGet()
+                return null
+            }
+            val paneColumns = if (clientOwnedDesktop) columns - 26 else columns
+            val paneRows = if (clientOwnedDesktop) rows - 1 else rows
             val result = captureHerdrPaneHistory({ command ->
                 val value = when {
-                    "'layout'" in command -> """{"result":{"layout":{"focused_pane_id":"$paneId","tab_id":"w1:t1","panes":[{"pane_id":"$paneId","rect":{"x":0,"y":0,"width":$columns,"height":$rows}}]}}}"""
-                    "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":1,"scroll":{"viewport_rows":$rows,"offset_from_bottom":${offset.get()}}}}}"""
-                    "'read'" in command -> (1..if (screenOnly) rows else 1000).joinToString("\n", postfix = "\n") { if (it == 1000) latestInput else "row $it" }
+                    "'layout'" in command -> """{"result":{"layout":{"area":{"x":0,"y":0,"width":$paneColumns,"height":$paneRows},"focused_pane_id":"$paneId","tab_id":"w1:t1","panes":[{"pane_id":"$paneId","rect":{"x":0,"y":0,"width":$paneColumns,"height":$paneRows}}]}}}"""
+                    "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":1,"scroll":{"viewport_rows":$paneRows,"offset_from_bottom":${offset.get()}}}}}"""
+                    "'read'" in command -> (1..if (screenOnly) rows else 1000).joinToString("\n", postfix = "\n") {
+                        if (it == 1000) latestInput else historyMarkup ?: "row $it"
+                    }
                     else -> error("Unexpected capture command")
                 }
                 TmuxExecOutput(value.toByteArray(), 0)

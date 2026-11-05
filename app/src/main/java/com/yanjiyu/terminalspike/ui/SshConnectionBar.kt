@@ -21,6 +21,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -385,6 +389,7 @@ private fun TmuxSessionDialog(
     onDelete: (String) -> Unit,
 ) {
     var deleteTarget by remember(prompt.promptToken, prompt.sessions) { mutableStateOf<String?>(null) }
+    var menuTarget by remember(prompt.promptToken) { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onOpenShell,
         modifier = Modifier.testTag(TmuxSessionDialogTestTag),
@@ -479,6 +484,7 @@ private fun TmuxSessionDialog(
                     )
                 }
                 prompt.sessions.forEach { session ->
+                    val sessionActionDescription = stringResource(R.string.session_actions_for, session.name)
                     Surface(
                         onClick = { onAttach(session.id) },
                         modifier = Modifier.testTag("startup-session-${session.id}"),
@@ -504,7 +510,7 @@ private fun TmuxSessionDialog(
                                 Text(
                                     text = stringResource(
                                         R.string.tmux_selector_session_metadata,
-                                        session.windowCount,
+                                        pluralStringResource(R.plurals.tmux_session_windows, session.windowCount, session.windowCount),
                                         session.attachedClientCount,
                                     ),
                                     style = MaterialTheme.typography.bodySmall,
@@ -514,8 +520,22 @@ private fun TmuxSessionDialog(
                                 )
                             }
                             TerminalTaskIndicator(session.taskStatus)
-                            TextButton(onClick = { deleteTarget = session.id }) {
-                                Text(stringResource(R.string.tmux_selector_delete))
+                            Box {
+                                IconButton(onClick = { menuTarget = session.id }) {
+                                    ConnectionsGlyphIcon(
+                                        ConnectionsGlyph.MORE,
+                                        Modifier.size(18.dp).semantics {
+                                            contentDescription = sessionActionDescription
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                DropdownMenu(expanded = menuTarget == session.id, onDismissRequest = { menuTarget = null }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tmux_selector_delete), color = MaterialTheme.colorScheme.error) },
+                                        onClick = { menuTarget = null; deleteTarget = session.id },
+                                    )
+                                }
                             }
                         }
                     }
@@ -561,6 +581,10 @@ private fun TmuxSessionDialog(
                         deleteTarget = null
                         onDelete(selected.id)
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
                 ) { Text(stringResource(R.string.tmux_selector_delete_confirm)) }
             },
             dismissButton = {
@@ -833,16 +857,16 @@ private fun SessionTabSurface(
     indicator: @Composable () -> Unit = {},
 ) {
     val background by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+        if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
         label = "session-tab",
     )
     Surface(
-        modifier = modifier.heightIn(min = 36.dp).combinedClickable(
+        modifier = modifier.heightIn(min = 48.dp).combinedClickable(
             onClick = onSelect,
             onDoubleClick = onDuplicate,
             onLongClick = onActions,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.small,
         color = background,
     ) {
         Row(
@@ -863,13 +887,14 @@ private fun SessionTabSurface(
             if (onClose != null) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(36.dp).semantics {
+                    modifier = Modifier.size(48.dp).semantics {
                         contentDescription = requireNotNull(closeDescription)
                     },
                 ) {
                     ConnectionsGlyphIcon(
                         glyph = ConnectionsGlyph.CLOSE,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

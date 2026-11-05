@@ -856,6 +856,83 @@ class SshSessionRepositoryTest {
             assertEquals(started.sessionId, event.sessionId)
             assertEquals("private clipboard value", repository.consumeRemoteClipboardRequest(event))
             assertEquals(null, repository.consumeRemoteClipboardRequest(event))
+            terminal.nextRemoteClipboardText = "must still ask"
+            connection.emitBytes("frame".toByteArray())
+            runCurrent()
+            assertFalse(events.last().automaticallyAllowed)
+            repository.discardRemoteClipboardRequest(events.last())
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun automaticClipboardConsentIsOneShotScopedToItsConnectionAndExpiresOnReconnect() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val first = FakeConnection()
+        val other = FakeConnection()
+        val reconnected = FakeConnection()
+        val firstTerminal = FakeTerminal()
+        val otherTerminal = FakeTerminal()
+        val connections = ArrayDeque(listOf(first, other, reconnected))
+        val terminals = ArrayDeque(listOf(firstTerminal, otherTerminal))
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connections.removeFirst() },
+            terminalFactory = SshSessionTerminalFactory { terminals.removeFirst() },
+        )
+        val events = mutableListOf<RemoteClipboardWriteRequestEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.remoteClipboardRequests.collect { events += it }
+        }
+        try {
+            repository.startUserInitiatedSession(
+                reconnectingRequest(authentication = SshAuthentication.StoredPassword { byteArrayOf(1) }),
+            )
+            repository.startUserInitiatedSession("Other shell", config())
+            runCurrent()
+
+            firstTerminal.nextRemoteClipboardText = "first request"
+            first.emitBytes("frame".toByteArray())
+            runCurrent()
+            assertFalse(events.last().automaticallyAllowed)
+            assertEquals("first request", repository.consumeRemoteClipboardRequest(events.last(), true))
+            assertEquals(null, repository.consumeRemoteClipboardRequest(events.last(), true))
+
+            firstTerminal.nextRemoteClipboardText = "automatic value"
+            first.emitBytes("frame".toByteArray())
+            runCurrent()
+            val automatic = events.last()
+            assertTrue(automatic.automaticallyAllowed)
+            assertEquals("automatic value", repository.consumeRemoteClipboardRequest(automatic))
+            assertEquals(null, repository.consumeRemoteClipboardRequest(automatic))
+
+            otherTerminal.nextRemoteClipboardText = "another connection must ask"
+            other.emitBytes("frame".toByteArray())
+            runCurrent()
+            assertFalse(events.last().automaticallyAllowed)
+            repository.discardRemoteClipboardRequest(events.last())
+
+            firstTerminal.nextRemoteClipboardText = "stale automatic value"
+            first.emitBytes("frame".toByteArray())
+            runCurrent()
+            val stale = events.last()
+            assertTrue(stale.automaticallyAllowed)
+            first.emit(transientTransportFailure("lost"))
+            advanceTimeBy(60_000L)
+            runCurrent()
+            assertEquals(1, reconnected.connectCalls.get())
+            assertEquals(null, repository.consumeRemoteClipboardRequest(stale, true))
+
+            firstTerminal.nextRemoteClipboardText = "new transport must ask again"
+            reconnected.emitBytes("frame".toByteArray())
+            runCurrent()
+            assertFalse(events.last().automaticallyAllowed)
+            assertEquals("new transport must ask again", repository.consumeRemoteClipboardRequest(events.last()))
         } finally {
             repository.disconnectAll()
             ownerScope.cancel()

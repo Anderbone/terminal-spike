@@ -6,13 +6,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import com.yanjiyu.terminalspike.ui.theme.AppEditorDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -97,7 +95,7 @@ internal fun CustomTerminalThemeEditorDialog(
         }
     }
 
-    AlertDialog(
+    AppEditorDialog(
         modifier = Modifier.testTag(CustomThemeEditorTestTag),
         onDismissRequest = onDismiss,
         title = {
@@ -117,11 +115,11 @@ internal fun CustomTerminalThemeEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 CustomThemeLivePreview(preview)
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    item {
+                    Box {
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it.take(ModelLimits.MAX_DISPLAY_NAME_LENGTH) },
@@ -131,7 +129,7 @@ internal fun CustomTerminalThemeEditorDialog(
                             isError = !isValidThemeName(name),
                         )
                     }
-                    itemsIndexed(labels) { index, label ->
+                    labels.forEachIndexed { index, label ->
                         val parsedColour = parsed[index]
                         OutlinedTextField(
                             value = colours[index],
@@ -163,7 +161,7 @@ internal fun CustomTerminalThemeEditorDialog(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                         )
                     }
-                    item {
+                    Box {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -181,7 +179,7 @@ internal fun CustomTerminalThemeEditorDialog(
                         }
                     }
                     if (draft == null) {
-                        item {
+                        Box {
                             Text(
                                 stringResource(R.string.settings_terminal_theme_invalid),
                                 color = MaterialTheme.colorScheme.error,
@@ -189,7 +187,7 @@ internal fun CustomTerminalThemeEditorDialog(
                             )
                         }
                     }
-                    item {
+                    Box {
                         OutlinedButton(
                             onClick = {
                                 colours = current.editorColours()
@@ -199,7 +197,7 @@ internal fun CustomTerminalThemeEditorDialog(
                         ) { Text(stringResource(R.string.settings_terminal_theme_restore_defaults)) }
                     }
                     if (initialTheme != null) {
-                        item {
+                        Box {
                             OutlinedButton(
                                 onClick = { deleteRequested = true },
                                 modifier = Modifier.fillMaxWidth().testTag(CustomThemeDeleteTestTag),

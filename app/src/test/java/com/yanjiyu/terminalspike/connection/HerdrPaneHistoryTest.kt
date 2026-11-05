@@ -6,6 +6,87 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrPaneHistoryTest {
+    @Test fun ansiHistoryPreservesObsidianOsc8TargetsAndStillRejectsOtherSchemes() {
+        val uri = "obsidian://open?vault=Obsjiyu&file=notes%2Fhistory"
+        for (target in listOf(uri, "file:///private/note", "javascript:alert(1)")) {
+            val content = (1..40).joinToString("\n", postfix = "\n") {
+                "\u001B]8;;$target\u001B\\note\u001B]8;;\u001B\\"
+            }.toByteArray()
+            val rows = requireNotNull(parseHerdrHistoryRows(content, 80, 24))
+            assertEquals(40, rows.size)
+            if (target == uri) assertTrue(rows.all { line -> line.runs.any { it.hyperlink?.uri == uri } })
+            else assertTrue(rows.all { line -> line.runs.all { it.hyperlink == null } })
+        }
+    }
+
+    @Test fun transportAndRevisionRacesAreRetryableButDefinitePaneChangesAreNot() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        val source = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it) }, choice, null, false))
+        for (failure in listOf("transport", "exit", "revision")) {
+            var gets = 0
+            val result = readHerdrPaneHistory({ command ->
+                if ("'read'" in command) {
+                    if (failure == "transport") error("SSH read interrupted")
+                    if (failure == "exit") return@readHerdrPaneHistory TmuxExecOutput(byteArrayOf(), 1)
+                }
+                fixtureResponse(command, revision = if ("'get'" in command && ++gets == 2 && failure == "revision") 2 else 1)
+            }, choice, null, false)
+            assertTrue(result is HerdrHistoryRead.Retry)
+            assertTrue((result as HerdrHistoryRead.Retry).target!!.matches(source))
+        }
+        assertEquals(HerdrHistoryRead.Retry(), readHerdrPaneHistory({ error("disconnected") }, choice, null, false))
+        assertEquals(HerdrHistoryRead.Retry(), readHerdrPaneHistory({ command ->
+            val response = fixtureResponse(command)
+            response.copy(stdout = response.stdout.toString(Charsets.UTF_8)
+                .replace("\"viewport_rows\":24", "\"viewport_rows\":12").toByteArray())
+        }, choice, source, true))
+        assertEquals(HerdrHistoryRead.Unavailable, readHerdrPaneHistory({
+            TmuxExecOutput("""{"error":{"code":"pane_not_found"}}""".toByteArray(), 1)
+        }, choice, source, true))
+        var areaReads = 0
+        assertEquals(HerdrHistoryRead.Retry(), readHerdrPaneHistory({ command ->
+            val response = fixtureResponse(command)
+            if ("'layout'" !in command) response else response.copy(stdout = response.stdout.toString(Charsets.UTF_8)
+                .replace("\"layout\":{", "\"layout\":{\"area\":{\"x\":0,\"y\":0,\"width\":${if (++areaReads == 1) 88 else 90},\"height\":25},")
+                .toByteArray())
+        }, choice, null, false))
+        var layouts = 0
+        val switched = readHerdrPaneHistory({ command ->
+            fixtureResponse(command, paneId = if ("'layout'" in command && ++layouts == 2) "w1:p3" else "w1:p2")
+        }, choice, null, false)
+        assertEquals(HerdrHistoryRead.Unavailable, switched)
+        assertEquals(HerdrHistoryRead.Unavailable, readHerdrPaneHistory({ fixtureResponse(it, agent = "vim") }, choice, source, true))
+    }
+
+    @Test fun pinnedReaderSurvivesAResetOfLiveHistoryButLiveScreenOnlyDoesNotClaimOwnership() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        val source = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it) }, choice, null, false))
+        val runner = TmuxCommandRunner { command ->
+            val response = fixtureResponse(command)
+            response.copy(stdout = response.stdout.toString(Charsets.UTF_8)
+                .replace("\"viewport_rows\":24", "\"max_offset_from_bottom\":0,\"viewport_rows\":24").toByteArray())
+        }
+        assertEquals(HerdrHistoryRead.Available(source), readHerdrPaneHistory(runner, choice, source, true))
+        assertEquals(HerdrHistoryRead.Unavailable, readHerdrPaneHistory(runner, choice, source, false))
+    }
+
+    @Test fun clientOwnedLayoutSurfaceIsRetainedAndParticipatesInSnapshotReuse() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        fun capture(surfaceWidth: Int, previous: HerdrPaneHistory?, reading: Boolean) = captureHerdrPaneHistory({ command ->
+            val response = fixtureResponse(command)
+            if ("'layout'" !in command) response else response.copy(stdout = response.stdout.toString(Charsets.UTF_8)
+                .replace("\"layout\":{", "\"layout\":{\"area\":{\"x\":0,\"y\":0,\"width\":$surfaceWidth,\"height\":25},")
+                .toByteArray())
+        }, choice, previous, reading)
+        val initial = requireNotNull(capture(88, null, false))
+        assertEquals(HerdrPaneArea(0, 0, 88, 25), initial.surface)
+        assertSame(initial, capture(88, initial, true))
+        val changed = requireNotNull(capture(90, initial, true))
+        assertNotSame("A changed outer surface must invalidate a pinned split", initial, changed)
+        assertEquals(90, changed.surface!!.columns)
+        assertNull("A focused pane must fit the reported surface", capture(80, null, false))
+    }
+
     @Test fun piRegularModeRetainsOrderedNativeHistory() {
         val captured = requireNotNull(captureHerdrPaneHistory(
             { fixtureResponse(it, agent = "pi") },

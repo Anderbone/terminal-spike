@@ -85,7 +85,10 @@ internal const val MAX_HERDR_SESSIONS = 128
 private const val HERDR_SELECTION_PREFIX = "herdr:"
 private const val HERDR_AVAILABLE_MARKER = "__TERMINAL_SPIKE_HERDR__"
 private val HERDR_PROBE_SCRIPT = """
-    terminal_spike_herdr_bin=${'$'}(command -v herdr 2>/dev/null || true)
+    terminal_spike_herdr_bin="${'$'}HOME/.local/bin/herdr"
+    if [ ! -x "${'$'}terminal_spike_herdr_bin" ]; then
+        terminal_spike_herdr_bin=${'$'}(command -v herdr 2>/dev/null || true)
+    fi
     if [ ! -x "${'$'}terminal_spike_herdr_bin" ]; then
         for terminal_spike_candidate in "${'$'}HOME/.local/bin/herdr" "${'$'}HOME/.cargo/bin/herdr" "${'$'}HOME/bin/herdr" "${'$'}HOME/.nix-profile/bin/herdr" /usr/local/bin/herdr /usr/bin/herdr /opt/homebrew/bin/herdr; do
             if [ -x "${'$'}terminal_spike_candidate" ]; then terminal_spike_herdr_bin=${'$'}terminal_spike_candidate; break; fi

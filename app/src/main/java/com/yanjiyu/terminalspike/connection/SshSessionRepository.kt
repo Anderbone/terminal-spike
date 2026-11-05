@@ -225,6 +225,7 @@ internal data class RemoteSessionTerminalConfiguration(
 internal class RemoteClipboardWriteRequestEvent internal constructor(
     val sessionId: Long,
     val requestId: Long,
+    val automaticallyAllowed: Boolean = false,
     private val runtimeToken: Long,
     private val transportGeneration: Long,
     private val ownerToken: Any,
@@ -668,7 +669,10 @@ internal class SshSessionRepository(
     }
 
     /** Returns the clipboard text once, and only while the exact originating transport is live. */
-    fun consumeRemoteClipboardRequest(event: RemoteClipboardWriteRequestEvent): String? =
+    fun consumeRemoteClipboardRequest(
+        event: RemoteClipboardWriteRequestEvent,
+        allowForConnection: Boolean = false,
+    ): String? =
         synchronized(lock) {
             val runtime = runtimes[event.sessionId]
             if (
@@ -683,7 +687,11 @@ internal class SshSessionRepository(
                 event.discard()
                 null
             } else {
-                event.consume(remoteClipboardEventOwner)
+                event.consume(remoteClipboardEventOwner)?.also {
+                    if (allowForConnection) {
+                        runtime.clipboardAllowedGeneration = runtime.transportGeneration
+                    }
+                }
             }
         }
 
@@ -1264,6 +1272,7 @@ internal class SshSessionRepository(
             RemoteClipboardWriteRequestEvent(
                 sessionId = runtime.id,
                 requestId = allocateRemoteClipboardRequestIdLocked(),
+                automaticallyAllowed = runtime.clipboardAllowedGeneration == runtime.transportGeneration,
                 runtimeToken = runtime.runtimeToken,
                 transportGeneration = runtime.transportGeneration,
                 ownerToken = remoteClipboardEventOwner,
@@ -2257,6 +2266,7 @@ private class DefaultSshSessionTerminal(
     override fun attach(connection: Connection, onInputAccepted: () -> Unit) {
         synchronized(tmuxHistoryLock) {
             attachedConnection = connection
+            controller.herdrSessionActive = connection.isHerdrSession
             controller.publishInputContext(TerminalInputContext())
             tmuxCaptureGeneration = tmuxCaptureGeneration.nextPositiveGeneration()
             tmuxCaptureAgain = false
@@ -2330,6 +2340,7 @@ private class DefaultSshSessionTerminal(
         onTerminalBell: () -> Unit,
     ) {
         synchronized(tmuxHistoryLock) {
+            controller.herdrSessionActive = attachedConnection?.isHerdrSession == true
             if (attachedConnection?.isHerdrSession == true) {
                 herdrOutputRevision = herdrOutputRevision.nextPositiveGeneration()
             }
@@ -2416,16 +2427,17 @@ private class DefaultSshSessionTerminal(
                     pinned || !reading && herdrOutputRevision == herdrCapturedOutputRevision
                 }, pinned)
             }
-            val snapshot = runCatching {
-                connection.captureHerdrHistory(previous, pinned)
-            }.getOrNull()
+            val sourceAtCapture = controller.herdrHistory
+            val result = runCatching {
+                connection.readHerdrHistory(previous, pinned)
+            }.getOrElse { HerdrHistoryRead.Retry() }
             synchronized(tmuxHistoryLock) {
                 if (!stopped && attachedConnection === connection) {
                     // Herdr's pane revision is metadata, not a terminal-content revision.
                     // Reuse idle live rows only without new output. A latest overlay must
                     // poll: output below a scrolled remote viewport may emit no Mosh frame.
-                    if (snapshot != null && !pinned) herdrCapturedOutputRevision = revision
-                    controller.publishHerdrHistory(snapshot)
+                    if (result is HerdrHistoryRead.Available && !pinned) herdrCapturedOutputRevision = revision
+                    controller.publishHerdrHistoryRead(result, sourceAtCapture)
                 }
             }
             return
@@ -2677,6 +2689,9 @@ private class SshSessionRuntime(
 
     @Volatile
     var transportGeneration: Long = 1L
+
+    // Guarded by the repository lock; never persisted or carried across transport replacement.
+    var clipboardAllowedGeneration: Long? = null
 
     @Volatile
     var lastMoshNetworkGeneration: Long = -1L

@@ -23,10 +23,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -34,7 +39,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.R
@@ -117,6 +123,7 @@ internal fun ActiveTmuxSessionSwitcherDialog(
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
+    var deleteTarget by rememberSaveable { mutableStateOf<String?>(null) }
     WindowSwitcherDialog(
         title = stringResource(R.string.tmux_session_switcher_title),
         summary = when {
@@ -160,13 +167,28 @@ internal fun ActiveTmuxSessionSwitcherDialog(
                                 R.string.tmux_session_switcher_close_description,
                                 session.name,
                             ),
-                            onClose = { onDelete(session.id) },
+                            onClose = { deleteTarget = session.id },
                             onClick = { onSelect(session.id) },
                         )
                     }
                 }
             }
         }
+    }
+    catalog?.sessions?.firstOrNull { it.id == deleteTarget }?.let { session ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
+            text = { Text(stringResource(R.string.tmux_selector_delete_message, session.name)) },
+            confirmButton = {
+                TextButton(onClick = { deleteTarget = null; onDelete(session.id) }) {
+                    Text(stringResource(R.string.tmux_selector_delete_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
     }
 }
 
@@ -192,7 +214,7 @@ private fun WindowSwitcherDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title)
@@ -272,12 +294,13 @@ private fun SwitcherTile(
     preview: @Composable () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.selected = selected },
         shape = MaterialTheme.shapes.large,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            MaterialTheme.colorScheme.surfaceContainerLow
         },
         border = BorderStroke(
             width = 1.dp,
@@ -297,7 +320,6 @@ private fun SwitcherTile(
                 Text(
                     text = title,
                     modifier = Modifier.weight(1f),
-                    fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -311,16 +333,16 @@ private fun SwitcherTile(
                     ) {}
                 }
                 if (onClose != null && closeDescription != null) {
-                    Box(
+                    IconButton(
+                        onClick = onClose,
                         modifier = Modifier
-                            .size(28.dp)
-                            .clickable(onClick = onClose)
+                            .size(48.dp)
                             .semantics { contentDescription = closeDescription },
-                        contentAlignment = Alignment.Center,
                     ) {
                         ConnectionsGlyphIcon(
                             glyph = ConnectionsGlyph.CLOSE,
                             modifier = Modifier.size(14.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

@@ -31,6 +31,8 @@ class AppSettingsSerializerTest {
         assertFalse(defaults.keepCpuAwake)
         assertFalse(defaults.tmuxSessionSelectorDisabled)
         assertEquals("", defaults.voiceInputLanguageTag)
+        assertFalse(defaults.voiceInputDisabled)
+        assertFalse(defaults.snippetsAboveKeyboard)
         assertSame(defaults, AppSettingsValidator.requireValidCurrent(defaults))
     }
 
@@ -39,6 +41,7 @@ class AppSettingsSerializerTest {
         val expected = AppSettingsSerializer.defaultValue.toBuilder()
             .setThemeMode(AppSettings.ThemeMode.THEME_MODE_DARK)
             .setDynamicColorEnabled(true)
+            .setSnippetsAboveKeyboard(true)
             .setDefaultTerminalProfileId("028c9d14-3645-4a36-af4d-86cdcccb52f0")
             .setReconnectEnabled(true)
             .setAppLockMode(AppSettings.AppLockMode.APP_LOCK_MODE_DELAYED)

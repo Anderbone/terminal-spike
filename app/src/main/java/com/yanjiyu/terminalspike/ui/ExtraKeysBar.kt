@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.animation.animateColorAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -57,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -188,6 +190,7 @@ fun ExtraKeysBar(
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
+    voiceInputEnabled: Boolean = true,
     voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
@@ -213,6 +216,7 @@ fun ExtraKeysBar(
         hapticFeedbackEnabled = hapticFeedbackEnabled,
         keyRepeatEnabled = keyRepeatEnabled,
         multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
+        voiceInputEnabled = voiceInputEnabled,
         voiceInputLanguageTag = voiceInputLanguageTag,
         customizationEnabled = customizationEnabled,
         inputTargetId = inputTargetId,
@@ -254,6 +258,7 @@ fun TerminalAccessoryBar(
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
+    voiceInputEnabled: Boolean = true,
     voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
@@ -268,6 +273,7 @@ fun TerminalAccessoryBar(
     onDirectInputMode: () -> Unit,
     imageContentCallback: TerminalImageContentCallback? = null,
     snippetsContent: (@Composable () -> Unit)? = null,
+    snippetsAboveKeyboard: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -277,22 +283,30 @@ fun TerminalAccessoryBar(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        tonalElevation = 0.dp,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
             val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-            var manualInputMode by remember(inputTargetId, inputContext) { mutableStateOf<Boolean?>(null) }
+            var manualInputMode by remember(inputTargetId) { mutableStateOf<Boolean?>(null) }
+            var inputContextIdentity by remember(inputTargetId) { mutableStateOf(inputContext.identity) }
             var bufferedInputMode by remember(inputTargetId) {
                 mutableStateOf(inputContext.agent || bufferedInputDraftState.value.text.isNotEmpty())
             }
             var bufferedInputPageWasActive by remember { mutableStateOf(false) }
-            LaunchedEffect(inputContext, manualInputMode, bufferedInputDraftState.value.text) {
+            LaunchedEffect(inputTargetId, inputContext, manualInputMode, bufferedInputDraftState.value.text) {
+                // Failed metadata reads have no identity. Only a confirmed pane change may
+                // reset the user's choice; agent flags and pane geometry are live metadata.
+                if (inputContext.identity.isNotEmpty() && inputContext.identity != inputContextIdentity) {
+                    if (inputContextIdentity.isNotEmpty()) manualInputMode = null
+                    inputContextIdentity = inputContext.identity
+                }
                 val manual = manualInputMode
                 // Never hide an in-progress draft because a metadata refresh or pane switch arrives.
                 if (manual != null) bufferedInputMode = manual
-                else if (!bufferedInputMode || bufferedInputDraftState.value.text.isEmpty()) {
+                else if (inputContext.identity.isNotEmpty() &&
+                    (!bufferedInputMode || bufferedInputDraftState.value.text.isEmpty())) {
                     bufferedInputMode = inputContext.agent
                 }
             }
@@ -315,9 +329,9 @@ fun TerminalAccessoryBar(
                 customizationEnabled && !actions.matchDefaultAccessoryDeck(),
             )
             val inputPageCount = if (bufferedInputMode) 1 else shortcutPages.size
-            val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null) 1 else 0 }
+            val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null && !snippetsAboveKeyboard) 1 else 0 }
             // Snippets send into the terminal, so the hidden draft must not keep owning the IME.
-            val bufferedInputPageActive = bufferedInputMode && pagerState.currentPage == 0
+            val bufferedInputPageActive = bufferedInputMode && (snippetsAboveKeyboard || pagerState.currentPage == 0)
             LaunchedEffect(bufferedInputPageActive, keyboardVisible) {
                 currentOnBufferedInputModeChanged(bufferedInputPageActive && keyboardVisible)
                 if (!bufferedInputPageActive && bufferedInputPageWasActive) {
@@ -330,68 +344,85 @@ fun TerminalAccessoryBar(
                 onDispose { currentOnBufferedInputModeChanged(false) }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().height(106.dp),
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
-                ) { page ->
-                    if (snippetsContent != null && page == inputPageCount) {
+            val bufferedContent: @Composable () -> Unit = {
+                Row(Modifier.fillMaxSize()) {
+                    BufferedImageInput(imageContentCallback) {
+                        BufferedInputPage(
+                            keyWidth = keyWidth,
+                            inputTargetId = inputTargetId,
+                            sendEnabled = bufferedInputSendEnabled,
+                            draftState = bufferedInputDraftState,
+                            active = keyboardVisible && bufferedInputPageActive,
+                            multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
+                            voiceInputEnabled = voiceInputEnabled,
+                            voiceInputLanguageTag = voiceInputLanguageTag,
+                            onSend = onSendBufferedInput,
+                            onSubmit = onSubmitBufferedInput,
+                            onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
+                            onToggleTyping = { manualInputMode = false },
+                            onInputInteraction = { manualInputMode = true },
+                        )
+                    }
+                }
+            }
+            val shortcutContent: @Composable (Int) -> Unit = { page ->
+                Row(Modifier.fillMaxSize()) {
+                    Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
+                        .padding(start = 3.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ExtraKeyButton(
+                            label = stringResource(R.string.terminal_escape_short),
+                            description = escapeDescription,
+                            onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                        TypingToggle(
+                            active = false,
+                            onClick = { manualInputMode = true },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        ExtraKeyPage(
+                            cells = shortcutPages[page],
+                            columnCount = columnCount,
+                            rowCount = rowCount,
+                            modifiers = modifiers,
+                            customizationEnabled = customizationEnabled,
+                            keyRepeatEnabled = keyRepeatEnabled,
+                            onPressFeedback = {
+                                if (hapticFeedbackEnabled) {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                                }
+                            },
+                            onAction = onAction,
+                            onCustomize = onCustomize,
+                        )
+                    }
+                }
+            }
+            Column {
+                if (snippetsAboveKeyboard && snippetsContent != null) {
+                    Box(Modifier.fillMaxWidth().heightIn(max = 106.dp).testTag("terminal_pinned_snippets")) {
                         snippetsContent()
-                    } else if (bufferedInputMode) {
-                        Row(Modifier.fillMaxSize()) {
-                            BufferedImageInput(imageContentCallback) {
-                                BufferedInputPage(
-                                    keyWidth = keyWidth,
-                                    inputTargetId = inputTargetId,
-                                    sendEnabled = bufferedInputSendEnabled,
-                                    draftState = bufferedInputDraftState,
-                                    active = keyboardVisible && bufferedInputPageActive,
-                                    multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
-                                    voiceInputLanguageTag = voiceInputLanguageTag,
-                                    onSend = onSendBufferedInput,
-                                    onSubmit = onSubmitBufferedInput,
-                                    onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
-                                    onToggleTyping = { manualInputMode = false },
-                                )
-                            }
-                        }
-                    } else {
-                        Row(Modifier.fillMaxSize()) {
-                            Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
-                                .padding(start = 3.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                ExtraKeyButton(
-                                    label = stringResource(R.string.terminal_escape_short),
-                                    description = escapeDescription,
-                                    onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
-                                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                                )
-                                TypingToggle(active = false, onClick = { manualInputMode = true },
-                                    modifier = Modifier.weight(1f))
-                            }
-                            Box(Modifier.weight(1f).fillMaxHeight()) {
-                                ExtraKeyPage(
-                                    cells = shortcutPages[page],
-                                    columnCount = columnCount,
-                                    rowCount = rowCount,
-                                    modifiers = modifiers,
-                                    customizationEnabled = customizationEnabled,
-                                    keyRepeatEnabled = keyRepeatEnabled,
-                                    onPressFeedback = {
-                                        if (hapticFeedbackEnabled) {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        }
-                                    },
-                                    onAction = onAction,
-                                    onCustomize = onCustomize,
-                                )
-                            }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().height(106.dp)) {
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
+                    ) { page ->
+                        if (!snippetsAboveKeyboard && snippetsContent != null && page == inputPageCount) {
+                            snippetsContent()
+                        } else if (bufferedInputMode) {
+                            bufferedContent()
+                        } else {
+                            shortcutContent(page)
                         }
                     }
                 }
             }
+
         }
     }
 }
@@ -485,11 +516,13 @@ private fun BufferedInputPage(
     draftState: BufferedInputDraftState,
     active: Boolean,
     multilineConfirmationEnabled: Boolean,
+    voiceInputEnabled: Boolean,
     voiceInputLanguageTag: String,
     onSend: (Long, String) -> Boolean,
     onSubmit: (Long, String) -> Boolean,
     onEnter: () -> Unit,
     onToggleTyping: () -> Unit,
+    onInputInteraction: () -> Unit,
 ) {
     val draft = draftState.value
     val validationMessage = draftState.validationMessage
@@ -502,6 +535,7 @@ private fun BufferedInputPage(
     val context = LocalContext.current
     val currentInputTargetId by rememberUpdatedState(inputTargetId)
     val currentVoiceLanguageTag by rememberUpdatedState(voiceInputLanguageTag)
+    val currentVoiceInputEnabled by rememberUpdatedState(voiceInputEnabled)
     var confirmingMultilinePaste by remember { mutableStateOf(false) }
     var pendingSubmit by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf(VoiceInputPhase.IDLE) }
@@ -513,6 +547,7 @@ private fun BufferedInputPage(
             onPhase = { voicePhase = it },
             onPartial = { partialTranscript = it },
             onResult = { transcript ->
+                if (!currentVoiceInputEnabled) return@AndroidVoiceInputRecognizer
                 voiceFailure = null
                 draftState.updateForTarget(
                     draftState.value.withVoiceTranscript(transcript),
@@ -525,6 +560,7 @@ private fun BufferedInputPage(
     val microphonePermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        if (!currentVoiceInputEnabled) return@rememberLauncherForActivityResult
         if (granted) {
             voiceFailure = null
             voiceRecognizer.start(currentVoiceLanguageTag)
@@ -537,8 +573,12 @@ private fun BufferedInputPage(
         onDispose { voiceRecognizer.destroy() }
     }
 
-    LaunchedEffect(inputTargetId) {
+    LaunchedEffect(inputTargetId, voiceInputEnabled) {
         if (voicePhase != VoiceInputPhase.IDLE) voiceRecognizer.cancel()
+        if (!voiceInputEnabled) {
+            partialTranscript = ""
+            voiceFailure = null
+        }
     }
 
     fun sendDraft(submit: Boolean = false) {
@@ -580,7 +620,9 @@ private fun BufferedInputPage(
             )
             TypingToggle(active = true, onClick = onToggleTyping, modifier = Modifier.weight(1f))
         }
-        val voiceStatus = voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
+        val voiceStatus = if (voiceInputEnabled) {
+            voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
+        } else null
         val interactionSource = remember { MutableInteractionSource() }
         val inputFocused by interactionSource.collectIsFocusedAsState()
         BasicTextField(
@@ -590,6 +632,7 @@ private fun BufferedInputPage(
                 .weight(1f)
                 .fillMaxHeight()
                 .focusRequester(focusRequester)
+                .onFocusChanged { if (it.isFocused) onInputInteraction() }
                 .testTag("buffered_terminal_input")
                 .semantics { contentDescription = inputDescription },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -634,55 +677,58 @@ private fun BufferedInputPage(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            val voiceActive = voicePhase != VoiceInputPhase.IDLE
-                            val voiceState = stringResource(
-                                if (voiceActive) {
-                                    R.string.terminal_voice_state_on
-                                } else {
-                                    R.string.terminal_voice_state_off
-                                },
-                            )
-                            val voiceDescription = stringResource(R.string.terminal_voice_input)
-                            Surface(
-                                shape = CircleShape,
-                                color = if (voiceActive) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                },
-                                contentColor = if (voiceActive) {
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                },
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        if (voiceActive) {
-                                            voiceRecognizer.stop()
-                                        } else if (!voiceRecognizer.available) {
-                                            voiceFailure = VoiceInputFailure.UNAVAILABLE
-                                        } else if (
-                                            ContextCompat.checkSelfPermission(
-                                                context,
-                                                Manifest.permission.RECORD_AUDIO,
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            voiceFailure = null
-                                            voiceRecognizer.start(currentVoiceLanguageTag)
-                                        } else {
-                                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                                        }
+                            if (voiceInputEnabled) {
+                                val voiceActive = voicePhase != VoiceInputPhase.IDLE
+                                val voiceState = stringResource(
+                                    if (voiceActive) {
+                                        R.string.terminal_voice_state_on
+                                    } else {
+                                        R.string.terminal_voice_state_off
                                     },
-                                    modifier = Modifier.size(44.dp).semantics {
-                                        contentDescription = voiceDescription
-                                        stateDescription = voiceState
+                                )
+                                val voiceDescription = stringResource(R.string.terminal_voice_input)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (voiceActive) {
+                                        MaterialTheme.colorScheme.errorContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                    contentColor = if (voiceActive) {
+                                        MaterialTheme.colorScheme.onErrorContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
                                     },
                                 ) {
-                                    ConnectionsGlyphIcon(
-                                        glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
-                                        modifier = Modifier.size(21.dp),
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            onInputInteraction()
+                                            if (voiceActive) {
+                                                voiceRecognizer.stop()
+                                            } else if (!voiceRecognizer.available) {
+                                                voiceFailure = VoiceInputFailure.UNAVAILABLE
+                                            } else if (
+                                                ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    Manifest.permission.RECORD_AUDIO,
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                voiceFailure = null
+                                                voiceRecognizer.start(currentVoiceLanguageTag)
+                                            } else {
+                                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        },
+                                        modifier = Modifier.size(44.dp).semantics {
+                                            contentDescription = voiceDescription
+                                            stateDescription = voiceState
+                                        },
+                                    ) {
+                                        ConnectionsGlyphIcon(
+                                            glyph = if (voiceActive) ConnectionsGlyph.STOP else ConnectionsGlyph.MIC,
+                                            modifier = Modifier.size(21.dp),
+                                        )
+                                    }
                                 }
                             }
                             if (canRestoreLastSent) {
@@ -693,7 +739,7 @@ private fun BufferedInputPage(
                                         .semantics { contentDescription = restoreInputDescription },
                                 ) {
                                     ConnectionsGlyphIcon(
-                                        glyph = ConnectionsGlyph.RESTORE,
+                                        glyph = ConnectionsGlyph.UNDO,
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
@@ -901,18 +947,18 @@ private fun ExtraKeyButton(
             description,
         )
     }
-    val containerColor = when (modifierState) {
+    val containerColor by animateColorAsState(targetValue = when (modifierState) {
         AccessoryModifierState.ARMED -> MaterialTheme.colorScheme.primaryContainer
         AccessoryModifierState.LOCKED -> MaterialTheme.colorScheme.tertiaryContainer
         AccessoryModifierState.OFF, null -> if (emphasized) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = when (modifierState) {
+            else MaterialTheme.colorScheme.surfaceContainerLow
+    }, label = "accessory-key-state")
+    val contentColor by animateColorAsState(targetValue = when (modifierState) {
         AccessoryModifierState.ARMED -> MaterialTheme.colorScheme.onPrimaryContainer
         AccessoryModifierState.LOCKED -> MaterialTheme.colorScheme.onTertiaryContainer
         AccessoryModifierState.OFF, null -> if (emphasized) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurface
-    }
+    }, label = "accessory-key-content")
 
     Surface(
         modifier = modifier
@@ -935,7 +981,9 @@ private fun ExtraKeyButton(
         shape = RoundedCornerShape(7.dp),
         color = containerColor,
         contentColor = contentColor,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = if (modifierState?.isActive == true) {
+            BorderStroke(1.dp, contentColor.copy(alpha = 0.45f))
+        } else null,
     ) {
         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp), contentAlignment = Alignment.Center) {
             if (glyph != null) {
@@ -957,11 +1005,10 @@ private fun ExtraKeyButton(
                 )
             }
             if (modifierState == AccessoryModifierState.LOCKED) {
-                Text(
-                    text = "🔒",
-                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 1.dp, top = 1.dp),
-                    fontSize = 7.sp,
-                    lineHeight = 8.sp,
+                ConnectionsGlyphIcon(
+                    glyph = ConnectionsGlyph.LOCK,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 3.dp, top = 3.dp).size(9.dp)
+                        .testTag("terminal-modifier-lock"),
                 )
             }
         }

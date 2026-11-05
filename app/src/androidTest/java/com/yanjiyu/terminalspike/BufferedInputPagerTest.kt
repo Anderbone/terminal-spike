@@ -110,6 +110,64 @@ class BufferedInputPagerTest {
         }
     }
 
+    @Test
+    fun pinnedSnippetsWrapContentAndStayAboveKeysOrDraft() {
+        val draft = BufferedInputDraftState()
+        val placement = mutableStateOf(true)
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize()) {
+                    TerminalAccessoryBar(
+                        actions = TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
+                        modifiers = AccessoryModifierSnapshot(),
+                        customizationEnabled = false,
+                        inputTargetId = 11L,
+                        bufferedInputSendEnabled = true,
+                        bufferedInputDraftState = draft,
+                        onAction = {},
+                        onCustomize = {},
+                        onSendBufferedInput = { _, _ -> true },
+                        onBufferedInputModeChanged = {},
+                        onDirectInputMode = {},
+                        snippetsAboveKeyboard = placement.value,
+                        snippetsContent = {
+                            TerminalSnippetsPage(
+                                snippets = listOf(CommandSnippet(1L, "Pinned snippet", "hello", false)),
+                                canSave = true,
+                                canSend = true,
+                                onSend = {},
+                                onNewCodex = {},
+                                onSave = { Result.success(Unit) },
+                                onEditorClosed = {},
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        val snippetsBounds = composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot
+        val keysBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
+        assertTrue("One snippet row must not reserve a full input page", snippetsBounds.height < keysBounds.height / 2)
+        assertEquals("No blank space between snippets and keys", snippetsBounds.bottom, keysBounds.top, 0.5f)
+        composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("preserve this")
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        val inputBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
+        assertEquals("Input replaces the shortcut keys", keysBounds, inputBounds)
+        assertEquals(snippetsBounds, composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot)
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+        composeRule.runOnIdle { placement.value = false }
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+    }
+
     private fun withSoftwareKeyboard(block: () -> Unit) {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
@@ -340,11 +398,25 @@ class BufferedInputPagerTest {
         }
         composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
         composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
-        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/1", true) }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
         composeRule.runOnIdle { context.value = TerminalInputContext("tmux/1", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        // Switch panes so a deliberate direct-input choice does not follow the new pane.
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/2", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/2", true) }
         composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/2", false) }
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/2", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        composeRule.runOnIdle { context.value = TerminalInputContext() }
+        composeRule.runOnIdle { context.value = TerminalInputContext("tmux/2", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
         composeRule.runOnIdle { context.value = TerminalInputContext("herdr/2", true) }
         composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("keep this draft")
         composeRule.runOnIdle { context.value = TerminalInputContext("herdr/2", false) }
@@ -361,6 +433,68 @@ class BufferedInputPagerTest {
         composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
         composeRule.runOnIdle { context.value = TerminalInputContext("herdr/3", false) }
         composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/3", true) }
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/3", false) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.runOnIdle { context.value = TerminalInputContext() }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/3", true) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed()
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/4", false) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+    }
+
+    @Test
+    fun focusedEmptyInputSurvivesAgentRefreshesBeforeAndAfterTextArrives() {
+        val context = mutableStateOf(TerminalInputContext("herdr/1", true))
+        val draft = BufferedInputDraftState()
+        var directFocusRequests = 0
+        composeRule.setContent {
+            MaterialTheme {
+                ExtraKeysBar(
+                    keys = TerminalExtraKey.DEFAULT_ORDER,
+                    ctrlArmed = false,
+                    altArmed = false,
+                    customizationEnabled = true,
+                    inputTargetId = 11L,
+                    bufferedInputSendEnabled = true,
+                    bufferedInputDraftState = draft,
+                    inputContext = context.value,
+                    onKey = {},
+                    onCustomize = {},
+                    onSendBufferedInput = { _, _ -> true },
+                    onBufferedInputModeChanged = {},
+                    onDirectInputMode = { directFocusRequests++ },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performClick().assertIsFocused()
+        // Dictation has not committed any text yet. Metadata must not dispose its editor.
+        val updates = listOf(
+            TerminalInputContext("herdr/1", false),
+            TerminalInputContext(),
+            TerminalInputContext("herdr/1", true,
+                com.yanjiyu.terminalspike.terminal.HerdrPiScrollPane(0, 0, 80, 24)),
+            TerminalInputContext("herdr/1", false),
+        )
+        for (update in updates) {
+            composeRule.runOnIdle { context.value = update }
+            composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed().assertIsFocused()
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performTextInput("dictated text")
+        composeRule.onNodeWithTag("buffered_terminal_input").performImeAction()
+        composeRule.runOnIdle {
+            assertEquals("", draft.value.text)
+            context.value = TerminalInputContext("herdr/1", true)
+        }
+        composeRule.runOnIdle { context.value = TerminalInputContext("herdr/1", false) }
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed().assertIsFocused()
+        composeRule.runOnIdle { assertEquals(0, directFocusRequests) }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, directFocusRequests) }
     }
 
     @Test
@@ -415,6 +549,7 @@ class BufferedInputPagerTest {
     fun stagedTextFollowsTheActiveSessionWhenSent() {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val inputTargetId = mutableLongStateOf(11L)
+        val voiceInputEnabled = mutableStateOf(true)
         var sendCount = 0
         var sentTargetId: Long? = null
         var sentText: String? = null
@@ -428,6 +563,7 @@ class BufferedInputPagerTest {
                     altArmed = false,
                     customizationEnabled = true,
                     inputTargetId = inputTargetId.longValue,
+                    voiceInputEnabled = voiceInputEnabled.value,
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = draftState,
                     inputContext = TerminalInputContext("test-agent", agent = true),
@@ -491,6 +627,14 @@ class BufferedInputPagerTest {
         voiceButton.assertIsDisplayed()
         assertEquals(voiceBounds, voiceButton.fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
+        composeRule.onNodeWithTag("buffered_input_enter").performClick()
+        composeRule.runOnIdle { voiceInputEnabled.value = false }
+        voiceButton.assertDoesNotExist()
+        restoreButton.assertIsDisplayed()
+        restoreButton.performClick()
+        composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
+        composeRule.runOnIdle { voiceInputEnabled.value = true }
+        voiceButton.assertIsDisplayed()
     }
 
     @Test

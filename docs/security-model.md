@@ -108,8 +108,8 @@ Release builds disable verbose JSch/native protocol logs, transcript logs, autom
 Remote terminal output is untrusted input.
 
 - CSI/OSC/control strings and replies are length/count bounded.
-- OSC 8 links are parsed and displayed safely; activation requires an explicit user gesture and validated scheme.
-- OSC 52 clipboard writes are Disabled or Ask, with Disabled/Ask as defaults; never silently allowed globally.
+- OSC 8 links retain only `http`, `https`, and `obsidian` targets. Activation requires an explicit user gesture and the existing validated open policy; history-reader taps use the displayed snapshot rather than sending clicks to the hidden live terminal. Other schemes, including `file` and `javascript`, remain rejected.
+- OSC 52 clipboard writes are Disabled or Ask, with Disabled/Ask as defaults; never silently allowed globally. In the Ask dialog, the user may explicitly allow automatic writes for the current connection. This grant stays in memory, expires when its transport is replaced or reconnected, and never applies to another session. Automatic writes are delivered only while the app UI is resumed; requests received without that observer are dropped rather than replayed on return.
 - Multiline clipboard/snippet/text sends follow the configured confirmation policy.
 - Selection/copy is bounded. Sensitive clipboard content can be auto-cleared after a user-selected delay where Android still contains the exact copied value.
 - Transcript export occurs only through explicit SAF action and never includes credentials supplied outside terminal output.

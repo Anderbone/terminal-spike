@@ -10,7 +10,7 @@ internal fun appSearchFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
     disabledBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
     focusedBorderColor = MaterialTheme.colorScheme.primary,
 )

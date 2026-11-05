@@ -20,15 +20,21 @@ internal class HerdrNativeScroll(context: Context) {
     private var dragging = false
     private var eligible = false
     private var caughtReader = false
+    private var historyTapEligible = false
 
     fun reset() {
+        stopTouch()
+        reader.clear()
+    }
+
+    private fun stopTouch() {
         scroller.forceFinished(true)
         velocity?.recycle()
         velocity = null
         dragging = false
         eligible = false
         caughtReader = false
-        reader.clear()
+        historyTapEligible = false
     }
 
     fun updateSource(source: HerdrPaneHistory?) {
@@ -42,14 +48,16 @@ internal class HerdrNativeScroll(context: Context) {
         lineHeight: Float,
         paddingX: Float,
         paddingY: Float,
+        onHistoryTap: (Float, Float) -> Unit = { _, _ -> },
     ): Boolean {
         if (event.pointerCount != 1 || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             val consumed = dragging || caughtReader
-            reset()
+            stopTouch()
             return consumed
         }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                val catchingFling = !scroller.isFinished
                 scroller.forceFinished(true)
                 velocity?.recycle()
                 velocity = VelocityTracker.obtain().also { it.addMovement(event) }
@@ -64,10 +72,14 @@ internal class HerdrNativeScroll(context: Context) {
                     event.y >= paddingY + target.y * lineHeight &&
                     event.y < paddingY + (target.y + target.rows) * lineHeight
                 if (caughtReader && !eligible) reset()
+                historyTapEligible = caughtReader && eligible && !catchingFling
                 return caughtReader
             }
             MotionEvent.ACTION_MOVE -> {
                 velocity?.addMovement(event)
+                if (abs(event.x - downX) > configuration.scaledTouchSlop ||
+                    abs(event.y - downY) > configuration.scaledTouchSlop
+                ) historyTapEligible = false
                 if (!eligible) return false
                 if (!dragging && abs(event.y - downY) > configuration.scaledTouchSlop &&
                     abs(event.y - downY) > abs(event.x - downX)
@@ -83,6 +95,10 @@ internal class HerdrNativeScroll(context: Context) {
             }
             MotionEvent.ACTION_UP -> {
                 val consumed = dragging || caughtReader
+                val historyTap = historyTapEligible && !dragging &&
+                    event.eventTime - event.downTime < ViewConfiguration.getLongPressTimeout() &&
+                    abs(event.x - downX) <= configuration.scaledTouchSlop &&
+                    abs(event.y - downY) <= configuration.scaledTouchSlop
                 velocity?.addMovement(event)
                 if (dragging && reader.snapshot != null) {
                     val tracker = velocity
@@ -92,12 +108,16 @@ internal class HerdrNativeScroll(context: Context) {
                         scroller.fling(0, reader.viewport.scrollY.toInt(), 0, speed, 0, 0,
                             0, reader.viewport.maximumScrollY.toInt())
                     }
-                } else if (caughtReader && !reader.holdingLatest) reader.clear()
+                }
+                // A tap also catches a fling. Keep the pinned pixel anchor after finger-up;
+                // only scrolling to live bottom or an explicit live action releases history.
                 velocity?.recycle()
                 velocity = null
                 dragging = false
                 caughtReader = false
                 eligible = false
+                historyTapEligible = false
+                if (historyTap) onHistoryTap(event.x, event.y)
                 return consumed
             }
         }

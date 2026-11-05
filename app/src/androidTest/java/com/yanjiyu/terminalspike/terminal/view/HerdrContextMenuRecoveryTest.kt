@@ -21,6 +21,60 @@ import org.junit.Test
 
 /** Exercises the production metadata refresh and real long-press dispatch on the old USB phone. */
 class HerdrContextMenuRecoveryTest {
+    @Test fun clientOwnedDesktopMenusIgnoreServerPaneCoordinates() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val connection = FailingSideChannel().apply { isHerdrSession = false }
+            lateinit var view: FastTerminalView
+            try {
+                scenario.onActivity { activity ->
+                    terminal.attach(connection)
+                    view = FastTerminalView(activity)
+                    activity.setContentView(view)
+                    view.attachController(controller)
+                }
+                await { connection.resizeReports.get() > 0 && controller.terminalColumns > 35 && controller.terminalRows > 10 }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                // Fold RED: outer grid 88x31, API reports only a 62x30 surface.
+                // Do not fabricate the old server-owned x=26/y=1 metadata.
+                connection.layout = HerdrSidebarLayout(0, controller.terminalColumns - 26, 0, controller.terminalRows - 1)
+                // Production attaches before the user selects Herdr. The first
+                // terminal frame must pick up that completed startup choice.
+                connection.isHerdrSession = true
+                for (tabRow in listOf(0, controller.terminalRows - 1)) {
+                    scenario.onActivity {
+                        val output = buildString {
+                            append("\u001B[?1000;1006h\u001B[2J\u001B[H spaces")
+                            for (row in 1..controller.terminalRows) append("\u001B[$row;26H│")
+                            append("\u001B[${controller.terminalRows / 2};2Hagents")
+                            append("\u001B[${tabRow + 1};27H tab \u001B[38;2;100;150;200m + \u001B[0m")
+                        }
+                        terminal.accept(output.toByteArray(), {})
+                    }
+                    await { controller.isMouseTrackingEnabled() && controller.isHerdrContextMenuCell(30, tabRow) }
+                    assertNull("Server pane coordinates must not masquerade as outer navigation", controller.herdrSidebarLayout.value)
+                    for (direct in listOf(true, false)) {
+                        scenario.onActivity { view.setDirectInputEnabled(direct) }
+                        for (failure in listOf(0, 1, 2)) {
+                            connection.failure = failure
+                            val reads = connection.completedReads.get()
+                            await { connection.completedReads.get() > reads }
+                            assertMenu(scenario, view, controller, connection, 30, tabRow)
+                            assertMenu(scenario, view, controller, connection, 4, 4)
+                            assertMenu(scenario, view, controller, connection, 4, controller.terminalRows - 3)
+                            assertFalse(controller.isHerdrContextMenuCell(40, 5))
+                        }
+                    }
+                }
+                scenario.onActivity { terminal.detach() }
+                assertFalse("Detached streams cannot retain client navigation", controller.isHerdrContextMenuCell(4, 4))
+            } finally {
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
     @Test fun tabsAndSpacesKeepTheirMenusWhenTheSideChannelFails() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
@@ -238,22 +292,26 @@ class HerdrContextMenuRecoveryTest {
                 }
                 await { connection.resizeReports.get() > 0 && controller.terminalRows > 8 }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-                connection.layout = HerdrSidebarLayout(0, controller.terminalColumns, 2, controller.terminalRows - 2)
-                await { controller.herdrSidebarLayout.value == connection.layout }
-                for (direct in listOf(true, false)) {
-                    scenario.onActivity {
-                        view.setDirectInputEnabled(direct)
-                        terminal.accept("\u001B[?1000;1006h\u001B[2;${controller.terminalColumns - 9}H│    ×    ".toByteArray(), {})
+                // Older servers include the mobile header in their outer coordinates;
+                // 0.9.1 reports a client-owned pane surface whose origin is zero.
+                for (top in listOf(2, 0)) {
+                    connection.layout = HerdrSidebarLayout(0, controller.terminalColumns, top, controller.terminalRows - 2)
+                    await { controller.herdrSidebarLayout.value == connection.layout }
+                    for (direct in listOf(true, false)) {
+                        scenario.onActivity {
+                            view.setDirectInputEnabled(direct)
+                            terminal.accept("\u001B[?1000;1006h\u001B[2;${controller.terminalColumns - 9}H│    ×    ".toByteArray(), {})
+                        }
+                        await { controller.isHerdrContextMenuCell(6, 4) }
+                        assertMenu(scenario, view, controller, connection, 6, 4)
+                        connection.failure = 2
+                        assertMenu(scenario, view, controller, connection, 6, 7)
+                        scenario.onActivity {
+                            terminal.accept("\u001B[2;${controller.terminalColumns - 9}H│ switch  ".toByteArray(), {})
+                        }
+                        await { !controller.isHerdrContextMenuCell(6, 4) }
+                        connection.failure = 0
                     }
-                    await { controller.isHerdrContextMenuCell(6, 4) }
-                    assertMenu(scenario, view, controller, connection, 6, 4)
-                    connection.failure = 2
-                    assertMenu(scenario, view, controller, connection, 6, 7)
-                    scenario.onActivity {
-                        terminal.accept("\u001B[2;${controller.terminalColumns - 9}H│ switch  ".toByteArray(), {})
-                    }
-                    await { !controller.isHerdrContextMenuCell(6, 4) }
-                    connection.failure = 0
                 }
             } finally {
                 scenario.onActivity { terminal.stopAndClear() }
@@ -299,7 +357,7 @@ class HerdrContextMenuRecoveryTest {
         val completedReads = AtomicInteger()
         val resizeReports = AtomicInteger()
         val sent = CopyOnWriteArrayList<String>()
-        override val isHerdrSession = true
+        @Volatile override var isHerdrSession = true
         override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? = when (failure) {
             1 -> null
             2 -> error("channel is not opened")

@@ -173,7 +173,7 @@ class FastTerminalView @JvmOverloads constructor(
             ) false else {
                 val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
                 val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
-                controller.isHerdrContextMenuCell(terminalColumnAt(x), row) && openHerdrProject?.invoke() == true
+                controller.closeHerdrNavigationAt(terminalColumnAt(x), row)
             }
         },
         canDoubleTapToType = { x, y ->
@@ -301,7 +301,7 @@ class FastTerminalView @JvmOverloads constructor(
             controller.herdrHistoryReading = false
         }
         if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
-        herdrScroll.updateSource(controller.herdrHistory.takeIf { controller.isHerdrNativeHistoryVisible() })
+        herdrScroll.updateSource(controller.herdrHistoryForDisplay().takeIf { controller.isHerdrNativeHistoryVisible() })
         publishHerdrReaderState(controller)
         val previousProfile = appliedRendererProfile
         val previousScrollY = controller.viewport.scrollY
@@ -765,7 +765,7 @@ class FastTerminalView @JvmOverloads constructor(
             herdrScroll.reset()
             herdrController?.herdrHistoryReading = false
         }
-        val herdrSource = herdrController?.herdrHistory?.takeIf {
+        val herdrSource = herdrController?.herdrHistoryForDisplay()?.takeIf {
             herdrHistoryVisible && !herdrGestureStartedOnOverlay &&
                 it.x + it.columns <= herdrController.terminalColumns &&
                 it.y + it.rows <= herdrController.terminalRows &&
@@ -775,7 +775,7 @@ class FastTerminalView @JvmOverloads constructor(
             (herdrSource != null || herdrScroll.reader.snapshot != null)
         ) {
             val consumed = herdrScroll.touch(event, herdrSource, cellWidthPx, lineHeightPx,
-                horizontalPaddingPx, verticalPaddingPx)
+                horizontalPaddingPx, verticalPaddingPx, ::handleHerdrHistoryTap)
             if (consumed) {
                 if (!herdrTouchConsumed) {
                     val cancel = MotionEvent.obtain(event)
@@ -792,6 +792,13 @@ class FastTerminalView @JvmOverloads constructor(
                 postInvalidateOnAnimation()
                 return true
             }
+        }
+        // Once native scrolling owns a one-finger gesture, a source invalidation
+        // must not send the remaining MOVE/UP events into the remote wheel path.
+        if (herdrTouchConsumed && event.pointerCount == 1 && event.actionMasked != MotionEvent.ACTION_DOWN) {
+            herdrTouchConsumed = event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL
+            parent?.requestDisallowInterceptTouchEvent(herdrTouchConsumed)
+            return true
         }
         if (event.actionMasked == MotionEvent.ACTION_DOWN) herdrTouchConsumed = false
         when (event.actionMasked) {
@@ -1149,6 +1156,14 @@ class FastTerminalView @JvmOverloads constructor(
         return false
     }
 
+    private fun handleHerdrHistoryTap(x: Float, y: Float) {
+        val link = linkAt(x, y) ?: return
+        if (TerminalLinkPolicy.canOpen(link.uri)) {
+            linkActionCallback.onLinkAction(TerminalLinkActionRequest(TerminalLinkAction.OPEN, link))
+            sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED)
+        }
+    }
+
     private fun showHerdrContextMenuAt(x: Float, y: Float): Boolean {
         val controller = terminalController ?: return false
         // Buffered typing owns the IME, not Herdr's navigation context menus.
@@ -1256,6 +1271,10 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun linkAt(x: Float, y: Float): TerminalLinkTarget? {
         val controller = terminalController ?: return null
+        if (herdrScroll.reader.snapshot != null) return herdrScroll.reader.linkAt(
+            x, y, cellWidthPx, lineHeightPx, horizontalPaddingPx, verticalPaddingPx,
+            controller.rendererProfile.osc8HyperlinksEnabled, controller.rendererProfile.detectPlainTextUrls,
+        )
         val row = terminalRowAt(y) ?: return null
         if (controller.selectionLineAt(row) == null) return null
         return TerminalLinkResolver.find(

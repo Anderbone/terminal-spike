@@ -19,6 +19,7 @@ import kotlin.math.sin
 internal enum class ConnectionsGlyph {
     BACK,
     RESTORE,
+    UNDO,
     SEARCH,
     CLOSE,
     ADD,
@@ -50,7 +51,7 @@ internal fun ConnectionsGlyphIcon(
     Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
-        val strokeWidth = minOf(width, height) * 0.09f
+        val strokeWidth = minOf(width, height) * 0.075f
         val stroke = Stroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
         fun point(x: Float, y: Float) = Offset(width * x, height * y)
 
@@ -74,6 +75,22 @@ internal fun ConnectionsGlyphIcon(
                     lineTo(width * 0.38f, height * 0.17f)
                     moveTo(width * 0.17f, height * 0.38f)
                     lineTo(width * 0.44f, height * 0.4f)
+                }
+                drawPath(arrow, resolvedColor, style = stroke)
+            }
+            ConnectionsGlyph.UNDO -> {
+                val arrow = Path().apply {
+                    moveTo(width * 0.38f, height * 0.2f)
+                    lineTo(width * 0.18f, height * 0.4f)
+                    lineTo(width * 0.38f, height * 0.6f)
+                    moveTo(width * 0.18f, height * 0.4f)
+                    lineTo(width * 0.6f, height * 0.4f)
+                    cubicTo(
+                        width * 0.9f, height * 0.4f,
+                        width * 0.9f, height * 0.8f,
+                        width * 0.6f, height * 0.8f,
+                    )
+                    lineTo(width * 0.48f, height * 0.8f)
                 }
                 drawPath(arrow, resolvedColor, style = stroke)
             }

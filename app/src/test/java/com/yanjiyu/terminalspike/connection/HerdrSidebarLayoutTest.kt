@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrSidebarLayoutTest {
+    @Test fun clientOwnedMobileSurfaceRetainsMenusOnlyOnTheConfirmedSwitchList() {
+        // Herdr 0.9.1 reports the pane surface with its own origin, excluding the
+        // client's two-row mobile header.
+        val surface = HerdrSidebarLayout(0, 44, 0, 28)
+        assertEquals(surface, surface.forTerminalGrid(44, 30))
+        for (header in listOf("│    ×    ", "│  close  ")) {
+            assertTrue(surface.isContextMenuCell(6, 4, 44, 30, header))
+            assertFalse(surface.isContextMenuCell(6, 1, 44, 30, header))
+            assertFalse(surface.isContextMenuCell(6, 4, 80, 30, header))
+        }
+        for (header in listOf(null, "", "│ switch  ", "terminal output")) {
+            assertFalse(surface.isContextMenuCell(6, 4, 44, 30, header))
+        }
+        assertNull(surface.forTerminalGrid(44, 40))
+        assertNull(HerdrSidebarLayout(4, 44, 0, 28).forTerminalGrid(44, 30))
+        assertFalse(surface.isContextMenuCell(6, 4, 44, 40, "│  close  "))
+    }
+
     @Test fun onlyConfirmedMobileSwitcherRowsUseRemoteContextMenus() {
         val mobile = HerdrSidebarLayout(0, 41, 2, 28)
         for (header in listOf("│    ×    ", "│  close  ")) {

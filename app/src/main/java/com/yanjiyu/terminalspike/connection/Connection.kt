@@ -25,6 +25,10 @@ interface Connection : TerminalInputSink {
     /** Background-only, bounded read from the explicitly selected Herdr session. */
     fun captureHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrPaneHistory? = null
 
+    /** Preserves retryable failures separately from confirmed pane/history invalidation. */
+    fun readHerdrHistory(previous: HerdrPaneHistory?, reading: Boolean): HerdrHistoryRead =
+        captureHerdrHistory(previous, reading)?.let { HerdrHistoryRead.Available(it) } ?: HerdrHistoryRead.Retry()
+
     /** True while this transport has an app-selected or side-channel-verified tmux client. */
     val isTmuxSession: Boolean
         get() = false

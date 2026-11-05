@@ -99,6 +99,8 @@ class AppSettingsRepositoryTest {
                 builder.setThemeMode(AppSettings.ThemeMode.THEME_MODE_DARK)
                 builder.setAccentPreset("coral")
                 builder.setKeepaliveIntervalSeconds(45)
+                builder.setVoiceInputDisabled(true)
+                builder.setVoiceInputLanguageTag("zh-CN")
             }
         } finally {
             first.close()
@@ -110,6 +112,8 @@ class AppSettingsRepositoryTest {
             assertEquals(AppSettings.ThemeMode.THEME_MODE_DARK, settings.themeMode)
             assertEquals("coral", settings.accentPreset)
             assertEquals(45, settings.keepaliveIntervalSeconds)
+            assertEquals(true, settings.voiceInputDisabled)
+            assertEquals("zh-CN", settings.voiceInputLanguageTag)
         } finally {
             recreated.close()
         }

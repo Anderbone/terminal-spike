@@ -57,6 +57,9 @@ class ReleaseUiLiteralAllowListTest {
             "key-selection",
             "snippet-selection",
             "primary-workspace",
+            "accessory-key-state",
+            "accessory-key-content",
+            "settings-detail",
             "M",
         )
 

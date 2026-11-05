@@ -31,10 +31,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -53,6 +55,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
@@ -79,10 +82,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
@@ -1116,6 +1121,15 @@ fun TerminalSpikeScreen(
         )?.let { destination = it }
     }
 
+    LaunchedEffect(lifecycleOwner, viewModel, terminalClipboardWriter) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.automaticClipboardRequests.collect { request ->
+                viewModel.consumeAutomaticClipboardRequest(request)
+                    ?.let(terminalClipboardWriter::writeRemoteClipboard)
+            }
+        }
+    }
+
     DisposableEffect(lifecycleOwner, viewModel, terminalClipboardWriter) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -1569,6 +1583,8 @@ fun TerminalSpikeScreen(
                                     multilinePasteConfirmationEnabled =
                                         state.multilinePasteConfirmationEnabled,
                                     voiceInputLanguageTag = state.voiceInputLanguageTag,
+                                    snippetsAboveKeyboard = state.snippetsAboveKeyboard,
+                                    voiceInputEnabled = state.voiceInputEnabled,
                                     customizationEnabled = state.settingsReady,
                                     inputTargetId = state.activeSessionId,
                                     bufferedInputSendEnabled = state.canSendTerminalInput,
@@ -2138,14 +2154,30 @@ fun TerminalSpikeScreen(
         }
     }
     state.remoteClipboardPrompt?.let { prompt ->
+        var allowForConnection by remember(prompt) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { viewModel.denyRemoteClipboardRequest(prompt) },
             title = { Text(stringResource(R.string.terminal_remote_clipboard_title)) },
-            text = { Text(stringResource(R.string.terminal_remote_clipboard_message)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.terminal_remote_clipboard_message))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.toggleable(
+                            value = allowForConnection,
+                            role = Role.Checkbox,
+                            onValueChange = { allowForConnection = it },
+                        ),
+                    ) {
+                        Checkbox(checked = allowForConnection, onCheckedChange = null)
+                        Text(stringResource(R.string.terminal_remote_clipboard_allow_connection))
+                    }
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.allowRemoteClipboardRequest(prompt)
+                        viewModel.allowRemoteClipboardRequest(prompt, allowForConnection)
                             ?.let(terminalClipboardWriter::writeRemoteClipboard)
                     },
                 ) {
