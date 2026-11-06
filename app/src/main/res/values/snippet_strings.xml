@@ -8,4 +8,6 @@
     <string name="snippet_sequence_invalid">Invalid key sequence. Use text …, ctrl+a through ctrl+z, enter, tab, escape, or wait 1–10000. Total waits must not exceed 60000 ms.</string>
     <string name="snippet_move_earlier">Move earlier</string>
     <string name="snippet_move_later">Move later</string>
+    <string name="terminal_hide_pinned_snippets">Hide snippets</string>
+    <string name="terminal_show_pinned_snippets">Show snippets</string>
 </resources>

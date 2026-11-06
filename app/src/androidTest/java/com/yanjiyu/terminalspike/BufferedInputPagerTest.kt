@@ -158,6 +158,15 @@ class BufferedInputPagerTest {
         val inputBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
         assertEquals("Input replaces the shortcut keys", keysBounds, inputBounds)
         assertEquals(snippetsBounds, composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot)
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }
+        val collapsedBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
+        assertEquals("Collapsing frees the snippet row height", snippetsBounds.top, collapsedBounds.top, 0.5f)
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        assertEquals(snippetsBounds, composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }

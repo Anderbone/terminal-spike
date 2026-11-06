@@ -52,6 +52,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +76,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -276,6 +278,7 @@ fun TerminalAccessoryBar(
     snippetsAboveKeyboard: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    var pinnedSnippetsExpanded by rememberSaveable { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val currentOnBufferedInputModeChanged by rememberUpdatedState(onBufferedInputModeChanged)
@@ -361,6 +364,10 @@ fun TerminalAccessoryBar(
                             onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
                             onToggleTyping = { manualInputMode = false },
                             onInputInteraction = { manualInputMode = true },
+                            snippetsExpanded = pinnedSnippetsExpanded,
+                            onToggleSnippets = if (snippetsAboveKeyboard && snippetsContent != null) {
+                                { pinnedSnippetsExpanded = !pinnedSnippetsExpanded }
+                            } else null,
                         )
                     }
                 }
@@ -402,7 +409,7 @@ fun TerminalAccessoryBar(
                 }
             }
             Column {
-                if (snippetsAboveKeyboard && snippetsContent != null) {
+                if (snippetsAboveKeyboard && snippetsContent != null && pinnedSnippetsExpanded) {
                     Box(Modifier.fillMaxWidth().heightIn(max = 106.dp).testTag("terminal_pinned_snippets")) {
                         snippetsContent()
                     }
@@ -523,6 +530,8 @@ private fun BufferedInputPage(
     onEnter: () -> Unit,
     onToggleTyping: () -> Unit,
     onInputInteraction: () -> Unit,
+    snippetsExpanded: Boolean,
+    onToggleSnippets: (() -> Unit)?,
 ) {
     val draft = draftState.value
     val validationMessage = draftState.validationMessage
@@ -660,17 +669,38 @@ private fun BufferedInputPage(
                     ),
                 ) {
                     Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp)) {
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
-                            if (draft.text.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.terminal_buffered_input_placeholder),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                        Row(Modifier.weight(1f).fillMaxWidth()) {
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                if (draft.text.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.terminal_buffered_input_placeholder),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                innerTextField()
                             }
-                            innerTextField()
+                            if (onToggleSnippets != null) {
+                                val toggleDescription = stringResource(
+                                    if (snippetsExpanded) R.string.terminal_hide_pinned_snippets
+                                    else R.string.terminal_show_pinned_snippets,
+                                )
+                                IconButton(
+                                    onClick = onToggleSnippets,
+                                    modifier = Modifier.size(40.dp)
+                                        .testTag("terminal_toggle_pinned_snippets")
+                                        .semantics { contentDescription = toggleDescription },
+                                ) {
+                                    ConnectionsGlyphIcon(
+                                        glyph = ConnectionsGlyph.BACK,
+                                        modifier = Modifier.size(18.dp)
+                                            .rotate(if (snippetsExpanded) -90f else 90f),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth().height(48.dp),
