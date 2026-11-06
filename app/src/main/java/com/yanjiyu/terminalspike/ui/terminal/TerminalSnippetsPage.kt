@@ -1,19 +1,21 @@
 package com.yanjiyu.terminalspike.ui.terminal
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -37,6 +40,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -49,6 +53,7 @@ import com.yanjiyu.terminalspike.core.model.Snippet
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.ui.connections.SnippetEditorDialog
 import com.yanjiyu.terminalspike.ui.connections.SnippetEditorDraft
+import com.yanjiyu.terminalspike.ui.connections.toEditorDraft
 import kotlinx.coroutines.delay
 
 // Zero is reserved for the built-in New Codex action; saved snippet IDs are positive.
@@ -64,6 +69,7 @@ internal fun TerminalSnippetsPage(
     onNewCodex: () -> Unit,
     onSave: suspend (Snippet) -> Result<Unit>,
     onEditorClosed: () -> Unit,
+    snippetForEditing: (Long) -> Snippet? = { null },
 ) {
     val context = LocalContext.current
     val preferences = remember(context) {
@@ -84,6 +90,7 @@ internal fun TerminalSnippetsPage(
     var dragStart by remember { mutableStateOf(Offset.Zero) }
     var dragPosition by remember { mutableStateOf(Offset.Zero) }
     var dropTarget by remember { mutableStateOf<Long?>(null) }
+    var editingSnippetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorVisible by rememberSaveable { mutableStateOf(false) }
     fun move(from: Long, to: Long) {
         val updated = currentOrder.toMutableList()
@@ -148,27 +155,41 @@ internal fun TerminalSnippetsPage(
             val addDescription = stringResource(R.string.snippet_accessory_add)
             FilledTonalButton(
                 enabled = canSave,
-                onClick = { editorVisible = true },
+                onClick = { editingSnippetId = null; editorVisible = true },
                 modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp)
                     .semantics { contentDescription = addDescription },
                 contentPadding = PaddingValues(4.dp),
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
             order.forEachIndexed { index, id ->
                 key(id) {
-                    OutlinedButton(
-                        // Reordering remains available while terminal input is disconnected.
-                        enabled = canSend,
-                        onClick = { if (id == 0L) onNewCodex() else onSend(id) },
+                    Surface(
+                        shape = ButtonDefaults.shape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = if (canSend) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                         border = BorderStroke(
                             if (dropTarget == id || dragging == id) 2.dp else 1.dp,
                             if (dropTarget == id || dragging == id) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.outline,
                         ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 32.dp)
+                            .combinedClickable(
+                                role = Role.Button,
+                                enabled = canSend || (id != 0L && canSave),
+                                onClick = {
+                                    if (canSend) {
+                                        if (id == 0L) onNewCodex() else onSend(id)
+                                    }
+                                },
+                                onDoubleClick = if (id != 0L && canSave) {
+                                    {
+                                        if (snippetForEditing(id) != null) {
+                                            editingSnippetId = id
+                                            editorVisible = true
+                                        }
+                                    }
+                                } else null,
+                            )
                             .onGloballyPositioned { bounds[id] = it.boundsInRoot() }
                             .zIndex(if (dragging == id) 1f else 0f)
                             .graphicsLayer {
@@ -193,6 +214,8 @@ internal fun TerminalSnippetsPage(
                             text = if (id == 0L) stringResource(R.string.snippet_accessory_example)
                             else snippets.first { it.id == id }.label,
                             style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                .wrapContentSize(Alignment.Center),
                         )
                     }
                 }
@@ -201,7 +224,7 @@ internal fun TerminalSnippetsPage(
     }
     if (editorVisible) {
         SnippetEditorDialog(
-            initial = SnippetEditorDraft(),
+            initial = editingSnippetId?.let(snippetForEditing)?.toEditorDraft() ?: SnippetEditorDraft(),
             onDismiss = { editorVisible = false; onEditorClosed() },
             onSave = onSave,
         )

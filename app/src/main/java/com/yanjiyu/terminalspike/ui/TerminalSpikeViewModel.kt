@@ -2420,6 +2420,10 @@ class TerminalSpikeViewModel(
             ?.firstOrNull { it.id == persistentId }
             ?.publicKey
 
+    internal fun terminalSnippetForEditing(presentationId: Long): Snippet? =
+        connectionsCatalogLoad.value?.catalog?.snippets
+            ?.firstOrNull { it.presentationId == presentationId }?.snippet
+
     internal fun connectionsSnippetCommand(persistentId: String): String? =
         connectionsCatalogLoad.value?.catalog?.snippets
             ?.firstOrNull { it.snippet.id == persistentId }

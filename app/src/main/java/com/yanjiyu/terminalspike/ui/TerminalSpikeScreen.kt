@@ -1548,6 +1548,7 @@ fun TerminalSpikeScreen(
                                     snippetsContent = {
                                         com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage(
                                             snippets = state.snippets,
+                                            snippetForEditing = viewModel::terminalSnippetForEditing,
                                             canSave = state.settingsReady,
                                             canSend = state.canSendTerminalInput,
                                             onSend = { id ->
