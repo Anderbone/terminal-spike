@@ -1,23 +1,21 @@
 name: Android CI
 
 on:
-  pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: "19 3 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-ci-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'compatibility' || 'required' }}
+  group: android-ci-${{ github.ref }}-${{ (github.event_name == 'workflow_dispatch') && 'compatibility' || 'required' }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 60
 
     steps:
@@ -89,9 +87,9 @@ jobs:
           retention-days: 7
 
   required-runtime-shard:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -115,12 +113,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -151,9 +145,9 @@ jobs:
           retention-days: 14
 
   required-runtime:
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push')
     needs: required-runtime-shard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 5
     strategy:
       matrix:
@@ -181,9 +175,9 @@ jobs:
               build/runtime-shards/combined.txt full "$TEST_API"
 
   backup-clean-install:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
     steps:
@@ -202,12 +196,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -237,9 +227,9 @@ jobs:
           retention-days: 14
 
   boundary-runtime:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -262,12 +252,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -297,9 +283,9 @@ jobs:
           retention-days: 14
 
   scheduled-runtime-shard:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -323,12 +309,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -359,9 +341,9 @@ jobs:
           retention-days: 14
 
   scheduled-runtime:
-    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch')
     needs: scheduled-runtime-shard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 5
     strategy:
       matrix:
@@ -390,7 +372,7 @@ jobs:
 
   openssh-e2e:
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 45
 
     steps:
@@ -409,12 +391,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -467,9 +445,9 @@ jobs:
           retention-days: 14
 
   lifecycle-e2e:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 35
 
     steps:
@@ -488,12 +466,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -519,9 +493,9 @@ jobs:
           retention-days: 14
 
   release-update-e2e:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 45
 
     steps:
@@ -540,12 +514,8 @@ jobs:
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "cmdline-tools;22.0" "platform-tools" "emulator" "build-tools;36.0.0"
 
-      - name: Enable KVM for the Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+      - name: Check runner KVM access
+        run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download verified unsigned release artifacts from this run
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

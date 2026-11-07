@@ -22,9 +22,21 @@ evidence, not a passing full suite. Compiling the instrumentation APK does not e
 its tests. Existing real-server and real-phone acceptance contracts still apply to
 their features; never run tests on the foldable.
 
-## Hosted CI
+## GitHub Actions on the local runner
 
-- Required push/PR runs and weekly/manual compatibility runs use separate concurrency
+- All jobs use `[self-hosted, Linux, X64]`, matching the registered `epee` runner.
+  Only pushes to `main` and manual runs on `main` execute jobs. Pull requests,
+  including the owner's PRs and fork PRs, do not trigger CI. There is no schedule;
+  start the full API 26–37 compatibility sweep manually when needed.
+- The runner needs a writable Android SDK exposed as `ANDROID_HOME` and
+  `ANDROID_SDK_ROOT`, command-line tools at `cmdline-tools/latest/bin/sdkmanager`,
+  Python 3, Docker Compose, and read/write access to `/dev/kvm`. Java 25 is set up
+  by the workflow. Configure KVM access on the runner once; CI checks access
+  without changing host udev rules or requiring passwordless sudo.
+- PRs require the user's manual review and explicit merge approval. Keep repository
+  auto-merge disabled. PR CI is intentionally absent, so do not require these jobs
+  as pre-merge status checks. CI success never authorizes an agent to merge a PR.
+- Push runs and manual compatibility runs use separate concurrency
   groups, so starting a compatibility sweep does not cancel normal CI. Newer runs
   within the same branch and group still supersede older ones.
 - SDK tooling/platform installation retries the identical command once, after ten
@@ -43,7 +55,7 @@ their features; never run tests on the foldable.
   existing `required-runtime (26)` and `(35)` gate names now aggregate the shards;
   they reject failed shards, missing reports, duplicates, missing tests and incorrect
   skips. Boundary APIs and all end-to-end gates remain.
-- Weekly/manual full API 26–37 coverage uses four class shards per API, with the same
+- Manual full API 26–37 coverage uses four class shards per API, with the same
   exact combined membership and skip checks. This bounds emulator lifetime: a local
   unsharded API 27 run grew past 18 GiB of host RSS while its tests kept passing;
   hosted full runs suffered runner shutdowns and an Android system watchdog crash.
@@ -65,7 +77,7 @@ their features; never run tests on the foldable.
   Run the affected check after a fix; repeat the full gate only when inputs justify it.
 
 Ordinary commit/push/publish requests finish after required local and publication
-checks. Hosted CI continues independently. Request `$push-main-green` explicitly
+checks. GitHub Actions continues independently. Request `$push-main-green` explicitly
 when the task includes waiting for and repairing all hosted checks. Never describe
 pending hosted checks as passed.
 
@@ -76,12 +88,12 @@ pending hosted checks as passed.
    when the product contract changed, not simply because an assertion is red.
 2. Batch confirmed fixes, run the affected checks and then the shared local gate
    once. Reuse passing results only when their source, dependencies and configuration
-   are unchanged. A changed commit still needs its own required hosted checks.
+   are unchanged. A changed commit still needs its own required CI checks.
 3. For a proven transient infrastructure failure, wait for the run to complete and
    use `gh run rerun RUN_ID --job JOB_ID` once. This preserves successful jobs and
    reuses that run's APK artifacts; dependent aggregate checks rerun automatically.
    Do not use a fresh workflow dispatch or rerun-all to recover one failed shard.
-4. Run the weekly/manual sweep once at the end only when full compatibility
+4. Run the manual sweep once at the end only when full compatibility
    verification is requested. Summarize milestone changes and final evidence;
    repeated status narration adds no diagnostic value.
 

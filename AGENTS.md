@@ -25,6 +25,8 @@
 
 ## Routine commit, push, and publish defaults
 
+- GitHub Actions uses the local self-hosted Linux/X64 runner only for pushes to `main` and manual runs on `main`. Do not add automatic PR triggers or restore scheduled runs without an explicit request.
+- Do not merge any Pull Request without the user's explicit approval after their manual review. Passing CI is not merge authorization; keep automatic merging disabled.
 - Ordinary commit/push/publish requests use required local verification and publication checks as the completion gate. Leave GitHub Actions running; do not poll, wait for, rerun, or repair full hosted CI unless the user explicitly asks for CI to be green. Report CI as unverified/pending, never as passed without evidence. Do not invoke `push-main-green` merely because a request includes pushing main.
 - Use `scripts/verify-android.sh` for the shared local/CI gate. For main-app internal releases, use the verified prepare/publish commands in `docs/CI-AND-RELEASING.md`; keep hosted CI waiting opt-in.
 - Inspect the intended diff once. Simplify only when requested and clearly useful; do not turn a release into an audit or feature-development session.
