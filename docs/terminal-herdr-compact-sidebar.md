@@ -1,5 +1,319 @@
 # Herdr sidebar on narrow screens
 
+## Unfolded-phone grouping and Git in project headings (2026-11-07)
+
+The local host's existing `[ui].mobile_width_threshold` is now 160 instead of
+the default 64. This keeps the grouped Switch layout on folded and unfolded
+phone-sized terminal grids; widths above 160 retain desktop navigation. Only
+that key was changed in `~/.config/herdr/config.toml`, and server config reload
+returned `applied` without diagnostics. This is a local setting, not a new
+protocol field or a change to the fork's default for other users.
+
+Grouped project headings now include cached `git_ahead_behind` arrows and the
+existing `git_clean`, `git_dirty`, and `git_conflict` token values. Project names
+retain their bold hierarchy; Git spans use green/red/yellow and reserve bounded
+space on the heading line. Unknown state and zero ahead/behind never manufacture
+a clean checkmark. Dirty/conflict values suppress a simultaneously present clean
+marker. This adds no Git subprocess, filesystem read, network request or new
+status producer to rendering; it reuses the data previously shown by the sidebar.
+
+Validation: 21 focused tests and all 3,654 nextest tests passed (seven configured
+skips); fmt, clippy, optimized build and six architecture checks passed. The
+populated Git-cache profile at 44×30 measured one→15 panes at
+179.096→200.126 µs (1.12×) in one Space and one→15 background Spaces at
+162.194→304.241 µs (1.88×). These are cardinality measurements with the new Git
+fixture, not a before/after performance claim.
+
+A real isolated PTY client retained the same groups and explicit cached dirty /
+clean markers across 44→88→120→160→44 columns. Numbered tabs, context menus and
+selecting a task in another Space passed. Unit fixtures also verify ahead/behind,
+unknown versus clean, conflict precedence, width bounds and each project/task
+appearing once across those widths. Evidence and previews are in ignored
+`build/verification/grouped-switch-unfold/`.
+
+Installed Herdr client SHA-256:
+`2379288e3cc3782ad20c919f7ae4360d35364489a7c75ef08418a64387abd618`.
+The previous executable is retained as
+`herdr-0.9.1-before-grouped-git-20261107T005430`. The running server and tasks
+were retained. Loading the Git heading code in an already running client needs
+Herdr `menu → detach` and reattachment. The unchanged latest debug APK was
+non-incrementally installed on model-verified SM-F976B and MainActivity was
+confirmed foregrounded; no gestures or tests ran on the foldable.
+
+The terminal UI runs in Herdr on the connected computer, not in the Android APK.
+Users of that upgraded Herdr installation share the feature. Independently
+hosted installations need the matching Herdr build and configuration/status
+provider; users do not need to hand-edit the source. APK-only distribution does
+not include these Herdr presentation changes.
+
+## Numbered tabs and a Space/task Switch list (2026-11-07)
+
+The tab strip now shows workspace-relative numbers only, preserving full stored
+names for navigation and rename menus. Phone tabs use a six-cell minimum so all
+five tabs fit at 44 columns. Overflow, focused-tab reveal, zoom markers, pointer
+selection and context menus retain their existing behavior.
+
+The default mobile Switch list now has one hierarchy: each Space is a heading
+with its named tasks beneath it. The duplicate aggregate Agents section and the
+separate focused-Space Tabs section are removed from this default view. Task
+rows keep a status dot and full name (ellipsized to available width), without
+repeating machine/project names, `idle`/`working` or agent kind. The one-machine
+case omits `Local`; multiple machines retain endpoint-level identification.
+Explicitly selected agent views retain their filtered result section.
+
+Single-agent tasks retain exact pane focus and pane context menus. Empty tabs
+retain tab actions, and multi-agent tabs retain their individual pane targets.
+Workspace headings retain keyboard preview, endpoint identity and context menus.
+New Workspace, the focused Space's New Tab, menu actions, linked worktree groups,
+stale endpoint treatment, scroll clipping and all four Close corners remain.
+No Android, terminal-history, mouse transport, protocol or dependency changes
+were made for this layout update. The existing two-row Switch/Close faces are
+preserved, including their Android ownership markers.
+
+Validation: 3,653 nextest tests passed (seven configured skips), formatting,
+clippy, optimized build and six architecture checks passed. Seven manual render
+profiles passed. The fixed 44×30 mobile profile with one versus 15 populated
+panes measured 170.571→201.097 µs (+30.526 µs, 1.18×) for one active Space, and
+174.407→203.742 µs (+29.335 µs, 1.17×) for background Spaces. These measure
+cardinality scaling, not a before/after performance improvement. An unrelated
+plugin fixture once read a partially written capture file; its focused recheck
+and the final full suite passed. The failed capture is retained in the logs.
+
+A real isolated 44×28 PTY client verified five numbered tabs, grouped task names
+appearing once, absence of `Local`, tab selection, right-click tab menus and
+selection of a task in another Space. Focus verification uses the actual
+client's highlighted tab and unique pane output: public CLI focus is a separate
+session-wide projection. Initial fixture experiments hit its first-run welcome
+modal; the final isolated fixture explicitly disables onboarding. No interactive
+tests or gestures ran on the foldable. Host-rendered preview, real PTY transcript,
+logs, measured profiles and deployment metadata are under ignored
+`build/verification/grouped-switch/`.
+
+Installed client SHA-256:
+`083c84efcd3cc7a49fd643259845a94ac878d51dd3d319fbe58a3fae1dda489a`.
+Previous executable: `herdr-0.9.1-before-grouped-switch-20261107T003920`.
+The running server and workspaces were retained. Existing clients must use
+Herdr's `menu → detach` and reattach to load the new executable; reconnecting a
+Mosh transport alone preserves the old client. The unchanged latest Android
+debug APK was installed non-incrementally on model-verified SM-F976B and
+MainActivity was confirmed foregrounded, without device tests.
+
+## Two-row button face with Switch on the first row (2026-11-07)
+
+The user preferred the larger two-row button over the single-row experiment.
+Switch and Close again fill the entire two-row rectangle with the accent color.
+Switch's visible label stays centered horizontally on the first row; its lower
+ownership marker is concealed against the same accent background. Close shows
+its label on the first row and its cross on the second. Four-corner positioning,
+two-row hit targets, right-hand information, invisible boundaries, and the
+full-width mobile tab strip remain intact. No Android source change is needed.
+
+The existing 25 mobile/graphics tests, fmt, clippy and release build passed.
+A real isolated PTY verified the two-row color, first-row Switch label, Close
+cross, both right-hand information rows, and opening/closing by clicking either
+row. Tabs and hidden Jump status also passed. Evidence: ignored verification
+files named `mobile-two-row-top-label-*`.
+
+Installed Herdr SHA-256:
+`76b03bd8ebf5ddc5ddb0295f26d790647a60068bd4ecff180eab39efb48fc6e8`.
+Previous binary: `herdr-0.9.1-before-two-row-top-label-20261107T002348Z`.
+The server and running workspaces were retained. The unchanged verified debug
+APK `16b5cc4255229aaf90683c2c955beb4fd8ecfbe7dbc12cb02b8f1e603c77220d`
+was installed non-incrementally on model-verified SM-F976B without tests.
+The initial immediate foreground check required a relaunch; MainActivity was
+then confirmed top-resumed. Existing Herdr clients still need to detach and
+reattach to load the new executable; Mosh resumption alone retains the old one.
+
+## Single-row button face beside two-row information (2026-11-06)
+
+Switch and Close now color only their first row and align their visible label
+with the workspace information. The second row beneath each button uses the
+normal panel background and looks blank. The original two-row hit rectangle,
+four-corner preference, and two rows of information on the right remain intact.
+
+The second-row VT ownership label and boundary are retained with SGR conceal,
+matching foreground/background and no bold. This keeps existing Android
+clients' history and context-menu recognition compatible without showing
+duplicate labels or the old Close cross, including themes with default colors.
+No Android source or APK change is needed for this rendering update.
+
+The final 25 mobile/graphics tests, fmt, clippy and release build passed.
+An isolated real PTY verified the first-row visible label, one-row color,
+blank lower row, both right-hand information rows, and opening/closing through
+both the visible and lower hit rows. Tabs and hidden Jump status also passed.
+Evidence: ignored `build/verification/mobile-single-row-*` logs and visible
+frame captures. Installed Herdr SHA-256:
+`14396af8a8045fa8960008dbeac213698074ddb18e0e600c48d28e7d6ea080a7`.
+The previous binary is saved as `herdr-0.9.1-before-single-row-20261106T235247Z`.
+The server was not restarted. Model-verified SM-F976B was foregrounded without
+tests; its app and concurrent Android work were retained. Existing clients
+need to exit and reattach to see the updated rendering.
+
+## Cleaner mobile navigation and full-width tabs (2026-11-06)
+
+Mobile tab bars no longer reserve or render the right-side status segments
+(including the Jump shortcut hint and hostname). Their whole row is available
+for tabs, overflow controls and New Tab. Desktop status and the actual jump
+shortcut remain available. A regression requires four short tabs and New Tab
+to fit at 44 columns with the status hidden, while desktop status still renders.
+
+Switch and Close labels are centered within their full button width. Their
+structural VT delimiter remains for Android's chrome/history recognition, but
+uses identical foreground/background and explicitly removes bold. This avoids
+ANSI indexed foreground brightening making the separator visible again.
+
+Herdr nextest passed 3,650 tests with six configured skips. After the final
+indexed-color correction, 35 focused tests, clippy, formatting and release build
+passed. An isolated real 44-column PTY verified four tabs plus New Tab, hidden
+Jump/hostname status, invisible non-bold Switch/Close boundaries, and opening
+and closing at the same position. Evidence: ignored verification logs and
+frames named `mobile-clean-chrome-*`.
+
+Installed Herdr SHA-256:
+`0e74c27340dbbb12ab496e86151a5c927203a5b21ca8e0674925653951890bcc`.
+Previous binary: `herdr-0.9.1-before-clean-chrome-20261106T232853Z` beside the
+installed binary. The server was not restarted. Android source was unchanged
+by this task. A separate Android build was still being verified, so its new
+APK was not installed as part of this change; the existing app on the verified
+SM-F976B was brought to the foreground without running tests. Existing Herdr
+clients need to exit and reattach to use the updated client rendering.
+
+## Distinct mobile navigation button colors (2026-11-06)
+
+Switch and Close share a solid theme-accent background with bold contrasting
+text; the waiting-for-attention badge retains its red foreground on a separate
+panel-colored cell. Geometry and corner preferences are unchanged. The shared
+Herdr source contains the styling; an isolated source snapshot at
+`/home/jiyu/git/herdr-mobile-colors` excluded concurrent tab and integration work
+for verification. Its 23 mobile/graphics regression tests, clippy, formatting
+and release build passed (`build/verification/mobile-colors-*`).
+
+The concurrent installed Herdr was preserved, SHA-256
+`5b65593e2f33be3495d297f76ccede258992e7b7d539a4a5d4555150e30be832`.
+An actual isolated PTY confirmed its bottom Close button uses accent RGB
+137/180/250, contrasting text RGB 24/24/37 and bold styling under the default
+theme; the temporary server was stopped. See `mobile-colors-installed.json`
+and `mobile-colors-installed.ansi` in ignored verification output. Android source
+was not changed for this styling task. The latest verified APK's concurrent
+foldable install was reused and MainActivity was foregrounded again; no phone
+tests ran. Existing Herdr clients need to exit and reattach for new rendering.
+
+## Workspace tabs at the top on phones (2026-11-06)
+
+The local Herdr 0.9.1 client fork at
+`/home/jiyu/git/herdr-mobile-menu-0.9.1` now retains the focused workspace's
+existing tab bar on terminal row zero in mobile layouts. It reuses desktop
+labels, selected styling, click/context-menu actions, new-tab and overflow
+controls, and focused-tab reveal. The desktop tab-position preference remains
+independent; mobile tabs stay at the top. Terminals taller than three rows
+reserve one extra row, leaving the two-row Switch bar in its chosen corner.
+The expanded Switch list excludes the tab row, and Close stays in Switch's
+opening rectangle in all four corner settings.
+
+Android recognizes both the legacy mobile chrome and the extra top tab row.
+History occupies only the pane, and long presses reach the existing remote
+tab menu. Switch-list targets exclude the tab row, Close and the divider.
+No new dependency, session protocol, network service or Android tab overlay
+is introduced.
+
+Validation: the isolated reviewed source passed 3,648 Herdr nextest tests
+with six configured skips, formatting, clippy and the release build. The
+shared Android gate passed 141 tooling tests, 1,230 JVM tests, debug/release
+lint and all required builds. A real isolated 44-column × 28-row PTY checked
+top-tab rendering, exact tab focus, right-click menus and the bottom Switch
+bar against both the reviewed candidate and the currently installed client.
+
+Concurrent work updated the installed Herdr during verification. That install
+was preserved and its top-tab behavior verified from an exact binary copy;
+this session did not restart the server or overwrite the other deployment.
+Installed SHA-256 is
+`5b65593e2f33be3495d297f76ccede258992e7b7d539a4a5d4555150e30be832`;
+the independent reviewed candidate is
+`737db875e51f781ac876a5493c5c5f9c07df51dd5f7930e683d0f233c97e0cd5`.
+Evidence and the isolated source are in ignored `build/verification/mobile-tabs-*`.
+Existing Herdr clients must disconnect and reattach to load the new chrome.
+
+Model-verified SM-F976B received debug APK
+`8fc1bc592854e887c2b86575125d89505431437fc649d4525e47091e99b8c30f`
+through a non-incremental update, and MainActivity was confirmed foregrounded.
+No device tests ran on the foldable. No authorized ordinary phone was connected,
+so physical phone interaction acceptance remains unverified. Deployment metadata:
+`build/verification/mobile-tabs-{herdr,fold}-install.json`.
+
+
+## Close follows the Switch corner (2026-11-06)
+
+The expanded mobile switcher now puts Close in the same rectangle as Switch
+in all four corner settings. Its title bar, divider, list viewport and notices
+follow that position. Android recognizes the switcher body at either edge,
+including a New Workspace action on row zero, while excluding Close and the
+divider from context-menu and project-picker hit testing. It also accepts the
+older top-right Close/× bar.
+
+Regression evidence: all four rendered Close targets equal their opening
+Switch targets and clicking each returns to the terminal; the list does not
+overlap Close. Android tests cover all four switcher bars, project actions,
+control exclusions and suppression of native history over the switcher.
+Herdr nextest passed 3,647 tests with six configured skips; fmt, clippy and
+release build passed. The shared Android gate passed 1,227 JVM tests, lint,
+and debug/release builds. Logs: ignored `build/verification/close-corners-*`.
+
+Installed local Herdr SHA-256: `92f5f5c5afb28c887076b9f4702fde07ded6fa23f02c90bf493b9f8a471a7a86`. Previous binary:
+`/home/jiyu/.local/lib/herdr-mobile-menu/herdr-0.9.1-before-close-corners-20261106T225837Z`. The server and running Spaces were retained; existing
+clients need to exit and reattach. Model-verified SM-F976B received APK
+`82c2bafb4960986ebebe9fa751d66c3d64bbdb60064d66078b9863e563505075` via non-incremental update, and MainActivity was confirmed
+foregrounded. No tests ran on the foldable; no authorized old phone was
+connected for real gesture acceptance. Deployment metadata:
+`build/verification/herdr-close-corners-install.json` and
+`build/verification/close-corners-fold-install.json`.
+
+## Mobile Switch corners and recent projects (2026-11-06)
+
+The local Herdr 0.9.1 client fork in
+`/home/jiyu/git/herdr-mobile-menu-0.9.1` defaults its narrow-screen navigation
+bar to the bottom with Switch on the left. Herdr **Settings → switch** offers
+bottom left, bottom right, top left, and top right. The choice uses the existing
+client chrome preferences file for the local endpoint, survives reattachment,
+and does not change the server protocol or desktop navigation layout. Bottom
+choices reserve the final two rows; top choices reserve the first two rows.
+The expanded switcher uses that same corner and button rectangle for Close,
+so opening and closing do not require reaching across the screen. Its title
+bar and divider move together; list rows and notices exclude those controls.
+Notification and clipboard feedback stay inside the pane area.
+
+Android recognizes both top and bottom navigation bars when projecting native
+Herdr history. Long-pressing `+ new workspace` in Herdr's mobile Switch list
+opens the same recent-project picker as the desktop New footer. Recognition
+requires the visible Switch/close bar and divider at either edge, excludes the left
+scrollbar, and consumes the hold without sending a remote click. Existing
+Space/Tab menus and pane text selection retain their own routes.
+
+Regression coverage includes the four rendered corners and hit targets,
+persisted settings, narrow-screen access to all four choices, history placement,
+and the mobile picker route with and without the switcher's scrollbar. Device
+interaction acceptance remains separate from host tests; the foldable is an
+install/launch target only.
+
+Verification: 141 tooling tests and the exact instrumentation inventory passed;
+1,226 Android JVM tests passed without failures or skips; the shared Android
+unit/lint/debug/release build gate passed. Herdr nextest passed 3,647 tests with
+six configured skips, followed by 62 focused mobile/graphics/lifecycle tests
+for the final desktop-offset correction; formatting, clippy and the release
+build passed. Evidence is in ignored `build/verification/*corners*` and
+`build/verification/switch-corner-*` logs.
+
+The local executable was replaced atomically without restarting the server;
+SHA-256 is `b381bd2718d74c23c2752c84e683328d4514cd0b5708c3d77c6635ccf3c2ad81`.
+Its previous binary is preserved beside it as
+`herdr-0.9.1-before-mobile-corners-20261106T182851Z`. Existing clients need to
+exit and reattach to use the new client rendering; Spaces and tasks can stay
+running. Model-verified SM-F976B received the debug APK via a non-incremental
+update and MainActivity was confirmed foregrounded. APK SHA-256 is
+`4cc38cf19d885adf0ca952160b5de84b0921f69924cb6bfbce45be4babe65c3f`.
+No authorized old phone was connected, so real gesture acceptance remains
+unverified; no tests ran on the foldable. Deployment metadata is in ignored
+`build/verification/{herdr-mobile-corners-install,mobile-corners-fold-install}.json`.
+
 ## Switch list retained behind mobile context menus (2026-10-08)
 
 The user's phone screenshots showed that a long press opened the correct menu,

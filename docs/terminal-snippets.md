@@ -10,6 +10,10 @@ editor used by the catalog. **New Codex** immediately runs the built-in sequence
 without opening an editor or saving a snippet. It is disabled when terminal input is unavailable.
 Saved snippets keep their existing confirmation policy.
 
+When snippets are placed above the keyboard, **Hide snippets** and **Show snippets**
+remember your choice on this device, including after returning to the main menu or
+restarting the app.
+
 Plain text remains literal, including multiline shell text. Only an exact first line
 `#!keys` enables a sequence. Each following line is one action:
 

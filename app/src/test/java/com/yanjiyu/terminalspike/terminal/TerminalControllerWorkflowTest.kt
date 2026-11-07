@@ -16,6 +16,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalControllerWorkflowTest {
+    @Test fun resizePlaceholdersDoNotSignalAPublishedRemoteRepaint() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(), scheduler)
+        controller.updateTerminalFrame(frame(), isResize = true)
+        scheduler.drainAll()
+        assertEquals(0L, controller.renderedOutputRevision)
+        controller.updateTerminalFrame(frame())
+        assertEquals(0L, controller.renderedOutputRevision)
+        scheduler.drainAll()
+        assertEquals(1L, controller.renderedOutputRevision)
+        // A local resize must not erase transport provenance when frames coalesce.
+        controller.updateTerminalFrame(frame())
+        controller.updateTerminalFrame(frame(), isResize = true)
+        scheduler.drainAll()
+        assertEquals(2L, controller.renderedOutputRevision)
+        controller.updateTerminalFrame(frame(), isResize = true)
+        scheduler.drainAll()
+        assertEquals(2L, controller.renderedOutputRevision)
+    }
+
     @Test
     fun repeatedHerdrRetriesRetainHistoryWhileConfirmedInvalidationsReleaseIt() {
         val controller = TerminalController(TerminalBuffer(), ManualFrameScheduler())

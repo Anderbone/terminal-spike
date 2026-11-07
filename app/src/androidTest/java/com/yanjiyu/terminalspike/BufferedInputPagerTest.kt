@@ -111,37 +111,40 @@ class BufferedInputPagerTest {
     }
 
     @Test
-    fun pinnedSnippetsWrapContentAndStayAboveKeysOrDraft() {
+    fun pinnedSnippetsWrapContentAndStayAboveKeysOrDraft() = withPinnedSnippetsPreference {
         val draft = BufferedInputDraftState()
         val placement = mutableStateOf(true)
+        val terminalVisible = mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize()) {
-                    TerminalAccessoryBar(
-                        actions = TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
-                        modifiers = AccessoryModifierSnapshot(),
-                        customizationEnabled = false,
-                        inputTargetId = 11L,
-                        bufferedInputSendEnabled = true,
-                        bufferedInputDraftState = draft,
-                        onAction = {},
-                        onCustomize = {},
-                        onSendBufferedInput = { _, _ -> true },
-                        onBufferedInputModeChanged = {},
-                        onDirectInputMode = {},
-                        snippetsAboveKeyboard = placement.value,
-                        snippetsContent = {
-                            TerminalSnippetsPage(
-                                snippets = listOf(CommandSnippet(1L, "Pinned snippet", "hello", false)),
-                                canSave = true,
-                                canSend = true,
-                                onSend = {},
-                                onNewCodex = {},
-                                onSave = { Result.success(Unit) },
-                                onEditorClosed = {},
-                            )
-                        },
-                    )
+                    if (terminalVisible.value) {
+                        TerminalAccessoryBar(
+                            actions = TerminalExtraKey.DEFAULT_ORDER.map { it.toAccessoryAction() },
+                            modifiers = AccessoryModifierSnapshot(),
+                            customizationEnabled = false,
+                            inputTargetId = 11L,
+                            bufferedInputSendEnabled = true,
+                            bufferedInputDraftState = draft,
+                            onAction = {},
+                            onCustomize = {},
+                            onSendBufferedInput = { _, _ -> true },
+                            onBufferedInputModeChanged = {},
+                            onDirectInputMode = {},
+                            snippetsAboveKeyboard = placement.value,
+                            snippetsContent = {
+                                TerminalSnippetsPage(
+                                    snippets = listOf(CommandSnippet(1L, "Pinned snippet", "hello", false)),
+                                    canSave = true,
+                                    canSend = true,
+                                    onSend = {},
+                                    onNewCodex = {},
+                                    onSave = { Result.success(Unit) },
+                                    onEditorClosed = {},
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -164,7 +167,18 @@ class BufferedInputPagerTest {
         composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }
         val collapsedBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
         assertEquals("Collapsing frees the snippet row height", snippetsBounds.top, collapsedBounds.top, 0.5f)
+        // Leaving for the main menu disposes the bar, including all rememberSaveable state.
+        composeRule.runOnIdle { terminalVisible.value = false }
+        composeRule.onNodeWithTag("terminal_input_pager").assertDoesNotExist()
+        composeRule.runOnIdle { terminalVisible.value = true }
+        composeRule.onNodeWithTag("terminal_input_pager").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithText("preserve this").assertIsDisplayed()
         composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        composeRule.runOnIdle { terminalVisible.value = false }
+        composeRule.onNodeWithTag("terminal_input_pager").assertDoesNotExist()
+        composeRule.runOnIdle { terminalVisible.value = true }
         composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
         assertEquals(snippetsBounds, composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
@@ -175,6 +189,20 @@ class BufferedInputPagerTest {
         composeRule.runOnIdle { placement.value = false }
         composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
         composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+    }
+
+    private fun withPinnedSnippetsPreference(block: () -> Unit) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+        val previous = if (preferences.contains("expanded")) preferences.getBoolean("expanded", true) else null
+        preferences.edit().remove("expanded").commit()
+        try {
+            block()
+        } finally {
+            preferences.edit().apply {
+                if (previous == null) remove("expanded") else putBoolean("expanded", previous)
+            }.commit()
+        }
     }
 
     private fun withSoftwareKeyboard(block: () -> Unit) {
@@ -365,6 +393,10 @@ class BufferedInputPagerTest {
         awaitBufferedKeyboard(terminal)
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
         composeRule.onNodeWithText("Insert prompt").performClick()
+        // combinedClickable defers single-click dispatch while excluding a double-click edit.
+        composeRule.waitUntil(5_000) {
+            composeRule.runOnUiThread { sent == listOf("hello") }
+        }
         composeRule.runOnIdle {
             assertTrue("Snippets must return keyboard focus to the terminal", terminal.hasFocus())
             val connection = checkNotNull(terminal.onCreateInputConnection(EditorInfo()))

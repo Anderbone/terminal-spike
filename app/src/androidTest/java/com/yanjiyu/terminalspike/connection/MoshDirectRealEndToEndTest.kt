@@ -100,6 +100,7 @@ class MoshDirectRealEndToEndTest {
             transport.terminalInput.flush()
             val collected = ByteArrayOutputStream()
             val terminal = VtTerminalEngine(columns = 80, rows = 24)
+            var completedSynchronizedFrame = false
             withContext(Dispatchers.IO) {
                 withTimeout(OUTPUT_TIMEOUT_MILLIS) {
                     val buffer = ByteArray(8 * 1024)
@@ -111,12 +112,14 @@ class MoshDirectRealEndToEndTest {
                         }
                         collected.write(buffer, 0, count)
                         val frame = terminal.accept(buffer.copyOf(count))
+                        completedSynchronizedFrame = completedSynchronizedFrame || frame.synchronizedOutputCompleted
                         val rendered = frame.screen.joinToString("\n") { line -> line.text }
-                        if (MARKER in rendered) break
+                        if (MARKER in rendered && !frame.synchronizedOutput) break
                     }
                     buffer.fill(0)
                 }
             }
+            assertTrue("Native framebuffer boundaries must survive the PFD pipe", completedSynchronizedFrame)
         } finally {
             transport.close()
             extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED)

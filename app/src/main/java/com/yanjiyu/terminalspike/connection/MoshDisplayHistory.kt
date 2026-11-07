@@ -14,8 +14,16 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalLine
  */
 internal class MoshDisplayHistory {
     private var previousPrimaryScreen: List<TerminalLine>? = null
+    private var batchDisallowsInference = false
 
     fun retainDisplayedRows(frame: TerminalFrameUpdate): TerminalFrameUpdate {
+        batchDisallowsInference = batchDisallowsInference || frame.hasExplicitVerticalMovement ||
+            frame.completedScrollback.isNotEmpty() || frame.clearScrollbackRequested || frame.alternateScreen
+        // The native Mosh renderer brackets each complete framebuffer diff. Pipe reads may split
+        // inside that diff; neither a half-cleared screen nor partially rewritten rows are history.
+        if (frame.synchronizedOutput) return frame
+        val skipInference = batchDisallowsInference
+        batchDisallowsInference = false
         if (frame.alternateScreen) {
             previousPrimaryScreen = null
             return frame
@@ -24,11 +32,9 @@ internal class MoshDisplayHistory {
         val previous = previousPrimaryScreen
         previousPrimaryScreen = frame.screen
         if (
-            previous == null ||
+            previous == null || previous === frame.screen ||
             previous.size != frame.screen.size ||
-            frame.clearScrollbackRequested ||
-            frame.hasExplicitVerticalMovement ||
-            frame.completedScrollback.isNotEmpty()
+            skipInference
         ) {
             return frame
         }
@@ -39,6 +45,7 @@ internal class MoshDisplayHistory {
     }
 
     fun reset(frame: TerminalFrameUpdate) {
+        batchDisallowsInference = false
         previousPrimaryScreen = frame.screen.takeUnless { frame.alternateScreen }
     }
 

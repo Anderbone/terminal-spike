@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FastTerminalPreImeBackTest {
     @Test
-    fun activeTerminalBackBypassesTheImeAndCommitsExactlyOnce() {
+    fun activeTerminalBackWithoutImeCommitsExactlyOnce() {
         var invocations = 0
         var consumedDown = false
         var consumedUp = false

@@ -2290,7 +2290,7 @@ private class DefaultSshSessionTerminal(
                 connection.resize(newColumns, newRows)
                 val update = engine.resize(newColumns, newRows)
                 moshDisplayHistory?.reset(update)
-                controller.updateTerminalFrame(update)
+                controller.updateTerminalFrame(update, isResize = true)
             },
             isTmuxSession = { connection.isTmuxSession },
             requestTmuxHistoryRefresh = ::requestTmuxHistoryCapture,

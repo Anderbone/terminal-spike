@@ -29,6 +29,17 @@ Check the host fingerprint against your server before trusting it. Mosh also nee
 APK and Google Play signing keys differ. Stick with one installation channel for updates;
 switching may require exporting a backup and reinstalling.
 
+## Using Herdr on a phone or foldable
+
+See [recommended Herdr settings](docs/HERDR-SETUP.md) for a compact layout,
+keeping mobile navigation when a foldable opens, Git indicators, and which features
+require our development Herdr build. These settings belong on the computer running
+Herdr, rather than in the Android app.
+
+The guide includes [copy-and-send agent instructions](docs/HERDR-SETUP.md#ask-an-agent-to-configure-it)
+in English and Chinese for configuring an existing installation without replacing
+unrelated settings or interrupting running tasks.
+
 <a id="google-play-testing"></a>
 
 ## Google Play

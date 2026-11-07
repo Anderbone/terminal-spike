@@ -4,10 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Picture
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.SystemClock
+import android.os.Trace
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.ActionMode
@@ -78,6 +80,25 @@ class FastTerminalView @JvmOverloads constructor(
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
     private val fillPaint = Paint()
     private val drawClipBounds = Rect()
+    private var resizePicture: TerminalResizeSnapshot? = null
+    private var resizePictureHeight = 0
+    private var resizeSourceHeight = 0
+    private var resizeMotion: TerminalResizeMotion? = null
+    private var resizeReveal: TerminalResizeReveal? = null
+    private val revealResizedTerminal = Runnable {
+        if (imeAnimationActive || (resizeMotion?.remainingMillis(SystemClock.uptimeMillis()) ?: 0L) > 0L) {
+            scheduleResizeReveal()
+        } else finishResizePresentation()
+    }
+    private var imeAnimationActive = false
+    private var imeTargetHeight = 0
+    private val finishMissingImeAnimation = Runnable {
+        if (imeAnimationActive) {
+            imeAnimationActive = false
+            reportTerminalSizeNow()
+            scheduleResizeReveal()
+        }
+    }
     private var normalTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
     private var boldTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     private var italicTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.ITALIC)
@@ -147,7 +168,10 @@ class FastTerminalView @JvmOverloads constructor(
     private var preImeBackCallback: (() -> Unit)? = null
     private val directInputSink = object : TerminalInputSink {
         override fun send(bytes: ByteArray) {
-            if (directInputEnabled) terminalController?.send(bytes)
+            if (directInputEnabled) {
+                finishResizePresentation()
+                terminalController?.send(bytes)
+            }
         }
     }
     private val gestureActions = TerminalGestureActions(
@@ -246,6 +270,9 @@ class FastTerminalView @JvmOverloads constructor(
 
     fun attachController(controller: TerminalController) {
         if (terminalController === controller) return
+        imeAnimationActive = false
+        removeCallbacks(finishMissingImeAnimation)
+        finishResizePresentation()
         terminalController?.herdrHistoryReading = false
         herdrScroll.reset()
         resetComposingInput()
@@ -282,6 +309,9 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
+        imeAnimationActive = false
+        removeCallbacks(finishMissingImeAnimation)
+        finishResizePresentation()
         terminalController?.herdrHistoryReading = false
         herdrScroll.reset()
         removeCallbacks(publishIdleStats)
@@ -297,7 +327,17 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onTerminalContentChanged(change: TerminalContentChange) {
         val controller = terminalController ?: return
+        if (!controller.viewport.autoFollow || controller.herdrHistoryReading || controller.lineCount() == 0) {
+            finishResizePresentation()
+        }
+        resizeReveal?.let { reveal ->
+            val now = SystemClock.uptimeMillis()
+            reveal.onOutputPublished(controller.renderedOutputRevision, now,
+                controller.renderedSynchronizedOutputRevision == controller.renderedOutputRevision)
+            scheduleResizeReveal()
+        }
         if (appliedRendererProfile != controller.rendererProfile) {
+            finishResizePresentation()
             herdrScroll.reset()
             controller.herdrHistoryReading = false
         }
@@ -364,6 +404,19 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
+        // Freeze only presentation. Parsing, history ownership and viewport geometry keep running.
+        // Record before updating geometry so the first keyboard frame cannot expose a shifted grid.
+        if (width == oldWidth && height > 0 && oldHeight > 0) {
+            if (!imeAnimationActive) {
+                captureResizePresentation(oldHeight)
+                resizeReveal = null
+                removeCallbacks(revealResizedTerminal)
+            }
+        } else {
+            imeAnimationActive = false
+            removeCallbacks(finishMissingImeAnimation)
+            finishResizePresentation()
+        }
         herdrScroll.reset()
         terminalController?.herdrHistoryReading = false
         terminalController?.viewport?.updateGeometry(
@@ -376,9 +429,30 @@ class FastTerminalView @JvmOverloads constructor(
     @SuppressLint("UseKtx")
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        Trace.beginSection(if (resizePicture != null) "Terminal.retainedFrame" else "Terminal.liveFrame")
+        try {
+            drawTerminalFrame(canvas)
+        } finally {
+            Trace.endSection()
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun drawTerminalFrame(canvas: Canvas) {
+        val drawStartNanos = System.nanoTime()
+        resizePicture?.let { picture ->
+            val now = SystemClock.uptimeMillis()
+            canvas.save()
+            val offset = resizeMotion?.offset(height, now) ?: (height - resizeSourceHeight).toFloat()
+            canvas.translate(0f, resizeSourceHeight - resizePictureHeight + offset)
+            picture.draw(canvas)
+            canvas.restore()
+            if ((resizeMotion?.remainingMillis(now) ?: 0L) > 0L) postInvalidateOnAnimation()
+            recordDrawTiming(drawStartNanos)
+            return
+        }
         val controller = terminalController ?: return
         if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
-        val drawStartNanos = System.nanoTime()
         val viewport = controller.viewport
         val rows = viewport.visibleRows(OVERSCAN_ROWS)
         canvas.getClipBounds(drawClipBounds)
@@ -410,6 +484,10 @@ class FastTerminalView @JvmOverloads constructor(
         if (!viewport.autoFollow) drawNewOutputBadge(canvas)
         drawVisualBell(canvas)
         canvas.restore()
+        recordDrawTiming(drawStartNanos)
+    }
+
+    private fun recordDrawTiming(drawStartNanos: Long) {
         frameStatsCollector.recordDraw(drawStartNanos, System.nanoTime())
         removeCallbacks(publishIdleStats)
         postDelayed(publishIdleStats, FrameStatsCollector.IDLE_DELAY_MS)
@@ -684,12 +762,17 @@ class FastTerminalView @JvmOverloads constructor(
         appliedRendererProfile = profile
     }
 
-    private fun drawCursor(canvas: Canvas, controller: TerminalController, scrollY: Float) {
+    private fun drawCursor(
+        canvas: Canvas,
+        controller: TerminalController,
+        scrollY: Float,
+        drawingHeight: Int = height,
+    ) {
         val cursor = controller.cursor
         if (!cursor.visible || cursor.row !in 0 until controller.lineCount()) return
         val left = horizontalPaddingPx + cursor.column * cellWidthPx
         val top = verticalPaddingPx + cursor.row * lineHeightPx - scrollY
-        if (top + lineHeightPx < 0f || top > height) return
+        if (top + lineHeightPx < 0f || top > drawingHeight) return
         val effectiveBlink = TerminalCursorRendering.resolveBlink(cursor, cursorBlinkEnabled)
         if (effectiveBlink) {
             scheduleCursorBlink()
@@ -748,6 +831,7 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) finishResizePresentation()
         val herdrController = terminalController
         val herdrHistoryVisible = herdrController?.isHerdrNativeHistoryVisible() != false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -979,12 +1063,17 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyPreIme(keyCode, event)
+        // Let the IME consume Back before the surrounding terminal navigation policy.
+        if (ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
+            return super.onKeyPreIme(keyCode, event)
+        }
         val callback = preImeBackCallback ?: return super.onKeyPreIme(keyCode, event)
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) callback()
         return true
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        finishResizePresentation()
         if (!directInputEnabled) return super.onKeyDown(keyCode, event)
         val controller = terminalController ?: return super.onKeyDown(keyCode, event)
         if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) {
@@ -1752,6 +1841,7 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun updateTextMetrics(fontSizeSp: Float, lineHeightMultiplier: Float) {
+        finishResizePresentation()
         updateTextPaintSize(fontSizeSp)
         fontMetrics = textPaint.fontMetrics
         val naturalLineHeight = fontMetrics.descent - fontMetrics.ascent +
@@ -1776,12 +1866,115 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun scheduleTerminalSizeReport() {
         removeCallbacks(publishTerminalSize)
-        postDelayed(publishTerminalSize, TERMINAL_RESIZE_SETTLE_MS)
+        if (imeAnimationActive) reportTerminalSizeNow()
+        else postDelayed(publishTerminalSize, TERMINAL_RESIZE_SETTLE_MS)
+    }
+
+    /** Called after Compose's IME-padding layout, so current insets and measured height agree. */
+    internal fun onImeAnimationLayout(currentBottom: Int, targetBottom: Int, navigationBottom: Int) {
+        if (currentBottom != targetBottom) {
+            if (!imeAnimationActive) captureResizePresentation(height)
+            imeAnimationActive = true
+            imeTargetHeight = height + maxOf(currentBottom, navigationBottom) -
+                maxOf(targetBottom, navigationBottom)
+            removeCallbacks(publishTerminalSize)
+            removeCallbacks(revealResizedTerminal)
+            removeCallbacks(finishMissingImeAnimation)
+            postDelayed(finishMissingImeAnimation, 1_000L)
+            reportTerminalSizeNow()
+        } else if (imeAnimationActive) {
+            imeAnimationActive = false
+            removeCallbacks(finishMissingImeAnimation)
+            reportTerminalSizeNow()
+            scheduleResizeReveal()
+        }
+    }
+
+    private fun scheduleResizeReveal() {
+        removeCallbacks(revealResizedTerminal)
+        if (imeAnimationActive || resizePicture == null) return
+        val now = SystemClock.uptimeMillis()
+        postDelayed(revealResizedTerminal, maxOf(
+            resizeReveal?.delayMillis(now) ?: 0L, resizeMotion?.remainingMillis(now) ?: 0L,
+        ))
     }
 
     private fun reportTerminalSizeNow() {
-        val grid = currentTerminalGrid() ?: return
-        terminalController?.reportTerminalSize(grid.columns, grid.rows)
+        val grid = terminalGridGeometry(
+            width, if (imeAnimationActive) imeTargetHeight else height,
+            horizontalPaddingPx, verticalPaddingPx, cellWidthPx, lineHeightPx,
+        ) ?: return finishResizePresentation()
+        val controller = terminalController ?: return
+        resizeMotion?.retarget(height, if (imeAnimationActive) imeTargetHeight else height,
+            grid.heightPx, SystemClock.uptimeMillis())
+        if (resizePicture != null) {
+            if (grid.columns == controller.terminalColumns && grid.rows == controller.terminalRows) {
+                if (!imeAnimationActive && resizeReveal == null) scheduleResizeReveal()
+            } else {
+                val now = SystemClock.uptimeMillis()
+                resizeReveal = TerminalResizeReveal(now, controller.renderedOutputRevision).also {
+                    removeCallbacks(revealResizedTerminal)
+                }
+                scheduleResizeReveal()
+            }
+        }
+        controller.reportTerminalSize(grid.columns, grid.rows)
+    }
+
+    private fun captureResizePresentation(oldHeight: Int) {
+        if (resizePicture != null) return
+        val controller = terminalController ?: return
+        if (!controller.viewport.autoFollow || controller.herdrHistoryReading || selection.hasSelection ||
+            findHighlight != null || controller.lineCount() == 0 || controller.viewport.viewportHeightPx <= 0
+        ) return
+        Trace.beginSection("Terminal.captureResize")
+        try {
+            recordResizePresentation(controller, oldHeight)
+        } finally {
+            Trace.endSection()
+        }
+    }
+
+    private fun recordResizePresentation(controller: TerminalController, oldHeight: Int) {
+        resizeSourceHeight = oldHeight
+        val sourceGrid = controller.viewport.viewportHeightPx
+        val responsiveUi = controller.herdrSessionActive || controller.inputContext.value.agent ||
+            controller.isMouseTrackingEnabled() || controller.liveScreenIsAlternate || controller.liveScreenHasFixedFooter
+        val anchor = when {
+            responsiveUi -> TerminalResizeMotion.Anchor.BOTTOM
+            controller.liveScreenRows != null -> TerminalResizeMotion.Anchor.CURSOR
+            else -> TerminalResizeMotion.Anchor.CONTENT
+        }
+        val anchorPixels = if (anchor == TerminalResizeMotion.Anchor.CURSOR) {
+            verticalPaddingPx + (controller.cursor.row + 1) * lineHeightPx - controller.viewport.scrollY
+        } else controller.lineCount() * lineHeightPx
+        resizeMotion = TerminalResizeMotion(oldHeight, sourceGrid, anchor, anchorPixels, controller.viewport.scrollY)
+        // Include rows above the old viewport so hiding the IME reveals retained text, not a blank
+        // strip. Bound recording to one display, independent of scrollback size. Never scale glyphs.
+        resizePictureHeight = maxOf(resources.displayMetrics.heightPixels, oldHeight, height)
+        val scrollY = controller.viewport.scrollY - (resizePictureHeight - oldHeight)
+        val first = floor((scrollY - verticalPaddingPx) / lineHeightPx).toInt().coerceAtLeast(0)
+        val last = ceil((scrollY + resizePictureHeight) / lineHeightPx).toInt()
+            .coerceAtMost(controller.lineCount())
+        val picture = Picture()
+        val recording = picture.beginRecording(width, resizePictureHeight)
+        for (row in first until last) {
+            val line = controller.lineAt(row) ?: continue
+            val top = verticalPaddingPx + row * lineHeightPx - scrollY
+            drawLine(recording, line.runs, top + baselineOffsetPx, top)
+        }
+        drawCursor(recording, controller, scrollY, drawingHeight = resizePictureHeight)
+        picture.endRecording()
+        resizePicture = TerminalResizeSnapshot(picture, width, resizePictureHeight)
+    }
+
+    private fun finishResizePresentation() {
+        removeCallbacks(revealResizedTerminal)
+        resizeReveal = null
+        resizeMotion = null
+        if (resizePicture == null) return
+        resizePicture = null
+        postInvalidateOnAnimation()
     }
 
     private fun currentTerminalGrid(): TerminalGridGeometry? = terminalGridGeometry(

@@ -61,6 +61,11 @@ data class TerminalFrameUpdate(
     val dirtyRows: IntArray = IntArray(0),
     /** One-shot VT scrolling/line-movement command; framebuffer inference must not reinterpret it. */
     val hasExplicitVerticalMovement: Boolean = false,
+    val synchronizedOutput: Boolean = false,
+    val synchronizedOutputGeneration: Long = 0L,
+    val synchronizedOutputCompleted: Boolean = false,
+    /** Geometry hint only; the parser's scrollback ownership rules are unchanged. */
+    val topAnchoredScrollRegionHasFooter: Boolean = false,
 ) {
     init {
         require(bellSequence >= 0L)
@@ -115,12 +120,16 @@ class VtTerminalEngine(
     private val deferredPrimaryResizeScrollback = ArrayDeque<TerminalLine>()
     private val deferredAlternateResizeScrollback = ArrayDeque<TerminalLine>()
     private var hasExplicitVerticalMovement = false
+    private var synchronizedOutput = false
+    private var synchronizedOutputGeneration = 0L
+    private var synchronizedOutputCompleted = false
 
     private val active: Screen get() = if (useAlternate) alternate else primary
 
     @Synchronized
     fun accept(bytes: ByteArray): TerminalFrameUpdate {
         hasExplicitVerticalMovement = false
+        synchronizedOutputCompleted = false
         val completed = ArrayList<TerminalLine>()
         val responses = ArrayList<ByteArray>()
         val remoteClipboardRequests = ArrayList<TerminalRemoteClipboardRequest>()
@@ -141,6 +150,7 @@ class VtTerminalEngine(
     @Synchronized
     fun resize(newColumns: Int, newRows: Int): TerminalFrameUpdate {
         hasExplicitVerticalMovement = false
+        synchronizedOutputCompleted = false
         val boundedColumns = newColumns.coerceIn(1, MAX_COLUMNS)
         val boundedRows = newRows.coerceIn(1, MAX_ROWS)
         if (boundedColumns == columns && boundedRows == rows) return snapshot()
@@ -171,6 +181,8 @@ class VtTerminalEngine(
     }
 
     private fun resetState() {
+        synchronizedOutput = false
+        synchronizedOutputCompleted = false
         decoder.reset()
         pendingBytes.fill(0)
         pendingBytes = ByteArray(0)
@@ -411,6 +423,14 @@ class VtTerminalEngine(
             'u' -> style = active.restoreCursor()
             'q' -> parseCursorStyleParameter(raw, privatePrefix)?.let(::applyCursorStyle)
             'c' -> responses += if (privatePrefix == '>') SECONDARY_DEVICE_ATTRIBUTES else PRIMARY_DEVICE_ATTRIBUTES
+            'p' -> if (privatePrefix == '?' && body.endsWith('$')) {
+                body.dropLast(1).split(';').forEach { value ->
+                    value.toIntOrNull()?.let { mode ->
+                        val state = if (mode == 2026) { if (synchronizedOutput) 1 else 2 } else 0
+                        responses += "\u001b[?$mode;$state\$y".toByteArray()
+                    }
+                }
+            }
         }
     }
 
@@ -546,6 +566,11 @@ class VtTerminalEngine(
                         if (!enabled) style = primary.restoreCursor()
                     }
                     2004 -> bracketedPaste = enabled
+                    2026 -> {
+                        if (enabled && !synchronizedOutput) synchronizedOutputGeneration += 1L
+                        if (!enabled && synchronizedOutput) synchronizedOutputCompleted = true
+                        synchronizedOutput = enabled
+                    }
                 }
             } else if (privatePrefix == null && mode == 4) {
                 insertMode = enabled
@@ -886,6 +911,10 @@ class VtTerminalEngine(
             clearScrollbackRequested = clearScrollbackRequested,
             dirtyRows = screenSnapshot.dirtyRows,
             hasExplicitVerticalMovement = hasExplicitVerticalMovement,
+            synchronizedOutput = synchronizedOutput,
+            synchronizedOutputGeneration = synchronizedOutputGeneration,
+            synchronizedOutputCompleted = synchronizedOutputCompleted,
+            topAnchoredScrollRegionHasFooter = active.topMargin == 0 && active.bottomMargin < rows - 1,
         )
     }
 

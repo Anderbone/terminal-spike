@@ -5,6 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
@@ -13,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -75,6 +82,7 @@ fun rememberTerminalInputFocusRequester(): TerminalInputFocusRequester =
     remember { TerminalInputFocusRequester() }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun TerminalViewBridge(
     controller: TerminalController,
     inputFocusRequester: TerminalInputFocusRequester,
@@ -87,6 +95,10 @@ fun TerminalViewBridge(
 ) {
     val rendererDescription = stringResource(R.string.terminal_renderer_description)
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imeInsets = WindowInsets.ime
+    val imeTargetInsets = WindowInsets.imeAnimationTarget
+    val navigationInsets = WindowInsets.navigationBars
     val currentLinkActionCallback = rememberUpdatedState(linkActionCallback)
     val currentClipboardActionCallback = rememberUpdatedState(clipboardActionCallback)
     val currentImageContentCallback = rememberUpdatedState(imageContentCallback)
@@ -148,6 +160,12 @@ fun TerminalViewBridge(
             },
             modifier = Modifier
                 .fillMaxSize()
+                .onGloballyPositioned {
+                    attachedView[0]?.onImeAnimationLayout(
+                        imeInsets.getBottom(density), imeTargetInsets.getBottom(density),
+                        navigationInsets.getBottom(density),
+                    )
+                }
                 .testTag("terminal_container")
                 .semantics { contentDescription = rendererDescription },
         )

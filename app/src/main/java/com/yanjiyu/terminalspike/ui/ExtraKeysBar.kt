@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -66,6 +67,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -90,6 +92,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.core.model.KeyboardLayout
@@ -278,7 +282,13 @@ fun TerminalAccessoryBar(
     snippetsAboveKeyboard: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    var pinnedSnippetsExpanded by rememberSaveable { mutableStateOf(true) }
+    val context = LocalContext.current
+    val snippetPreferences = remember(context) {
+        context.applicationContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+    }
+    var pinnedSnippetsExpanded by remember(snippetPreferences) {
+        mutableStateOf(snippetPreferences.getBoolean("expanded", true))
+    }
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val currentOnBufferedInputModeChanged by rememberUpdatedState(onBufferedInputModeChanged)
@@ -291,7 +301,7 @@ fun TerminalAccessoryBar(
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
-            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            val keyboardVisible = rememberTerminalKeyboardVisible()
             var manualInputMode by remember(inputTargetId) { mutableStateOf<Boolean?>(null) }
             var inputContextIdentity by remember(inputTargetId) { mutableStateOf(inputContext.identity) }
             var bufferedInputMode by remember(inputTargetId) {
@@ -366,7 +376,10 @@ fun TerminalAccessoryBar(
                             onInputInteraction = { manualInputMode = true },
                             snippetsExpanded = pinnedSnippetsExpanded,
                             onToggleSnippets = if (snippetsAboveKeyboard && snippetsContent != null) {
-                                { pinnedSnippetsExpanded = !pinnedSnippetsExpanded }
+                                {
+                                    pinnedSnippetsExpanded = !pinnedSnippetsExpanded
+                                    snippetPreferences.edit().putBoolean("expanded", pinnedSnippetsExpanded).apply()
+                                }
                             } else null,
                         )
                     }
@@ -541,6 +554,7 @@ private fun BufferedInputPage(
     val restoreInputDescription = stringResource(R.string.terminal_restore_last_sent_input)
     val focusRequester = remember { FocusRequester() }
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
     val context = LocalContext.current
     val currentInputTargetId by rememberUpdatedState(inputTargetId)
     val currentVoiceLanguageTag by rememberUpdatedState(voiceInputLanguageTag)
@@ -604,8 +618,13 @@ private fun BufferedInputPage(
         }
     }
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val inputFocused by interactionSource.collectIsFocusedAsState()
     LaunchedEffect(active) {
-        if (active) {
+        // Insets-driven composition can lag behind a system Back dismissal. Do not let
+        // a pending focus transfer reopen a keyboard that Android has already hidden.
+        if (active && !inputFocused &&
+            ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
             focusRequester.requestFocus()
             softwareKeyboardController?.show()
         }
@@ -632,8 +651,6 @@ private fun BufferedInputPage(
         val voiceStatus = if (voiceInputEnabled) {
             voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
         } else null
-        val interactionSource = remember { MutableInteractionSource() }
-        val inputFocused by interactionSource.collectIsFocusedAsState()
         BasicTextField(
             value = draft,
             onValueChange = { nextValue -> draftState.update(nextValue, inputTargetId) },
@@ -1114,3 +1131,12 @@ internal fun terminalShortcutLabelFontSizeSp(labelLength: Int): Float {
 
 private const val LONG_PRESS_REPEAT_INITIAL_DELAY_MS = 400L
 private const val LONG_PRESS_REPEAT_INTERVAL_MS = 70L
+
+/** Observe only visibility edges; animated pixel heights must not recompose the accessory deck. */
+@Composable
+internal fun rememberTerminalKeyboardVisible(insets: WindowInsets = WindowInsets.ime): Boolean {
+    val density = LocalDensity.current
+    return remember(insets, density) {
+        derivedStateOf { insets.getBottom(density) > 0 }
+    }.value
+}

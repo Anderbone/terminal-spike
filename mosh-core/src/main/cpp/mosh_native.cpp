@@ -295,6 +295,12 @@ int run_transport( JNIEnv *environment,
       predictions.cull( frame );
       predictions.apply( frame );
       std::string output = display.new_frame( display_initialized, local_framebuffer, frame );
+      // Preserve the upstream framebuffer boundary across partial pipe writes/Java reads.
+      // Empty diffs must stay empty: wrapping them would create continuous idle traffic.
+      if ( !output.empty() ) {
+        output.insert( 0, "\033[?2026h" );
+        output.append( "\033[?2026l" );
+      }
       if ( pending_output.size() - pending_offset + output.size() > kMaximumPendingOutput ) {
         return kTerminalPipeClosed;
       }

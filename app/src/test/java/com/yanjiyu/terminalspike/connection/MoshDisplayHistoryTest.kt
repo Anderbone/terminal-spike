@@ -7,6 +7,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MoshDisplayHistoryTest {
+    @Test fun splitSynchronizedMoshFramesRetainEveryOneOfTwoHundredRowsInOrder() {
+        val engine = VtTerminalEngine(columns = 24, rows = 5)
+        val history = MoshDisplayHistory()
+        val retained = mutableListOf<String>()
+        var last = engine.accept(byteArrayOf())
+        for (end in 4..200) {
+            val rows = (end - 3..end).map { "CODEX_%03d".format(it) } + "input"
+            val bytes = "\u001b[?2026h".toByteArray() + rewriteScreen(*rows.toTypedArray()) + "\u001b[?2026l".toByteArray()
+            for (byte in bytes) {
+                last = history.retainDisplayedRows(engine.accept(byteArrayOf(byte)))
+                if (last.synchronizedOutput) assertTrue(last.completedScrollback.isEmpty())
+                retained += last.completedScrollback.map { it.text.trimEnd() }
+            }
+        }
+        retained += last.screen.map { it.text.trimEnd() }.filter { it.startsWith("CODEX_") }
+        assertEquals((1..200).map { "CODEX_%03d".format(it) }, retained)
+        assertEquals("input", last.screen.last().text.trimEnd())
+    }
+
+    @Test fun explicitScrollInAnEarlierChunkMustNotBeInferredAgainAtSyncEnd() {
+        val engine = VtTerminalEngine(columns = 24, rows = 5)
+        val history = MoshDisplayHistory()
+        history.retainDisplayedRows(engine.accept(rewriteScreen("001", "002", "003", "004", "input")))
+        val scrolled = history.retainDisplayedRows(engine.accept("\u001b[?2026h\u001b[1;4r\u001b[S".toByteArray()))
+        assertEquals(listOf("001"), scrolled.completedScrollback.map { it.text.trimEnd() })
+        val end = history.retainDisplayedRows(engine.accept("\u001b[?2026l".toByteArray()))
+        assertTrue(end.completedScrollback.isEmpty())
+        assertEquals("input", end.screen.last().text.trimEnd())
+    }
+
     @Test
     fun wrapMetadataDoesNotHideAVisualShiftAndRetainedMetadataIsPreserved() {
         val engine = VtTerminalEngine(columns = 20, rows = 4)

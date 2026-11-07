@@ -17,12 +17,49 @@ internal object HerdrNavigationChrome {
         }
         // The two-row mobile header remains present behind its switcher. Only the
         // live Switch affordance permits an overlay; close/× means it is covered.
-        val header = screen[1].text
-        val dividerOffset = header.lastIndexOf('│')
-        if (dividerOffset < 0 || header.substring(dividerOffset + 1).trim() != "switch") return null
-        val dividerColumn = TerminalLineGeometry.columnAtOffset(screen[1], dividerOffset)
-        return if (dividerColumn in maxOf(0, columns - 11) until columns) HerdrPaneArea(0, 2, columns, rows - 2) else null
+        val hasTopTabs = tabRows(screen, 0, rows).singleOrNull() == 0
+        for (top in mobileBarTops(rows, hasTopTabs)) {
+            val header = screen[top + 1]
+            val firstDivider = header.text.indexOf('│')
+            if (firstDivider < 0) continue
+            val lastDivider = header.text.lastIndexOf('│')
+            val rightButton = TerminalLineGeometry.columnAtOffset(header, lastDivider) in
+                maxOf(0, columns - 11) until columns &&
+                header.text.substring(lastDivider + 1).trim() == "switch"
+            val leftButton = TerminalLineGeometry.columnAtOffset(header, firstDivider) in 1..10 &&
+                header.text.substring(0, firstDivider).trim() == "switch"
+            if (rightButton || leftButton) {
+                val tabHeight = if (hasTopTabs) 1 else 0
+                return HerdrPaneArea(0, if (top <= 1) top + 2 else tabHeight, columns, rows - 2 - tabHeight)
+            }
+        }
+        return null
     }
+
+    /** Visible switcher body, excluding its navigation bar and horizontal rule. */
+    private fun mobileSwitcherBody(screen: List<TerminalLine>, columns: Int, rows: Int): IntRange? {
+        if (screen.size != rows || rows < 4) return null
+        val hasTopTabs = tabRows(screen, 0, rows).singleOrNull() == 0
+        for (top in mobileBarTops(rows, hasTopTabs)) {
+            val first = screen[top].text.split('│')
+            val second = screen[top + 1].text.split('│')
+            if (first.size != 2 || second.size != 2) continue
+            val titleSide = first.indexOfFirst { it.trim() == "switch" }
+            if (titleSide < 0) continue
+            val buttonSide = 1 - titleSide
+            if (first[buttonSide].trim() != "close" && second[buttonSide].trim() !in listOf("close", "×")) continue
+            val divider = TerminalLineGeometry.columnAtOffset(screen[top], screen[top].text.indexOf('│'))
+            if (divider !in 1..10 && divider !in maxOf(0, columns - 11) until columns) continue
+            val rule = if (top <= 1) top + 2 else top - 1
+            val ruleText = screen[rule].text.trim()
+            if (ruleText.isEmpty() || ruleText.any { it != '─' }) continue
+            return if (top <= 1) top + 3 until rows else (if (hasTopTabs) 1 else 0) until rule
+        }
+        return null
+    }
+
+    private fun mobileBarTops(rows: Int, hasTopTabs: Boolean): List<Int> =
+        if (hasTopTabs) listOf(0, 1, rows - 2).distinct() else listOf(0, rows - 2).distinct()
 
     fun isContextMenuCell(
         screen: List<TerminalLine>,
@@ -32,16 +69,20 @@ internal object HerdrNavigationChrome {
         row: Int,
     ): Boolean {
         if (screen.size != rows || column !in 0 until columns || row !in 0 until rows) return false
-        val sidebarColumns = sidebarColumns(screen, columns) ?: return false
+        mobileSwitcherBody(screen, columns, rows)?.let { return row in it }
+        val sidebarColumns = sidebarColumns(screen, columns) ?: return isTabCell(screen, columns, rows, column, row)
         if (column < sidebarColumns) return true
         if (row != 0 && row != rows - 1) return false
         return tabRows(screen, sidebarColumns, rows).singleOrNull() == row
     }
 
-    /** Only an existing desktop tab, excluding the sidebar and the new-tab control. */
+    /** Existing tabs in verified desktop or mobile chrome, excluding the new-tab control. */
     fun isTabCell(screen: List<TerminalLine>, columns: Int, rows: Int, column: Int, row: Int): Boolean {
         if (screen.size != rows || column !in 0 until columns || row !in 0 until rows) return false
-        val sidebar = sidebarColumns(screen, columns) ?: return false
+        val sidebar = sidebarColumns(screen, columns) ?: run {
+            if (row != 0 || outputArea(screen, columns, rows) == null) return false
+            0
+        }
         if (column < sidebar || tabRows(screen, sidebar, rows).singleOrNull() != row) return false
         val addTab = screen[row].runs.firstOrNull {
             it.startColumn >= sidebar && it.columnWidth in 1..3 && it.text.trim() == "+"
@@ -51,8 +92,19 @@ internal object HerdrNavigationChrome {
 
     /** The New footer only: menu, existing spaces and pane output retain their own actions. */
     fun isNewSpaceCell(screen: List<TerminalLine>, columns: Int, rows: Int, column: Int, row: Int): Boolean {
-        if (screen.size != rows || row !in 1 until rows || column < 0) return false
-        val sidebar = sidebarColumns(screen, columns) ?: return false
+        if (screen.size != rows || row !in 0 until rows || column < 0) return false
+        val sidebar = sidebarColumns(screen, columns)
+        if (sidebar == null) {
+            // Herdr's mobile switcher is a full-screen list, not a desktop sidebar.
+            // Require its own header and divider before recognizing the action;
+            // identical words in terminal output must remain selectable.
+            if (column >= columns || row !in (mobileSwitcherBody(screen, columns, rows) ?: return false)) return false
+            // Column zero belongs to the switcher's optional left scrollbar.
+            val label = screen[row].text.drop(1)
+            val action = "+ new workspace"
+            val start = label.indexOf(action) + 1
+            return label.trim() == action && column in start until start + action.length
+        }
         if (column >= sidebar - 1 || screen[0].text.substringBefore('│').trim() != "spaces") return false
         val label = screen[row].text.substringBefore('│')
         val start = label.indexOf("new")

@@ -86,6 +86,36 @@ class HerdrHistoryProjectionTest {
         assertEquals(2, requireNotNull(fixture.controller.herdrHistoryForDisplay()).y)
     }
 
+    @Test fun mobileHistoryRespectsAllFourNavigationCorners() {
+        val fixture = Fixture(44, 30)
+        fixture.controller.publishHerdrHistory(fixture.history(44, 28))
+        for (bottom in listOf(false, true)) {
+            for (left in listOf(false, true)) {
+                val row = if (bottom) 30 else 2
+                val button = if (left) "switch │ status" else "status                            │ switch"
+                fixture.draw("\u001B[2J\u001B[${row};1H$button")
+                val history = requireNotNull(fixture.controller.herdrHistoryForDisplay())
+                assertEquals(if (bottom) 0 else 2, history.y)
+                assertEquals(28, history.rows)
+            }
+        }
+    }
+
+    @Test fun mobileTopTabsRemainOutsideHistoryAtEverySwitchCorner() {
+        val fixture = Fixture(44, 30)
+        fixture.controller.publishHerdrHistory(fixture.history(44, 27))
+        for (bottom in listOf(false, true)) {
+            for (left in listOf(false, true)) {
+                val row = if (bottom) 30 else 3
+                val button = if (left) "switch │ status" else "status                            │ switch"
+                fixture.draw("\u001B[2J\u001B[H tab one \u001B[1;16H\u001B[32m + \u001B[0m\u001B[${row};1H$button")
+                val history = requireNotNull(fixture.controller.herdrHistoryForDisplay())
+                assertEquals(if (bottom) 1 else 3, history.y)
+                assertEquals(27, history.rows)
+            }
+        }
+    }
+
     @Test fun unknownGeometryAndBrokenChromeDoNotPlaceHistoryAtTheScreenOrigin() {
         val fixture = Fixture()
         fixture.controller.publishHerdrHistory(fixture.history(62, 30))

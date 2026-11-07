@@ -488,7 +488,7 @@ private fun TerminalPriorityBackHandlerApi33(
             }
         }
         dispatcher.registerOnBackInvokedCallback(
-            OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+            OnBackInvokedDispatcher.PRIORITY_DEFAULT,
             callback,
         )
         onDispose {
@@ -1193,7 +1193,7 @@ fun TerminalSpikeScreen(
         onDispose { rootView.keepScreenOn = false }
     }
 
-    // The terminal uses overlay priority so an active IME cannot consume the first system Back.
+    // Keep terminal navigation below the IME so the first system Back hides the keyboard.
     // The AndroidX handlers remain the compatibility and programmatic-dispatch path.
     BackHandler(enabled = projectVisible) { projectSelected = false }
     BackHandler(enabled = focusMode) { focusSessionId = null }

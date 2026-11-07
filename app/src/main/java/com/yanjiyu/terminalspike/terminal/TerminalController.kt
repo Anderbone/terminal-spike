@@ -6,6 +6,7 @@ import com.yanjiyu.terminalspike.connection.HerdrSidebarLayout
 import com.yanjiyu.terminalspike.connection.HerdrHistoryRead
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Choreographer
 import com.yanjiyu.terminalspike.connection.TmuxHistoryPageRequest
 import com.yanjiyu.terminalspike.core.model.CursorStyle
@@ -393,6 +394,10 @@ class TerminalController(
     }
 
     fun isMouseTrackingEnabled(): Boolean = terminalModes.mouseTracking
+    internal val liveScreenRows: Int? get() = terminalScreen?.size
+    internal val liveScreenIsAlternate: Boolean get() = terminalScreenIsAlternate
+    internal var liveScreenHasFixedFooter: Boolean = false
+        private set
 
     fun isTmuxSession(): Boolean =
         !tmuxOuterTerminalExited && tmuxSessionProvider?.invoke() == true
@@ -545,6 +550,7 @@ class TerminalController(
     }
 
     fun resetInputSink() {
+        liveScreenHasFixedFooter = false
         dismissHerdrProjectPicker()
         herdrSessionActive = false
         publishHerdrSidebarLayout(null)
@@ -609,9 +615,19 @@ class TerminalController(
         scheduleFrame()
     }
 
-    fun updateTerminalFrame(frame: TerminalFrameUpdate) {
+    /** Advances only when transport output is published, never for the local resize placeholder. */
+    var renderedOutputRevision: Long = 0L
+        private set
+    private var pendingTransportOutput = false
+    private val synchronizedOutputGate = TerminalSynchronizedOutputGate()
+    private var synchronizedTimeoutGeneration: Long? = null
+    var renderedSynchronizedOutputRevision: Long = -1L
+        private set
+
+    fun updateTerminalFrame(frame: TerminalFrameUpdate, isResize: Boolean = false) {
         val configuredTmux = tmuxSessionProvider?.invoke() == true
         synchronized(queueLock) {
+            pendingTransportOutput = pendingTransportOutput || !isResize
             val exitingManagedTmux = configuredTmux &&
                 tmuxOuterScreenIsAlternate != false && !frame.alternateScreen &&
                 tmuxHistoryActive &&
@@ -649,6 +665,8 @@ class TerminalController(
                 (earlierFrame?.bellCount ?: 0).toLong() + frame.bellCount.toLong()
             ).coerceAtMost(MAX_COALESCED_BELL_COUNT.toLong()).toInt()
             pendingTerminalFrame = frame.copy(
+                synchronizedOutputCompleted = frame.synchronizedOutputCompleted ||
+                    (!isResize && earlierFrame?.synchronizedOutputCompleted == true),
                 completedScrollback = emptyList(),
                 responses = emptyList(),
                 remoteClipboardRequests = emptyList(),
@@ -690,6 +708,7 @@ class TerminalController(
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
+            pendingTransportOutput = false
             pendingTmuxHistorySnapshots.clear()
             activeTmuxHistoryReconciliation = null
         }
@@ -706,6 +725,7 @@ class TerminalController(
             pendingLiveLine = null
             hasPendingLiveLine = false
             pendingTerminalFrame = null
+            pendingTransportOutput = false
             pendingTmuxHistorySnapshots.clear()
             activeTmuxHistoryReconciliation = null
             buffer.clear()
@@ -714,6 +734,7 @@ class TerminalController(
             tmuxScrollback = null
             liveLine = null
             terminalScreen = null
+            liveScreenHasFixedFooter = false
             terminalScreenIsAlternate = false
             tmuxHistoryActive = false
             tmuxOuterScreenIsAlternate = null
@@ -1025,6 +1046,31 @@ class TerminalController(
         var restoreTmuxViewportY: Float? = null
         var tmuxSnapshotRequiresLiveBottom = false
         val hasMore = synchronized(queueLock) {
+            // Decide and consume under the same lock. Otherwise transport output can replace an
+            // eligible frame with an unfinished synchronized batch between these two operations.
+            val frame = pendingTerminalFrame
+            val delay = synchronizedOutputGate.delayMillis(
+                frame, frameScheduler.uptimeMillis(),
+                primaryTerminalScrollbackQueue.size + alternateTerminalScrollbackQueue.size +
+                    tmuxTerminalScrollbackQueue.size,
+            )
+            if (delay > 0L && frame != null) {
+                frameScheduled = false
+                if (synchronizedTimeoutGeneration != frame.synchronizedOutputGeneration) {
+                    synchronizedTimeoutGeneration = frame.synchronizedOutputGeneration
+                    val generation = frame.synchronizedOutputGeneration
+                    frameScheduler.postDelayedFrame(Choreographer.FrameCallback {
+                        val stillPending = synchronized(queueLock) {
+                            pendingTerminalFrame?.let {
+                                it.synchronizedOutput && it.synchronizedOutputGeneration == generation
+                            } == true
+                        }
+                        if (stillPending) scheduleFrame()
+                    }, delay)
+                }
+                return@FrameCallback
+            }
+            synchronizedTimeoutGeneration = null
             val previousTerminalScreen = terminalScreen
             val previousCursor = cursor
             val batch = outputQueue.drain(MAX_LINES_PER_FRAME)
@@ -1045,6 +1091,12 @@ class TerminalController(
             hasPendingLiveLine = false
             val terminalFrame = pendingTerminalFrame
             pendingTerminalFrame = null
+            if (pendingTransportOutput) renderedOutputRevision += 1L
+            if (terminalFrame != null) synchronizedOutputGate.onFramePublished()
+            if (terminalFrame?.synchronizedOutputCompleted == true && !terminalFrame.synchronizedOutput) {
+                renderedSynchronizedOutputRevision = renderedOutputRevision
+            }
+            pendingTransportOutput = false
             frameScheduled = false
 
             if (batch.isNotEmpty()) buffer.append(batch)
@@ -1114,6 +1166,7 @@ class TerminalController(
                 )
             }
             if (terminalFrame != null) {
+                liveScreenHasFixedFooter = terminalFrame.topAnchoredScrollRegionHasFooter
                 terminalScreen = terminalFrame.screen
                 terminalScreenIsAlternate = terminalFrame.alternateScreen
                 terminalModes = terminalFrame.modes
@@ -1454,6 +1507,10 @@ class TerminalController(
 
 internal fun interface TerminalFrameScheduler {
     fun postFrame(callback: Choreographer.FrameCallback)
+    fun uptimeMillis(): Long = SystemClock.uptimeMillis()
+    fun postDelayedFrame(callback: Choreographer.FrameCallback, delayMillis: Long) {
+        postFrame(callback)
+    }
 }
 
 private object AndroidTerminalFrameScheduler : TerminalFrameScheduler {
@@ -1463,6 +1520,10 @@ private object AndroidTerminalFrameScheduler : TerminalFrameScheduler {
         handler.post {
             Choreographer.getInstance().postFrameCallback(callback)
         }
+    }
+
+    override fun postDelayedFrame(callback: Choreographer.FrameCallback, delayMillis: Long) {
+        handler.postDelayed({ postFrame(callback) }, delayMillis)
     }
 }
 

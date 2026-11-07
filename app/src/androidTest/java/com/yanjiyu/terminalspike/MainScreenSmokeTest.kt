@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike
 
+import android.os.ParcelFileDescriptor
+import android.view.KeyEvent
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
@@ -24,6 +28,7 @@ import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.hasFocus
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
+import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
 import com.yanjiyu.terminalspike.ui.settings.KeyboardPreviewTestTag
 import com.yanjiyu.terminalspike.ui.settings.KeyboardSettingsTestTag
@@ -36,6 +41,7 @@ import com.yanjiyu.terminalspike.ui.TerminalEmptyStateTestTag
 import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertFalse
 
 class MainScreenSmokeTest {
     @get:Rule
@@ -186,6 +192,77 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
         onView(isAssignableFrom(FastTerminalView::class.java)).check(matches(hasFocus()))
+    }
+
+    @Test
+    fun systemBackHidesDirectKeyboardBeforeLeavingTerminal() = withSoftwareKeyboard {
+        openRendererLab()
+        composeRule.onNodeWithTag("terminal_container").performTouchInput { click() }
+        awaitKeyboard(visible = true)
+
+        // Exercise the legacy pre-IME path even when this test runs on a newer Android.
+        onView(isAssignableFrom(FastTerminalView::class.java)).check { view, _ ->
+            assertFalse(view.onKeyPreIme(KeyEvent.KEYCODE_BACK, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK)))
+            assertFalse(view.onKeyPreIme(KeyEvent.KEYCODE_BACK, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK)))
+        }
+        pressSystemBack()
+        awaitKeyboard(visible = false)
+        composeRule.onNodeWithTag("terminal_container").assertIsDisplayed()
+
+        pressSystemBack()
+        composeRule.onNodeWithContentDescription("Settings screen").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open renderer lab").assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackHidesBufferedKeyboardAndPreservesDraftBeforeLeavingTerminal() = withSoftwareKeyboard {
+        openRendererLab()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        val input = composeRule.onNodeWithTag("buffered_terminal_input")
+        input.performClick().performTextInput("keep my unsent command")
+        awaitKeyboard(visible = true)
+
+        pressSystemBack()
+        awaitKeyboard(visible = false)
+        composeRule.onNodeWithTag("terminal_container").assertIsDisplayed()
+        input.assert(hasText("keep my unsent command"))
+
+        pressSystemBack()
+        composeRule.onNodeWithContentDescription("Settings screen").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open renderer lab").assertIsDisplayed()
+    }
+
+    private fun pressSystemBack() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitForIdle()
+    }
+
+    private fun awaitKeyboard(visible: Boolean) {
+        composeRule.waitUntil(5_000) {
+            var matches = false
+            composeRule.runOnUiThread {
+                matches = ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView)
+                    ?.isVisible(WindowInsetsCompat.Type.ime()) == visible
+            }
+            matches
+        }
+    }
+
+    private fun withSoftwareKeyboard(block: () -> Unit) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(command),
+        ).bufferedReader().use { it.readText().trim() }
+        val setting = "show_ime_with_hard_keyboard"
+        val previous = shell("settings get secure $setting")
+        check(previous in listOf("null", "0", "1"))
+        try {
+            shell("settings put secure $setting 1")
+            block()
+        } finally {
+            shell(if (previous == "null") "settings delete secure $setting"
+                else "settings put secure $setting $previous")
+        }
     }
 
     private fun openTerminal() {

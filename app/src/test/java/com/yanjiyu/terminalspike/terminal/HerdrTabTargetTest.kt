@@ -8,6 +8,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HerdrTabTargetTest {
+    @Test fun mobileSwitchHeadersAllowDividersInTheStatusText() {
+        for (bottom in listOf(false, true)) {
+            for (left in listOf(false, true)) {
+                val screen = MutableList(8) { TerminalLine.plain("output") }
+                screen[if (bottom) 7 else 1] = TerminalLine.plain(
+                    if (left) "switch │ project │ task" else "project │ task                │ switch",
+                )
+                val area = requireNotNull(HerdrNavigationChrome.outputArea(screen, 40, 8))
+                org.junit.Assert.assertEquals(if (bottom) 0 else 2, area.y)
+                org.junit.Assert.assertEquals(6, area.rows)
+            }
+        }
+    }
+
     @Test fun newSpaceLongPressExcludesMenuExistingSpacesAndPaneOutput() {
         val screen = listOf(
             TerminalLine.plain(" spaces       │ tab +"),
@@ -23,6 +37,87 @@ class HerdrTabTargetTest {
         }
         val broken = screen.toMutableList().apply { this[2] = TerminalLine.plain("new menu") }
         assertFalse(HerdrNavigationChrome.isNewSpaceCell(broken, 40, 6, 1, 3))
+    }
+
+    @Test fun mobileNewWorkspaceRequiresTheVisibleSwitcherAndExactAction() {
+        val screen = listOf(
+            TerminalLine.plain(" switch             │"),
+            TerminalLine.plain("                    │ close"),
+            TerminalLine.plain("──────────────────────────────"),
+            TerminalLine.plain(" spaces"),
+            TerminalLine.plain("  + new workspace"),
+            TerminalLine.plain("  project"),
+        )
+        for (column in 2..16) assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 30, 6, column, 4))
+        for ((column, row) in listOf(0 to 4, 17 to 4, 30 to 4, 3 to 3, 3 to 5)) {
+            assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 30, 6, column, row))
+        }
+        val scrolled = screen.toMutableList().apply { this[4] = TerminalLine.plain("┃  + new workspace") }
+        assertTrue(HerdrNavigationChrome.isNewSpaceCell(scrolled, 30, 6, 4, 4))
+        assertFalse(HerdrNavigationChrome.isNewSpaceCell(scrolled, 30, 6, 0, 4))
+        for (changedRow in 0..2) {
+            val output = screen.toMutableList().apply { this[changedRow] = TerminalLine.plain("output") }
+            assertFalse(HerdrNavigationChrome.isNewSpaceCell(output, 30, 6, 4, 4))
+        }
+    }
+
+    @Test fun mobileSwitcherRecognizesAllCloseCornersAndKeepsControlsOutOfTheBody() {
+        for (bottom in listOf(false, true)) {
+            for (left in listOf(false, true)) {
+                val top = if (bottom) 6 else 0
+                val rule = if (bottom) 5 else 2
+                val actionRow = if (bottom) 0 else 3
+                val screen = MutableList(8) { TerminalLine.plain("") }
+                screen[top] = TerminalLine.plain(if (left) " close   │ switch" else " switch                       │ close")
+                screen[top + 1] = TerminalLine.plain(if (left) "    ×    │" else "                              │ ×")
+                screen[rule] = TerminalLine.plain("─".repeat(40))
+                screen[actionRow] = TerminalLine.plain("│  + new workspace")
+                assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 8, 4, actionRow))
+                assertTrue(HerdrNavigationChrome.isContextMenuCell(screen, 40, 8, 4, actionRow))
+                for (row in listOf(top, top + 1, rule)) {
+                    assertFalse(HerdrNavigationChrome.isContextMenuCell(screen, 40, 8, 4, row))
+                    assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 8, 4, row))
+                }
+                org.junit.Assert.assertNull(HerdrNavigationChrome.outputArea(screen, 40, 8))
+            }
+        }
+    }
+
+    @Test fun mobileTopTabTargetsRequireLiveChromeAndExcludePaneAndNewTab() {
+        for (bottom in listOf(false, true)) {
+            val screen = MutableList(8) { TerminalLine.plain("output") }
+            screen[0] = TerminalLine.styled(listOf(TerminalRun(" tab one ", startColumn = 0, columnWidth = 9),
+                TerminalRun(" + ", startColumn = 15, columnWidth = 3)))
+            screen[if (bottom) 7 else 2] = TerminalLine.plain("switch │ status")
+            assertTrue(HerdrNavigationChrome.isTabCell(screen, 40, 8, 3, 0))
+            assertTrue(HerdrNavigationChrome.isContextMenuCell(screen, 40, 8, 3, 0))
+            for ((column, row) in listOf(16 to 0, 3 to 3, 3 to 7)) {
+                assertFalse(HerdrNavigationChrome.isTabCell(screen, 40, 8, column, row))
+            }
+            screen[if (bottom) 7 else 2] = TerminalLine.plain("close │ status")
+            assertFalse(HerdrNavigationChrome.isTabCell(screen, 40, 8, 3, 0))
+        }
+    }
+
+    @Test fun mobileSwitcherWithTopTabsKeepsTabBarAndControlsOutOfListTargets() {
+        for (bottom in listOf(false, true)) {
+            val screen = MutableList(10) { TerminalLine.plain("") }
+            screen[0] = TerminalLine.styled(listOf(TerminalRun(" tab ", startColumn = 0, columnWidth = 5),
+                TerminalRun(" + ", startColumn = 15, columnWidth = 3)))
+            val top = if (bottom) 8 else 1
+            val rule = if (bottom) 7 else 3
+            val actionRow = if (bottom) 1 else 4
+            screen[top] = TerminalLine.plain(" close   │ switch")
+            screen[top + 1] = TerminalLine.plain("    ×    │")
+            screen[rule] = TerminalLine.plain("─".repeat(40))
+            screen[actionRow] = TerminalLine.plain("│  + new workspace")
+            assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, 4, actionRow))
+            assertTrue(HerdrNavigationChrome.isContextMenuCell(screen, 40, 10, 4, actionRow))
+            for (row in listOf(0, top, top + 1, rule)) {
+                assertFalse(HerdrNavigationChrome.isContextMenuCell(screen, 40, 10, 4, row))
+            }
+            org.junit.Assert.assertNull(HerdrNavigationChrome.outputArea(screen, 40, 10))
+        }
     }
 
     @Test fun spacesExcludeHeadersFooterAgentsAndEmptyRows() {
@@ -74,6 +169,14 @@ class HerdrTabTargetTest {
         assertTrue(controller.showHerdrProjectPickerAt(2, 3))
         org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
         assertTrue(sent.isEmpty())
+        controller.dismissHerdrProjectPicker()
+        val mobile = "\u001B[2J\u001B[H switch\u001B[1;31H│\u001B[2;31H│ close\u001B[3;1H" +
+            "─".repeat(40) + "\u001B[4;1H spaces\u001B[5;1H  + new workspace"
+        controller.updateTerminalFrame(engine.accept(mobile.toByteArray()))
+        while (frames.isNotEmpty()) frames.removeFirst().doFrame(1L)
+        assertTrue(controller.showHerdrProjectPickerAt(5, 4))
+        org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
+        assertTrue("Opening recent projects must not send a remote click", sent.isEmpty())
         controller.resetInputSink()
         org.junit.Assert.assertNull(controller.herdrProjectPicker.value)
         assertFalse(controller.showHerdrProjectPickerAt(2, 3))
