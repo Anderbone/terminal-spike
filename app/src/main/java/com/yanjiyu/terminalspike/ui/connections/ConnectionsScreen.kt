@@ -90,6 +90,8 @@ internal data class ConnectionsCallbacks(
     val onRenameKeyMetadata: (suspend (String, String, String?) -> Result<Unit>)? = null,
     val onOpenMoshStatus: (() -> Unit)? = null,
     val nearbySshDiscoveryControllerFactory: NearbySshDiscoveryControllerFactory? = null,
+    val onOpenBrowser: (() -> Unit)? = null,
+    val onOpenWebBrowser: (() -> Unit)? = null,
 )
 
 private sealed interface PendingConnectionsEditor {
@@ -482,6 +484,7 @@ internal fun ConnectionsScreen(
                     SnippetEditorDialog(
                         initial = existing?.toEditorDraft() ?: SnippetEditorDraft(),
                         onDismiss = { pendingEditorToken = null },
+                        onDelete = callbacks.onDeleteSnippet,
                         onSave = { snippet ->
                             callbacks.onSaveSnippetModel?.invoke(snippet)
                                 ?: unavailableEditorOperation()

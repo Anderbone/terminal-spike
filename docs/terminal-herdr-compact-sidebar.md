@@ -1,5 +1,107 @@
 # Herdr sidebar on narrow screens
 
+## Restore meaningful task status dots (2026-11-07)
+
+The user clarified that green/yellow task status dots must remain. This
+supersedes their removal in the compact-prefix change below. Task rows now
+start with the existing colored status indicator, then `1 Task name`, with
+one space between each part and no decorative separator. The dot occupies
+the leftmost content cell; compact headings and left alignment remain. Names
+retain six extra cells compared with the original padded grouped list.
+
+The width regression now checks green idle and yellow working indicators,
+their exact foreground colors, and the full 20-character task name across
+desktop/mobile layouts. All 3,658 nextest tests passed (seven configured
+skips), as did formatting, clippy and the optimized build. The isolated real
+PTY width/focus/context-menu/Git checks passed with a meaningful leading
+status marker and no middle-dot separator after the number. A plain shell
+has unknown status (`·`), rather than an invented idle green dot.
+
+Installed Herdr SHA-256:
+`df1a62030121ee1b0198b167c5757ece37c95b6e370bbe779958af408536f11e`.
+The previous executable is backed up; the server and tasks were retained.
+Existing clients need `menu → detach` and reattachment. Evidence and exact
+deployment metadata: ignored `build/verification/grouped-status-restore/`.
+
+## Compact task prefixes and left alignment (2026-11-07)
+
+The user's unfolded-screen screenshot showed task names truncated behind wide
+indents, status dots and middle-dot separators. Grouped desktop and mobile lists
+now use a single task indent and `1 Task name`, without either dot. This gives
+the name seven additional terminal cells at the same sidebar width. Workspace
+headings, actions and menu labels also move left; Git heading gaps use one space.
+Selected-row backgrounds, task numbers, grouping, Git metadata and input targets
+remain intact.
+
+Validation: all 25 mobile/grouped tests and all 3,658 Herdr nextest tests passed
+(seven configured skips), along with formatting, clippy, six architecture checks
+and the optimized build. A width regression proves a 20-character task name fits
+the existing 26-column sidebar and that task rows have only the scrollbar gutter,
+one indent and their numbered label. An isolated real PTY passed 88 → 120 → 160
+→ 44 → 88 columns, compact-prefix assertions, exact task focus, context menus and
+cached Git markers. Evidence: ignored `build/verification/grouped-compact-prefix/`.
+
+Installed local Herdr SHA-256:
+`4e9279c43aee2fad779c37c071482957c4e89278b80495af85a17cc2421a75b2`.
+The previous executable is backed up. The server and tasks were retained;
+existing clients need `menu → detach` and reattachment to load the new rendering.
+The latest debug APK was non-incrementally installed on model-verified SM-F976B
+and MainActivity was confirmed top-resumed; no tests ran on that phone. The
+artifact hash and exact target are recorded in `grouped-compact-prefix/install.json`.
+
+## Grouped tasks in the unfolded sidebar (2026-11-07)
+
+The local Herdr fork now supports `[ui].grouped_sidebar = true`. Its expanded
+sidebar reuses the mobile Switch list's workspace headings, numbered tasks,
+status dots, cached Git markers and context-menu targets. The default Spaces /
+Agents split remains available when this setting is false. The local narrow-screen
+threshold remains 64: wider grids retain the sidebar and terminal side by side,
+without a Switch/Close bar. Collapsed navigation and the width-resize divider
+retain their existing routes.
+
+The list shares its projection and visible-row renderer with mobile navigation.
+Desktop sidebar scroll offsets remain separate from mobile Switch offsets;
+clicks and wheel events are consumed only inside the sidebar's list viewport.
+Terminal input, history, transport and protocol are unchanged.
+
+Validation: three new focused tests and all 3,657 Herdr nextest tests passed
+(seven configured skips); formatting, clippy, the optimized build, configuration
+reference validation and 20 configuration/architecture contract tests passed.
+An isolated real PTY passed 88 → 120 → 160 → 44 → 88 column transitions,
+including exact task focus, task context menus and cached Git markers. Evidence:
+ignored `build/verification/grouped-desktop/`. Existing Herdr clients need
+`menu → detach` and reattachment to load the new client code; the running
+server, Spaces and tasks can remain running.
+
+All seven manual render profiles passed. At fixed 88×30 geometry, one → 15
+populated panes measured 133.621 → 169.919 µs (1.27×) in one Space and
+129.594 → 173.656 µs (1.34×) across background Spaces. These measure
+cardinality scaling, not a before/after speed improvement.
+
+Installed local Herdr SHA-256:
+`1c4a5e49e616ad3d909bd74dc6b12ab6f2947bbc856d95fd33bebdcf5067386c`.
+The previous executable and config were backed up; the running server was
+retained. The local grouped-sidebar option is enabled. The existing shared
+Android gate completed successfully, and the latest debug APK was installed
+non-incrementally on model-verified SM-F976B. MainActivity was confirmed
+top-resumed after the launch transition; no device tests ran on the foldable.
+Deployment metadata: `build/verification/grouped-desktop/install.json`.
+
+## Restore the sidebar on unfolded screens (2026-11-07)
+
+At the user's request, the local `[ui].mobile_width_threshold` was restored
+from 160 to the default 64 in `~/.config/herdr/config.toml`. Narrow phone
+grids retain Switch; wider unfolded grids show the sidebar and terminal
+together. This supersedes the threshold change recorded below and preserves
+the grouped mobile navigation and Git headings.
+
+`herdr config check` passed, and `herdr server reload-config` returned
+`applied` with no diagnostics. An isolated real PTY using the installed
+client passed 44 → 64 → 88 → 120 → 160 → 44 column transitions: Switch
+at 44/64, sidebar and terminal at 88/120/160, then Switch again at 44.
+Evidence: ignored `build/verification/fold-layout-restore/`. No application
+source or Herdr executable changed; no device tests ran on the foldable.
+
 ## Unfolded-phone grouping and Git in project headings (2026-11-07)
 
 The local host's existing `[ui].mobile_width_threshold` is now 160 instead of

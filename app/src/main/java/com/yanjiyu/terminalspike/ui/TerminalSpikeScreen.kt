@@ -65,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,7 +105,6 @@ import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardActionCallback
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalImageContentCallback
-import com.yanjiyu.terminalspike.terminal.view.TerminalImagePasteSource
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
@@ -119,6 +119,7 @@ import com.yanjiyu.terminalspike.ui.connections.HostAuthenticationPromptDialog
 import com.yanjiyu.terminalspike.ui.connections.HostConnectRequest
 import com.yanjiyu.terminalspike.ui.connections.SavedConnectionPickerDialog
 import com.yanjiyu.terminalspike.ui.connections.requiresConnectionPrompt
+import com.yanjiyu.terminalspike.ui.releasenotes.ReleaseNotesUpdateHost
 import com.yanjiyu.terminalspike.ui.terminal.TERMINAL_TRANSCRIPT_FILE_NAME
 import com.yanjiyu.terminalspike.ui.terminal.TERMINAL_TRANSCRIPT_MIME_TYPE
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSessionActions
@@ -145,7 +146,6 @@ internal enum class TerminalOwner(
 }
 
 internal const val TerminalEmptyStateTestTag = "terminal-empty-state"
-private const val MAX_SELECTED_TERMINAL_IMAGES = 20
 
 @Composable
 internal fun TerminalEmptyState(
@@ -627,6 +627,7 @@ fun TerminalSpikeScreen(
     modifier: Modifier = Modifier,
     openTerminalSessionId: Long? = null,
     onOpenTerminalSessionConsumed: () -> Unit = {},
+    releaseNotesEnabled: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val connectionsState by viewModel.connectionsUiState.collectAsStateWithLifecycle()
@@ -654,11 +655,11 @@ fun TerminalSpikeScreen(
         TerminalClipboardActionCallback { request -> terminalClipboardWriter.write(request) != null }
     }
     val terminalImageContent = TerminalImageContentCallback { request ->
-        val accepted = viewModel.pasteImage(
+        val accepted = viewModel.pasteImages(
             sessionId = state.activeSessionId,
-            mimeType = request.mimeType,
-            open = { rootView.context.contentResolver.openInputStream(request.uri) },
-            onFinished = request.releasePermission,
+            images = listOf(terminalAttachmentSource(
+                rootView.context.contentResolver, request.uri, request.mimeType, request.releasePermission,
+            )),
         )
         if (!accepted) request.releasePermission()
         accepted
@@ -686,10 +687,24 @@ fun TerminalSpikeScreen(
     var newSessionPickerVisible by rememberSaveable { mutableStateOf(false) }
     var destination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
     var projectSelected by rememberSaveable { mutableStateOf(false) }
+    var browserSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val browserTab by viewModel.browser.active.collectAsStateWithLifecycle()
+    val currentBrowserTab by viewModel.browser.current.collectAsStateWithLifecycle()
+    val webBrowserTab by viewModel.webBrowser.active.collectAsStateWithLifecycle()
+    val currentWebBrowserTab by viewModel.webBrowser.current.collectAsStateWithLifecycle()
+    fun hideBrowsers() { viewModel.browser.hide(); viewModel.webBrowser.hide() }
+    fun openWebBrowser() {
+        viewModel.browser.hide()
+        viewModel.webBrowser.open("web-browser", rootView.context.getString(R.string.browser_title), codeServer = false)
+    }
     var filesSelected by rememberSaveable { mutableStateOf(false) }
     val filesOpen = sftpState !is SftpUiState.Closed
-    val projectVisible = projectSelected && projectState.sessionId != null && destination == AppRoute.TERMINAL_DETAIL
-    val filesVisible = filesSelected && filesOpen && destination == AppRoute.TERMINAL_DETAIL
+    val browserVisible = (browserTab != null || webBrowserTab != null) && destination == AppRoute.TERMINAL_DETAIL
+    val projectVisible = !browserVisible && projectSelected && projectState.sessionId != null && destination == AppRoute.TERMINAL_DETAIL
+    val filesVisible = !browserVisible && filesSelected && filesOpen && destination == AppRoute.TERMINAL_DETAIL
+    LaunchedEffect(projectSelected, filesSelected) {
+        if (projectSelected || filesSelected) hideBrowsers()
+    }
     val filesHostName = when (val files = sftpState) {
         is SftpUiState.AuthenticationRequired -> files.hostName
         is SftpUiState.Connecting -> files.hostName
@@ -732,24 +747,20 @@ fun TerminalSpikeScreen(
         reimportIdentityToken = null
         if (uri != null) viewModel.importSshIdentity(uri, recoveryToken)
     }
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(MAX_SELECTED_TERMINAL_IMAGES),
-    ) { uris ->
+    fun attachSelectedFiles(uris: List<android.net.Uri>) {
         val targetSessionId = imagePickerTargetSessionId
         imagePickerTargetSessionId = null
         if (targetSessionId != null && uris.isNotEmpty()) {
             val resolver = rootView.context.contentResolver
-            val images = uris.mapNotNull { uri ->
-                resolver.getType(uri)?.let { mimeType ->
-                    TerminalImagePasteSource(
-                        mimeType = mimeType,
-                        open = { resolver.openInputStream(uri) },
-                    )
-                }
-            }
-            if (images.isNotEmpty()) viewModel.pasteImages(targetSessionId, images)
+            viewModel.pasteImages(targetSessionId, uris.map { terminalAttachmentSource(resolver, it) })
         }
     }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris -> attachSelectedFiles(uris) }
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> attachSelectedFiles(uris) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -824,19 +835,12 @@ fun TerminalSpikeScreen(
         val images = runCatching {
             val clip = clipboardManager?.primaryClip ?: return@runCatching null
             if (clip.itemCount == 0) return@runCatching null
-            val describedMimeType = (0 until clip.description.mimeTypeCount)
-                .map(clip.description::getMimeType)
-                .firstOrNull { it.startsWith("image/", ignoreCase = true) }
             val resolver = rootView.context.contentResolver
             (0 until clip.itemCount).mapNotNull { index ->
                 val uri = clip.getItemAt(index).uri ?: return@mapNotNull null
-                val mimeType = resolver.getType(uri) ?: describedMimeType
-                mimeType?.let {
-                    TerminalImagePasteSource(
-                        mimeType = it,
-                        open = { resolver.openInputStream(uri) },
-                    )
-                }
+                // A copied web link is text; only readable file URIs are attachments.
+                if (uri.scheme?.lowercase() !in listOf("content", "file", "android.resource")) return@mapNotNull null
+                terminalAttachmentSource(resolver, uri)
             }.takeIf { it.isNotEmpty() }
         }.getOrNull()
         if (images != null) {
@@ -849,7 +853,6 @@ fun TerminalSpikeScreen(
             clip.getItemAt(0)
                 .coerceToText(rootView.context)
                 ?.toString()
-                ?.take(MAX_BUFFERED_INPUT_CHARACTERS + 1)
         }.getOrNull()?.takeIf(String::isNotEmpty) ?: return
         if (state.multilinePasteConfirmationEnabled && text.requiresMultilineConfirmation()) {
             pendingAccessoryPaste = sessionId to text
@@ -984,6 +987,7 @@ fun TerminalSpikeScreen(
         source: AppRoute = destination,
         rendererLab: Boolean = false,
     ) {
+        hideBrowsers()
         filesSelected = false
         projectSelected = false
         if (rendererLab) {
@@ -1161,10 +1165,16 @@ fun TerminalSpikeScreen(
         }
     }
 
+    LaunchedEffect(browserTab, webBrowserTab) {
+        if (browserTab != null || webBrowserTab != null) {
+            projectSelected = false; filesSelected = false; focusSessionId = null
+            destination = AppRoute.TERMINAL_DETAIL
+        }
+    }
     val terminalSurfaceVisible = !state.activeSession.isLocalTerminal ||
         (BuildConfig.DEBUG && rendererLabVisible)
     val focusMode = destination == AppRoute.TERMINAL_DETAIL &&
-        focusSessionId == state.activeSessionId
+        focusSessionId == state.activeSessionId && !browserVisible
     LaunchedEffect(focusSessionId, state.sessions) {
         val focusedId = focusSessionId
         if (focusedId != null && state.sessions.none { it.id == focusedId }) {
@@ -1197,7 +1207,7 @@ fun TerminalSpikeScreen(
     // The AndroidX handlers remain the compatibility and programmatic-dispatch path.
     BackHandler(enabled = projectVisible) { projectSelected = false }
     BackHandler(enabled = focusMode) { focusSessionId = null }
-    if (!filesVisible && !projectVisible) TerminalPriorityBackHandler(
+    if (!filesVisible && !projectVisible && !browserVisible) TerminalPriorityBackHandler(
         currentRoute = destination,
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
@@ -1212,12 +1222,12 @@ fun TerminalSpikeScreen(
         terminalOwner = terminalOwner,
         catalogReturnDestination = catalogReturnDestination,
         settingsReturnDestination = settingsReturnDestination,
-        enabled = !focusMode && !filesVisible && !projectVisible,
+        enabled = !focusMode && !filesVisible && !projectVisible && !browserVisible,
         onPreviewChanged = { backPreview = it },
         onNavigate = { destination = it },
     )
     TerminalSystemBarsEffect(
-        immersive = destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible,
+        immersive = destination == AppRoute.TERMINAL_DETAIL && (terminalSurfaceVisible || browserVisible),
         controller = systemBarsController,
     )
     androidx.lifecycle.compose.LifecycleResumeEffect(
@@ -1314,6 +1324,12 @@ fun TerminalSpikeScreen(
                         target == AppRoute.CONNECTIONS
                     },
                     callbacks = ConnectionsCallbacks(
+                        onOpenBrowser = {
+                            browserSessionId = null
+                            viewModel.webBrowser.hide()
+                            viewModel.browser.open("standalone", rootView.context.getString(R.string.browser_code_server))
+                        },
+                        onOpenWebBrowser = ::openWebBrowser,
                         onTabSelected = viewModel::selectConnectionsTab,
                         onSearchQueryChanged = viewModel::setConnectionsSearchQuery,
                         onHostSortSelected = viewModel::setConnectionsHostSort,
@@ -1439,11 +1455,33 @@ fun TerminalSpikeScreen(
                                 notice = null,
                                 canAddSession = state.canAddSshSession,
                                 settingsReady = state.settingsReady,
-                                onSelectSession = { filesSelected = false; projectSelected = false; viewModel.selectSession(it) },
+                                onSelectSession = { hideBrowsers(); filesSelected = false; projectSelected = false; viewModel.selectSession(it) },
+                                browserTitle = currentBrowserTab?.let { stringResource(R.string.browser_code_server) },
+                                browserSelected = browserTab != null,
+                                onSelectBrowser = { filesSelected = false; projectSelected = false; viewModel.webBrowser.hide(); viewModel.browser.select() },
+                                webBrowserTitle = currentWebBrowserTab?.let { stringResource(R.string.browser_title) },
+                                webBrowserSelected = webBrowserTab != null,
+                                onSelectWebBrowser = { filesSelected = false; projectSelected = false; viewModel.browser.hide(); viewModel.webBrowser.select() },
+                                onCloseWebBrowser = viewModel.webBrowser::closeTab,
+                                onWebBrowserActions = viewModel.webBrowser::showMenu,
+                                onOpenWebBrowser = ::openWebBrowser,
+                                onCloseBrowser = viewModel.browser::closeTab,
+                                onBrowserActions = viewModel.browser::showMenu,
                                 projectTitle = (projectState.snapshot?.root?.substringAfterLast('/') ?: projectState.title).takeIf { projectState.sessionId != null },
                                 projectSelected = projectVisible,
                                 onSelectProject = { projectSelected = true; filesSelected = false },
-                                onCloseProject = { viewModel.project.closeTab(projectState.tabId); projectSelected = viewModel.project.state.value.sessionId != null },
+                                onCloseProject = { val selected = projectSelected; viewModel.project.closeTab(projectState.tabId); projectSelected = selected && viewModel.project.state.value.sessionId != null },
+                                onOpenProject = if (viewModel.connectionSeedForSession(state.activeSessionId) != null &&
+                                    state.connectionState is ConnectionState.Connected) {
+                                    {
+                                        if (viewModel.openProject(state.activeSessionId)) {
+                                            projectSelected = true; filesSelected = false
+                                        }
+                                    }
+                                } else null,
+                                onOpenBrowser = viewModel.connectionSeedForSession(state.activeSessionId)?.let {
+                                    fun() { browserSessionId = state.activeSessionId; viewModel.openBrowser(state.activeSessionId) }
+                                },
                                 filesTitle = filesHostName.takeIf { filesOpen },
                                 filesSelected = filesVisible,
                                 onSelectFiles = { filesSelected = true; projectSelected = false },
@@ -1467,7 +1505,23 @@ fun TerminalSpikeScreen(
                                 showLocalTerminalSession = BuildConfig.DEBUG && rendererLabVisible,
                             )
                         }
-                        if (projectVisible) {
+                        if (browserVisible) {
+                            (webBrowserTab ?: browserTab)?.let { tab ->
+                                key(tab) {
+                                    com.yanjiyu.terminalspike.ui.browser.BrowserWorkspace(
+                                        (if (tab.codeServer) viewModel.browser else viewModel.webBrowser), tab, modifier = Modifier.weight(1f),
+                                        onNative = browserSessionId?.takeIf { id -> tab.codeServer &&
+                                            state.sessions.any { it.id == id && it.connectionState is ConnectionState.Connected }
+                                        }?.let { id -> {
+                                            if (viewModel.openProject(id)) {
+                                                projectSelected = true; filesSelected = false
+                                                hideBrowsers()
+                                            }
+                                        } },
+                                    )
+                                }
+                            }
+                        } else if (projectVisible) {
                             com.yanjiyu.terminalspike.ui.project.ProjectScreen(
                                 controller = viewModel.project,
                                 onPasteToTerminal = viewModel::pasteProjectFeedback,
@@ -1476,6 +1530,12 @@ fun TerminalSpikeScreen(
                                     projectSelected = false
                                 },
                                 modifier = Modifier.weight(1f),
+                                onOpenBrowser = {
+                                    projectState.sessionId?.let { id ->
+                                        browserSessionId = id
+                                        viewModel.openBrowser(id, projectState.snapshot?.root)
+                                    }
+                                },
                             )
                         } else if (filesVisible) {
                             SftpScreen(
@@ -1560,6 +1620,7 @@ fun TerminalSpikeScreen(
                                                 viewModel.startNewCodex()
                                             },
                                             onSave = viewModel::saveConnectionsSnippet,
+                                            onDelete = viewModel::deleteConnectionsSnippet,
                                             onEditorClosed = { restoreTerminalFocusAfterSnippetPicker = true },
                                         )
                                     },
@@ -1600,9 +1661,7 @@ fun TerminalSpikeScreen(
                                                 TerminalLocalAccessoryAction.SELECT_IMAGES -> {
                                                     imagePickerTargetSessionId = state.activeSessionId
                                                     imagePickerLauncher.launch(
-                                                        PickVisualMediaRequest(
-                                                            ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                                                        ),
+                                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                                                     )
                                                 }
                                                 TerminalLocalAccessoryAction.SNIPPETS ->
@@ -1620,6 +1679,10 @@ fun TerminalSpikeScreen(
                                         }
                                     },
                                     onCustomize = { showTools(ToolSection.KEYS) },
+                                    onSelectFiles = {
+                                        imagePickerTargetSessionId = state.activeSessionId
+                                        filePickerLauncher.launch(arrayOf("*/*"))
+                                    },
                                     imageContentCallback = terminalImageContent,
                                     onSendBufferedInput = { sessionId, text ->
                                         viewModel.sendBufferedInput(sessionId, text)
@@ -1781,6 +1844,9 @@ fun TerminalSpikeScreen(
                 session = state.sessions.firstOrNull { it.id == targetId },
                 endpoint = viewModel.connectionSeedForSession(targetId),
                 canAddSession = state.canAddSshSession,
+                onOpenBrowser = viewModel.connectionSeedForSession(targetId)?.let {
+                    fun(id: Long) { browserSessionId = id; viewModel.openBrowser(id) }
+                },
                 onOpenProject = if (viewModel.connectionSeedForSession(targetId) != null &&
                     state.sessions.firstOrNull { it.id == targetId }?.connectionState is ConnectionState.Connected
                 ) {
@@ -1956,7 +2022,11 @@ fun TerminalSpikeScreen(
                 newSessionPickerVisible = false
                 filesSelected = false
                 if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
-                    if (viewModel.openLocalArch()) destination = AppRoute.TERMINAL_DETAIL
+                    if (viewModel.openLocalArch()) {
+                        hideBrowsers()
+                        projectSelected = false
+                        destination = AppRoute.TERMINAL_DETAIL
+                    }
                 } else localArchInstallVisible = true
             },
             onOpenFiles = { host ->
@@ -1978,6 +2048,8 @@ fun TerminalSpikeScreen(
             },
             onSelectHost = { host ->
                 newSessionPickerVisible = false
+                hideBrowsers()
+                projectSelected = false
                 filesSelected = false
                 val catalog = (connectionsState.loadState as? ConnectionsLoadState.Ready)
                     ?.editorCatalog
@@ -2252,6 +2324,23 @@ fun TerminalSpikeScreen(
             inProgress = state.settingsRecoveryInProgress,
             onRetry = viewModel::retrySettingsRecovery,
             onResetConfirmed = viewModel::resetSettingsAfterRecoveryConfirmation,
+        )
+    }
+    if (releaseNotesEnabled) {
+        ReleaseNotesUpdateHost(
+            repository = (rootView.context.applicationContext as TerminalSpikeApplication).container.settings,
+            ready = state.settingsReady && state.settingsRecoveryFailure == null,
+            canShow = destination == AppRoute.WORKSPACE &&
+                connectionsState.loadState is ConnectionsLoadState.Ready &&
+                connectDialogRequest == null &&
+                pendingWorkspaceAuthenticationHostId == null &&
+                pendingTerminalAuthenticationHostId == null &&
+                !newSessionPickerVisible && !localArchInstallVisible && !localArchProgressVisible &&
+                sessionActionsTargetId == null && !rendererLabVisible &&
+                state.remoteClipboardPrompt == null &&
+                localNetworkActionDispatch == null &&
+                !state.notificationPermissionPromptVisible &&
+                !shouldOfferFreshSshFallback(state.activeSession, dismissedMoshFallbackSessionId),
         )
     }
 }

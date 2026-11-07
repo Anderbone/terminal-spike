@@ -354,10 +354,25 @@ class AppContainer internal constructor(
         )
     }
 
+    /** Explicit, process-local grant. Merely constructing this does not open a socket. */
+    internal val localAgentControl: com.yanjiyu.terminalspike.localarch.control.LocalAgentControl by lazy {
+        com.yanjiyu.terminalspike.localarch.control.LocalAgentControl(applicationScope) { request ->
+            com.yanjiyu.terminalspike.localarch.control.AppControlApi(this) {
+                localAgentControl.enabled.value
+            }.handle(request).toString()
+        }
+    }
+
     /** Persistent Arch storage and application-owned local shell processes. */
     internal val localSessionRepository: com.yanjiyu.terminalspike.localarch.LocalSessionRepository by lazy {
         com.yanjiyu.terminalspike.localarch.LocalSessionRepository(
-            environment = com.yanjiyu.terminalspike.localarch.ArchEnvironment(applicationContext),
+            environment = com.yanjiyu.terminalspike.localarch.ArchEnvironment(
+                applicationContext,
+                prepareShellTools = { rootfs ->
+                    com.yanjiyu.terminalspike.localarch.control.ControlToolsInstaller(applicationContext)
+                        .install(rootfs, localAgentControl.connectionInfo())
+                },
+            ),
             scope = applicationScope,
             foregroundStarter = AndroidSessionForegroundStarter(applicationContext),
         )

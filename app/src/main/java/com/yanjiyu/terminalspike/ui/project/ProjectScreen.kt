@@ -51,6 +51,8 @@ import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -93,6 +95,7 @@ internal fun ProjectScreen(
     onPasteToTerminal: (Long, String) -> Boolean,
     onReturnToTerminal: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenBrowser: (() -> Unit)? = null,
 ) {
     // Capture immutable values before the provider lambda: an old provider must never observe
     // another tab's live state before its saved scroll state has been collected.
@@ -137,7 +140,7 @@ internal fun ProjectScreen(
                     HorizontalDivider()
                     key(state.tabId) {
                         saved.SaveableStateProvider(state.tabId) {
-                            ProjectWorkspace(state, controller, onPasteToTerminal, onReturnToTerminal, Modifier.weight(1f))
+                            ProjectWorkspace(state, controller, onPasteToTerminal, onReturnToTerminal, Modifier.weight(1f), onOpenBrowser)
                         }
                     }
                 }
@@ -154,9 +157,12 @@ private fun ProjectWorkspace(
     onPasteToTerminal: (Long, String) -> Boolean,
     onReturnToTerminal: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenBrowser: (() -> Unit)? = null,
 ) {
     var directoryDialog by rememberSaveable { mutableStateOf(false) }
     var reviewDialog by rememberSaveable { mutableStateOf(false) }
+    var scopeMenu by remember { mutableStateOf(false) }
+    var baseDialog by rememberSaveable { mutableStateOf(false) }
     var changesOnly by rememberSaveable { mutableStateOf(true) }
     var search by rememberSaveable(state.snapshot?.root) { mutableStateOf("") }
     var expandedFiles by rememberSaveable { mutableStateOf(emptyList<String>()) }
@@ -164,15 +170,13 @@ private fun ProjectWorkspace(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val filesListState = rememberSaveable(state.snapshot?.root, saver = LazyListState.Saver) { LazyListState() }
+    val documentStates = rememberSaveableStateHolder()
     var lastFilter by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(changesOnly, search) {
         val filter = "$changesOnly\u0000$search"
         if (lastFilter != filter) { filesListState.scrollToItem(0); lastFilter = filter }
     }
     BackHandler(state.document != null && !directoryDialog && !reviewDialog) { controller.closeFile() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (state.snapshot != null && !state.busy) controller.refresh()
-    }
     PullToRefreshBox(isRefreshing = state.busy, onRefresh = controller::refresh,
         modifier = modifier.fillMaxSize().testTag("project-pull-refresh")) {
         Column(Modifier.fillMaxSize().testTag("project-screen")) {
@@ -182,6 +186,9 @@ private fun ProjectWorkspace(
                     fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 3.dp))
                 ProjectAction(onClick = { directoryDialog = true }, enabled = !state.busy) { Text(stringResource(R.string.project_directory)) }
+                onOpenBrowser?.let { open ->
+                    ProjectAction(onClick = open) { Text(stringResource(R.string.browser_code_server)) }
+                }
                 ProjectAction(onClick = controller::refresh, enabled = !state.busy) { Text(stringResource(R.string.project_refresh)) }
             }
             Box(Modifier.fillMaxWidth().height(4.dp)) {
@@ -218,13 +225,35 @@ private fun ProjectWorkspace(
                     ProjectAction(onClick = { reviewDialog = true }) { Text(stringResource(R.string.project_feedback_count, state.feedback.size)) }
                 }
                 HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        ProjectAction(onClick = { scopeMenu = true }, enabled = !state.busy,
+                            modifier = Modifier.testTag("project-comparison")) {
+                            Text(stringResource(state.comparison.scope.label()) + " ▾", fontSize = 12.sp)
+                        }
+                        DropdownMenu(scopeMenu, { scopeMenu = false }) {
+                            ProjectDiffScope.entries.forEach { scope ->
+                                DropdownMenuItem(text = { Text(stringResource(scope.label())) }, onClick = {
+                                    scopeMenu = false
+                                    if (scope == ProjectDiffScope.BRANCH) baseDialog = true
+                                    else controller.compare(state.comparison.copy(scope = scope))
+                                })
+                            }
+                        }
+                    }
+                    if (state.comparison.scope == ProjectDiffScope.BRANCH) {
+                        Text(state.comparison.base, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall)
+                        ProjectAction(onClick = { baseDialog = true }, enabled = !state.busy) { Text(stringResource(R.string.project_base)) }
+                    }
+                }
                 BoxWithConstraints(Modifier.weight(1f)) {
                     val wide = maxWidth >= 600.dp
                     Row(Modifier.fillMaxSize()) {
                         if (wide || state.document == null) {
                             Column((if (wide) Modifier.width(260.dp) else Modifier.fillMaxSize())
                                 .background(MaterialTheme.colorScheme.surfaceContainerLow)) {
-                                Text(if (changesOnly) stringResource(R.string.project_changes_scope) else snapshot.root,
+                                Text(if (changesOnly) stringResource(state.comparison.scope.detail()) else snapshot.root,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -259,8 +288,10 @@ private fun ProjectWorkspace(
                             }
                         }
                         state.document?.let { document ->
-                            ProjectCode(document, state.feedback, controller::closeFile, controller::addFeedback,
-                                Modifier.weight(1f).fillMaxSize())
+                            documentStates.SaveableStateProvider(document.path + ":" + state.comparison.scope.name) {
+                                ProjectCode(document, state.feedback, controller::closeFile, controller::addFeedback,
+                                    Modifier.weight(1f).fillMaxSize())
+                            }
                         }
                     }
                 }
@@ -279,6 +310,17 @@ private fun ProjectWorkspace(
             confirmButton = { Button(onClick = { directoryDialog = false; controller.load(directory) },
                 enabled = directory.startsWith('/') && directory.isNotBlank()) { Text(stringResource(R.string.project_open)) } },
             dismissButton = { TextButton(onClick = { directoryDialog = false }) { Text(stringResource(R.string.cancel)) } })
+    }
+    if (baseDialog) {
+        var base by remember { mutableStateOf(state.comparison.base) }
+        AlertDialog(onDismissRequest = { baseDialog = false },
+            title = { Text(stringResource(R.string.project_base)) },
+            text = { OutlinedTextField(base, { base = it }, singleLine = true,
+                label = { Text(stringResource(R.string.project_base_hint)) }, modifier = Modifier.testTag("project-base-input")) },
+            confirmButton = { TextButton(onClick = {
+                baseDialog = false; controller.compare(ProjectComparison(ProjectDiffScope.BRANCH, base.trim()))
+            }, enabled = base.isNotBlank()) { Text(stringResource(R.string.project_compare)) } },
+            dismissButton = { TextButton(onClick = { baseDialog = false }) { Text(stringResource(R.string.cancel)) } })
     }
     if (reviewDialog) {
         ProjectReview(state, controller::removeFeedback, controller::editFeedback, onDismiss = { reviewDialog = false },
@@ -342,6 +384,16 @@ private fun ProjectFiles(snapshot: ProjectSnapshot, changesOnly: Boolean, search
 private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedback>, onBack: () -> Unit,
     onComment: (Int, Int, String) -> Unit, modifier: Modifier) {
     var diffOnly by rememberSaveable(document.path) { mutableStateOf(false) }
+    var expandedGaps by rememberSaveable(document.path, document.revision) { mutableStateOf(emptyList<Int>()) }
+    var findVisible by rememberSaveable(document.path) { mutableStateOf(false) }
+    var query by rememberSaveable(document.path) { mutableStateOf("") }
+    var goToVisible by remember { mutableStateOf(false) }
+    var matchIndex by remember(document.revision, query) { mutableStateOf(0) }
+    var pendingJump by remember { mutableStateOf<Int?>(null) }
+    val matches = remember(document, query) {
+        if (query.isEmpty()) emptyList() else document.lines.indices.filter { document.lines[it].text.contains(query, ignoreCase = true) }
+    }
+    val clipboard = LocalContext.current.getSystemService(ClipboardManager::class.java)
     var wrap by rememberSaveable { mutableStateOf(true) }
     val density = LocalDensity.current
     val longestLine = remember(document) { document.lines.maxOfOrNull { it.text.length } ?: 0 }
@@ -352,8 +404,10 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
     var selection by remember(document.revision) { mutableStateOf<IntRange?>(null) }
     var commentDialog by remember(document.revision) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val listState = rememberSaveable(document.path, document.revision, diffOnly, saver = LazyListState.Saver) { LazyListState() }
-    val rows = remember(document, diffOnly) {
+    val fullListState = rememberSaveable(document.path, saver = LazyListState.Saver) { LazyListState() }
+    val diffListState = rememberSaveable(document.path, saver = LazyListState.Saver) { LazyListState() }
+    val listState = if (diffOnly) diffListState else fullListState
+    val rows = remember(document, diffOnly, expandedGaps) {
         if (!diffOnly) document.lines.indices.toList() else {
             val visible = BooleanArray(document.lines.size)
             document.lines.forEachIndexed { i, line ->
@@ -361,16 +415,34 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                     for (index in maxOf(0, i - 3)..minOf(document.lines.lastIndex, i + 3)) visible[index] = true
                 }
             }
+            expandedGaps.chunked(2).filter { it.size == 2 }.forEach { (start, end) ->
+                for (index in start..minOf(end, visible.lastIndex)) if (index >= 0) visible[index] = true
+            }
             document.lines.indices.filter { visible[it] }
         }
     }
-    var positioned by rememberSaveable(document.path, document.revision, diffOnly) { mutableStateOf(false) }
-    LaunchedEffect(document.path, document.revision, diffOnly) {
-        if (!positioned) {
+    var fullPositioned by rememberSaveable(document.path) { mutableStateOf(false) }
+    var diffPositioned by rememberSaveable(document.path) { mutableStateOf(false) }
+    LaunchedEffect(document.path, diffOnly) {
+        if (!(if (diffOnly) diffPositioned else fullPositioned)) {
             val firstChange = document.changeStarts.firstOrNull()
             val index = if (firstChange == null) 0 else rows.indexOf(firstChange).coerceAtLeast(0)
             if (rows.isNotEmpty()) listState.scrollToItem(index)
-            positioned = true
+            if (diffOnly) diffPositioned = true else fullPositioned = true
+        }
+    }
+    LaunchedEffect(query, matchIndex, findVisible) {
+        if (findVisible && matches.isNotEmpty()) {
+            // Search all code, including context hidden by Diff mode.
+            diffOnly = false
+            pendingJump = matches[matchIndex.coerceIn(0, matches.lastIndex)]
+        }
+    }
+    LaunchedEffect(pendingJump, diffOnly, rows) {
+        val target = pendingJump
+        if (target != null && !diffOnly) {
+            listState.scrollToItem(target.coerceIn(0, document.lines.lastIndex.coerceAtLeast(0)))
+            pendingJump = null
         }
     }
     Column(modifier.testTag("project-code")) {
@@ -398,6 +470,21 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
             }, enabled = document.changeStarts.isNotEmpty()) { Text(stringResource(R.string.project_next)) }
             Checkbox(effectiveWrap, { wrap = it }, enabled = canUnwrap, modifier = Modifier.testTag("project-wrap-toggle"))
             Text(stringResource(R.string.project_wrap), style = MaterialTheme.typography.labelSmall)
+            ProjectAction(onClick = { findVisible = !findVisible }, modifier = Modifier.testTag("project-find")) {
+                Text(stringResource(R.string.project_find))
+            }
+            ProjectAction(onClick = { goToVisible = true }, modifier = Modifier.testTag("project-goto")) { Text(stringResource(R.string.project_go_to_line)) }
+        }
+        if (findVisible) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(query, { query = it }, singleLine = true,
+                    label = { Text(stringResource(R.string.project_find)) },
+                    modifier = Modifier.weight(1f).padding(4.dp).testTag("project-find-input"))
+                Text(if (matches.isEmpty()) "0/0" else "${matchIndex + 1}/${matches.size}", style = MaterialTheme.typography.labelSmall)
+                ProjectAction(onClick = { matchIndex = (matchIndex - 1 + matches.size) % matches.size }, enabled = matches.isNotEmpty()) { Text("↑") }
+                ProjectAction(onClick = { matchIndex = (matchIndex + 1) % matches.size }, enabled = matches.isNotEmpty()) { Text("↓") }
+                ProjectAction(onClick = { findVisible = false }) { Text("×") }
+            }
         }
         selection?.let { range ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -405,6 +492,10 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                 ProjectAction(onClick = { commentDialog = true }) {
                     Text(stringResource(R.string.project_comment_range, document.lines[range.first].number, document.lines[range.last].number))
                 }
+                ProjectAction(onClick = {
+                    clipboard?.setPrimaryClip(ClipData.newPlainText(document.path,
+                        document.lines.slice(range).joinToString("\n") { it.text }))
+                }) { Text(stringResource(R.string.project_copy)) }
             }
         }
         document.metadata.forEach { Text(it, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp)) }
@@ -417,8 +508,11 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                 LazyColumn(Modifier.width(codeWidth).fillMaxSize().testTag("project-code-list"), state = listState) {
                     itemsIndexed(rows, key = { _, index -> index }) { displayIndex, index ->
                         val line = document.lines[index]
-                        if (diffOnly && displayIndex > 0 && rows[displayIndex - 1] != index - 1) {
-                            Text("⋯", modifier = Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val gapStart = if (displayIndex == 0) 0 else rows[displayIndex - 1] + 1
+                        if (diffOnly && gapStart < index) {
+                            ProjectAction(onClick = { expandedGaps = expandedGaps + listOf(gapStart, index - 1) }) {
+                                Text(stringResource(R.string.project_show_context, index - gapStart), fontSize = 12.sp)
+                            }
                         }
                         val selected = selection?.contains(index) == true
                         val marked = feedback.any { it.path == document.path && it.revision == document.revision &&
@@ -427,6 +521,7 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                             selected -> MaterialTheme.colorScheme.secondaryContainer
                             line.kind == ProjectLineKind.ADDED -> Color(0xFF173E32)
                             line.kind == ProjectLineKind.DELETED -> Color(0xFF4A2834)
+                            findVisible && query.isNotEmpty() && index == matches.getOrNull(matchIndex) -> Color(0xFF514620)
                             else -> Color.Transparent
                         }
                         Row(Modifier.fillMaxWidth().background(background), verticalAlignment = Alignment.Top) {
@@ -444,7 +539,7 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                                     .padding(horizontal = 4.dp))
                             val syntax = remember(line.text, document.path) { projectSyntax(line.text, document.path) }
                             val colors = MaterialTheme.colorScheme
-                            val highlighted = remember(line.text, syntax, colors) {
+                            val highlighted = remember(line.text, syntax, colors, query, findVisible) {
                                 AnnotatedString.Builder(line.text.ifEmpty { " " }).apply {
                                     syntax.forEach { token ->
                                         addStyle(SpanStyle(color = when (token.kind) {
@@ -453,6 +548,13 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                                             CodeTokenKind.COMMENT -> colors.onSurfaceVariant
                                             CodeTokenKind.NUMBER -> Color(0xFFFFC580)
                                         }), token.start, token.end)
+                                    }
+                                    if (findVisible && query.isNotEmpty()) {
+                                        var start = line.text.indexOf(query, ignoreCase = true)
+                                        while (start >= 0) {
+                                            addStyle(SpanStyle(background = Color(0xFF765D20), color = Color.White), start, start + query.length)
+                                            start = line.text.indexOf(query, start + query.length, ignoreCase = true)
+                                        }
                                     }
                                 }.toAnnotatedString()
                             }
@@ -469,6 +571,23 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
                 modifier = Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else Text(stringResource(R.string.project_select_hint), fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(4.dp))
+    }
+    if (goToVisible) {
+        var number by remember { mutableStateOf("") }
+        val target = number.toIntOrNull()?.let { line ->
+            document.lines.indexOfFirst { it.number == line && it.kind != ProjectLineKind.DELETED }.takeIf { it >= 0 }
+        }
+        AlertDialog(onDismissRequest = { goToVisible = false }, title = { Text(stringResource(R.string.project_go_to_line)) },
+            text = { OutlinedTextField(number, { number = it.filter(Char::isDigit).take(8) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                modifier = Modifier.testTag("project-line-input")) },
+            confirmButton = { TextButton(onClick = {
+                target?.let { index ->
+                    diffOnly = false; goToVisible = false
+                    pendingJump = index
+                }
+            }, enabled = target != null) { Text(stringResource(R.string.project_go)) } },
+            dismissButton = { TextButton(onClick = { goToVisible = false }) { Text(stringResource(R.string.cancel)) } })
     }
     if (commentDialog) {
         val range = selection ?: return
@@ -565,3 +684,17 @@ private val ProjectReaderColors = darkColorScheme(
     outline = Color(0xFF8296AE), outlineVariant = Color(0xFF46586D),
     error = Color(0xFFFFA5AB),
 )
+
+private fun ProjectDiffScope.label(): Int = when (this) {
+    ProjectDiffScope.ALL -> R.string.project_scope_all
+    ProjectDiffScope.UNSTAGED -> R.string.project_scope_unstaged
+    ProjectDiffScope.STAGED -> R.string.project_scope_staged
+    ProjectDiffScope.BRANCH -> R.string.project_scope_branch
+}
+
+private fun ProjectDiffScope.detail(): Int = when (this) {
+    ProjectDiffScope.ALL -> R.string.project_changes_scope
+    ProjectDiffScope.UNSTAGED -> R.string.project_unstaged_detail
+    ProjectDiffScope.STAGED -> R.string.project_staged_detail
+    ProjectDiffScope.BRANCH -> R.string.project_branch_detail
+}

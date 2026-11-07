@@ -61,6 +61,43 @@ class HerdrTabTargetTest {
         }
     }
 
+    @Test fun groupedSidebarNewWorkspaceRequiresVerifiedChromeAndExcludesOtherTargets() {
+        for (bottomTabs in listOf(false, true)) {
+            for (header in listOf("+ new workspace", "workspace", "agents · active")) {
+                val screen = MutableList(8) { TerminalLine.plain("┃ project                 pane output") }
+                screen[0] = TerminalLine.styled(listOf(
+                    TerminalRun("┃ $header", startColumn = 0, columnWidth = header.length + 2),
+                    TerminalRun("«", startColumn = 25, columnWidth = 1),
+                ))
+                val tabRow = if (bottomTabs) 7 else 0
+                screen[tabRow] = TerminalLine.styled(screen[tabRow].runs + listOf(
+                    TerminalRun(" tab ", startColumn = 26, columnWidth = 5),
+                    TerminalRun(" + ", startColumn = 32, columnWidth = 3),
+                ))
+                screen[2] = TerminalLine.plain("┃ + new workspace         + new workspace")
+                screen[3] = TerminalLine.plain("┃ + new tab")
+                screen[4] = TerminalLine.plain("┃ + new workspace extra")
+                for (column in 2..16) {
+                    assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, column, 2))
+                }
+                if (header == "+ new workspace") {
+                    assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, 5, 0))
+                }
+                for ((column, row) in listOf(0 to 2, 1 to 2, 17 to 2, 25 to 2, 30 to 2, 5 to 3, 5 to 4)) {
+                    assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, column, row))
+                }
+                val noTabs = screen.toMutableList().apply {
+                    this[tabRow] = TerminalLine.styled(this[tabRow].runs.filter { it.startColumn < 26 })
+                }
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(noTabs, 60, 8, 5, 2))
+                val noCollapse = screen.toMutableList().apply {
+                    this[0] = TerminalLine.styled(this[0].runs.filter { it.text != "«" })
+                }
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(noCollapse, 60, 8, 5, 2))
+            }
+        }
+    }
+
     @Test fun mobileSwitcherRecognizesAllCloseCornersAndKeepsControlsOutOfTheBody() {
         for (bottom in listOf(false, true)) {
             for (left in listOf(false, true)) {
@@ -177,6 +214,15 @@ class HerdrTabTargetTest {
         assertTrue(controller.showHerdrProjectPickerAt(5, 4))
         org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
         assertTrue("Opening recent projects must not send a remote click", sent.isEmpty())
+        controller.dismissHerdrProjectPicker()
+        val grouped = "\u001B[2J\u001B[H┃ + new workspace\u001B[1;26H\u001B[38;5;244m«\u001B[0m" +
+            "\u001B[1;27H tab \u001B[38;5;245m + \u001B[0m"
+        controller.updateTerminalFrame(engine.accept(grouped.toByteArray()))
+        while (frames.isNotEmpty()) frames.removeFirst().doFrame(1L)
+        assertFalse(controller.showHerdrProjectPickerAt(28, 0))
+        assertTrue(controller.showHerdrProjectPickerAt(5, 0))
+        org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
+        assertTrue("Grouped sidebar picker must not send a remote click", sent.isEmpty())
         controller.resetInputSink()
         org.junit.Assert.assertNull(controller.herdrProjectPicker.value)
         assertFalse(controller.showHerdrProjectPickerAt(2, 3))

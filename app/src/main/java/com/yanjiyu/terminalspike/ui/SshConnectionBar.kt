@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -131,9 +132,23 @@ fun SessionChrome(
     filesSelected: Boolean = false,
     onSelectFiles: () -> Unit = {},
     onCloseFiles: () -> Unit = {},
+    onOpenProject: (() -> Unit)? = null,
+    onOpenBrowser: (() -> Unit)? = null,
+    webBrowserTitle: String? = null,
+    webBrowserSelected: Boolean = false,
+    onSelectWebBrowser: () -> Unit = {},
+    onCloseWebBrowser: () -> Unit = {},
+    onWebBrowserActions: () -> Unit = {},
+    onOpenWebBrowser: (() -> Unit)? = null,
+    browserTitle: String? = null,
+    browserSelected: Boolean = false,
+    onSelectBrowser: () -> Unit = {},
+    onCloseBrowser: () -> Unit = {},
+    onBrowserActions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val newSessionDescription = stringResource(R.string.session_add_saved_connection_description)
+    val projectToolsDescription = stringResource(R.string.project_tools)
     val backDescription = stringResource(
         R.string.terminal_predictive_back_destination,
         backDestinationLabel,
@@ -142,6 +157,7 @@ fun SessionChrome(
     val visibleSessions = if (showLocalTerminalSession) sessions else sessions.filterNot(SessionTabUi::isLocalTerminal)
     var replacementConfirmationToken by remember { mutableStateOf<Long?>(null) }
     var appSessionSwitcherVisible by remember { mutableStateOf(false) }
+    var workspaceToolsVisible by remember { mutableStateOf(false) }
     val visibleSessionIds = visibleSessions.map(SessionTabUi::id)
     val appSessionPreviews = remember(appSessionSwitcherVisible, visibleSessionIds) {
         if (appSessionSwitcherVisible) {
@@ -167,7 +183,7 @@ fun SessionChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null) {
+                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null && browserTitle == null && webBrowserTitle == null) {
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier
@@ -182,7 +198,7 @@ fun SessionChrome(
                         )
                     }
                 }
-                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null) {
+                if (visibleSessions.isEmpty() && filesTitle == null && projectTitle == null && browserTitle == null && webBrowserTitle == null) {
                     Text(
                         text = stringResource(R.string.navigation_terminal),
                         modifier = Modifier
@@ -223,7 +239,7 @@ fun SessionChrome(
                         visibleSessions.forEach { session ->
                             SessionTab(
                                 session = session,
-                                selected = !filesSelected && !projectSelected && session.id == activeSessionId,
+                                selected = !filesSelected && !projectSelected && !browserSelected && !webBrowserSelected && session.id == activeSessionId,
                                 modifier = Modifier.weight(1f),
                                 onSelect = { onSelectSession(session.id) },
                                 onDuplicate = if (!session.isLocalTerminal && canAddSession) {
@@ -243,9 +259,68 @@ fun SessionChrome(
                                 },
                             )
                         }
+                        if (webBrowserTitle != null) {
+                            SessionTabSurface(title = webBrowserTitle, selected = webBrowserSelected,
+                                modifier = Modifier.weight(1f).testTag("web-browser-session-tab")
+                                    .semantics { this.selected = webBrowserSelected },
+                                onSelect = onSelectWebBrowser, onClose = onCloseWebBrowser,
+                                closeDescription = stringResource(R.string.web_browser_close_tab),
+                                onActions = { onSelectWebBrowser(); onWebBrowserActions() })
+                        }
+                        if (browserTitle != null) {
+                            SessionTabSurface(
+                                title = browserTitle,
+                                selected = browserSelected,
+                                modifier = Modifier.weight(1f).testTag("browser-session-tab")
+                                    .semantics { this.selected = browserSelected },
+                                onSelect = onSelectBrowser,
+                                onClose = onCloseBrowser,
+                                closeDescription = stringResource(R.string.browser_close_tab),
+                                onActions = { onSelectBrowser(); onBrowserActions() },
+                            )
+                        }
                     }
                 }
-                if (visibleSessions.isNotEmpty()) {
+                if (webBrowserSelected) {
+                    val description = stringResource(R.string.web_browser_actions)
+                    IconButton(onClick = onWebBrowserActions,
+                        modifier = Modifier.size(30.dp).testTag("web-browser-tab-menu")
+                            .semantics { contentDescription = description }) {
+                        ConnectionsGlyphIcon(ConnectionsGlyph.MORE, Modifier.size(20.dp))
+                    }
+                }
+                if (browserSelected) {
+                    val description = stringResource(R.string.browser_actions)
+                    IconButton(onClick = onBrowserActions,
+                        modifier = Modifier.size(30.dp).testTag("browser-tab-menu")
+                            .semantics { contentDescription = description }) {
+                        ConnectionsGlyphIcon(ConnectionsGlyph.MORE, Modifier.size(20.dp))
+                    }
+                }
+                if (onOpenProject != null || onOpenBrowser != null || onOpenWebBrowser != null) {
+                    androidx.compose.foundation.layout.Box {
+                        IconButton(onClick = { workspaceToolsVisible = true },
+                            modifier = Modifier.size(40.dp).testTag("workspace-tools")
+                                .semantics { contentDescription = projectToolsDescription }) {
+                            ConnectionsGlyphIcon(ConnectionsGlyph.WINDOWS, Modifier.size(20.dp))
+                        }
+                        DropdownMenu(workspaceToolsVisible, onDismissRequest = { workspaceToolsVisible = false }) {
+                            onOpenProject?.let { open ->
+                                DropdownMenuItem(text = { Text(stringResource(R.string.project_open_native)) },
+                                    onClick = { workspaceToolsVisible = false; open() })
+                            }
+                            onOpenBrowser?.let { open ->
+                                DropdownMenuItem(text = { Text(stringResource(R.string.browser_open)) },
+                                    onClick = { workspaceToolsVisible = false; open() })
+                            }
+                            onOpenWebBrowser?.let { open ->
+                                DropdownMenuItem(text = { Text(stringResource(R.string.browser_title)) },
+                                    onClick = { workspaceToolsVisible = false; open() })
+                            }
+                        }
+                    }
+                }
+                if (visibleSessions.isNotEmpty() || browserTitle != null || webBrowserTitle != null) {
                     IconButton(
                         onClick = { appSessionSwitcherVisible = true },
                         modifier = Modifier
@@ -295,7 +370,11 @@ fun SessionChrome(
         AppSessionSwitcherDialog(
             sessions = visibleSessions,
             previews = appSessionPreviews,
-            activeSessionId = if (filesSelected || projectSelected) Long.MIN_VALUE else activeSessionId,
+            activeSessionId = if (filesSelected || projectSelected || browserSelected || webBrowserSelected) Long.MIN_VALUE else activeSessionId,
+            webBrowserTitle = webBrowserTitle,
+            onSelectWebBrowser = onSelectWebBrowser,
+            browserTitle = browserTitle,
+            onSelectBrowser = onSelectBrowser,
             projectTitle = projectTitle,
             onSelectProject = onSelectProject,
             filesTitle = filesTitle,
@@ -310,7 +389,7 @@ fun SessionChrome(
 
     // Approval dialogs belong to a specific terminal tab. Showing an arbitrary background
     // session's prompt can cover the active session's prompt and leave both connections waiting.
-    val promptSession = if (filesSelected || projectSelected) null else activeApprovalSession(sessions, activeSessionId)
+    val promptSession = if (filesSelected || projectSelected || browserSelected || webBrowserSelected) null else activeApprovalSession(sessions, activeSessionId)
     val pendingPrompt = (promptSession?.connectionState as? ConnectionState.AwaitingApproval)?.prompt
     val hostPrompt = pendingPrompt as? HostIdentityPrompt
     val keyboardInteractive = pendingPrompt as? KeyboardInteractiveChallenge

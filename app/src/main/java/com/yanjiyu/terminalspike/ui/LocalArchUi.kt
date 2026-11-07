@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -18,6 +19,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yanjiyu.terminalspike.R
@@ -62,6 +65,8 @@ internal fun LocalArchInstallDialog(state: ArchEnvironmentState, onInstall: () -
 internal fun LocalArchSettings() {
     val context = LocalContext.current
     val repository = remember(context) { (context.applicationContext as TerminalSpikeApplication).container.localSessionRepository }
+    val agentControl = remember(context) { (context.applicationContext as TerminalSpikeApplication).container.localAgentControl }
+    val agentAccess by agentControl.enabled.collectAsStateWithLifecycle()
     val state by repository.environment.state.collectAsStateWithLifecycle()
     val runtime by repository.runtime.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -73,6 +78,21 @@ internal fun LocalArchSettings() {
         LocalArchStatus(state)
         runtime.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LocalArchAccounts()
+        if (state.installed) {
+            Row(
+                Modifier.fillMaxWidth().testTag("local-agent-access").toggleable(
+                    value = agentAccess, role = Role.Switch, onValueChange = agentControl::setEnabled,
+                ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(stringResource(R.string.local_agent_access_title), modifier = Modifier.weight(1f))
+                Switch(
+                    checked = agentAccess,
+                    onCheckedChange = null,
+                )
+            }
+            Text(stringResource(R.string.local_agent_access_detail))
+        }
         if (!state.installed && state.supported) {
             Button(onClick = { repository.installOrReset() }, enabled = state.checked && !state.busy && !runtime.installationActive && !runtime.loginActive) {
                 Text(stringResource(R.string.local_arch_install))

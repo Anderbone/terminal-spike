@@ -20,7 +20,15 @@ Less typing. More doing.
 • Customize the extra-key bar with Ctrl, Esc, arrows and your own shortcuts
 • Search terminal output, select text and copy what you need
 • Review multiline commands before pasting
-• Send a clipboard image to a connected SSH host
+• Attach files to local or remote terminals, with multiple transfers in your selection order
+• Use buffered input for longer drafts and manage snippets directly from the keyboard toolbar
+
+Code, browser and local Linux
+• Read project files and compare staged, unstaged and branch changes
+• Keep a web browser and your own code-server editor beside terminal tabs
+• Run a persistent local Arch Linux environment on supported ARM64 phones after downloading the guest system
+• Optionally allow local agents to manage selected app settings through a device-local API
+• Explore the built-in user guide, short offline demonstrations and update history
 
 Files and port forwarding
 • Browse, upload, download, rename and delete remote files with SFTP

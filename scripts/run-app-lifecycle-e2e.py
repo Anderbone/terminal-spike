@@ -437,7 +437,18 @@ class Runner:
         class_name: str | None = None,
     ) -> tuple[int, int]:
         def locate() -> tuple[int, int] | None:
-            nodes = self.matching_nodes(self.dump_ui(), attribute, value, class_name)
+            root = self.dump_ui()
+            if (
+                attribute == "text" and value == "Connections"
+                and (self.matching_nodes(root, "text", "Getting started")
+                     or self.matching_nodes(root, "text", "User guide"))
+                and self.matching_nodes(root, "text", "Skip")
+            ):
+                # A clean install offers the tour before the lifecycle fixture connects.
+                # Dismiss it through the same visible action as a user, retaining the normal launch gate.
+                self.tap_node("text", "Skip")
+                return None
+            nodes = self.matching_nodes(root, attribute, value, class_name)
             if occurrence >= len(nodes):
                 return None
             match = re.fullmatch(

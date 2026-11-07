@@ -1561,6 +1561,7 @@ class TerminalSpikeUiStateTest {
 
         assertNull(state.bufferedInputValidationError(sessionId = 1, text = "pwd"))
         assertNull(state.bufferedInputValidationError(sessionId = 2, text = "pwd"))
+        assertNull(state.bufferedInputValidationError(sessionId = 2, text = "long draft 😀\n".repeat(10_000)))
     }
 
     @Test

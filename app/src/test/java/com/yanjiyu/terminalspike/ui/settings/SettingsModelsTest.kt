@@ -41,6 +41,7 @@ class SettingsModelsTest {
                 SettingsCategory.SECURITY,
                 SettingsCategory.LOCAL_ARCH,
                 SettingsCategory.MOSH,
+                SettingsCategory.GUIDE,
                 SettingsCategory.ABOUT,
                 SettingsCategory.ADVANCED,
                 SettingsCategory.DEVELOPER,

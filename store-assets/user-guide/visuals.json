@@ -1,0 +1,14 @@
+{
+  "start_typing": {"source": "typing", "start": 1, "duration": 12.5, "speed": 1.6, "poster_at": 2.4, "filter": "crop=720:900:0:650"},
+  "start_snippets": {"source": "snippets", "start": 29.5, "duration": 4, "poster_at": 0.6, "filter": "crop=720:900:0:650"},
+  "start_projects": {"source": "projects", "start": 0, "duration": 5.5, "poster_at": 1.9, "filter": "crop=720:650:0:'if(lt(t,1.2),950,if(lt(t,1.7),950*(1-(t-1.2)/0.5),0))'"},
+  "tip_move": {"source": "snippets", "start": 5.3, "duration": 5, "poster_at": 2.7, "filter": "crop=720:410:0:1180"},
+  "tip_edit": {"source": "snippets", "start": 13, "filter": "crop=720:1150:0:50"},
+  "tip_recent": {"source": "projects", "start": 4.9, "duration": 5.8, "poster_at": 3, "filter": "crop=720:1100:0:0"},
+  "tip_close_tab": {"source": "gestures", "start": 7.7, "duration": 4, "poster_at": 0.15, "filter": "crop=720:450:0:0"},
+  "tip_close_space": {"source": "projects", "start": 2, "filter": "crop=720:740:0:0"},
+  "tip_actions": {"source": "gestures", "start": 0.3, "duration": 5, "poster_at": 3, "filter": "crop=720:450:0:0"},
+  "tip_keyboard": {"source": "gestures", "start": 12, "duration": 5, "poster_at": 3.7, "filter": "crop=720:800:0:750"},
+  "tip_attach": {"source": "snippets", "start": 8, "filter": "crop=720:410:0:1180"},
+  "tip_undo": {"source": "typing", "start": 9, "filter": "crop=720:520:0:780"}
+}

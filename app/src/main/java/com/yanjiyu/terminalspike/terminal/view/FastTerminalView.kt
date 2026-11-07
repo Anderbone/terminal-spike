@@ -30,6 +30,7 @@ import android.widget.OverScroller
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
+import com.yanjiyu.terminalspike.BuildConfig
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.CursorStyle
 import com.yanjiyu.terminalspike.core.model.TouchScrollMode
@@ -109,6 +110,8 @@ class FastTerminalView @JvmOverloads constructor(
     private var legacySymbolBoldItalicTypeface: Typeface? = null
     private val scroller = OverScroller(context)
     private val herdrScroll = HerdrNativeScroll(context)
+    private var herdrGestureRemote = false
+    private var herdrGestureTraceLogged = false
     private var herdrTouchConsumed = false
     private var herdrGestureStartedOnOverlay = false
     private var herdrTouchMode = TouchScrollMode.AUTO
@@ -831,7 +834,11 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) finishResizePresentation()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            finishResizePresentation()
+            herdrGestureRemote = false
+            herdrGestureTraceLogged = false
+        }
         val herdrController = terminalController
         val herdrHistoryVisible = herdrController?.isHerdrNativeHistoryVisible() != false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -855,13 +862,23 @@ class FastTerminalView @JvmOverloads constructor(
                 it.x + it.columns <= herdrController.terminalColumns &&
                 it.y + it.rows <= herdrController.terminalRows &&
                 herdrController.viewport.autoFollow && !selection.hasSelection
+        }?.let { source ->
+            // Mosh's visible frame may lead the bounded SSH snapshot. Join only
+            // verified overlapping rows before pinning the first drag, off the
+            // draw/fling path. An established reader keeps its exact snapshot.
+            if (event.actionMasked == MotionEvent.ACTION_MOVE && herdrScroll.reader.snapshot == null)
+                herdrController.herdrHistoryForFirstDrag(source)
+            else source
         }
-        if (herdrTouchMode != TouchScrollMode.REMOTE_MOUSE &&
-            (herdrSource != null || herdrScroll.reader.snapshot != null)
+        if (herdrTouchMode != TouchScrollMode.REMOTE_MOUSE && !herdrGestureRemote &&
+            (herdrSource != null || herdrScroll.reader.snapshot != null || herdrScroll.hasActiveTouch ||
+                event.actionMasked == MotionEvent.ACTION_DOWN && herdrController?.herdrSessionActive == true &&
+                herdrHistoryVisible && !herdrGestureStartedOnOverlay && !selection.hasSelection)
         ) {
             val consumed = herdrScroll.touch(event, herdrSource, cellWidthPx, lineHeightPx,
                 horizontalPaddingPx, verticalPaddingPx, ::handleHerdrHistoryTap)
             if (consumed) {
+                recordHerdrScrollRoute(herdrController, "native", "verified_history")
                 if (!herdrTouchConsumed) {
                     val cancel = MotionEvent.obtain(event)
                     cancel.action = MotionEvent.ACTION_CANCEL
@@ -1681,6 +1698,20 @@ class FastTerminalView @JvmOverloads constructor(
         )
     }
 
+    /** Debug-only, once per gesture; never includes terminal text or connection secrets. */
+    private fun recordHerdrScrollRoute(controller: TerminalController?, route: String, reason: String) {
+        if (!BuildConfig.DEBUG || controller?.herdrSessionActive != true || herdrGestureTraceLogged) return
+        herdrGestureTraceLogged = true
+        val source = controller.herdrHistory
+        val projected = controller.herdrHistoryForDisplay()
+        android.util.Log.d("HerdrScrollRoute", "route=$route reason=$reason mode=$herdrTouchMode" +
+            " grid=${controller.terminalColumns}x${controller.terminalRows}" +
+            " source=${source?.columns}x${source?.rows} rows=${source?.lines?.size ?: 0}" +
+            " offset=${source?.offsetFromBottom} projected=${projected != null}" +
+            " chrome=${controller.herdrChromeAreaForDiagnostics()} surface=${source?.surface}" +
+            " reader=${controller.herdrHistoryReading} pane=${source?.identity?.hashCode()}")
+    }
+
     private fun handleGestureScroll(distanceY: Float, x: Float, y: Float, pointerCount: Int) {
         val controller = terminalController ?: return
         if (pinchZoomConsumed) return
@@ -1719,6 +1750,11 @@ class FastTerminalView @JvmOverloads constructor(
                 scrollViewportBy(distanceY + pendingDistance)
             }
             TerminalScrollDestination.REMOTE_MOUSE -> {
+                // Do not switch half of an already classified remote gesture to a
+                // newly arrived native snapshot. Its next DOWN can choose native.
+                herdrGestureRemote = true
+                herdrScroll.cancelTouch()
+                recordHerdrScrollRoute(controller, "remote", decision.reason.name)
                 sendRemoteMouseWheel(distanceY, x, y)
             }
             TerminalScrollDestination.NONE -> {

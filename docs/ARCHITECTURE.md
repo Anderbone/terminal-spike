@@ -32,7 +32,7 @@ local. Taps, long-press selection, and link actions do not enter the vertical-sc
 
 `TerminalInputConnection` sends committed UTF-8 immediately, maps deletion to DEL, handles common terminal keys, and advertises a direct-input editor with correction and personalized learning disabled. A two-page Compose strip keeps the shortcut deck as the default and offers a separate bounded `TextFieldValue` editor with ordinary IME composition, correction, and selection. Its explicit Send action uses the active controller's bracketed-paste-aware path without adding Enter, requires an extra confirmation for multiline drafts, clears only after dispatch, and hands focus back to the native View when the user returns to direct input. Hardware keys and the Compose extra-key toolbar also enter through the active controller's byte sink. Terminal size changes are derived from cached native-renderer cell geometry and propagated without Compose terminal-content state.
 
-Direct input also advertises bounded PNG, JPEG, WebP, and GIF rich content. An accepted phone clipboard image never enters the renderer or terminal byte stream: a short-lived SFTP channel on the exact authenticated SSH session streams at most 100 MiB into `~/.cache/terminal-spike/pasted-images`, then the controller bracket-pastes the absolute remote path. The media picker also supports the video MIME types enumerated by `selectedMediaExtension`, under the same byte limit. Codex consumes that pasted image path as its normal `[Image #N]` attachment. A Mosh connection retains its already authenticated SSH bootstrap transport as this private upload side channel for the Mosh session lifetime; terminal bytes continue to use Mosh. Local benchmark sessions reject image paste.
+Both direct and buffered input advertise `*/*` rich content. The image button opens the system photo picker showing recent images and videos by default, without the old app-defined 20-item cap; the system photo picker may impose its own selection limit. Long-pressing that same button opens Android's multiple-document picker with `*/*` for arbitrary files, without an app-defined selection count, file-size or format limit. Picker files, clipboard URI items (including videos and documents), and IME rich content share the same streaming pipeline. Up to four IO workers transfer files concurrently without loading whole files into memory, and paths are inserted in selection order. Failed files do not discard successful files; temporary IME grants are released on completion or cancellation. SSH and Mosh use independent SFTP channels on the authenticated SSH transport and store files in the host's private `~/.cache/terminal-spike/pasted-images` directory. Mosh can reopen its upload side channel with reloadable credentials if the bootstrap TCP connection has expired. Local Arch imports files into `/root/.cache/terminal-spike/pasted-images` under an installation lease; the local renderer demo stores files in app-private storage and inserts that path (it has no shell to consume attachments). File bytes never enter the renderer or terminal byte stream; the receiving tool decides what a pasted path means. System document-provider access, available storage and receiving-tool limits still apply. Buffered drafts and text clipboard paste have no app-defined character cap; local PTY writes split large pastes into native-sized frames.
 
 ## File browser
 
@@ -75,3 +75,16 @@ Transport parsers publish bounded frames into `TerminalController`, which accept
 ## Terminal engine decision
 
 ADR-002 retains the project-owned custom renderer and selects the project-owned bounded VT engine. This keeps the parser and renderer independent of third-party terminal-app source and keeps parser/model tests runnable on the JVM. The decision can be revisited with measured evidence and a separate licensing decision, but SSH and future transports now share the same screen contract.
+
+## Project reading and browser
+
+Two independent project tools sit alongside terminal sessions. `ProjectReader` uses
+bounded authenticated SSH exec channels to query Git and read source, including a
+Mosh session's SSH companion. Its native Compose workspace supports working-tree,
+index and branch-merge-base comparisons, file trees, source search and review
+drafts. `BrowserController` instead opens a user-configured code-server address in
+Android's system WebView, using the phone's existing network/Tailscale routing.
+The embedded browser lives inside MainActivity's security boundary and retains at
+most three application-context WebViews. Neither project tool changes the terminal
+hot path. See [project review](PROJECT-REVIEW.md) and
+[browser lifecycle and network policy](EMBEDDED-BROWSER.md).

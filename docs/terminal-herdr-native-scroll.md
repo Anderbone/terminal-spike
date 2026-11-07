@@ -1,5 +1,85 @@
 # Native scrolling for transcript panes inside Herdr
 
+## 2026-11-07: long wrapped history and grouped desktop sidebar
+
+The user's new 37.857-second recording still contains both continuous motion and
+approximately three/six-row steps. Previous ten-round Mosh evidence covered fresh
+200-line conversations, not existing rich conversations with grouped desktop
+navigation. That evidence does not establish stability of the reported workflow.
+
+Two additional failure paths are now reproduced and repaired:
+
+- `parseHerdrHistoryRows` previously rejected an entire valid capture when up to
+  1,000 raw lines rewrapped into more than 1,000 physical rows. A read of the actual
+  conversation produced 1,461 physical rows at 41 columns and returned null. It
+  now retains the newest 1,000 physical rows. Raw-row, byte and geometry limits
+  remain enforced; this does not implement older-history paging.
+- Herdr's grouped desktop sidebar uses a separate collapse control rather than
+  the classic continuous vertical rule. Passive logs from 21 real Fold gestures
+  retained 248 history rows but rejected their projection (`88x34` outer grid,
+  `62x33` source), selecting remote mouse scrolling. `HerdrNavigationChrome` now
+  recognizes the separate one-cell collapse control together with exactly one
+  independent top/bottom tab strip. Projection still requires exact surface
+  dimensions; a width difference alone cannot establish navigation geometry.
+
+Both changes have failing-before/passing-after JVM regressions. The physical
+controlled recovery class passed all 12 methods on the authorized S10e, including
+wrapped history, grouped sidebar pixel stability, fractional motion, existing
+input paths and zero wheel reports. Debug builds log one text-free route summary
+per classified gesture, including source and detected chrome geometry; no terminal
+body, host, credential, network telemetry or analytics is added.
+
+A strict actual-Mosh landscape check with the current Herdr executable correctly
+projected grouped navigation and entered the native reader on the first gesture
+(`75x9` outer, `49x8` pane, projection `(26,1)`, wheels zero at that point). However,
+its 200-marker ordered-history assertion failed: the 103-row capture contained
+only a subset. This remains RED; native route alone is not a passing end-to-end
+acceptance. An earlier fixture used a different executable also labelled 0.9.5,
+which did not support grouped navigation; its separate failure is retained.
+Neither run proves stable repeated scrolling of the user's existing multi-tab
+workflow. The landscape missing-history origin remains unconfirmed.
+
+No database/schema/dependency, global Herdr configuration, current user pane,
+rendering physics or per-row Compose state changes are made. Exact artifacts,
+final verification and deployment results are kept in the canonical living
+record and `build/scroll-user-red-20261107/`. The broader acceptance remains open.
+
+## 2026-11-07: continuous ownership across late history and partial chrome frames
+
+The user's recording alternates between continuous pixel motion and jumps of
+approximately three or six terminal rows. Controlled production-View regressions
+reproduce two ways native ownership could be lost: history delivered between
+`ACTION_DOWN` and the first move did not initialize the native gesture, and an
+incomplete remote navigation redraw made a previously valid projection disappear.
+An already remote gesture could then change to native halfway through its moves.
+
+`FastTerminalView` now initializes native touch tracking at DOWN in a confirmed
+Herdr session even if its first snapshot is still arriving. The original DOWN
+coordinates decide whether a subsequently available source contains the gesture.
+Tracking ends on UP/CANCEL or remote classification. Once a gesture is classified
+remote, it remains remote until the next DOWN; it cannot mix wheel reports with
+local pixel motion. Initial absent/unsupported history still uses the established
+remote policy. This change does not manufacture history or promise native motion
+before a real source is available.
+
+An established native reader retains its verified projection through an
+incomplete chrome frame only while pane identity, raw source geometry, terminal
+grid and visibility remain compatible. Both an older pinned reader and the latest
+overlay waiting for a nonzero remote offset are protected. Idle panes do not
+inherit that placement. A valid changed projection, resize, replacement pane,
+source removal or covering switcher still invalidates the reader. A successful
+read from another client's incompatible grid cannot replace the reader's source
+merely because a partial chrome frame made the pure projection check fail.
+Projection caching stays on the View thread; background publication consults
+existing source identity and reader flags without mutating that cache.
+
+The original Float drag, OverScroller physics, captured row ordering, 1,000-row
+history limit, explicit Remote mode and fullscreen Codex/Pi fallback remain.
+No direct dependency, persisted schema, host configuration or new network feature
+is added. Controlled simulator and current actual-Codex history-source evidence
+are recorded in the canonical living investigation; they do not replace its
+physical old-phone and user acceptance requirements.
+
 ## 2026-10-31: stable cached readers and links in native history
 
 User RED: smooth scrolling still falls back to row-based movement in several
@@ -718,3 +798,72 @@ Added opt-in savedHostCodexHasOrderedHistoryAndNativeMotion alongside the isolat
 ### New-tab user feedback
 
 2026-10-02T20:20:37.907001+00:00 — User RED: a newly opened Herdr tab still feels unsmooth on the fold. No new success claim. Host config still has tui.fullscreen_transcript=false and alternate_screen="never"; installed Codex0.159.0/Herdr0.8.2 unchanged. Read-only default-server metadata: terminal-spike pane w6:pH (Output 200 rows), agent=codex,history max_offset200,offset0,viewport32,revision30. Exact phone-tested pane not yet confirmed. Server global focused pane is wH:p1 agent=agy with427 older rows; current capture code explicitly requires agent=codex, so this is another possible unsupported path, not confirmed attribution. Native phone route/reason and outbound wheels unmeasured; tmux metadata N/A. Only SM_F976B is connected; old SM_S911B absent from adb and mDNS, previous wireless address192.168.0.175:44387 returns No route to host. No fold tests, gestures, install, or changes. Requested old-phone USB connection and identification of tested tab. No application source changes or new Android verification needed for this read-only investigation.
+
+## 2026-11-07 真实 Mosh 验收补充
+
+`HerdrInlineRealEndToEndTest#actualMoshCodexHasOrderedHistoryAndNativeMotion` 是额外的 opt-in 真机 gate。它要求 `herdrE2eMosh=true`、runner-owned `herdrE2eSession=terminal-spike-inline-*`、`herdrE2eMoshUdpPort`，以及既有 `sshE2eHost/Port/Username/PrivateKeyBase64/CodexCommandBase64`。Host runner 必须核对授权 S23 或 S10e 的精确 serial/model；不能在 fold 上运行。私钥参数通过 stdin 传给 device shell，不能写入命令日志或导出用户 saved credentials。
+
+该测试通过 production repository 创建 `RemoteSessionConnectionRequest.Mosh`，保留默认 `MoshFallbackPolicy.NEVER`。只选择自己的 Herdr session，再挂载正式 Compose/native terminal View；复用 `exerciseCodex` 的全套实际 Codex 200行、first gesture、3.25px、post-UP fling、touch catch、oldest001、zero-wheel 断言。它只关闭自己创建的 app session；不调用 `disconnectAll` 或创建 saved host。
+
+S10e SM-G9708 / R28M227XA0E 实测 GREEN，38.716s：真实 Mosh1.4.0 UDP62000、Herdr0.9.5、Codex0.166.0；235 captured rows、25 viewport rows、offset0；首手势 native reader，200 marker全按序；release y13131→12823/100ms，catch与001均通过，remote wheels0。初始底部含200、不含001，没有等待 history-ready。Dedicated container 仅提供 OpenSSH/Mosh 与 owned Herdr client/socket，真实 Codex 在 host-owned pane 内运行；没有把 Codex auth 复制入 container。
+
+实际 app SHA256 `ceadb2af75cd87ae17d2b95a05104dbea1f8046d7892d4f28f3f9277e303946d` 的全部 non-signature payload，等同通过当前 shared gate 的 normal build `e6aaa8f15faab5a3bfd83ece6f9a007f43f4f82546ca7e497b3ab07b97699910`；四个 scroll production source files 与此前隔离 RED/GREEN 完全一致。测试前后 app hash 不变，保留并行工作较新安装。Test APK SHA256 `bf938ca873dd744f477d64a26cb2b8651cad0233103a4a0ae197b545ab07501d`。证据在 `build/scroll-mosh-20261107/`，包含 fixture 初始化 modal 与 stale UDP port 的 setup RED、最终 GREEN、UDP socket、来源和清理记录。
+
+本次增加 test/inventory；没有 product Mosh 改动。Root142 host checks与450-task unit/lint/build gate、isolated141 host checks与同一450-task gate均通过。Owned container/server/session/临时keys已清理。Fresh Mosh acceptance 不替代 saved-host resume、断网/漫游重连或所有 tmux gate；本轮未覆盖这些路径。Fold当前未连接，未在其上跑测试；原 workflow 手感与 broader Definition of Solved 仍等待用户确认。
+
+## 2026-11-07 重复验收暴露的历史刷新问题
+
+用户要求多轮验收后，旧版本出现两类 RED：一次最终没有停留在行001；另一次可见画面已到200，但首个 native snapshot 仅到189，后续还抓到仅到178。不能用先前单次 Mosh GREEN 声称稳定。
+
+历史新鲜度由两层处理：
+
+```mermaid
+flowchart TD
+  Metadata[Input context / sidebar metadata] --> M[原有 metadata worker]
+  History[有界 Herdr history read] --> H[独立 history worker / 500 ms]
+  H --> Cached[被动历史快照]
+  Cached --> First[首次 MOVE / reader 尚未建立]
+  Visible[当前 pane 的 VT rows] --> First
+  First --> Match{唯一连续重叠 / 至少3种非空行}
+  Match -->|成立| Join[保留已知前缀 / 接入真实可见尾行]
+  Match -->|不成立| Keep[保留原快照 / 不制造缺口行]
+  Join --> Pinned[Float native reader 固定快照]
+  Keep --> Pinned
+```
+
+`DefaultSshSessionTerminal` 原先按顺序读取 input context、sidebar、history。多个 metadata SSH round-trip 会拖慢 history；现在 history 使用独立 worker，保留原500ms间隔、bounded read、output revision/connection identity校验与detach/stop清理。它沿用已有 authenticated SSH side-channel，不在手势或动画中发请求，也不改变 tmux capture。
+
+`HerdrHistoryLiveTail.kt` 在首次 MOVE、reader 尚未建立时，比较已投影 pane 的 cached history 与实际 VT rows。只对 remote offset0、已确认surface和唯一连续重叠接入新行。至少3个distinct nonblank匹配行，并要求尾部有真实非空新内容。重复/歧义、空白重绘、未知source、remote older viewport和真实缺口均保留原数据。允许匹配起点之前存在短暂 Herdr warning；保留已有前缀，不把 warning 插入 transcript。超过原1000行bound时保留最新1000行。
+
+`TerminalLineGeometry.sliceColumns` 按完整cell裁切VT行，保留颜色、样式、hyperlink和wrap metadata；不接受切进半个wide cell的边界。`TerminalController.herdrHistoryForFirstDrag` 保持screen私有；`FastTerminalView`只在开始拖动前调用，draw/fling与已经pinned的reader不做拼接。
+
+受控 RED/GREEN：新增 JVM reproducer先证明189→200缺行，真实owned trace又证明Herdr warning挡住首个可见行；对应8个JVM cases均GREEN。`slowMetadataDoesNotBlockTheFirstHistoryOrItsNewerOutput`在S10e旧app阻塞metadata时RED（history timeout），修改后在metadata仍被阻塞时证明初次history和新输出都能发布。当前候选的6-class native suite **37/37 GREEN，134.691s**；包括first MOVE newer tail、sub-row/fling/catch、remote offsets、latest-input refresh、菜单/links/direct-buffered/resize等既有断言。
+
+实际Codex测试的oldest traversal会先发送真实DOWN捕获前一次release motion，再检查001。找到后UP并等待100ms，要求001仍可见。原测试会在已经看到001后继续轮询，期间fling能继续越过它；保留原RED与位置trace，不调整app physics。200个marker全按序、初始bottom含200无001、first gesture不等history-ready、3.25px、独立post-UP fling与touch catch、zero-wheel断言均保留。
+
+Current：最终同一app/test artifact的真实Mosh连续 **10/10 GREEN**，每轮38.113–43.360s；每轮pre-touch cache均已含200，200 ordered/first native/3.25px/fling/catch/001持留/wheels0均通过。没有history-ready等待。最终完整local gate450tasks/88s GREEN，JVM1275与11contract tests通过；正常新建连接在这些重复中稳定，saved resume/网络重连与用户原workflow仍未覆盖。证据目录 `build/scroll-mosh-stability-20261107/`，保留全部RED、intermediate artifact、owned tail trace、最终候选来源与每轮结果。Startup catalog单行超过2048bytes的额外问题仍未修复；repeat fixture每轮只暴露自己的一个session，避免把连接前失败混作滚动失败。没有新增dependency/schema/网络产品功能。
+
+最终artifact：normal app `33074aafa4398d74dcb3c7810678822328b25e67875721951358807a6442b484`，S10e matching-key app `f1ccfd6f729868d671edec23c9ef9105f0f4012c701b335080949645bd69000e`；test `cc8ab8a0bc9a4f06e1adac1ae32c5b866b964068bbd8ed0d92da53cfa8d1fbb9`。所有non-signature payload与build一致，所有37项controlled及10轮actual gate均绑定同一最终app；source/archive在candidate-manifest.json和verified-source/。Own fixture/keys/device trace已清理，S10e app已重启。2026-11-07用户要求安装后，已在重新model-verified SM-F976B / RFGL80WYDZW / adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp上完整非incremental安装此33074a…2b484 APK，读回installed SHA256一致；MainActivity cold launch989ms、topResumedActivity/focus均确认，keyguard showing=false。没有fold tests或scroll gestures；证据fold-final-install.json。原workflow手感仍待用户确认。
+
+## 2026-11-07 用户长会话视频 RED：换行超过显示行上限
+
+用户在 Fold 实际长会话、多 tab、反复上下滑动中仍看到continuous/row-step交替。之前10次fresh isolated Mosh、200短行测试不能验收此工作流。原视频13–27s高置信相邻画面平移80/80为约3/6行；真实route/wheel报告未采集。原Fold后续合并APK的8个scroll核心class与33074a tested build相同，不能归因于缺少修复。
+
+已从实际own conversation只读数据确认：1000raw history rows在41columns下解析成1461physical rows，旧parser整份返回null。失败路径为：
+
+```mermaid
+flowchart TD
+  A[有界1000行历史] --> B[窄屏 VT 解析 / 自动换行]
+  B --> C[显示行超过1000]
+  C --> D[旧实现返回null]
+  D --> E[Unavailable / controller清history]
+  E --> F[AUTO可能转入remote row wheel]
+```
+
+`HerdrPaneHistory.kt` 的 `parseHerdrHistoryRows` 现在在physical overflow时保留最新1000行。输入raw-row/4MiB/geometry限制不变，cell/style/link不重写，native cache仍有界。固定fixture含800个96-char rows及最新200个marker：旧实现RED，新实现保持1000physical rows和200个marker完整按序。实际会话后续采样1510physical rows现在得到1000，而正文未持久化；动态采样不等于相同bytes对照，固定fixture提供可重复RED/GREEN。
+
+`HerdrRemoteScrollRecoveryTest#wrappedOldConversationRetainsNativeMotionAndEveryNewestMarker` 验证这个overflow路径的native View、全200最新marker、bounded cache以及原motion/latest-input/zero-wheel断言。S10e相关11项controlled regression通过25.164s；JVM1276、shared450-task unit/lint/debug/release/AAB/test/benchmark gate158s、11contract与exact inventory通过。没有把controlled fixture称为实际multi-tab Mosh验收。
+
+Debug APK的 `HerdrScrollRoute` 每gesture最多记录一次route/reason、mode、grid/source geometry、cache rows/offset、projection/reader与pane hash，不含正文或连接secret，无新增network/analytics/permissions。用于用户实际操作的passive evidence；Fold不运行自动gesture/tests。
+
+Current：已证实的一条long-history rejection已修；用户实际multi-tab/return-to-live工作流仍未验收，不能称整体solved。新版normal APK259dd83ebe4c0c9e2ec342afe4ae3d0a30d727d1bebe3dd50b9258a325d4175e已在model/hardware验证的Fold完整非incremental安装，installed hash一致、MainActivity launch Status ok；secure keyguard/Bouncer挡住foreground确认。没有Fold tests。证据 `build/scroll-user-red-20261107/`。之前GREEN按其日期和scope保留，不能替代本轮用户RED。

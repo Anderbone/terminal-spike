@@ -152,7 +152,6 @@ class JschSshConnection(
     private var tmuxSessionsBeforeStart: Set<String> = emptySet()
     private var cachedTmuxPaneCapture: TmuxPaneCapture? = null
     private var tmuxLiveHistoryRefreshPending = false
-    private val imageUploadLock = Any()
     private var requestedColumns = DEFAULT_TERMINAL_COLUMNS
     private var requestedRows = DEFAULT_TERMINAL_ROWS
 
@@ -281,9 +280,7 @@ class JschSshConnection(
             authenticatedSession?.session?.takeIf { it.isConnected }
                 ?: error("The SSH session is not connected.")
         }
-        return synchronized(imageUploadLock) {
-            uploadPastedImageViaSftp(session, fileName, source)
-        }
+        return uploadPastedImageViaSftp(session, fileName, source)
     }
 
     override suspend fun connect(
@@ -744,13 +741,18 @@ internal fun uploadPastedImageViaSftp(
 private const val IMAGE_UPLOAD_CHANNEL_TIMEOUT_MS = 10_000
 private const val REMOTE_PRIVATE_DIRECTORY_MODE = 448 // 0700
 private const val REMOTE_PRIVATE_FILE_MODE = 384 // 0600
-private val PASTED_IMAGE_FILE_NAME = Regex("[a-f0-9-]{36}\\.(png|jpe?g|webp|gif|mp4|webm|mov|mkv|3gp|3g2|mpeg|avi)")
+private val PASTED_IMAGE_FILE_NAME = Regex("[a-f0-9-]{36}\\.[a-z0-9][a-z0-9_-]{0,31}")
 
 private fun ChannelSftp.ensureDirectory(parent: String, name: String): String {
     val path = childPath(parent, name)
     val existing = runCatching { lstat(path) }.getOrNull()
     if (existing == null) {
-        mkdir(path)
+        try {
+            mkdir(path)
+        } catch (error: Exception) {
+            // Concurrent attachments may create the same private cache directory.
+            if (runCatching { lstat(path).isDir }.getOrDefault(false).not()) throw error
+        }
     } else {
         require(existing.isDir) { "Remote image cache path is not a directory." }
     }

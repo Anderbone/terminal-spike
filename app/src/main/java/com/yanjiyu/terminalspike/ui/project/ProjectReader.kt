@@ -7,12 +7,16 @@ import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 
 internal data class ProjectChange(val path: String, val status: String, val originalPath: String? = null)
+internal enum class ProjectDiffScope { ALL, UNSTAGED, STAGED, BRANCH }
+internal data class ProjectComparison(val scope: ProjectDiffScope = ProjectDiffScope.ALL, val base: String = "main")
 internal data class ProjectSnapshot(
     val root: String,
     val branch: String,
     val head: String?,
     val changes: List<ProjectChange>,
     val files: List<String>,
+    val comparison: ProjectComparison = ProjectComparison(),
+    val baseline: String? = head,
 )
 internal enum class ProjectLineKind { CONTEXT, ADDED, DELETED }
 internal data class ProjectLine(val number: Int, val text: String, val kind: ProjectLineKind)
@@ -28,7 +32,7 @@ internal data class ProjectDocument(
 
 /** The remote Git executable is authoritative. No checkout, index write, textconv or external diff. */
 internal class ProjectReader(private val runner: TmuxCommandRunner) {
-    fun snapshot(directory: String): ProjectSnapshot {
+    fun snapshot(directory: String, comparison: ProjectComparison = ProjectComparison()): ProjectSnapshot {
         require(directory.startsWith('/') && '\u0000' !in directory) { "Enter an absolute remote repository path." }
         val root = read(git(directory, "rev-parse --show-toplevel")).removeSuffix("\n")
         require(root.startsWith('/')) { "This directory is not in a Git repository." }
@@ -39,29 +43,72 @@ internal class ProjectReader(private val runner: TmuxCommandRunner) {
         val branchOutput = runner.run(git(root, "symbolic-ref --quiet --short HEAD"))
         val branch = if (branchOutput.exitStatus == 0) branchOutput.stdout.toString(Charsets.UTF_8).trim()
             else head?.take(8) ?: "HEAD"
-        val changes = parseProjectStatus(read(git(root, "status --porcelain=v1 -z --untracked-files=all"), allowNul = true))
-        val files = read(git(root, "ls-files -z --cached --others --exclude-standard"), allowNul = true)
+        val status = parseProjectStatus(read(git(root, "status --porcelain=v1 -z --untracked-files=all"), allowNul = true))
+        val baseline = if (comparison.scope == ProjectDiffScope.BRANCH) {
+            require(comparison.base.isNotBlank() && comparison.base.length <= 256 && comparison.base.none(Char::isISOControl)) {
+                "Enter a base branch or commit."
+            }
+            val ref = read(git(root, "rev-parse --verify --end-of-options ${quotePosixShellArgument(comparison.base + "^{commit}")}"),
+                "Cannot resolve the base branch or commit.").trim()
+            require(ref.matches(Regex("[0-9a-f]{40,64}"))) { "Invalid base commit." }
+            check(head != null) { "Commit this repository before comparing branches." }
+            read(git(root, "merge-base $ref $head"), "The branches do not share a common ancestor.").trim().also {
+                require(it.matches(Regex("[0-9a-f]{40,64}"))) { "Invalid merge base." }
+            }
+        } else head
+        val changes = when (comparison.scope) {
+            ProjectDiffScope.ALL -> status
+            ProjectDiffScope.UNSTAGED -> status.filter { it.status[1] != ' ' }
+            ProjectDiffScope.STAGED -> status.filter { it.status[0] != ' ' && it.status != "??" }
+            ProjectDiffScope.BRANCH -> {
+                val fields = read(git(root, "diff --no-ext-diff --no-textconv --no-renames --name-status -z $baseline --"), allowNul = true)
+                    .split('\u0000').filter(String::isNotEmpty)
+                require(fields.size % 2 == 0) { "Invalid branch diff response." }
+                (status.filter { it.status == "??" } + fields.chunked(2).map { ProjectChange(it[1], it[0]) })
+                    .distinctBy { it.path }
+            }
+        }
+        val listing = if (comparison.scope == ProjectDiffScope.STAGED) "ls-files -z --cached"
+            else "ls-files -z --cached --others --exclude-standard"
+        val files = read(git(root, listing), allowNul = true)
             .split('\u0000').filter(String::isNotEmpty).distinct().sorted()
         require(files.size <= MAX_PROJECT_FILES && changes.size <= MAX_PROJECT_FILES) {
             "This repository has too many files to browse (limit $MAX_PROJECT_FILES)."
         }
         (files + changes.map { it.path }).forEach(::requireProjectPath)
-        return ProjectSnapshot(root, branch, head, changes, files)
+        return ProjectSnapshot(root, branch, head, changes, files, comparison, baseline)
     }
 
     fun document(snapshot: ProjectSnapshot, path: String): ProjectDocument {
         requireProjectPath(path)
         require(path in snapshot.files || snapshot.changes.any { it.path == path }) { "Refresh the file list first." }
-        val deleted = snapshot.changes.firstOrNull { it.path == path }?.status?.contains('D') == true
-        val content = if (deleted) "" else readWorkingFile(snapshot.root, path)
-        val patch = if (snapshot.head == null) "" else read(git(snapshot.root,
-            "diff --no-ext-diff --no-textconv --no-renames --unified=0 ${snapshot.head} -- ${quotePosixShellArgument(path)}"))
+        val scope = snapshot.comparison.scope
+        val status = snapshot.changes.firstOrNull { it.path == path }?.status.orEmpty()
+        val untracked = snapshot.changes.any { it.path == path && it.status == "??" }
+        val deleted = when (scope) {
+            ProjectDiffScope.STAGED -> status.firstOrNull() == 'D'
+            ProjectDiffScope.UNSTAGED -> status.getOrNull(1) == 'D'
+            ProjectDiffScope.BRANCH -> status == "D"
+            ProjectDiffScope.ALL -> !untracked && (status.getOrNull(1) == 'D' || status == "D ")
+        }
+        fun readContent(): String = if (deleted) "" else if (scope == ProjectDiffScope.STAGED) {
+            read(git(snapshot.root, "show ${quotePosixShellArgument(":" + path)}"), "This file is not in the index. Choose another comparison.")
+        } else readWorkingFile(snapshot.root, path)
+        val content = readContent()
+        val baseline = when (scope) {
+            ProjectDiffScope.STAGED -> "--cached ${snapshot.head.orEmpty()}"
+            ProjectDiffScope.UNSTAGED -> ""
+            else -> snapshot.baseline.orEmpty()
+        }
+        val patch = if (snapshot.head == null && scope != ProjectDiffScope.STAGED && scope != ProjectDiffScope.UNSTAGED) ""
+            else read(git(snapshot.root,
+                "diff --no-ext-diff --no-textconv --no-renames --unified=0 $baseline -- ${quotePosixShellArgument(path)}"))
         // The agent may write while we read. Keep the visible snapshot stable, or ask for a retry.
-        if (!deleted) check(content == readWorkingFile(snapshot.root, path)) {
+        if (!deleted) check(content == readContent()) {
             "This file changed while loading. Open it again."
         }
-        val untracked = snapshot.changes.any { it.path == path && it.status == "??" }
-        return projectDocument(path, content, patch, snapshot.head == null || untracked)
+        return projectDocument(path, content, patch,
+            (snapshot.head == null && scope != ProjectDiffScope.UNSTAGED) || untracked)
     }
 
     private fun readWorkingFile(root: String, path: String): String {

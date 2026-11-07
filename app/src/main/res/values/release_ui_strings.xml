@@ -107,15 +107,11 @@
     </plurals>
     <string name="notice_image_paste_partial">%1$d of %2$d files attached to terminal input</string>
     <string name="notice_image_paste_failed">Could not attach the file</string>
-    <string name="notice_image_paste_requires_remote">Media upload requires a connected SSH or Mosh session</string>
-    <string name="notice_image_paste_format_unsupported">This media format is not supported</string>
-    <string name="notice_image_paste_too_large">Files must be 100 MB or smaller</string>
     <string name="terminal_customize_keys">Customize terminal keys</string>
     <string name="terminal_edit_keys_short">EDIT</string>
     <string name="terminal_modifier_off">%1$s off</string>
     <string name="terminal_modifier_armed">%1$s armed for one key</string>
     <string name="terminal_modifier_locked">%1$s locked</string>
-    <string name="terminal_buffer_limit_unchanged">Draft unchanged — the limit is %1$d characters.</string>
 
     <!-- Built-in Mosh transport presentation. -->
     <string name="mosh_extension_title">Mosh transport</string>

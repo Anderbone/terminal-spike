@@ -89,7 +89,7 @@ class BufferedInputPagerTest {
         composeRule.waitUntil { connection != null }
         composeRule.runOnIdle { target.value = 2L }
         composeRule.runOnIdle {
-            assertTrue(attributes.contentMimeTypes?.contains("image/png") == true)
+            assertTrue(attributes.contentMimeTypes?.contains("*/*") == true)
             assertTrue(connection!!.commitContent(
                 android.view.inputmethod.InputContentInfo(
                     android.net.Uri.parse("content://terminal-spike-test/image.png"),
@@ -99,14 +99,15 @@ class BufferedInputPagerTest {
             ))
             assertEquals(listOf(2L), received)
             assertEquals("keep this draft", draft.value.text)
-            org.junit.Assert.assertFalse(connection!!.commitContent(
+            assertTrue(connection!!.commitContent(
                 android.view.inputmethod.InputContentInfo(
                     android.net.Uri.parse("content://terminal-spike-test/file.pdf"),
                     android.content.ClipDescription("document", arrayOf("application/pdf")),
                     null,
                 ), 0, null,
             ))
-            assertEquals(listOf(2L), received)
+            assertEquals(listOf(2L, 2L), received)
+            assertEquals("keep this draft", draft.value.text)
         }
     }
 
@@ -153,6 +154,14 @@ class BufferedInputPagerTest {
         val keysBounds = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
         assertTrue("One snippet row must not reserve a full input page", snippetsBounds.height < keysBounds.height / 2)
         assertEquals("No blank space between snippets and keys", snippetsBounds.bottom, keysBounds.top, 0.5f)
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        assertEquals(snippetsBounds, composeRule.onNodeWithTag("terminal_pinned_snippets").fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
         composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
@@ -393,7 +402,6 @@ class BufferedInputPagerTest {
         awaitBufferedKeyboard(terminal)
         composeRule.onNodeWithTag("terminal_input_pager").performTouchInput { swipeLeft() }
         composeRule.onNodeWithText("Insert prompt").performClick()
-        // combinedClickable defers single-click dispatch while excluding a double-click edit.
         composeRule.waitUntil(5_000) {
             composeRule.runOnUiThread { sent == listOf("hello") }
         }
@@ -566,6 +574,12 @@ class BufferedInputPagerTest {
         }
         val input = composeRule.onNodeWithTag("buffered_terminal_input")
         input.performTextInput("first part")
+        composeRule.runOnIdle {
+            draftState.update(
+                draftState.value.copy(composition = androidx.compose.ui.text.TextRange(0, draftState.value.text.length)),
+                activeSessionId = 11L,
+            )
+        }
         input.performImeAction()
         input.performTextInput("second part")
         input.performImeAction()
@@ -578,6 +592,12 @@ class BufferedInputPagerTest {
         composeRule.onNodeWithTag("buffered_input_enter").performClick()
         composeRule.runOnIdle { assertEquals(1, enterCount) }
         input.performTextInput("submit this draft")
+        composeRule.runOnIdle {
+            draftState.update(
+                draftState.value.copy(composition = androidx.compose.ui.text.TextRange(0, draftState.value.text.length)),
+                activeSessionId = 11L,
+            )
+        }
         composeRule.onNodeWithTag("buffered_input_enter").performClick()
         composeRule.runOnIdle {
             assertEquals(listOf("submit this draft"), submitted)

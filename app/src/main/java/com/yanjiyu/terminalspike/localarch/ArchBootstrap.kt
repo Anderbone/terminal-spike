@@ -9,7 +9,10 @@ import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
 import java.nio.file.StandardOpenOption.WRITE
 
 /** Configures and validates a staged Arch filesystem through the production PRoot command. */
-internal class ArchBootstrap(private val nativeLibraries: File) {
+internal class ArchBootstrap(
+    private val nativeLibraries: File,
+    private val procStat: ArchProcStat? = null,
+) {
     fun validateRuntime() {
         listOf("libproot.so", "libproot_loader.so", "libtalloc.so", "libandroid-shmem.so").forEach { name ->
             requireArm64Elf(File(nativeLibraries, name))
@@ -69,7 +72,8 @@ internal class ArchBootstrap(private val nativeLibraries: File) {
 
     fun command(rootfs: File, temporaryDirectory: File, guestCommand: List<String> = listOf("/bin/bash", "--login")): ProotCommand {
         Files.createDirectories(temporaryDirectory.toPath())
-        return ProotCommand.archShell(nativeLibraries, rootfs, temporaryDirectory, guestCommand)
+        return ProotCommand.archShell(nativeLibraries, rootfs, temporaryDirectory, guestCommand,
+            procStat = procStat?.prepare(temporaryDirectory))
     }
 
     fun runGuest(

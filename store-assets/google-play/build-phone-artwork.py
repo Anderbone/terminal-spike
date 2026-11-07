@@ -18,10 +18,11 @@ def run(*args):
 def build(manifest_path, output):
     manifest = json.loads(manifest_path.read_text())
     output.mkdir(parents=True, exist_ok=True)
-    # Remove only the three superseded generated files; original captures remain archived.
-    for legacy in ('03-connections.png', '04-settings.png', '05-add-host.png'):
-        if legacy not in {shot['output'] for shot in manifest['screenshots']}:
-            (output / legacy).unlink(missing_ok=True)
+    # Remove superseded generated artwork only; raw captures stay in sources/.
+    expected = {shot['output'] for shot in manifest['screenshots']}
+    for previous in output.glob('*.png'):
+        if previous.name not in expected:
+            previous.unlink()
     with tempfile.TemporaryDirectory() as temporary:
         work = Path(temporary)
         for index, shot in enumerate(manifest['screenshots'], 1):
@@ -34,7 +35,7 @@ def build(manifest_path, output):
             svg = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1080" height="1920" viewBox="0 0 1080 1920">
 <defs>
   <linearGradient id="bg" x2=".8" y2="1"><stop stop-color="#172723"/><stop offset="1" stop-color="#0b1110"/></linearGradient>
-  <clipPath id="screen"><rect x="166" y="370" width="748" height="1522" rx="26"/></clipPath>
+  <clipPath id="screen"><rect x="118" y="370" width="844" height="1522" rx="26"/></clipPath>
 </defs>
 <rect width="1080" height="1920" fill="url(#bg)"/>
 <path d="M830 0V325M864 0V325M898 0V325" stroke="#c9f58b" stroke-opacity=".06" stroke-width="1"/>
@@ -42,8 +43,8 @@ def build(manifest_path, output):
 <text x="1008" y="55" fill="#bdd1c8" text-anchor="end" font-family="Liberation Sans" font-size="23">{index:02d}</text>
 <text x="72" y="156" fill="#e7f5d5" font-family="Liberation Sans" font-weight="bold" font-size="88" letter-spacing="-2">{title}</text>
 <text x="76" y="319" fill="#b6c7c0" font-family="Liberation Sans" font-size="30">{escape(shot['subtitle'])}</text>
-<rect x="154" y="358" width="772" height="1546" rx="38" fill="#060b09" stroke="#42534a" stroke-width="2"/>
-<image x="166" y="370" width="748" height="1522" preserveAspectRatio="xMidYMin meet" clip-path="url(#screen)" xlink:href="data:image/png;base64,{capture}"/>
+<rect x="106" y="358" width="868" height="1546" rx="38" fill="#060b09" stroke="#42534a" stroke-width="2"/>
+<image x="118" y="370" width="844" height="1522" preserveAspectRatio="xMidYMin meet" clip-path="url(#screen)" xlink:href="data:image/png;base64,{capture}"/>
 </svg>'''
             (work / 'artwork.svg').write_text(svg)
             run('rsvg-convert', '-o', str(work / 'artwork.png'), str(work / 'artwork.svg'))
@@ -53,7 +54,7 @@ def build(manifest_path, output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--manifest', type=Path, default=ROOT / 'sources/phone-s23/manifest.json')
+    parser.add_argument('--manifest', type=Path, default=ROOT / 'sources/phone-release-0.0.13/manifest.json')
     parser.add_argument('--output', type=Path, default=ROOT / 'screenshots/phone')
     args = parser.parse_args()
     build(args.manifest, args.output)

@@ -54,7 +54,6 @@
     </plurals>
     <string name="notice_legacy_records_review">Some legacy records need review after migration; preserved source data was not deleted.</string>
     <string name="notice_buffer_enter_text">Enter text before sending.</string>
-    <string name="notice_buffer_limit">Buffered input is limited to %1$d characters.</string>
     <string name="notice_buffer_invalid_unicode">Buffered input contains invalid Unicode.</string>
     <string name="notice_buffer_unsupported_control">Buffered input contains an unsupported control character.</string>
     <string name="notice_terminal_session_unavailable">That terminal session is no longer available.</string>
@@ -183,6 +182,7 @@
     <string name="terminal_key_tmux_prefix_label">tmux</string>
     <string name="terminal_key_tmux_prefix_description">Send configured tmux prefix</string>
     <string name="terminal_key_paste_label">PASTE</string>
+    <string name="terminal_select_files">Select files</string>
     <string name="terminal_key_select_images_label">IMG</string>
     <string name="terminal_key_snippets_label">SNIPS</string>
     <string name="terminal_key_tmux_sessions_label">▣</string>

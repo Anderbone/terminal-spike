@@ -27,7 +27,7 @@ class HerdrInlineRealEndToEndTest {
         val args = InstrumentationRegistry.getArguments()
         val session = args.getString("herdrE2eSession").orEmpty()
         assumeTrue("Requires an isolated Herdr fixture", session.startsWith("terminal-spike-inline-"))
-        check(android.os.Build.MODEL.replace('_', '-') == "SM-S911B") { "Real scroll tests require the authorized old phone" }
+        requireAuthorizedScrollDevice()
         val key = android.util.Base64.decode(requireNotNull(args.getString("sshE2ePrivateKeyBase64")), 0)
         val command = String(android.util.Base64.decode(requireNotNull(args.getString("sshE2eCodexCommandBase64")), 0))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -105,7 +105,7 @@ class HerdrInlineRealEndToEndTest {
         val session = args.getString("herdrE2eSession").orEmpty()
         assumeTrue("Requires an explicitly selected saved host and owned Herdr fixture",
             hostName.isNotBlank() && session.startsWith("terminal-spike-inline-"))
-        check(android.os.Build.MODEL.replace('_', '-') == "SM-S911B")
+        requireAuthorizedScrollDevice()
         val command = String(android.util.Base64.decode(requireNotNull(args.getString("sshE2eCodexCommandBase64")), 0))
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as TerminalSpikeApplication
         val repository = app.container.sshSessionRepository
@@ -183,6 +183,111 @@ class HerdrInlineRealEndToEndTest {
         }
     }
 
+    @Test fun actualMoshCodexHasOrderedHistoryAndNativeMotion(): Unit = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        val session = args.getString("herdrE2eSession").orEmpty()
+        assumeTrue("Requires an isolated real Mosh/Herdr fixture",
+            args.getString("herdrE2eMosh") == "true" && session.startsWith("terminal-spike-inline-"))
+        requireAuthorizedScrollDevice()
+        val key = android.util.Base64.decode(requireNotNull(args.getString("sshE2ePrivateKeyBase64")), 0)
+        val command = String(android.util.Base64.decode(requireNotNull(args.getString("sshE2eCodexCommandBase64")), 0))
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as TerminalSpikeApplication
+        val repository = app.container.sshSessionRepository
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        var startedId: Long? = null
+        try {
+            if (args.getString("herdrE2eLandscape") == "true") {
+                scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                await("landscape activity ready") {
+                    var ready = false
+                    scenario.onActivity { ready = it.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+                    ready
+                }
+            }
+            val result = repository.startUserInitiatedSession(RemoteSessionStartRequest(
+                title = "Owned Mosh scroll fixture",
+                workspaceName = "Owned Mosh scroll fixture",
+                connection = RemoteSessionConnectionRequest.Mosh(MoshBootstrapRequest(
+                    ssh = SshConnectionConfig(
+                        host = requireNotNull(args.getString("sshE2eHost")),
+                        port = requireNotNull(args.getString("sshE2ePort")).toInt(),
+                        username = requireNotNull(args.getString("sshE2eUsername")),
+                        authentication = SshAuthentication.PrivateKey("herdr-mosh-fixture", { key.copyOf() }, null),
+                        tmuxSessionSelectorEnabled = true,
+                    ),
+                    udpPort = requireNotNull(args.getString("herdrE2eMoshUdpPort")).toInt(),
+                )),
+            ))
+            val id = (result as? StartSshSessionResult.Started)?.sessionId
+                ?: error("Production Mosh session did not start: $result")
+            startedId = id
+            var selectedOwnedSession = false
+            await("real Mosh connected", 60_000) {
+                when (val state = repository.sessions.value.single { it.id == id }.connectionState) {
+                    is ConnectionState.AwaitingApproval -> {
+                        when (val prompt = state.prompt) {
+                            is HostIdentityPrompt -> repository.answerHostIdentityPrompt(id, prompt.promptToken, HostIdentityDecision.TrustOnce)
+                            is TmuxSessionPrompt -> {
+                                check(prompt.herdrSessions.any { it.name == session }) { "Owned Mosh Herdr session missing" }
+                                repository.answerTmuxSessionPrompt(id, prompt.promptToken, "herdr:$session")
+                                selectedOwnedSession = true
+                            }
+                            else -> error("Mosh fixture requires an unsupported prompt")
+                        }
+                        false
+                    }
+                    ConnectionState.Connected -> true
+                    is ConnectionState.Failed -> error("Real Mosh connection failed: ${state.message}")
+                    else -> false
+                }
+            }
+            check(selectedOwnedSession) { "Refusing to type into an unowned Mosh session" }
+            val controller = requireNotNull(repository.controllerFor(id))
+            scenario.onActivity { it.openTerminalSession(id) }
+            var view: FastTerminalView? = null
+            fun find(v: android.view.View): FastTerminalView? {
+                if (v is FastTerminalView) return v
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
+                return null
+            }
+            await("real Mosh native view attached") {
+                scenario.onActivity { view = find(it.window.decorView) }
+                view != null
+            }
+            val wheels = AtomicInteger()
+            val sinkField = TerminalController::class.java.getDeclaredField("inputSink").apply { isAccessible = true }
+            val original = sinkField.get(controller) as TerminalInputSink
+            val counter = object : TerminalInputSink {
+                private fun count(bytes: ByteArray, accepted: Boolean): Boolean {
+                    if (accepted && Regex("\\u001B\\[<(64|65);").containsMatchIn(bytes.toString(Charsets.US_ASCII))) wheels.incrementAndGet()
+                    return accepted
+                }
+                override fun send(bytes: ByteArray) { count(bytes, original.sendWithAcceptance(bytes)) }
+                override fun trySend(bytes: ByteArray) = count(bytes, original.trySend(bytes))
+                override fun sendWithAcceptance(bytes: ByteArray) = count(bytes, original.sendWithAcceptance(bytes))
+            }
+            scenario.onActivity { sinkField.set(controller, counter) }
+            try {
+                android.util.Log.i("HerdrInlineE2e", "transport=MOSH production repository; no SSH fallback")
+                exerciseCodex(scenario, controller, requireNotNull(view), command, wheels)
+            } finally { scenario.onActivity { sinkField.set(controller, original) } }
+        } finally {
+            startedId?.let(repository::close)
+            if (args.getString("herdrE2eLandscape") == "true") {
+                scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+            }
+            scenario.close()
+            key.fill(0)
+        }
+    }
+
+    private fun requireAuthorizedScrollDevice() {
+        val model = android.os.Build.MODEL.replace('_', '-')
+        check(model == "SM-S911B" || model == "SM-G9708") {
+            "Real scroll tests require the authorized S23 or S10e; the host runner must verify its serial"
+        }
+    }
+
     private suspend fun await(label: String, timeout: Long = 30_000, condition: () -> Boolean) {
         withTimeout(timeout) { while (!condition()) delay(25) }
         android.util.Log.i("HerdrInlineE2e", label)
@@ -231,6 +336,25 @@ class HerdrInlineRealEndToEndTest {
             }
             scenario.onActivity {
                 val history = controller.herdrHistory
+                if (InstrumentationRegistry.getArguments().getString("herdrE2eTailTrace") == "true" &&
+                    history?.identity?.startsWith("terminal-spike-inline-") == true) {
+                    val projection = controller.herdrHistoryForDisplay()
+                    val projected = projection ?: history
+                    val field = TerminalController::class.java.getDeclaredField("terminalScreen").apply { isAccessible = true }
+                    @Suppress("UNCHECKED_CAST")
+                    val screen = field.get(controller) as List<com.yanjiyu.terminalspike.terminal.model.TerminalLine>
+                    val data = org.json.JSONObject().put("x", projected.x).put("y", projected.y)
+                        .put("columns", projected.columns).put("rows", projected.rows)
+                        .put("sourceCount", history.lines.size).put("surface", history.surface.toString())
+                        .put("projectionAccepted", projection != null)
+                        .put("navigation", org.json.JSONArray((screen.take(3) + screen.takeLast(3)).map { it.text }))
+                        .put("sourceTail", org.json.JSONArray(history.lines.takeLast(projected.rows * 2).map { it.text }))
+                        .put("screen", org.json.JSONArray(screen.subList(projected.y, projected.y + projected.rows).map { it.text }))
+                        .put("cropped", org.json.JSONArray(screen.subList(projected.y, projected.y + projected.rows).map {
+                            com.yanjiyu.terminalspike.terminal.selection.TerminalLineGeometry.sliceColumns(it, projected.x, projected.x + projected.columns)?.text
+                        }))
+                    File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "herdr-owned-tail.json").writeText(data.toString())
+                }
                 android.util.Log.i("HerdrInlineE2e", "pre-touch visible=${controller.isHerdrNativeHistoryVisible()} follow=${controller.viewport.autoFollow} outer=${controller.terminalColumns}x${controller.terminalRows} pane=${history?.x},${history?.y},${history?.columns},${history?.rows} view=${view.width}x${view.height}")
             }
             val startY = view.height * .35f
@@ -255,14 +379,31 @@ class HerdrInlineRealEndToEndTest {
                 assertTrue("Bottom excludes row 200: outer=${controller.terminalColumns}x${controller.terminalRows} capture=${snapshot.columns}x${snapshot.rows} rows=${snapshot.lines.size} lastMarker=${snapshot.lines.indexOfLast { it.text.contains("CODEX_SCROLL_200") }}", bottom.contains("CODEX_SCROLL_200"))
                 assertFalse(bottom.contains("CODEX_SCROLL_001"))
             }
-            delay(20)
-            event(MotionEvent.ACTION_MOVE, startY + 220f)
-            delay(20)
-            event(MotionEvent.ACTION_UP, startY + 270f)
+            // Keep the swipe tail continuous even if the ordered-history assertion
+            // above was slow. Long gaps make older VelocityTracker versions correctly
+            // classify a stopped finger, which would not test a release fling.
+            scenario.onActivity {
+                for (offset in listOf(120f, 170f, 220f, 270f)) {
+                    val motion = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(),
+                        MotionEvent.ACTION_MOVE, view.width * .75f, startY + offset, 0)
+                    try { view.onTouchEvent(motion) } finally { motion.recycle() }
+                    SystemClock.sleep(12)
+                }
+                val up = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP,
+                    view.width * .75f, startY + 290f, 0)
+                try { view.onTouchEvent(up) } finally { up.recycle() }
+            }
             var released = 0f
-            scenario.onActivity { released = native.reader.viewport.scrollY }
+            scenario.onActivity {
+                released = native.reader.viewport.scrollY
+                val physics = HerdrNativeScroll::class.java.getDeclaredField("scroller").apply { isAccessible = true }.get(native) as android.widget.OverScroller
+                android.util.Log.i("HerdrInlineE2e", "release y=$released shown=${view.isShown} focus=${view.hasWindowFocus()} window=${view.windowVisibility} finished=${physics.isFinished} velocity=${physics.currVelocity} final=${physics.finalY}")
+            }
             delay(100)
-            scenario.onActivity { assertTrue("Fling must move after release", native.reader.viewport.scrollY < released) }
+            scenario.onActivity {
+                android.util.Log.i("HerdrInlineE2e", "after release y=${native.reader.viewport.scrollY} shown=${view.isShown} focus=${view.hasWindowFocus()} reader=${controller.herdrHistoryReading}")
+                assertTrue("Fling must move after release", native.reader.viewport.scrollY < released)
+            }
             downTime = SystemClock.uptimeMillis()
             event(MotionEvent.ACTION_DOWN, startY)
             var caught = 0f
@@ -271,19 +412,43 @@ class HerdrInlineRealEndToEndTest {
             scenario.onActivity { assertEquals(caught, native.reader.viewport.scrollY, .01f) }
             event(MotionEvent.ACTION_MOVE, startY + 70f)
             event(MotionEvent.ACTION_UP, startY + 70f)
-            repeat(100) {
-                var oldest = false
-                scenario.onActivity { oldest = view.herdrVisibleRowsForTesting().any { it.contains("CODEX_SCROLL_001") } }
-                if (!oldest) {
-                    downTime = SystemClock.uptimeMillis()
-                    event(MotionEvent.ACTION_DOWN, startY)
-                    delay(20)
-                    event(MotionEvent.ACTION_MOVE, startY + view.height * .4f)
-                    delay(100)
-                    event(MotionEvent.ACTION_UP, startY + view.height * .4f)
+            fun oldestTrace(attempt: Int): String {
+                val visibleMarkers = view.herdrVisibleRowsForTesting().flatMap {
+                    Regex("CODEX_SCROLL_\\d{3}").findAll(it).map { match -> match.value }.toList()
                 }
+                return "oldest attempt=$attempt y=${native.reader.viewport.scrollY} max=${native.reader.viewport.maximumScrollY}" +
+                    " reader=${controller.herdrHistoryReading} pinned=${controller.herdrHistoryPinned}" +
+                    " source=${controller.isHerdrNativeHistoryVisible()} snapshot=${native.reader.snapshot?.lines?.size}" +
+                    " visible=${visibleMarkers.firstOrNull()}..${visibleMarkers.lastOrNull()} wheels=${wheels.get()}"
             }
-            scenario.onActivity { assertTrue(view.herdrVisibleRowsForTesting().any { it.contains("CODEX_SCROLL_001") }) }
+            var traversalAttempts = 0
+            for (attempt in 0 until 100) {
+                traversalAttempts = attempt + 1
+                // Catch the preceding drag's release motion before checking the
+                // target. Otherwise a fling can pass row 001 while the test keeps
+                // polling it, then stop at earlier prompt/header rows instead.
+                downTime = SystemClock.uptimeMillis()
+                event(MotionEvent.ACTION_DOWN, startY)
+                var oldest = false
+                scenario.onActivity {
+                    oldest = view.herdrVisibleRowsForTesting().any { it.contains("CODEX_SCROLL_001") }
+                    if (attempt % 10 == 0 || oldest) android.util.Log.i("HerdrInlineE2e", oldestTrace(attempt))
+                }
+                if (oldest) {
+                    event(MotionEvent.ACTION_UP, startY)
+                    break
+                }
+                delay(20)
+                event(MotionEvent.ACTION_MOVE, startY + view.height * .4f)
+                delay(100)
+                event(MotionEvent.ACTION_UP, startY + view.height * .4f)
+            }
+            delay(100)
+            scenario.onActivity {
+                val trace = oldestTrace(traversalAttempts)
+                android.util.Log.i("HerdrInlineE2e", trace)
+                assertTrue(trace, view.herdrVisibleRowsForTesting().any { it.contains("CODEX_SCROLL_001") })
+            }
             assertEquals("Native history must emit zero remote wheels", 0, wheels.get())
             android.util.Log.i("HerdrInlineE2e", "PASS markers=200 fractional=3.25 fling=true catch=true oldest=true wheels=0")
     }

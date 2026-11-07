@@ -2,8 +2,12 @@ package com.yanjiyu.terminalspike.connection
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.yanjiyu.terminalspike.terminal.view.TerminalImagePasteSource
+import com.yanjiyu.terminalspike.terminal.view.transferTerminalAttachments
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -92,6 +97,64 @@ class SftpRealEndToEndTest {
                 verifier.download(uploadedPath, output)
                 assertArrayEquals(payload, output.toByteArray())
                 verifier.delete(uploadedPath)
+
+                // Exercise the actual attachment pipeline and SSH side channel together:
+                // arbitrary extensions, more than 20 files, and a file over the former cap.
+                val paths = mutableListOf<String>()
+                val largeSize = 100L * 1024 * 1024 + 17
+                val extensions = listOf("heic", "avif", "svg", "pdf", "zip", "mkv")
+                try {
+                    assertEquals(25, withTimeout(120_000) {
+                        transferTerminalAttachments(
+                            sources = List(25) { index ->
+                                TerminalImagePasteSource(
+                                    mimeType = "application/octet-stream",
+                                    open = {
+                                        if (index == 0) object : InputStream() {
+                                            var remaining = largeSize
+                                            override fun read(): Int = if (remaining-- > 0) 42 else -1
+                                            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                                                if (remaining == 0L) return -1
+                                                val count = minOf(remaining, length.toLong()).toInt()
+                                                bytes.fill(42, offset, offset + count)
+                                                remaining -= count
+                                                return count
+                                            }
+                                        } else ByteArrayInputStream(byteArrayOf(index.toByte(), -1))
+                                    },
+                                    displayName = { "file.${extensions[index % extensions.size]}" },
+                                )
+                            },
+                            transfer = { name, input -> connection.uploadPastedImage(name, input) },
+                            insert = { paths.add(it) },
+                        )
+                    })
+                    withContext(Dispatchers.IO) {
+                        paths.forEachIndexed { index, path ->
+                            assertTrue(path.endsWith(".${extensions[index % extensions.size]}"))
+                            if (index == 0) {
+                                var received = 0L
+                                verifier.download(path, object : OutputStream() {
+                                    override fun write(value: Int) {
+                                        assertEquals(42, value)
+                                        received++
+                                    }
+                                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                                        for (position in offset until offset + length) check(bytes[position] == 42.toByte())
+                                        received += length
+                                    }
+                                })
+                                assertEquals(largeSize, received)
+                            } else {
+                                val downloaded = ByteArrayOutputStream()
+                                verifier.download(path, downloaded)
+                                assertArrayEquals(byteArrayOf(index.toByte(), -1), downloaded.toByteArray())
+                            }
+                        }
+                    }
+                } finally {
+                    paths.forEach { verifier.delete(it) }
+                }
             } finally {
                 verifier.close()
             }

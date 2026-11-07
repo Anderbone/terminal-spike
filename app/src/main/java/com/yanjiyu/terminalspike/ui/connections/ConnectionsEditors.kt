@@ -1462,12 +1462,14 @@ internal fun SnippetEditorDialog(
     initial: SnippetEditorDraft,
     onDismiss: () -> Unit,
     onSave: suspend (com.yanjiyu.terminalspike.core.model.Snippet) -> Result<Unit>,
+    onDelete: ((String) -> Unit)? = null,
 ) {
     var draft by rememberSaveable(initial.persistentId, stateSaver = SnippetEditorDraftSaver) {
         mutableStateOf(initial)
     }
     var errors by remember { mutableStateOf(SnippetEditorErrors()) }
     var discardConfirmation by remember { mutableStateOf(false) }
+    var deleteConfirmation by rememberSaveable(initial.persistentId) { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveFailure by remember { mutableStateOf<UiText?>(null) }
     val scope = rememberCoroutineScope()
@@ -1607,9 +1609,39 @@ internal fun SnippetEditorDialog(
             ) { AppButtonLabel(stringResource(if (saving) R.string.host_editor_saving else R.string.snippet_editor_save), busy = saving) }
         },
         dismissButton = {
+            if (initial.persistentId != null && onDelete != null) {
+                TextButton(
+                    onClick = { deleteConfirmation = true },
+                    enabled = !saving,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.connections_action_delete)) }
+            }
             TextButton(onClick = ::requestDismiss, enabled = !saving) { Text(stringResource(R.string.cancel)) }
         },
     )
+    if (deleteConfirmation && initial.persistentId != null && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmation = false },
+            title = { Text(stringResource(R.string.connections_delete_title, initial.name)) },
+            text = { Text(stringResource(R.string.connections_delete_snippet_detail)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deleteConfirmation = false
+                        onDelete(initial.persistentId)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) { Text(stringResource(R.string.connections_delete_snippet)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmation = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
     if (discardConfirmation) {
         AlertDialog(
             onDismissRequest = { discardConfirmation = false },

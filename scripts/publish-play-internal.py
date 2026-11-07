@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Prepare once, then publish the reviewed main-app bundle to Play internal testing.
+"""Prepare once, then publish the reviewed main-app bundle to the selected Play track.
 
-Credentials stay outside the repository. No Mosh-extension or production uploads.
+Credentials stay outside the repository. No Mosh-extension uploads. Production requires an explicit --track production.
 """
 from __future__ import annotations
 
@@ -86,13 +86,13 @@ def consumed_codes(bundles, tracks) -> set[int]:
                for release in track.get("releases", []) for code in release.get("versionCodes", [])})
 
 
-def inspect_play(token):
+def inspect_play(token, selected_track="internal"):
     edit = request("POST", f"{API}/edits", {}, token)["id"]
     try:
         bundles = request("GET", f"{API}/edits/{edit}/bundles", token=token)
         tracks = request("GET", f"{API}/edits/{edit}/tracks", token=token)
         return consumed_codes(bundles, tracks), next(
-            (track for track in tracks.get("tracks", []) if track["track"] == "internal"), {}
+            (track for track in tracks.get("tracks", []) if track["track"] == selected_track), {}
         )
     finally:
         request("DELETE", f"{API}/edits/{edit}", token=token)
@@ -176,7 +176,7 @@ def prepare(args, used):
     STATE.parent.mkdir(parents=True, exist_ok=True)
     frozen = STATE.parent / "app-release.aab"
     frozen.write_bytes(bundle.read_bytes())
-    STATE.write_text(json.dumps({"schema": 1, "package": PACKAGE, "track": "internal", "versionCode": code,
+    STATE.write_text(json.dumps({"schema": 1, "package": PACKAGE, "track": args.track, "versionCode": code,
                                 "versionName": args.version_name, "source": before,
                                 "sha256": hashlib.sha256(frozen.read_bytes()).hexdigest()}, indent=2) + "\n")
     print("Prepared and verified. Review, commit and push this source; then run publish. No upload yet.")
@@ -185,7 +185,7 @@ def prepare(args, used):
 def publish(args, used):
     state = json.loads(STATE.read_text())
     bundle = STATE.parent / "app-release.aab"
-    if (state.get("schema") != 1 or state.get("package") != PACKAGE or state.get("track") != "internal"
+    if (state.get("schema") != 1 or state.get("package") != PACKAGE or state.get("track") != args.track
             or state["source"] != source_fingerprint()
             or state["sha256"] != hashlib.sha256(bundle.read_bytes()).hexdigest()):
         raise RuntimeError("prepared source/artifact changed; prepare again")
@@ -204,6 +204,12 @@ def publish(args, used):
     if code in used:
         raise RuntimeError("version code is already consumed; inspect Play before preparing a new code")
     listing, images = store_assets() if args.with_store_assets else ({}, {})
+    release = {"name": state["versionName"], "versionCodes": [str(code)], "status": "completed"}
+    if args.with_store_assets or args.track == "production":
+        notes = (ROOT / "store-assets/google-play/release-notes/main-en-US.txt").read_text().rstrip("\n")
+        if not notes or len(notes) > 500:
+            raise RuntimeError("release notes must contain 1 to 500 characters")
+        release["releaseNotes"] = [{"language": "en-US", "text": notes}]
     if args.require_green_ci:
         runs = json.loads(command(["gh", "run", "list", "--workflow", "android-ci.yml", "--commit", head,
                                    "--event", "push", "--limit", "1", "--json", "databaseId"], text=True))
@@ -223,23 +229,19 @@ def publish(args, used):
     edit = request("POST", f"{API}/edits", {}, token)["id"]
     # Preserve the edit ID immediately: a timeout after upload must never trigger a blind retry.
     receipt = STATE.parent / "publish-receipt.json"
-    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "state": "started"}) + "\n")
+    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "track": args.track, "state": "started"}) + "\n")
     uploaded = request("POST", f"{UPLOAD}/edits/{edit}/bundles?uploadType=media", artifact_bytes, token,
                        "application/octet-stream")
     if int(uploaded["versionCode"]) != code or uploaded.get("sha256", "").lower() != state["sha256"]:
         raise RuntimeError("Play uploaded artifact metadata differs; edit was not committed")
     asset_hashes = upload_store_assets(token, edit, listing, images) if args.with_store_assets else {}
-    release = {"name": state["versionName"], "versionCodes": [str(code)], "status": "completed"}
-    if args.with_store_assets:
-        release["releaseNotes"] = [{"language": "en-US", "text": (
-            ROOT / "store-assets/google-play/release-notes/main-en-US.txt").read_text().rstrip("\n")}]
-    request("PUT", f"{API}/edits/{edit}/tracks/internal", {"track": "internal", "releases": [release]}, token)
+    request("PUT", f"{API}/edits/{edit}/tracks/{args.track}", {"track": args.track, "releases": [release]}, token)
     request("POST", f"{API}/edits/{edit}:validate", {}, token)
     request("POST", f"{API}/edits/{edit}:commit", {}, token)
-    _, track = inspect_play(token)
-    if not any(str(code) in release.get("versionCodes", []) and release.get("status") == "completed"
+    _, track = inspect_play(token, args.track)
+    if track.get("track") != args.track or not any(str(code) in release.get("versionCodes", []) and release.get("status") == "completed"
                for release in track.get("releases", [])):
-        raise RuntimeError("internal track did not confirm the uploaded release; inspect before retrying")
+        raise RuntimeError(f"{args.track} track did not confirm the uploaded release; inspect before retrying")
     if args.with_store_assets:
         readback = request("POST", f"{API}/edits", {}, token)["id"]
         try:
@@ -248,7 +250,7 @@ def publish(args, used):
             request("DELETE", f"{API}/edits/{readback}", token=token)
     receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "state": "completed",
                                   "track": track, "storeAssetHashes": asset_hashes}, indent=2) + "\n")
-    print(f"Play internal track confirmed {state['versionName']} ({code}); CI {'passed' if args.require_green_ci else 'not checked'}. Store availability may lag.")
+    print(f"Play {args.track} track confirmed {state['versionName']} ({code}); CI {'passed' if args.require_green_ci else 'not checked'}. Store availability may lag.")
 
 
 def main():
@@ -257,6 +259,8 @@ def main():
     parser.add_argument("--signing-dir", type=Path, default=ROOT.parent / "app_sign")
     parser.add_argument("--credential", type=Path, help="External Play service-account JSON")
     parser.add_argument("--version-name")
+    parser.add_argument("--track", choices=("internal", "production"), default="internal",
+                        help="Defaults to internal testing; production must be explicitly selected for prepare and publish")
     parser.add_argument("--require-green-ci", action="store_true")
     parser.add_argument("--with-store-assets", action="store_true",
                         help="Publish prepared en-US copy, phone screenshots and feature graphic in the same edit")
@@ -273,9 +277,9 @@ def main():
     if args.credential.resolve().is_relative_to(ROOT):
         parser.error("credentials must remain outside the repository")
     token = access_token(args.credential)
-    used, track = inspect_play(token)
+    used, track = inspect_play(token, args.track)
     if args.action == "inspect":
-        print(json.dumps({"consumedCodes": sorted(used), "internal": track}, indent=2))
+        print(json.dumps({"consumedCodes": sorted(used), args.track: track}, indent=2))
     elif args.action == "prepare":
         prepare(args, used)
     else:

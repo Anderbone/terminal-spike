@@ -90,7 +90,7 @@ internal object HerdrNavigationChrome {
         return column < addTab.startColumn
     }
 
-    /** The New footer only: menu, existing spaces and pane output retain their own actions. */
+    /** New workspace actions only: menu, existing spaces and pane output retain their own actions. */
     fun isNewSpaceCell(screen: List<TerminalLine>, columns: Int, rows: Int, column: Int, row: Int): Boolean {
         if (screen.size != rows || row !in 0 until rows || column < 0) return false
         val sidebar = sidebarColumns(screen, columns)
@@ -99,17 +99,30 @@ internal object HerdrNavigationChrome {
             // Require its own header and divider before recognizing the action;
             // identical words in terminal output must remain selectable.
             if (column >= columns || row !in (mobileSwitcherBody(screen, columns, rows) ?: return false)) return false
-            // Column zero belongs to the switcher's optional left scrollbar.
-            val label = screen[row].text.drop(1)
-            val action = "+ new workspace"
-            val start = label.indexOf(action) + 1
-            return label.trim() == action && column in start until start + action.length
+            return isNewWorkspaceActionCell(screen[row], column, columns)
         }
-        if (column >= sidebar - 1 || screen[0].text.substringBefore('│').trim() != "spaces") return false
+        if (column >= sidebar - 1) return false
+        // The grouped desktop sidebar shares the mobile list, without a Switch
+        // header or the legacy Spaces footer. sidebarColumns verified its
+        // collapse control and tab strip; crop away the independent pane text.
+        if (screen[0].runs.any { it.startColumn == sidebar - 1 && it.columnWidth == 1 && it.text == "«" }) {
+            return isNewWorkspaceActionCell(screen[row], column, sidebar - 1)
+        }
+        if (screen[0].text.substringBefore('│').trim() != "spaces") return false
         val label = screen[row].text.substringBefore('│')
         val start = label.indexOf("new")
         return label.trim().let { it.startsWith("new ") && it.endsWith("menu") } &&
             column in maxOf(0, start - 1) until minOf(start + 4, sidebar - 1)
+    }
+
+    private fun isNewWorkspaceActionCell(line: TerminalLine, column: Int, endColumn: Int): Boolean {
+        // Column zero belongs to the list's optional left scrollbar.
+        val endOffset = TerminalLineGeometry.positionAtColumn(line, endColumn).textOffset
+        val label = line.text.take(endOffset).drop(1)
+        val action = "+ new workspace"
+        if (label.trim() != action) return false
+        val start = TerminalLineGeometry.columnAtOffset(line, label.indexOf(action) + 1)
+        return column in start until start + action.length
     }
 
     /** Expanded Spaces entries only; headers, footer controls and Agents stay untouched. */
@@ -127,6 +140,13 @@ internal object HerdrNavigationChrome {
 
     private fun sidebarColumns(screen: List<TerminalLine>, columns: Int): Int? {
         val header = screen.firstOrNull() ?: return null
+        // Herdr's grouped sidebar has a single collapse control and no vertical
+        // rule. Verify both that control and the independent tab strip before
+        // assigning a pane rectangle; API/client width differences alone are not evidence.
+        header.runs.firstOrNull { run ->
+            run.startColumn in 3 until minOf(200, columns - 1) && run.columnWidth == 1 &&
+                run.text == "«" && tabRows(screen, run.startColumn + 1, screen.size).size == 1
+        }?.let { return it.startColumn + 1 }
         val dividerOffset = header.text.indexOf('│')
         if (dividerOffset < 0 || header.text.take(dividerOffset).trim() !in listOf("spaces", "machines")) return null
         val dividerColumn = TerminalLineGeometry.columnAtOffset(header, dividerOffset)

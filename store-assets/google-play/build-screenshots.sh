@@ -16,7 +16,7 @@ command -v magick >/dev/null || {
 
 mkdir -p "$phone_output" "$tablet_7_output" "$tablet_10_output"
 
-# English marketing artwork uses real, privacy-reviewed S23 captures and short headlines.
+# English marketing artwork uses real, privacy-reviewed signed-release captures and short headlines.
 python3 "$root_dir/build-phone-artwork.py"
 
 command -v rsvg-convert >/dev/null || {

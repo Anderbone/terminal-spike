@@ -27,7 +27,7 @@ internal fun BufferedImageInput(
                 if (currentCallback == null) {
                     connection
                 } else {
-                    attributes.contentMimeTypes = arrayOf("image/png", "image/jpeg", "image/webp", "image/gif")
+                    attributes.contentMimeTypes = arrayOf("*/*")
                     object : InputConnectionWrapper(connection, false) {
                         override fun commitContent(info: InputContentInfo, flags: Int, opts: Bundle?): Boolean {
                             val receiver = currentCallback ?: return false

@@ -1,6 +1,9 @@
 # Remote project review
 
-Connect an SSH or Mosh terminal, hold its session tab and choose **Open project**.
+Connect an SSH or Mosh terminal and choose **Native files & diff** from the terminal
+toolbar's **Project tools** menu, or hold its session tab and choose **Open project**.
+The independent **Open browser** action connects to an existing code-server; see
+[Embedded workspace browser](EMBEDDED-BROWSER.md).
 For an app-selected Herdr session, **Open project** reads an atomic Herdr API
 snapshot and opens the focused pane's `foreground_cwd` (falling back to `cwd`). Git
 resolves that directory to its actual worktree root. No directory is inferred from
@@ -24,6 +27,13 @@ and review drafts also survive process restarts.
   annotations compare the complete current working file with the captured HEAD,
   not the index; a staged change subsequently reversed in the working file can
   therefore remain in the status list with no net source annotations.
+- The comparison menu offers **All uncommitted** (working files versus HEAD),
+  **Unstaged** (working files versus the index, including untracked files),
+  **Staged** (actual index content versus HEAD), and **Branch changes** (working
+  files versus the merge base with a user-selected branch or commit, including
+  untracked files). Staged view excludes untracked files from its file tree.
+  Unborn repositories support staged and unstaged comparisons. A missing base or
+  unrelated branch reports an error and retains the preceding readable snapshot.
 - **Changes** and **Files** both use collapsible folder trees. Single-directory
   chains are compressed, and filenames do not repeat their parent path on a second
   line. Changed-file folders start expanded; the full file tree starts collapsed.
@@ -37,8 +47,15 @@ and review drafts also survive process restarts.
   relative to HEAD without rename detection.
 - The viewer initially jumps to the first change. **Previous / Next** navigate
   changes; **Full file / Diff** changes the display, and **Wrap** controls long
-  lines. Extremely long lines stay wrapped to fit Android layout limits. At 700 dp and wider the file list stays beside the viewer. Returning to
+  lines. Hidden context in Diff mode can be expanded inline. **Find in file** searches
+  all source, highlights matches and navigates them; **Go to line** opens the current
+  source line. A line-number selection can also be copied without creating a comment.
+  Extremely long lines stay wrapped to fit Android layout limits. At 600 dp and wider the file list stays beside the viewer. Returning to
   the list preserves its folder and scroll position.
+- Each file/comparison retains its reading state. Full-file and Diff scroll
+  positions are independent. Explicit refresh updates source without jumping back
+  to the first change; returning from the browser does not automatically refresh
+  the native reader.
 - Tap/hold a line number to select a line; tap another number to extend the range.
   Current and deleted lines must be commented on separately. **Save draft** keeps
   the message, selected source, nearby context and reviewed revision on the phone.

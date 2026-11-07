@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -27,6 +28,42 @@ import org.junit.Rule
 import org.junit.Test
 
 class ProjectScreenTest {
+    @Test fun findGoToAndRefreshKeepTheReaderOnTheirChosenCode() {
+        open()
+        composeRule.onNodeWithText("Main.kt").performClick()
+        composeRule.waitUntil(10_000) { controller.state.value.document != null && !controller.state.value.busy }
+        composeRule.onNodeWithTag("project-find").performScrollTo().performClick()
+        composeRule.onNodeWithTag("project-find-input").performTextInput("row220")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("val row220 = 220").assertIsDisplayed()
+        composeRule.onNodeWithTag("project-find").performScrollTo().performClick()
+        composeRule.onNodeWithTag("project-goto").performScrollTo().performClick()
+        composeRule.onNodeWithTag("project-line-input").performTextInput("160")
+        composeRule.onNodeWithText("Go", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("val row160 = 160").assertIsDisplayed()
+        composeRule.runOnIdle {
+            content = content.replace("700", "701")
+            controller.refresh()
+        }
+        composeRule.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.document?.lines?.any { it.text == "val row70 = 701" } == true }
+        composeRule.onNodeWithText("val row160 = 160").assertIsDisplayed()
+        composeRule.onNodeWithText("val row70 = 701").assertIsNotDisplayed()
+        composeRule.onNodeWithText("Full file").performClick()
+        composeRule.onNodeWithText("Diff").performClick()
+        composeRule.onNodeWithText("val row160 = 160").assertIsDisplayed()
+        composeRule.runOnIdle { controller.closeFile() }
+        composeRule.onNodeWithText("Main.kt").performClick()
+        composeRule.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.document != null }
+        composeRule.onNodeWithText("val row160 = 160").assertIsDisplayed()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+            instrumentation.targetContext.cacheDir.resolve("workspace-native.png").outputStream().use {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+    }
+
     @get:Rule val composeRule = createComposeRule()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val draftStore = TestProjectDraftStore()
@@ -121,7 +158,10 @@ class ProjectScreenTest {
         composeRule.waitUntil(10_000) { controller.state.value.document != null && !controller.state.value.busy }
         val first = composeRule.onNodeWithText("val row71 = 71").fetchSemanticsNode().boundsInRoot.top
         val second = composeRule.onNodeWithText("val row72 = 72").fetchSemanticsNode().boundsInRoot.top
-        assertTrue("Source rows should be at most 19 dp apart", (second - first) / density <= 19f)
+        val fontScale = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration.fontScale
+        val spacing = (second - first) / density
+        assertTrue("Source rows should be at most 19 dp at default font scale; spacing=$spacing fontScale=$fontScale",
+            spacing <= 19f * fontScale)
     }
 
     @Test fun veryLongSourceLinesStayWrappedWithinAndroidLayoutLimits() {

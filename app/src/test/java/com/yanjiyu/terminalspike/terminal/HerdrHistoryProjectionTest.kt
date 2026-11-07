@@ -11,6 +11,84 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrHistoryProjectionTest {
+    @Test fun groupedSidebarStillRequiresTheTabStripAndExactSurfaceSize() {
+        val fixture = Fixture(88, 34)
+        fixture.controller.publishHerdrHistory(fixture.history(62, 33))
+        fixture.draw("\u001B[2J\u001B[H spaces\u001B[1;26H\u001B[38;5;244m«\u001B[0m")
+        assertNull("A collapse-like glyph alone is not enough", fixture.controller.herdrHistoryForDisplay())
+        fixture.draw("\u001B[1;27H tab \u001B[38;5;245m + \u001B[0m")
+        assertNotNull(fixture.controller.herdrHistoryForDisplay())
+        fixture.controller.publishHerdrHistory(fixture.history(61, 33))
+        assertNull("Another client's pane must not be stretched", fixture.controller.herdrHistoryForDisplay())
+    }
+
+    @Test fun groupedSidebarUsesItsCollapseControlAndTabBarWithoutAVerticalRule() {
+        for (header in listOf("spaces", "machines", "agents · active", "a scrolled workspace")) {
+            for (bottom in listOf(false, true)) {
+                val fixture = Fixture(88, 34)
+                fixture.draw(buildString {
+                    append("\u001B[2J\u001B[H$header\u001B[1;26H\u001B[38;5;244m«\u001B[0m")
+                    append("\u001B[${if (bottom) 34 else 1};27H tab \u001B[38;5;245m + \u001B[0m")
+                })
+                fixture.controller.publishHerdrHistory(fixture.history(62, 33))
+                val projected = requireNotNull(fixture.controller.herdrHistoryForDisplay())
+                assertEquals(26, projected.x)
+                assertEquals(if (bottom) 0 else 1, projected.y)
+                assertEquals(62, projected.columns)
+                assertEquals(33, projected.rows)
+            }
+        }
+    }
+
+    @Test fun anIncompatibleClientReadDuringChromeRedrawCannotReplaceTheEstablishedSource() {
+        val fixture = Fixture()
+        fixture.desktop(0)
+        val source = fixture.history(62, 30)
+        fixture.controller.publishHerdrHistory(source)
+        val projected = requireNotNull(fixture.controller.herdrHistoryForDisplay())
+        fixture.controller.herdrHistoryReading = true
+        fixture.controller.herdrHistoryPinned = true
+        fixture.draw("\u001B[1;1H\u001B[2K")
+        val foreign = source.copy(rows = 15, surface = HerdrPaneArea(0, 0, 62, 15))
+        fixture.controller.publishHerdrHistoryRead(com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Available(foreign), source)
+        assertSame(source, fixture.controller.herdrHistory)
+        assertEquals(projected, fixture.controller.herdrHistoryForDisplay())
+    }
+
+    @Test fun incompleteChromeFrameKeepsOnlyAnAlreadyPinnedSamePaneProjection() {
+        val fixture = Fixture()
+        fixture.desktop(0)
+        fixture.controller.publishHerdrHistory(fixture.history(62, 30))
+        val source = requireNotNull(fixture.controller.herdrHistoryForDisplay())
+        fixture.controller.herdrHistoryReading = true
+        fixture.controller.herdrHistoryPinned = true
+        fixture.draw("\u001B[1;1H\u001B[2K")
+        assertEquals(source, fixture.controller.herdrHistoryForDisplay())
+        fixture.controller.herdrHistoryReading = false
+        fixture.controller.herdrHistoryPinned = false
+        assertNull("An idle pane cannot infer chrome from an earlier reader", fixture.controller.herdrHistoryForDisplay())
+    }
+
+    @Test fun pinnedProjectionStillRejectsPaneReplacementResizeAndIncompatibleCapture() {
+        for (change in listOf("pane", "geometry", "grid", "removed")) {
+            val fixture = Fixture()
+            fixture.desktop(0)
+            val source = fixture.history(62, 30)
+            fixture.controller.publishHerdrHistory(source)
+            assertNotNull(fixture.controller.herdrHistoryForDisplay())
+            fixture.controller.herdrHistoryReading = true
+            fixture.controller.herdrHistoryPinned = true
+            fixture.draw("\u001B[1;1H\u001B[2K")
+            when (change) {
+                "pane" -> fixture.controller.publishHerdrHistory(source.copy(identity = "default/w1:p2/term2"))
+                "geometry" -> fixture.controller.publishHerdrHistory(source.copy(rows = 15, surface = HerdrPaneArea(0, 0, 62, 15)))
+                "grid" -> fixture.controller.reportTerminalSize(44, 30)
+                "removed" -> fixture.controller.publishHerdrHistory(null)
+            }
+            assertNull("A $change change must invalidate the pinned projection", fixture.controller.herdrHistoryForDisplay())
+        }
+    }
+
     @Test fun anotherClientsSuccessfulReadDoesNotReplaceThisClientsWorkingHistory() {
         val fixture = Fixture()
         fixture.desktop(0)

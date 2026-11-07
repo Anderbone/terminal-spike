@@ -16,6 +16,43 @@ import org.junit.Test
 
 class LocalSessionTest {
     @Test
+    fun largeInputIsAcceptedAsOneQueueEntryAndWrittenInNativeSizedFrames() = runBlocking {
+        val connected = CountDownLatch(1)
+        val written = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val input = ByteArray(3 * NativePty.MAX_WRITE_BYTES + 19) { (it % 251).toByte() }
+        val received = java.io.ByteArrayOutputStream()
+        val process = object : LocalPty {
+            override fun read(buffer: ByteArray): Int {
+                check(release.await(5, TimeUnit.SECONDS))
+                return -1
+            }
+            override fun write(bytes: ByteArray) {
+                assertTrue(bytes.size <= NativePty.MAX_WRITE_BYTES)
+                received.write(bytes)
+                if (received.size() == input.size) written.countDown()
+            }
+            override fun resize(columns: Int, rows: Int) = Unit
+            override fun exitCode(): Int = 0
+            override fun close() = Unit
+        }
+        val session = LocalSession { _, _ -> process }
+        val job = launch(Dispatchers.IO) {
+            session.connect(80, 24, {}, { if (it is ConnectionState.Connected) connected.countDown() })
+        }
+        try {
+            assertTrue(connected.await(5, TimeUnit.SECONDS))
+            assertTrue(session.trySend(input))
+            assertTrue(written.await(5, TimeUnit.SECONDS))
+            org.junit.Assert.assertArrayEquals(input, received.toByteArray())
+        } finally {
+            release.countDown()
+            session.close()
+        }
+        withTimeout(5_000) { job.join() }
+    }
+
+    @Test
     fun closeDuringLaunchReapsTheNewChildWithoutPublishingConnected() = runBlocking {
         val starting = CountDownLatch(1)
         val release = CountDownLatch(1)

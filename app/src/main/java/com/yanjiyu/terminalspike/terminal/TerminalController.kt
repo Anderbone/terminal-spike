@@ -116,7 +116,15 @@ class TerminalController(
 
     internal fun herdrHistoryForDisplay(): HerdrPaneHistory? = herdrHistoryProjection.project(
         herdrHistory, terminalScreen, terminalColumns, terminalRows,
+        retainReader = herdrHistoryReading && isHerdrNativeHistoryVisible(),
     )
+    internal fun herdrHistoryForFirstDrag(projected: HerdrPaneHistory): HerdrPaneHistory =
+        herdrHistoryWithLiveTail(projected, terminalScreen)
+
+    internal fun herdrChromeAreaForDiagnostics() = terminalScreen?.let {
+        HerdrNavigationChrome.outputArea(it, terminalColumns, terminalRows)
+    }
+
     @Volatile
     var herdrHistoryReading: Boolean = false
     @Volatile
@@ -192,7 +200,8 @@ class TerminalController(
                 // never stretch the other grid or discard a working reader for it.
                 if (current != null && current.identity == result.history.identity &&
                     projectHerdrHistory(result.history, screen, terminalColumns, terminalRows) == null &&
-                    projectHerdrHistory(current, screen, terminalColumns, terminalRows) != null
+                    (projectHerdrHistory(current, screen, terminalColumns, terminalRows) != null ||
+                        herdrHistoryReading && sourceAtCapture != null && current.samePane(sourceAtCapture))
                 ) return
                 publishHerdrHistory(result.history)
             }

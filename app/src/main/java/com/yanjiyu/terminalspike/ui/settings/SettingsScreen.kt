@@ -149,6 +149,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardRequest
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
 import com.yanjiyu.terminalspike.ui.AboutSection
+import com.yanjiyu.terminalspike.ui.guide.UserGuideIndex
 import com.yanjiyu.terminalspike.ui.AdaptivePrimaryNavigation
 import com.yanjiyu.terminalspike.ui.AppGlyph
 import com.yanjiyu.terminalspike.ui.AppGlyphIcon
@@ -743,6 +744,7 @@ private val SettingsCategory.glyph: AppGlyph
         SettingsCategory.SECURITY -> AppGlyph.SHIELD
         SettingsCategory.LOCAL_ARCH -> AppGlyph.TERMINAL
         SettingsCategory.MOSH -> AppGlyph.SIGNAL
+        SettingsCategory.GUIDE -> AppGlyph.INFO
         SettingsCategory.ABOUT -> AppGlyph.INFO
         SettingsCategory.ADVANCED -> AppGlyph.LAB
         SettingsCategory.DEVELOPER -> AppGlyph.LAB
@@ -845,6 +847,7 @@ private fun SettingsDetail(
                 state = moshExtension,
                 onRefresh = onRefreshMoshExtension,
             )
+            SettingsCategory.GUIDE -> UserGuideIndex()
             SettingsCategory.ABOUT -> AboutSection()
             SettingsCategory.DEVELOPER -> DeveloperSettingsSection(
                 onOpenRendererLab = onOpenRendererLab,

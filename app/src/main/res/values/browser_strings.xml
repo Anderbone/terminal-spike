@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_title">Browser</string>
+    <string name="browser_code_server">Code server</string>
+    <string name="browser_close_tab">Close Code server tab</string>
+    <string name="browser_actions">Code server actions</string>
+    <string name="browser_open">Code server</string>
+    <string name="browser_terminal">Terminal</string>
+    <string name="browser_native">Native diff</string>
+    <string name="browser_address">Address</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
+    <string name="browser_home">Project home</string>
+    <string name="browser_desktop">Desktop layout</string>
+    <string name="browser_mobile">Phone layout</string>
+    <string name="browser_setup_title">Your code-server</string>
+    <string name="browser_setup_detail">Open your existing code-server here. Enter its Tailscale or other reachable address. The address and layout are remembered for this host; sign in on the server’s page.</string>
+    <string name="browser_server_url">Server address</string>
+    <string name="browser_invalid_url">Enter an HTTP or HTTPS address without a username or password.</string>
+    <string name="browser_load_failed">Could not load this page.</string>
+    <string name="browser_connection_hint">Check that Tailscale is connected, code-server is running, and the address and port are correct.</string>
+    <string name="browser_tls_failed">The server certificate could not be verified. Use the server’s valid HTTPS address.</string>
+    <string name="browser_renderer_failed">The browser stopped. Reload to restore the page.</string>
+    <string name="browser_navigation_blocked">This address cannot be opened here. Use HTTPS, or enter the HTTP server address explicitly.</string>
+    <string name="browser_upload_failed">Could not open the file picker.</string>
+    <string name="browser_network_permission">Local network access is needed for this server. Allow it in Android app permissions, then reopen the browser.</string>
+    <string name="browser_address_save_failed">The page can open, but its address could not be remembered.</string>
+    <string name="browser_password">Password</string>
+    <string name="browser_sign_in">Sign in to code-server</string>
+    <string name="browser_save_password">Save password</string>
+    <string name="browser_remember_password">Remember on this device</string>
+    <string name="browser_password_storage">Saved passwords are encrypted with this device’s Android Keystore. They are used only for this server’s code-server login.</string>
+    <string name="browser_forget_password">Forget saved password</string>
+    <string name="browser_password_rejected">Sign-in failed. Check the password and try again.</string>
+    <string name="browser_password_unavailable">The saved password could not be read. Enter it again or forget the saved password.</string>
+    <string name="browser_password_save_failed">The password could not be saved or removed. Your browser session is still available.</string>
+    <string name="browser_password_form_unavailable">The code-server login page changed. Reload it and try again.</string>
+    <string name="web_browser_close_tab">Close Browser tab</string>
+    <string name="web_browser_actions">Browser actions</string>
+    <string name="web_browser_address">Website address</string>
+    <string name="web_browser_go">Go</string>
+    <string name="web_browser_intro">Enter a website address above to start browsing.</string>
+    <string name="web_browser_connection_hint">Check your connection and the website address.</string>
+    <string name="web_browser_home">Start page</string>
+</resources>

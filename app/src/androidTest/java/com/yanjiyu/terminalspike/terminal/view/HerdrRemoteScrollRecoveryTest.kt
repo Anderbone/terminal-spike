@@ -24,6 +24,44 @@ import org.junit.Test
 
 /** Production capture/routing regression with a fake transport, not real Mosh/Codex acceptance. */
 class HerdrRemoteScrollRecoveryTest {
+    @Test fun wrappedOldConversationRetainsNativeMotionAndEveryNewestMarker() =
+        verifyNativeRecovery("w6:pC", wrappedHistory = true)
+
+    @Test fun groupedDesktopSidebarKeepsHistoryLocalAndNavigationPixelsFixed() =
+        verifyNativeRecovery("w6:pC", clientOwnedDesktop = true, groupedSidebar = true)
+
+    @Test fun slowMetadataDoesNotBlockTheFirstHistoryOrItsNewerOutput() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val metadataEntered = CountDownLatch(1)
+            val releaseMetadata = CountDownLatch(1)
+            val base = ScrolledHerdr("w6:pC")
+            val connection = object : Connection by base {
+                override fun captureInputContext(): com.yanjiyu.terminalspike.terminal.TerminalInputContext {
+                    metadataEntered.countDown()
+                    check(releaseMetadata.await(15, TimeUnit.SECONDS))
+                    return base.captureInputContext()
+                }
+            }
+            try {
+                scenario.onActivity {
+                    terminal.attach(connection)
+                    terminal.accept("LIVE".toByteArray(), {})
+                }
+                assertTrue(metadataEntered.await(5, TimeUnit.SECONDS))
+                await { controller.herdrHistory?.lines?.lastOrNull()?.text == "INPUT_READY" }
+                base.latestInput = "NEWER_OUTPUT"
+                scenario.onActivity { terminal.accept("new output".toByteArray(), {}) }
+                await { controller.herdrHistory?.lines?.lastOrNull()?.text == "NEWER_OUTPUT" }
+                assertEquals("The metadata request is still blocked", 1L, releaseMetadata.count)
+            } finally {
+                releaseMetadata.countDown()
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
     @Test fun pinnedHistoryObsidianLinksOpenLocallyInBothInputModes() =
         verifyNativeRecovery("w6:pC", historyLinks = true)
 
@@ -110,11 +148,14 @@ class HerdrRemoteScrollRecoveryTest {
         clientOwnedDesktop: Boolean = false,
         lateIdleFailure: Boolean = false,
         historyLinks: Boolean = false,
+        wrappedHistory: Boolean = false,
+        groupedSidebar: Boolean = false,
     ) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
             val controller = requireNotNull(terminal.controller)
-            val connection = ScrolledHerdr(paneId, agent = agent, clientOwnedDesktop = clientOwnedDesktop)
+            val connection = ScrolledHerdr(paneId, agent = agent, clientOwnedDesktop = clientOwnedDesktop,
+                wrappedHistory = wrappedHistory)
             val historyUri = "obsidian://open?vault=Obsjiyu&file=notes%2Fhistory"
             if (historyLinks) connection.historyMarkup = "\u001B]8;;$historyUri\u001B\\note\u001B]8;;\u001B\\"
             val openedLinks = CopyOnWriteArrayList<String>()
@@ -122,6 +163,9 @@ class HerdrRemoteScrollRecoveryTest {
             try {
                 scenario.onActivity { activity ->
                     terminal.attach(connection)
+                    // This fixture models a desktop sidebar plus an output pane. A
+                    // narrow, high-density phone still needs enough cells for both.
+                    if (clientOwnedDesktop) controller.fontSizeSp = 10f
                     view = FastTerminalView(activity)
                     activity.setContentView(view)
                     view.attachController(controller)
@@ -130,6 +174,7 @@ class HerdrRemoteScrollRecoveryTest {
                 }
                 await { connection.reads.get() >= 2 && controller.isMouseTrackingEnabled() }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { connection.resize(controller.terminalColumns, controller.terminalRows) }
                 var sidebarBefore: IntArray? = null
                 fun sidebarPixels(): IntArray {
                     val density = view.resources.displayMetrics.density
@@ -146,12 +191,17 @@ class HerdrRemoteScrollRecoveryTest {
                     scenario.onActivity {
                         terminal.accept(buildString {
                             append("\u001B[?25l\u001B[2J\u001B[H spaces")
-                            for (row in 1..controller.terminalRows) append("\u001B[$row;26H│")
+                            if (groupedSidebar) append("\u001B[1;26H\u001B[38;5;244m«\u001B[0m")
+                            else for (row in 1..controller.terminalRows) append("\u001B[$row;26H│")
                             append("\u001B[1;27H tab \u001B[32m + \u001B[0m")
                             append("\u001B[5;2Hagents")
                         }.toByteArray(), {})
                     }
-                    await { controller.herdrHistoryForDisplay()?.x == 26 }
+                    try { await { controller.herdrHistoryForDisplay()?.x == 26 } } catch (error: AssertionError) {
+                        val h = controller.herdrHistory
+                        android.util.Log.i("HerdrFrameClock", "desktop grid=${controller.terminalColumns}x${controller.terminalRows} view=${view.width}x${view.height} source=${h?.columns}x${h?.rows} projected=${controller.herdrHistoryForDisplay()?.x} cell=${view.terminalCellWidthPx}")
+                        throw error
+                    }
                     scenario.onActivity { sidebarBefore = sidebarPixels() }
                 }
                 fun gestureX() = if (clientOwnedDesktop) {
@@ -183,6 +233,13 @@ class HerdrRemoteScrollRecoveryTest {
                 scenario.onActivity {
                     assertTrue(controller.herdrHistoryReading)
                     assertTrue(controller.herdrHistoryPinned)
+                    if (wrappedHistory) {
+                        val scroll = FastTerminalView::class.java.getDeclaredField("herdrScroll").apply { isAccessible = true }.get(view) as HerdrNativeScroll
+                        val snapshot = requireNotNull(scroll.reader.snapshot)
+                        assertEquals(HerdrPaneHistory.ROW_LIMIT, snapshot.lines.size)
+                        val markers = snapshot.lines.map { it.text }.filter { it.startsWith("CODEX_SCROLL_") }
+                        assertEquals((1..200).map { "CODEX_SCROLL_%03d".format(it) }, markers)
+                    }
                     sidebarBefore?.let { assertArrayEquals("History must not paint over navigation", it, sidebarPixels()) }
                 }
                 assertTrue("The first history gesture must remain native", connection.sent.isEmpty())
@@ -267,6 +324,7 @@ class HerdrRemoteScrollRecoveryTest {
         private val screenOnly: Boolean = false,
         private val agent: String = "codex",
         private val clientOwnedDesktop: Boolean = false,
+        private val wrappedHistory: Boolean = false,
     ) : Connection {
         @Volatile private var columns = 80
         @Volatile private var rows = 24
@@ -300,7 +358,12 @@ class HerdrRemoteScrollRecoveryTest {
                     "'layout'" in command -> """{"result":{"layout":{"area":{"x":0,"y":0,"width":$paneColumns,"height":$paneRows},"focused_pane_id":"$paneId","tab_id":"w1:t1","panes":[{"pane_id":"$paneId","rect":{"x":0,"y":0,"width":$paneColumns,"height":$paneRows}}]}}}"""
                     "'get'" in command -> """{"result":{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"$agent","revision":1,"scroll":{"viewport_rows":$paneRows,"offset_from_bottom":${offset.get()}}}}}"""
                     "'read'" in command -> (1..if (screenOnly) rows else 1000).joinToString("\n", postfix = "\n") {
-                        if (it == 1000) latestInput else historyMarkup ?: "row $it"
+                        when {
+                            it == 1000 -> latestInput
+                            wrappedHistory && it < 800 -> "x".repeat(paneColumns + 3)
+                            wrappedHistory -> "CODEX_SCROLL_%03d".format(it - 799)
+                            else -> historyMarkup ?: "row $it"
+                        }
                     }
                     else -> error("Unexpected capture command")
                 }

@@ -1327,3 +1327,9 @@ Copyright 2017-2024 JetBrains s.r.o.
 Source: https://github.com/Kotlin/kotlinx.serialization/tree/v1.8.1
 Licensed under Apache License 2.0, reproduced in this notice file.
 Used to parse herdr session metadata through the existing SSH transport.
+
+The 2026-11-07 Local Arch runtime adds original shared Unix-socket path handling
+for PRoot 5.1.107.81. The modified GPL-2.0-or-later source is reproducible from
+`local-arch-runtime/patches/proot-shared-unix-sockets.patch`, the pinned source
+archive and the existing build inputs in this public repository. Preserve these
+inputs and the PRoot notices when redistributing the modified runtime.

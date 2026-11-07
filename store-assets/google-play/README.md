@@ -1,23 +1,23 @@
 # Google Play listing package
 
 Local artwork and copy for the next Terminal Spike release. Nothing in this directory uploads to
-Play or publishes an app. The 2026-10-06 refresh focuses on the English phone listing.
+Play or publishes an app. The 2026-11-07 refresh focuses on the English phone listing.
 
 ## What to use
 
 - `metadata/en-US/`: refreshed title, short description and About this app copy, highlighting
-  built-in Mosh, tmux, Herdr, Tailscale connectivity, SSH keys, snippets, themes, SFTP and TCP tunnels.
+  SSH/Mosh, native project review, the embedded browser and code-server, local Linux, snippets and SFTP.
 - `screenshots/phone/`: numbered 1080 × 1920 English artwork. Real captures, large headlines, and a
   consistent dark green/mint design. Use filename order.
 - `graphics/feature-graphic-1024x500.png`: matching opaque feature graphic; its editable SVG is
   next to it. The icon is unchanged.
-- `sources/phone-s23/`: raw captures, a provenance/headline manifest and the capture recipe.
+- `sources/phone-release-0.0.13/`: raw captures, a provenance/headline manifest and the capture recipe.
 - `fixtures/`: non-private sample workspace and suggested snippet data.
 - `preview-phone.jpg`: contact sheet for review; do not upload it as a screenshot.
 - `SCREENSHOT_ALT_TEXT.md`: descriptions for the prepared images.
 - `PLAY_CONSOLE_CHECKLIST.md`: upload steps and release review.
 
-Older supplied phone captures remain in `sources/phone/`. Tablet captures and generated tablet
+Older supplied phone captures remain in `sources/phone/` and `sources/phone-s23/`. Tablet captures and generated tablet
 sets are retained from the previous package, not recaptured in this refresh. Review them against
 the release UI before reusing them. Non-English listing drafts are also older: update them from
 the English source and review them before publishing. Captioned artwork is English, so localize

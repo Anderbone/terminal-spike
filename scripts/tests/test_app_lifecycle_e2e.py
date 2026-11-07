@@ -209,6 +209,10 @@ elif joined.endswith(f'exec-out run-as {package} cat databases/terminal-spike.db
 elif f'exec-out run-as {package} cat databases/terminal-spike.db-' in joined:
     raise SystemExit(1)
 elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
+    if os.environ.get('FAKE_FIRST_RUN_GUIDE') == '1' and not (state / 'guide-dismissed').exists():
+        print('<hierarchy><node text="Getting started" bounds="[0,0][500,100]" />'
+              '<node text="Skip" bounds="[1000,0][1080,100]" /></hierarchy>')
+        raise SystemExit(0)
     incomplete = os.environ.get('FAKE_UI_INCOMPLETE', '')
     seen = state / 'ui-incomplete-seen'
     if incomplete == 'always' or incomplete and not seen.exists():
@@ -241,6 +245,8 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
 <node text="" class="android.widget.EditText" bounds="[0,1500][100,1600]" />
 <node text="" class="android.widget.EditText" bounds="[0,1600][100,1700]" />
 </hierarchy>''' + '')
+elif joined.endswith('shell input tap 1040 50'):
+    (state / 'guide-dismissed').touch()
 elif 'shell input text printf%s' in joined:
     marker = joined.split('printf%s', 1)[1]
     with (state / 'markers').open('a', encoding='utf-8') as stream:
@@ -277,6 +283,12 @@ elif 'shell input text printf%s' in joined:
 
     def commands(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
+
+    def test_first_run_guide_is_skipped_before_connecting_fixture(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_FIRST_RUN_GUIDE="1"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "guide-dismissed").exists())
+        self.assertTrue(any("shell input tap 1040 50" in command for command in self.commands()))
 
     def fresh_env(self, **values: str) -> dict[str, str]:
         environment = self.env.copy()

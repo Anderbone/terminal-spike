@@ -738,7 +738,6 @@ private class JschMoshSshExecSession(
     private val authenticated: AuthenticatedJschSession,
     override val numericAddress: InetAddress,
 ) : MoshSshExecSession {
-    private val imageUploadLock = Any()
 
     override fun openExec(command: String): MoshExecChannel {
         val channel = authenticated.session.openChannel("exec") as ChannelExec
@@ -749,12 +748,10 @@ private class JschMoshSshExecSession(
     }
 
     override fun uploadPastedImage(fileName: String, source: InputStream): String =
-        synchronized(imageUploadLock) {
-            uploadPastedImageViaSftp(authenticated.session, fileName, source)
-        }
+        uploadPastedImageViaSftp(authenticated.session, fileName, source)
 
     override fun close() {
-        synchronized(imageUploadLock) { authenticated.close() }
+        authenticated.close()
     }
 }
 

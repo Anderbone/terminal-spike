@@ -7,6 +7,67 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProjectReaderTest {
+    @Test fun realGitComparisonsKeepIndexWorkingTreeAndBranchBaselinesSeparate() {
+        val root = Files.createTempDirectory("project-scopes").toFile()
+        fun git(vararg args: String): String {
+            val process = ProcessBuilder(listOf("git", "-C", root.path) + args).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(output, 0, process.waitFor())
+            return output.trim()
+        }
+        val reader = ProjectReader(TmuxCommandRunner { command ->
+            val process = ProcessBuilder("sh", "-c", command).redirectError(java.io.File("/dev/null")).start()
+            val output = process.inputStream.readBytes()
+            TmuxExecOutput(output, process.waitFor())
+        })
+        try {
+            git("init", "-q", "-b", "main")
+            root.resolve("file.kt").writeText("val value = 1\n")
+            git("add", ".")
+            val unbornStaged = reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.STAGED))
+            assertEquals("val value = 1", reader.document(unbornStaged, "file.kt").lines.single().text)
+            assertEquals(1, reader.document(unbornStaged, "file.kt").additions)
+            root.resolve("file.kt").writeText("val value = 2\n")
+            val unbornUnstaged = reader.document(reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.UNSTAGED)), "file.kt")
+            assertEquals(listOf("val value = 1", "val value = 2"), unbornUnstaged.lines.map { it.text })
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
+            git("checkout", "-qb", "feature")
+            git("add", ".")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "feature")
+            root.resolve("file.kt").writeText("val value = 3\n")
+            git("add", "file.kt")
+            root.resolve("file.kt").writeText("val value = 4\n")
+            root.resolve("new.kt").writeText("val newFile = true\n")
+            val before = root.resolve(".git/index").readBytes()
+            fun document(scope: ProjectDiffScope) = reader.document(reader.snapshot(root.path, ProjectComparison(scope)), "file.kt")
+            assertEquals(listOf("val value = 2", "val value = 3"), document(ProjectDiffScope.STAGED).lines.map { it.text })
+            assertEquals(listOf("val value = 3", "val value = 4"), document(ProjectDiffScope.UNSTAGED).lines.map { it.text })
+            assertEquals(listOf("val value = 2", "val value = 4"), document(ProjectDiffScope.ALL).lines.map { it.text })
+            assertEquals(listOf("val value = 1", "val value = 4"), document(ProjectDiffScope.BRANCH).lines.map { it.text })
+            assertFalse(reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.STAGED)).files.contains("new.kt"))
+            assertTrue(reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.BRANCH)).changes.any { it.path == "new.kt" })
+            assertThrows(IllegalStateException::class.java) {
+                reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.BRANCH, "missing-branch"))
+            }
+            assertThrows(IllegalStateException::class.java) {
+                reader.snapshot(root.path, ProjectComparison(ProjectDiffScope.BRANCH, "main; touch injected"))
+            }
+            assertFalse(root.resolve("injected").exists())
+            assertArrayEquals(before, root.resolve(".git/index").readBytes())
+            git("rm", "-f", "file.kt")
+            val stagedDeletion = document(ProjectDiffScope.STAGED)
+            assertEquals(ProjectLineKind.DELETED, stagedDeletion.lines.single().kind)
+            assertEquals("val value = 2", stagedDeletion.lines.single().text)
+            root.resolve("file.kt").writeText("val value = 5\n")
+            val recreated = document(ProjectDiffScope.ALL)
+            assertTrue(recreated.lines.any { it.text == "val value = 5" && it.kind == ProjectLineKind.ADDED })
+            assertTrue(recreated.lines.any { it.text == "val value = 2" && it.kind == ProjectLineKind.DELETED })
+            val branchRecreated = document(ProjectDiffScope.BRANCH)
+            assertTrue(branchRecreated.lines.any { it.text == "val value = 5" && it.kind == ProjectLineKind.ADDED })
+            assertTrue(branchRecreated.lines.any { it.text == "val value = 1" && it.kind == ProjectLineKind.DELETED })
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun statusPreservesOpaqueNamesAndRenameDirection() {
         val changes = parseProjectStatus(" M space name.kt\u0000R  new\nname.kt\u0000old name.kt\u0000?? --odd.kt\u0000")
         assertEquals(listOf("space name.kt", "new\nname.kt", "--odd.kt"), changes.map { it.path })

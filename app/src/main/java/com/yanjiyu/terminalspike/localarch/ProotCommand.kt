@@ -19,8 +19,9 @@ internal data class ProotCommand(
             rootfs: File,
             temporaryDirectory: File,
             guestCommand: List<String> = listOf("/bin/bash", "--login"),
+            procStat: File? = null,
         ): ProotCommand {
-            listOf(nativeLibraryDirectory, rootfs, temporaryDirectory).forEach { path ->
+            (listOf(nativeLibraryDirectory, rootfs, temporaryDirectory) + listOfNotNull(procStat)).forEach { path ->
                 require(path.isAbsolute && path.path.none { it == ':' || it == '\u0000' })
             }
             require(guestCommand.isNotEmpty() && guestCommand.first().startsWith('/'))
@@ -34,7 +35,7 @@ internal data class ProotCommand(
                 "/dev", "/proc", "/sys", "/dev/pts", "/dev/urandom:/dev/random",
                 "/proc/self/fd:/dev/fd", "/proc/self/fd/0:/dev/stdin",
                 "/proc/self/fd/1:/dev/stdout", "/proc/self/fd/2:/dev/stderr",
-            )
+            ) + listOfNotNull(procStat?.let { "${it.path}:/proc/stat" })
             return ProotCommand(
                 executable = File(nativeLibraryDirectory, "libproot.so").path,
                 arguments = listOf("--kill-on-exit", "--link2symlink", "--sysvipc", "-0", "-r", rootfs.path) +
@@ -47,6 +48,7 @@ internal data class ProotCommand(
                 environment = mapOf(
                     "PROOT_LOADER" to File(nativeLibraryDirectory, "libproot_loader.so").path,
                     "PROOT_TMP_DIR" to temporaryDirectory.path,
+                    "PROOT_SHARED_UNIX_SOCKETS" to "1",
                     "LD_LIBRARY_PATH" to nativeLibraryDirectory.path,
                 ),
                 workingDirectory = rootfs.path,

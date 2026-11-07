@@ -1,3 +1,6 @@
-More reliable Herdr navigation menus on phones and after resizing, in direct and buffered input modes.
-Improved Pi transcript scrolling and fullscreen page gestures.
-Refreshed store images highlighting tmux, Herdr, SSH and built-in Mosh, plus keys, snippets, themes, SFTP and tunnels.
+• Browse the web and use code-server inside your workspace.
+• New quick-start guide with short demonstrations and offline update history.
+• Compare staged, unstaged and branch changes in the project reader.
+• Attach files to local or remote terminals and manage snippets from the picker.
+• Improved Herdr history handling and local Arch Linux support, including optional local-agent settings access.
+• Fixes buffered-input Send handling.

@@ -10,6 +10,42 @@ import org.junit.Test
 
 /** Native event regressions; these are not actual-Codex or physical smoothness acceptance. */
 class HerdrNativeScrollTest {
+    @Test fun lateHistoryUsesTheOriginalDownAndKeepsSubRowMotionFlingAndCatch() = onMain {
+        val gesture = Gesture()
+        gesture.availableSource = null
+        gesture.down()
+        gesture.availableSource = gesture.source
+        assertTrue(gesture.move(200f + gesture.distance))
+        val before = gesture.scroll.reader.viewport.scrollY
+        gesture.move(203.25f + gesture.distance)
+        assertEquals(before - 3.25f, gesture.scroll.reader.viewport.scrollY, 0.01f)
+        gesture.move(300f + gesture.distance)
+        gesture.up(340f + gesture.distance)
+        val released = gesture.scroll.reader.viewport.scrollY
+        android.os.SystemClock.sleep(32)
+        assertTrue(gesture.scroll.animate())
+        assertTrue(gesture.scroll.reader.viewport.scrollY < released)
+        gesture.down()
+        val caught = gesture.scroll.reader.viewport.scrollY
+        android.os.SystemClock.sleep(32)
+        assertFalse(gesture.scroll.animate())
+        assertEquals(caught, gesture.scroll.reader.viewport.scrollY, 0f)
+        gesture.cancel()
+    }
+
+    @Test fun aLateSourceCannotCaptureADownOutsideItsPaneOrAnEndedGesture() = onMain {
+        val gesture = Gesture()
+        gesture.availableSource = null
+        gesture.down()
+        gesture.availableSource = gesture.source.copy(x = 20)
+        assertFalse(gesture.move(200f + gesture.distance))
+        assertNull(gesture.scroll.reader.snapshot)
+        gesture.up(200f + gesture.distance)
+        gesture.availableSource = gesture.source
+        assertFalse(gesture.move(400f))
+        assertNull(gesture.scroll.reader.snapshot)
+    }
+
     @Test fun stationaryHistoryTapDispatchesLocallyButDragAndFlingCatchDoNot() = onMain {
         val gesture = Gesture()
         gesture.scroll.reader.begin(gesture.source, 20f)
@@ -191,6 +227,7 @@ class HerdrNativeScrollTest {
         val distance = ViewConfiguration.get(context).scaledTouchSlop + 40f
         val source = HerdrPaneHistory("default/w1:p1/term1", 0, 0, 80, 24, offset,
             (1..1000).map { TerminalLine.plain("row $it") })
+        var availableSource: HerdrPaneHistory? = source
         private var time = 1000L
         private var downTime = time
 
@@ -206,7 +243,7 @@ class HerdrNativeScrollTest {
             time += 10
             val event = MotionEvent.obtain(downTime, time, action, 100f, y, 0)
             return try {
-                scroll.touch(event, source, 10f, 20f, 0f, 0f) { x, y -> taps += x to y }
+                scroll.touch(event, availableSource, 10f, 20f, 0f, 0f) { x, y -> taps += x to y }
             } finally {
                 event.recycle()
             }

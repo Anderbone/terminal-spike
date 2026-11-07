@@ -36,20 +36,19 @@ class TerminalImageInputConnectionTest {
                     true
                 },
             )
-            accepted = connection.commitContent(
-                InputContentInfo(
-                    uri,
-                    ClipDescription("phone screenshot", arrayOf("image/png")),
-                    null,
-                ),
-                0,
-                null,
-            )
+            accepted = listOf("image/png", "image/heic", "video/mp4", "application/pdf", "application/octet-stream").all { mime ->
+                connection.commitContent(
+                    InputContentInfo(uri, ClipDescription("attachment", arrayOf(mime)), null),
+                    0, null,
+                )
+            }
         }
 
         assertTrue(accepted)
-        assertEquals(uri, requests.single().uri)
-        assertEquals("image/png", requests.single().mimeType)
+        assertEquals(5, requests.size)
+        assertTrue(requests.all { it.uri == uri })
+        assertEquals(listOf("image/png", "image/heic", "video/mp4", "application/pdf", "application/octet-stream"),
+            requests.map { it.mimeType })
         assertTrue(sent.isEmpty())
     }
 }

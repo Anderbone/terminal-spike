@@ -53,6 +53,10 @@ message AppSettings {
   // False preserves the swipe layout on existing installs.
   bool snippets_above_keyboard = 28;
 
+  // Device-local acknowledgement, omitted from portable backups. Presence distinguishes an
+  // install that predates release notes from a user who has acknowledged zero entries.
+  optional uint32 release_notes_seen_revision = 29;
+
   enum ThemeMode {
     THEME_MODE_UNSPECIFIED = 0;
     THEME_MODE_SYSTEM = 1;

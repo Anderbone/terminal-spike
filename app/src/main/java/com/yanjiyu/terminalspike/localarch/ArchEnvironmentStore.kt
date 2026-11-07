@@ -41,7 +41,7 @@ internal class ArchEnvironmentStore(private val directory: File) {
         check(!operationActive) { "Arch installation or reset is in progress" }
         val installed = readInstalled() ?: throw IOException("Arch Linux is not installed")
         leases++
-        Lease(installed)
+        Lease(installed) { synchronized(lock) { leases-- } }
     }
 
     fun beginOperation(): Operation = synchronized(lock) {
@@ -51,10 +51,10 @@ internal class ArchEnvironmentStore(private val directory: File) {
         Operation()
     }
 
-    inner class Lease internal constructor(val installation: Installation) : Closeable {
+    class Lease internal constructor(val installation: Installation, private val release: () -> Unit) : Closeable {
         private val closed = AtomicBoolean()
         override fun close() {
-            if (closed.compareAndSet(false, true)) synchronized(lock) { leases-- }
+            if (closed.compareAndSet(false, true)) release()
         }
     }
 

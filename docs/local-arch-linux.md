@@ -73,6 +73,47 @@ Package hooks for booted system services may skip their actions. PRoot is not a
 security boundary for untrusted guest programs. Keep work in private guest storage;
 Android shared-storage integration is not included.
 
+### Android process start times
+
+When Android denies access to `/proc/stat`, new local shells bind a small
+compatibility file supplying `btime`, the boot epoch in seconds. It is
+derived from Android's wall clock and sleep-inclusive `SystemClock.elapsedRealtime()`,
+then retained for the same device boot so separate shells agree when checking
+a running process. A kernel boot UUID, or Android's boot count when that UUID is
+restricted, selects a new file after reboot. Files are published atomically.
+Readable kernel statistics are used directly, and per-process `/proc` entries
+remain real. libproc2 requires an aggregate CPU header before it can read `btime`;
+this header uses zero placeholders for unavailable counters, with an explanatory
+comment in the file. These are not real CPU measurements. Other unavailable
+system counters and per-CPU statistics are omitted.
+
+Local Arch also uses stable, private aliases for Unix socket paths that exceed
+the kernel path limit after PRoot translation. Separate local shells can connect
+to the same Codex background server, and closing a client does not unlink the
+server's socket. Full canonical paths distinguish guests and guard against short
+name collisions. The original PRoot patch is included in corresponding source.
+
+This lets Arch's `ps -o lstart=` and Codex's PID-managed background server read
+process start times. Existing Arch installations receive it when opening a new
+local session after the app update; no package upgrade, reset or `--no-daemon`
+is required. This does not add systemd or privileged services.
+
+The opt-in `ArchCodexDaemonDeviceTest` uses a separate pinned Arch/Codex `0.166.0`
+fixture on the authorized S10e. It preserves the unmodified `ps` failure, starts
+the real daemon through the production bootstrap, verifies it from a second
+shell and stops it without signing in or calling a model.
+It also verifies recovery after an owning shell exits without stopping the daemon.
+Run `python3 scripts/run-local-arch-codex-daemon-test.py --serial <current-S10e-serial>`;
+after the shared verification gate passes, add `--no-build` to reuse its APKs.
+The runner verifies the model and hardware serial before installs and testing,
+checks both downloaded fixtures, and removes its separate guest afterward.
+If the phone retains a legacy debug certificate, use the recovered matching key
+to sign copies of both verified APKs and pass them with `--app-apk` and `--test-apk`;
+retain the canonical debug keystore and never uninstall to resolve a mismatch.
+See [Android's clock contract](https://developer.android.com/reference/android/os/SystemClock)
+and [the Linux `btime` format](https://www.man7.org/linux/man-pages/man5/proc_stat.5.html).
+The required CPU header is checked by [libproc2's parser](https://gitlab.com/procps-ng/procps/-/blob/v4.0.4/library/stat.c).
+
 The runtime and guest are ARM64-only. Development-package evidence and the
 separate Prisma investigation are recorded in
 [the compatibility ledger](local-arch-development-compatibility.md). A successful

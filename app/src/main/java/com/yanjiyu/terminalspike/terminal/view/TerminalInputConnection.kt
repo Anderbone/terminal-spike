@@ -101,7 +101,7 @@ internal class TerminalInputConnection(
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or
                 EditorInfo.IME_FLAG_NO_FULLSCREEN
-            outAttrs.contentMimeTypes = arrayOf("image/png", "image/jpeg", "image/webp", "image/gif")
+            outAttrs.contentMimeTypes = arrayOf("*/*")
         }
     }
 }

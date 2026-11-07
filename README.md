@@ -29,6 +29,24 @@ Check the host fingerprint against your server before trusting it. Mosh also nee
 APK and Google Play signing keys differ. Stick with one installation channel for updates;
 switching may require exporting a backup and reinstalling.
 
+## Setup & reference
+
+In the app, open **Settings → User guide → Setup & reference** for short setup
+steps, a copyable Tailscale Serve command, and links to the official instructions.
+
+- **Tailscale:** install it on your phone and computer, join the same tailnet and
+  connect both. For a terminal, your computer also needs an SSH server.
+- **Code server:** [install and run code-server](https://coder.com/docs/code-server/install)
+  on the computer holding your projects. Keep password authentication enabled.
+  [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) can give
+  it a private HTTPS address. Paste that address into **Code server** in the app
+  and sign in. The app can remember the password encrypted on your phone.
+- **Browser:** a separate tab with an address bar for ordinary websites.
+
+Keep your computer awake and the services running. Tailscale and code-server are
+configured separately from Terminal Spike; install them only if you need them.
+See the [browser reference](docs/EMBEDDED-BROWSER.md) for tab controls and limits.
+
 ## Using Herdr on a phone or foldable
 
 See [recommended Herdr settings](docs/HERDR-SETUP.md) for a compact layout,

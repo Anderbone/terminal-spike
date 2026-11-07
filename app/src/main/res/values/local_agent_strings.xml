@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_agent_access_title">Allow local agents to manage app settings</string>
+    <string name="local_agent_access_detail">Local Arch programs can manage app appearance, terminal colours and fonts, snippets, keyboard profiles, and saved port forwarding rules. Access lasts until the app process exits and is blocked by App lock. Open a new Local Arch tab to refresh the tools. Snippets are saved without execution; forwarding changes apply on the next connection. Local Arch programs share this app’s system identity, so this switch is not isolation from untrusted programs.</string>
+</resources>

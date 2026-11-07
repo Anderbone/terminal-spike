@@ -1,0 +1,166 @@
+--- a/src/syscall/socket.c
++++ b/src/syscall/socket.c
+@@ -25,6 +25,10 @@
+ #include <string.h>      /* strncpy(3), strlen(3), */
+ #include <assert.h>      /* assert(3), */
+ #include <errno.h>       /* E*, */
++#include <inttypes.h>    /* uint64_t, PRIx64, */
++#include <stdio.h>       /* snprintf(3), */
++#include <stdlib.h>      /* getenv(3), */
++#include <unistd.h>      /* symlink(2), readlink(2), */
+ #include <sys/socket.h>  /* struct sockaddr_un, AF_UNIX, */
+ #include <sys/un.h>      /* struct sockaddr_un, */
+ #include <sys/param.h>   /* MIN(), MAX(), */
+@@ -44,6 +48,84 @@
+ static const off_t offsetof_path = offsetof(struct sockaddr_un, sun_path);
+ extern struct sockaddr_un sockaddr_un__;
+ static const size_t sizeof_path  = sizeof(sockaddr_un__.sun_path);
++
++/* Terminal Spike, 2026-11-07: share long Unix socket aliases between independent PRoot
++ * sessions in the same private temporary directory. Keep normal filesystem
++ * socket lifetime: exiting a client must not unlink a live server's socket. */
++static uint64_t shared_socket_hash(const char *host_path)
++{
++	const unsigned char *cursor;
++	uint64_t hash = UINT64_C(14695981039346656037);
++	for (cursor = (const unsigned char *) host_path; *cursor; ++cursor) {
++		hash ^= *cursor;
++		hash *= UINT64_C(1099511628211);
++	}
++	return hash;
++}
++
++/* Restore a registered alias before filesystem operations, not just connect.
++ * Re-canonicalizing after insertion also follows guest symlinks through aliases
++ * created by another session and lets normal stale-socket unlink work. */
++int restore_shared_socket_binding(Tracee *tracee, const char host_path[PATH_MAX])
++{
++	const char *shared = getenv("PROOT_SHARED_UNIX_SOCKETS");
++	char shorter[PATH_MAX], identity[PATH_MAX], recorded[PATH_MAX];
++	char guest[PATH_MAX];
++	ssize_t length;
++	int status;
++
++	if (shared == NULL || strcmp(shared, "1") != 0 || strlen(host_path) <= sizeof_path)
++		return 0;
++	status = snprintf(shorter, sizeof(shorter), "%s/us-%016" PRIx64,
++		get_temp_directory(), shared_socket_hash(host_path));
++	if (status < 0 || (size_t) status >= sizeof_path)
++		return 0;
++	status = snprintf(identity, sizeof(identity), "%s.path", shorter);
++	if (status < 0 || (size_t) status >= sizeof(identity))
++		return 0;
++	length = readlink(identity, recorded, sizeof(recorded));
++	if (length < 0 || (size_t) length != strlen(host_path)
++	    || memcmp(recorded, host_path, (size_t) length) != 0)
++		return 0;
++	strcpy(guest, host_path);
++	status = detranslate_path(tracee, guest, NULL);
++	if (status < 0)
++		return status;
++	if (insort_binding3(tracee, tracee->ctx, shorter, guest) == NULL)
++		return -ENOMEM;
++	return 1;
++}
++
++static int shared_socket_path(Tracee *tracee, const char *host_path, char **result)
++{
++	uint64_t hash = shared_socket_hash(host_path);
++	char *identity;
++	char recorded[PATH_MAX];
++	ssize_t length;
++
++	*result = talloc_asprintf(tracee->ctx, "%s/us-%016" PRIx64,
++		get_temp_directory(), hash);
++	if (*result == NULL)
++		return -ENOMEM;
++	if (strlen(*result) >= sizeof_path)
++		return -ENAMETOOLONG;
++
++	/* The hash is only a short name, not an identity check. An atomic,
++	 * persistent symlink records the full canonical path; reject a collision
++	 * instead of ever connecting to a different guest socket. */
++	identity = talloc_asprintf(tracee->ctx, "%s.path", *result);
++	if (identity == NULL)
++		return -ENOMEM;
++	if (symlink(host_path, identity) < 0 && errno != EEXIST)
++		return -errno;
++	length = readlink(identity, recorded, sizeof(recorded));
++	if (length < 0)
++		return -errno;
++	if ((size_t) length != strlen(host_path)
++	    || memcmp(recorded, host_path, (size_t) length) != 0)
++		return -EADDRINUSE;
++	return 0;
++}
+ 
+ /**
+  * Copy in @sockaddr the struct sockaddr_un stored in the @tracee
+@@ -116,11 +198,17 @@
+ 
+ 		/* The translated path is too long to fit the sun_path
+ 		 * array, so let's bind it to a shorter path.  */
+-		shorter_host_path = create_temp_name(tracee->ctx, "proot");
+-		if (shorter_host_path == NULL || strlen(shorter_host_path) > sizeof_path)
+-			return -EINVAL;
+-
+-		(void) mktemp(shorter_host_path);
++		const char *shared = getenv("PROOT_SHARED_UNIX_SOCKETS");
++		if (shared != NULL && strcmp(shared, "1") == 0) {
++			status = shared_socket_path(tracee, host_path, &shorter_host_path);
++			if (status < 0)
++				return status;
++		} else {
++			shorter_host_path = create_temp_name(tracee->ctx, "proot");
++			if (shorter_host_path == NULL || strlen(shorter_host_path) > sizeof_path)
++				return -EINVAL;
++			(void) mktemp(shorter_host_path);
++		}
+ 
+ 		if (strlen(shorter_host_path) > sizeof_path)
+ 			return -EINVAL;
+@@ -137,8 +225,8 @@
+ 		if (binding == NULL)
+ 			return -EINVAL;
+ 
+-		/* This temporary file (shorter_host_path) will be removed once the
+-		 * binding is destroyed.  */
++		/* Legacy temporary names have a cleanup destructor. Shared names
++		 * retain filesystem lifetime and are removed by guest unlink. */
+ 		talloc_reparent(tracee->ctx, binding, shorter_host_path);
+ 
+ 		/* Let's use this shorter path now.  */
+--- a/src/syscall/socket.h
++++ b/src/syscall/socket.h
+@@ -26,6 +26,8 @@
+ #include "arch.h" /* word_t */
+ #include "tracee/tracee.h"
+ 
++int restore_shared_socket_binding(Tracee *tracee, const char host_path[PATH_MAX]);
++
+ int translate_socketcall_enter(Tracee *tracee, word_t *sock_addr, int size);
+ int translate_socketcall_exit(Tracee *tracee, word_t sock_addr, word_t size_addr, word_t max_size);
+ 
+--- a/src/path/path.c
++++ b/src/path/path.c
+@@ -33,6 +33,7 @@
+ #include <stddef.h>    /* ptrdiff_t, */
+ #include <inttypes.h>  /* PRI*, */
+ 
++#include "syscall/socket.h"
+ #include "path/path.h"
+ #include "path/binding.h"
+ #include "path/canon.h"
+@@ -380,6 +381,12 @@
+ 	status = substitute_binding(tracee, GUEST, result);
+ 	if (status < 0)
+ 		return status;
++
++	status = restore_shared_socket_binding(tracee, result);
++	if (status < 0)
++		return status;
++	if (status > 0)
++		return translate_path(tracee, result, dir_fd, user_path, deref_final);
+ 
+ skip:
+ 	VERBOSE(tracee, 2, "vpid %" PRIu64 ":          -> \"%s\"",

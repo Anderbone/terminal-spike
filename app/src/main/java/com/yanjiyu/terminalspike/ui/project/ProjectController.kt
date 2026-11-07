@@ -44,6 +44,7 @@ internal data class ProjectUiState(
     val error: String? = null,
     val tabId: Long = 0,
     val locations: List<RemoteProjectLocation> = emptyList(),
+    val comparison: ProjectComparison = ProjectComparison(),
 )
 
 internal interface ProjectDraftStore {
@@ -179,7 +180,14 @@ internal class ProjectController(
         }
     }
 
-    fun load(directory: String, refreshOpenFile: Boolean = false) {
+    fun compare(comparison: ProjectComparison) {
+        val current = mutableState.value
+        val directory = current.snapshot?.root ?: return
+        load(directory, refreshOpenFile = true, comparison = comparison)
+    }
+
+    fun load(directory: String, refreshOpenFile: Boolean = false,
+        comparison: ProjectComparison = mutableState.value.comparison) {
         val before = mutableState.value
         val sessionId = before.sessionId ?: return
         cancelRead()
@@ -190,10 +198,10 @@ internal class ProjectController(
                 ensureConnected(sessionId)
                 val (snapshot, document) = withContext(ioContext) {
                     val reader = ProjectReader(readerFor(sessionId))
-                    val snapshot = reader.snapshot(directory)
+                    val snapshot = reader.snapshot(directory, comparison)
                     val path = before.document?.path
                     val document = if (refreshOpenFile && snapshot.root == before.snapshot?.root &&
-                        path != null && path in snapshot.files) reader.document(snapshot, path) else null
+                        path != null && (path in snapshot.files || snapshot.changes.any { it.path == path })) reader.document(snapshot, path) else null
                     snapshot to document
                 }
                 if (generation != token) return@launch
@@ -210,7 +218,8 @@ internal class ProjectController(
                     if (changingRoot) publish(before.copy(busy = false))
                     publish(before.copy(directory = snapshot.root, snapshot = snapshot,
                         tabId = if (changingRoot) nextTabId++ else before.tabId,
-                        document = document, feedback = store.load(before.endpointKey, snapshot.root), busy = false, error = null))
+                        document = document, comparison = comparison,
+                        feedback = store.load(before.endpointKey, snapshot.root), busy = false, error = null))
                 }
             } catch (error: CancellationException) {
                 throw error

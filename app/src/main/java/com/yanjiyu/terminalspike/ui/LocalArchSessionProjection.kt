@@ -6,13 +6,14 @@ internal fun TerminalSpikeUiState.withLocalSessionSnapshots(
     snapshots: List<LocalSessionSnapshot>,
     preferredSessionId: Long? = null,
 ): TerminalSpikeUiState {
-    val tabs = sessions.filterNot { it.isLocalArch } + snapshots.map { snapshot ->
+    val localTabs = snapshots.map { snapshot ->
         SessionTabUi(
             id = snapshot.id, title = snapshot.title, connectionState = snapshot.connectionState,
             isLocalArch = true, workspaceName = "Local Arch Linux",
             terminalTitle = snapshot.terminalTitle, lastActivityAtEpochMillis = snapshot.lastActivityAtEpochMillis,
         )
     }
+    val tabs = (sessions.filterNot { it.isLocalArch } + localTabs).inExistingTabOrder(sessions)
     val active = when {
         preferredSessionId != null && tabs.any { it.id == preferredSessionId } -> preferredSessionId
         tabs.any { it.id == activeSessionId } -> activeSessionId

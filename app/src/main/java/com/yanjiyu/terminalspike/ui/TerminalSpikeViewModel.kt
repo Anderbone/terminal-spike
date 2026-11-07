@@ -86,14 +86,13 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryDispatch
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryModifier
 import com.yanjiyu.terminalspike.terminal.view.TerminalKeySequences
-import com.yanjiyu.terminalspike.terminal.view.PastedImageSizeLimitInputStream
-import com.yanjiyu.terminalspike.terminal.view.PastedImageTooLargeException
 import com.yanjiyu.terminalspike.terminal.view.TerminalImagePasteSource
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
 import com.yanjiyu.terminalspike.terminal.view.accessoryModifierState
 import com.yanjiyu.terminalspike.terminal.view.encodeTerminalChord
 import com.yanjiyu.terminalspike.terminal.view.resolve
-import com.yanjiyu.terminalspike.terminal.view.selectedMediaExtension
+import com.yanjiyu.terminalspike.terminal.view.transferTerminalAttachments
+import com.yanjiyu.terminalspike.terminal.view.storeTerminalAttachment
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsLoadState
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsInteractionAction
@@ -146,6 +145,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.File
 import java.io.InputStream
 import java.nio.CharBuffer
 import java.util.Locale
@@ -957,7 +957,7 @@ internal fun TerminalSpikeUiState.withRemoteSessionSnapshots(
             moshFallbackPolicy = snapshot.moshFallbackPolicy,
         )
     }
-    val updatedSessions = localSessions + remoteTabs
+    val updatedSessions = (localSessions + remoteTabs).inExistingTabOrder(sessions)
     val validIds = updatedSessions.mapTo(mutableSetOf(), SessionTabUi::id)
     val active = when {
         preferredSessionId != null && preferredSessionId in validIds -> preferredSessionId
@@ -1266,8 +1266,6 @@ internal fun TerminalSpikeUiState.bufferedInputValidationError(sessionId: Long, 
     val targetSession = sessions.firstOrNull { it.id == sessionId }
     return when {
         text.isEmpty() -> uiText(R.string.notice_buffer_enter_text)
-        text.length > MAX_BUFFERED_INPUT_CHARACTERS ->
-            uiText(R.string.notice_buffer_limit, MAX_BUFFERED_INPUT_CHARACTERS)
         text.hasUnpairedSurrogate() -> uiText(R.string.notice_buffer_invalid_unicode)
         text.any { it.isISOControl() && it !in "\r\n\t" } ->
             uiText(R.string.notice_buffer_unsupported_control)
@@ -1569,6 +1567,18 @@ class TerminalSpikeViewModel(
     private val terminalDataRepository = appContainer.terminalDataRepository
     private val recentSessionRepository = appContainer.recentSessions
     private val knownHostManager = appContainer.knownHostManager
+    internal val browser = com.yanjiyu.terminalspike.ui.browser.BrowserController(application)
+
+    internal val webBrowser = com.yanjiyu.terminalspike.ui.browser.BrowserController(application)
+
+    internal fun openBrowser(sessionId: Long, projectPath: String? = null): Boolean {
+        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return false
+        val seed = connectionSeedForSession(sessionId) ?: return false
+        webBrowser.hide()
+        browser.open(listOf(seed.host, seed.port.toString(), seed.username).joinToString("\u0000"), session.title, projectPath)
+        return true
+    }
+
     internal val project = com.yanjiyu.terminalspike.ui.project.ProjectController(
         viewModelScope, remoteSessions::projectReader,
         com.yanjiyu.terminalspike.ui.project.AndroidProjectDraftStore(application),
@@ -1626,7 +1636,6 @@ class TerminalSpikeViewModel(
     )
     private val catalogPublicationGate = LatestValuePublicationGate(terminalDataRepository::loadCatalog)
     private val knownHostPublicationMutex = Mutex()
-    private val imagePasteMutex = Mutex()
     private val recentSessionObservationStarted = AtomicBoolean(false)
     private val connectionsCatalogRetryInProgress = AtomicBoolean(false)
     private val moshStatusRequestInProgress = AtomicBoolean(false)
@@ -4262,11 +4271,7 @@ class TerminalSpikeViewModel(
             _uiState.update { it.copy(notice = error) }
             return false
         }
-        val targetController = if (sessionId == LOCAL_TERMINAL_SESSION_ID) {
-            controller
-        } else {
-            remoteSessions.controllerFor(sessionId)
-        }
+        val targetController = controllerForExistingSession(sessionId)
         if (targetController == null) {
             _uiState.update {
                 it.copy(notice = uiText(R.string.notice_terminal_unavailable_draft_kept))
@@ -4301,88 +4306,55 @@ class TerminalSpikeViewModel(
         images: List<TerminalImagePasteSource>,
     ): Boolean {
         if (images.isEmpty()) return false
-        val prepared = images.mapNotNull { image ->
-            selectedMediaExtension(image.mimeType)?.let { extension -> image to extension }
-        }
-        if (prepared.isEmpty()) {
-            _uiState.update { it.copy(notice = uiText(R.string.notice_image_paste_format_unsupported)) }
-            return false
-        }
         val session = _uiState.value.sessions.firstOrNull { it.id == sessionId }
-        if (session == null || session.isLocalTerminal ||
-            session.connectionState !is ConnectionState.Connected
-        ) {
-            _uiState.update { it.copy(notice = uiText(R.string.notice_image_paste_requires_remote)) }
+        if (session == null || (!session.isLocalTerminal && session.connectionState !is ConnectionState.Connected)) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_terminal_session_unavailable)) }
             return false
-        }
-        val unsupportedCount = images.size - prepared.size
-        prepared.map { it.first }.toSet().let { accepted ->
-            images.filterNot(accepted::contains).forEach { runCatching(it.onFinished) }
         }
         _uiState.update {
             it.copy(
-                notice = if (prepared.size == 1) {
+                notice = if (images.size == 1) {
                     uiText(R.string.notice_image_paste_uploading)
                 } else {
                     quantityText(
                         R.plurals.notice_image_paste_uploading_count,
-                        prepared.size,
-                        prepared.size,
+                        images.size,
+                        images.size,
                     )
                 }
             )
         }
-        viewModelScope.launch {
-            imagePasteMutex.withLock {
-                var insertedCount = 0
-                var oversizedCount = 0
-                prepared.forEach { (image, extension) ->
-                    val result = try {
-                        withContext(Dispatchers.IO) {
-                            runCatching {
-                                val input = requireNotNull(image.open()) {
-                                    "The selected media file is no longer available."
-                                }
-                                remoteSessions.uploadPastedImage(
-                                    sessionId = sessionId,
-                                    fileName = "${UUID.randomUUID()}.$extension",
-                                    source = PastedImageSizeLimitInputStream(input),
-                                ).getOrThrow()
-                            }
-                        }
-                    } finally {
-                        runCatching(image.onFinished)
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val insertedCount = transferTerminalAttachments(
+                sources = images,
+                transfer = { fileName, input ->
+                    when {
+                        session.isLocalArch -> localSessions.environment.storeAttachment(fileName, input)
+                        session.isLocalTerminal -> storeTerminalAttachment(
+                            File(getApplication<Application>().filesDir, "terminal-attachments"),
+                            fileName, input,
+                        )
+                        else -> remoteSessions.uploadPastedImage(sessionId, fileName, input).getOrThrow()
                     }
-                    if (result.exceptionOrNull().hasCause<PastedImageTooLargeException>()) {
-                        oversizedCount += 1
-                    }
-                    val remotePath = result.getOrNull()
-                    if (remotePath != null &&
-                        controllerForExistingSession(sessionId)?.sendPaste(remotePath) == true
-                    ) {
-                        insertedCount += 1
-                    }
-                }
-                _uiState.update {
-                    it.copy(
-                        notice = when {
-                            insertedCount == images.size -> quantityText(
-                                R.plurals.notice_image_paste_attached_count,
-                                insertedCount,
-                                insertedCount,
-                            )
-                            insertedCount > 0 -> uiText(
-                                R.string.notice_image_paste_partial,
-                                insertedCount,
-                                images.size,
-                            )
-                            oversizedCount > 0 -> uiText(R.string.notice_image_paste_too_large)
-                            unsupportedCount == images.size ->
-                                uiText(R.string.notice_image_paste_format_unsupported)
-                            else -> uiText(R.string.notice_image_paste_failed)
-                        },
-                    )
-                }
+                },
+                insert = { path -> controllerForExistingSession(sessionId)?.sendPaste(path) == true },
+            )
+            _uiState.update {
+                it.copy(
+                    notice = when {
+                        insertedCount == images.size -> quantityText(
+                            R.plurals.notice_image_paste_attached_count,
+                            insertedCount,
+                            insertedCount,
+                        )
+                        insertedCount > 0 -> uiText(
+                            R.string.notice_image_paste_partial,
+                            insertedCount,
+                            images.size,
+                        )
+                        else -> uiText(R.string.notice_image_paste_failed)
+                    },
+                )
             }
         }
         return true
@@ -4765,6 +4737,8 @@ class TerminalSpikeViewModel(
         cancelLocalNetworkAction()
         sftp.close()
         project.close()
+        browser.close()
+        webBrowser.close()
         cancelConnectionsHostTest()
         cancelTerminalTranscriptExport()
         pendingRemoteClipboardRequest?.let(::discardRemoteClipboardRequest)

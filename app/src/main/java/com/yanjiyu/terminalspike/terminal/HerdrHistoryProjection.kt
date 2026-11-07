@@ -9,15 +9,31 @@ internal class HerdrHistoryProjection {
     private var screen: List<TerminalLine>? = null
     private var columns = 0
     private var rows = 0
+    private var retainingReader = false
     private var projected: HerdrPaneHistory? = null
 
-    fun project(source: HerdrPaneHistory?, screen: List<TerminalLine>?, columns: Int, rows: Int): HerdrPaneHistory? {
-        if (this.source !== source || this.screen !== screen || this.columns != columns || this.rows != rows) {
+    fun project(
+        source: HerdrPaneHistory?, screen: List<TerminalLine>?, columns: Int, rows: Int,
+        retainReader: Boolean = false,
+    ): HerdrPaneHistory? {
+        if (this.source !== source || this.screen !== screen || this.columns != columns || this.rows != rows ||
+            retainingReader != retainReader
+        ) {
+            val previous = projected
+            val next = projectHerdrHistory(source, screen, columns, rows)
+            // Remote redraws can publish a frame with its navigation temporarily erased.
+            // An established reader still owns the same pixels and captured rows. Only
+            // reuse its verified placement for the same pane, source geometry and grid;
+            // a successful different placement, resize or identity change remains authoritative.
+            projected = next ?: previous?.takeIf {
+                retainReader && source != null && this.source?.samePane(source) == true &&
+                    this.columns == columns && this.rows == rows
+            }?.let { requireNotNull(source).copy(x = it.x, y = it.y) }
             this.source = source
             this.screen = screen
             this.columns = columns
             this.rows = rows
-            projected = projectHerdrHistory(source, screen, columns, rows)
+            retainingReader = retainReader
         }
         return projected
     }

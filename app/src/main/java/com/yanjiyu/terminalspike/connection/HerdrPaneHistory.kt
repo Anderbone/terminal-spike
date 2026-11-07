@@ -185,7 +185,9 @@ internal fun parseHerdrHistoryRows(content: ByteArray, columns: Int, rows: Int):
     val bytes = text.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray()
     val update = VtTerminalEngine(columns = columns, rows = 1).accept(bytes)
     val lines = update.completedScrollback + update.screen
-    if (lines.size > HerdrPaneHistory.ROW_LIMIT) return null
+    // Old rows can wrap again on a narrower client. Retain the newest bounded
+    // window instead of disabling native history for the entire conversation.
+    if (lines.size > HerdrPaneHistory.ROW_LIMIT) return lines.takeLast(HerdrPaneHistory.ROW_LIMIT)
     // Herdr omits blank rows at the end of a read; preserve the visible grid's height.
     return if (lines.size < rows) lines + List(rows - lines.size) { TerminalLine.plain("") } else lines
 }

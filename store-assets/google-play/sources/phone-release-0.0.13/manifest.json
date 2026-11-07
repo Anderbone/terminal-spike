@@ -1,0 +1,105 @@
+{
+  "captured_at": "2026-11-07T23:36:05.253053+00:00",
+  "device": "Android API 35 phone emulator / 1080x1920 / density 360",
+  "build": "0.0.13 (versionCode 21), signed release",
+  "status": "Captured from the final locally verified release APK; actual MainActivity and live demo services; no synthetic app UI.",
+  "installed_apk_sha256": "710ac7e7c9b5619aa65ed08e6b76d1b60598b7b76886fcf9b1a4c9cc38f69843",
+  "screenshots": [
+    {
+      "source": "terminal.png",
+      "output": "01-workspace.png",
+      "headline": [
+        "Your whole",
+        "workspace."
+      ],
+      "subtitle": "SSH + Mosh. Compact tabs. Room to work.",
+      "alt": "A connected Atlas SSH terminal with real project output and compact session tabs.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "f1745e045db400245dda95366ae00f9e9ca846e361e2c8cc24ffaabd77a4187f"
+    },
+    {
+      "source": "project.png",
+      "output": "02-code-review.png",
+      "headline": [
+        "Review code.",
+        "Keep context."
+      ],
+      "subtitle": "Compare changes without leaving your session.",
+      "alt": "Native project reader showing an actual Git diff of a small JavaScript change.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "fbcdc3f2623fe8a9c44fb812838536077978b20ca18aa3a6a009dc9838a34012"
+    },
+    {
+      "source": "editor.png",
+      "output": "03-code-server.png",
+      "headline": [
+        "Your editor.",
+        "Still here."
+      ],
+      "subtitle": "Keep code-server beside your terminal tabs.",
+      "alt": "A real code-server editor open inside Terminal Spike with an Atlas project file.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "0b7a9f0e27a75d13adf29e26fd3a221e3989cdb1f4f617548bde44cf6b1ed33d"
+    },
+    {
+      "source": "browser.png",
+      "output": "04-browser.png",
+      "headline": [
+        "A real browser.",
+        "In your flow."
+      ],
+      "subtitle": "Project docs and web tools, in the workspace.",
+      "alt": "The built-in web browser displaying the Atlas demo project notes.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "88f00ece5a4312fd552c56a15b314d6ddf9bfa023d9aea97a79044d2f82f3827"
+    },
+    {
+      "source": "snippets.png",
+      "output": "05-snippets.png",
+      "headline": [
+        "Commands.",
+        "One tap away."
+      ],
+      "subtitle": "Pin, edit and organise the commands you reuse.",
+      "alt": "Pinned command snippets in management mode above the terminal shortcut keys.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "f2ff1997e1df68f1216c014f40b9973a10e0df29124bf3286d5b7cd58737a85b"
+    },
+    {
+      "source": "buffered.png",
+      "output": "06-buffered-input.png",
+      "headline": [
+        "Type freely.",
+        "Send when ready."
+      ],
+      "subtitle": "Keep longer drafts in buffered terminal input.",
+      "alt": "Buffered terminal input containing an unsent example draft above the keyboard.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "15c79499d09edc5200faf507a1d35412cc1f43926f9e5ce9db74480a71c2a368"
+    },
+    {
+      "source": "sftp.png",
+      "output": "07-files.png",
+      "headline": [
+        "Move files.",
+        "Stay in flow."
+      ],
+      "subtitle": "Browse your remote project with SFTP.",
+      "alt": "The SFTP file browser connected to the Atlas demo workspace.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "997f8a82e21bf9c2bfe02c71c1ee65ab4a8837a91030f1cf5456b1e86a283535"
+    },
+    {
+      "source": "guide.png",
+      "output": "08-user-guide.png",
+      "headline": [
+        "Find your feet.",
+        "Find your flow."
+      ],
+      "subtitle": "Quick visual lessons, ready when you need them.",
+      "alt": "The built-in user guide with real recordings and tips for terminal workflows.",
+      "crop": "1080x1920+0+0",
+      "source_sha256": "907b3b4259c0202a14e6b32d8ef7a914ceff5f61e42a2298a422f71ecea20408"
+    }
+  ]
+}

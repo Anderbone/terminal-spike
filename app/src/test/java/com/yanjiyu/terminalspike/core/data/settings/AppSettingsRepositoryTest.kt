@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike.core.data.settings
 
 import androidx.datastore.core.DataStoreFactory
+import com.yanjiyu.terminalspike.core.backup.toBackupGlobalSettings
 import java.io.File
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,47 @@ import org.junit.rules.TemporaryFolder
 class AppSettingsRepositoryTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun releaseNotesAcknowledgementSurvivesRepositoryRecreation() = runBlocking {
+        val file = settingsFile("release-notes.pb", AppSettingsSerializer.defaultValue.toByteArray())
+        val first = dataStoreOwner(file)
+        try {
+            assertEquals(false, first.repository.settings.first().hasReleaseNotesSeenRevision())
+            val initialized = first.repository.initializeReleaseNotes(0)
+            assertEquals(true, initialized.hasReleaseNotesSeenRevision())
+            assertEquals(0, initialized.releaseNotesSeenRevision)
+            first.repository.acknowledgeReleaseNotes(3)
+        } finally {
+            first.close()
+        }
+        val recreated = dataStoreOwner(file)
+        try {
+            val settings = recreated.repository.settings.first()
+            assertEquals(true, settings.hasReleaseNotesSeenRevision())
+            assertEquals(3, settings.releaseNotesSeenRevision)
+        } finally {
+            recreated.close()
+        }
+    }
+
+    @Test
+    fun startupAndOlderAcknowledgementCannotRegressTheReadRevision() = runTest {
+        val file = settingsFile("release-notes-monotonic.pb", AppSettingsSerializer.defaultValue.toByteArray())
+        val repository = repository(file)
+        repository.initializeReleaseNotes(1)
+        repository.acknowledgeReleaseNotes(3)
+        repository.initializeReleaseNotes(0)
+        val settings = repository.acknowledgeReleaseNotes(2)
+        assertEquals(3, settings.releaseNotesSeenRevision)
+    }
+
+    @Test
+    fun releaseNotesReadStateIsExcludedFromPortableSettings() {
+        val original = AppSettingsSerializer.defaultValue
+        val read = original.toBuilder().setReleaseNotesSeenRevision(3).build()
+        assertEquals(original.toBackupGlobalSettings(), read.toBackupGlobalSettings())
+    }
 
     @Test
     fun invalidPersistedSchemaOneIsReportedWithoutReplacingSourceBytes() = runTest {

@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "source": "Actual MainActivity on Android API 35 emulator, using an isolated SSH/Herdr demo session. No personal projects or credentials are shown.",
+  "source_size": [
+    720,
+    1600
+  ],
+  "preview_size": [
+    720,
+    600
+  ],
+  "edits": "Uniform scale and crop only; complete app recordings are retained.",
+  "clips": {
+    "typing": {
+      "camera": [
+        {
+          "time": 0,
+          "y": 720
+        },
+        {
+          "time": 0,
+          "y": 720
+        }
+      ]
+    },
+    "snippets": {
+      "camera": [
+        {
+          "time": 0,
+          "y": 1000
+        },
+        {
+          "time": 5.987,
+          "y": 1000
+        },
+        {
+          "time": 10.943,
+          "y": 80
+        },
+        {
+          "time": 19.34,
+          "y": 80
+        },
+        {
+          "time": 30.771,
+          "y": 490.66666666666663
+        }
+      ]
+    },
+    "projects": {
+      "camera": [
+        {
+          "time": 0,
+          "y": 1000
+        },
+        {
+          "time": 1.207,
+          "y": 0
+        },
+        {
+          "time": 2.493,
+          "y": 0
+        },
+        {
+          "time": 3.795,
+          "y": 0
+        },
+        {
+          "time": 6.085,
+          "y": 0
+        },
+        {
+          "time": 8.324,
+          "y": 300
+        }
+      ]
+    },
+    "gestures": {
+      "camera": [
+        {
+          "time": 0,
+          "y": 0
+        },
+        {
+          "time": 1.2,
+          "y": 0
+        },
+        {
+          "time": 8.287,
+          "y": 0
+        },
+        {
+          "time": 13.533,
+          "y": 720
+        }
+      ]
+    }
+  },
+  "source_apk_sha256": "8b21f8118d983972bf944c5ee1f8008e5c39250d6788dbd2926a143d0829a93e"
+}

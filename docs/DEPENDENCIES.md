@@ -288,3 +288,8 @@ an original stale-local-key lookup fix to libandroid-shmem 0.7 (BSD-3-Clause).
 `local-arch-runtime/patches/shmem-stale-local-key.patch` is included in the runtime
 source offer along with the existing source archives and build inputs. No new
 third-party dependency or version is introduced by this fix.
+
+The 2026-11-07 PRoot runtime patch shares long Unix-socket aliases between local
+sessions. It changes the existing PRoot dependency only; its GPL-2.0-or-later
+source obligations include `local-arch-runtime/patches/proot-shared-unix-sockets.patch`
+and the pinned source archive and build inputs already distributed in this repository.

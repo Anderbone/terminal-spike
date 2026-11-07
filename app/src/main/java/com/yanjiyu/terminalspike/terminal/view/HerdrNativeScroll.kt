@@ -21,13 +21,16 @@ internal class HerdrNativeScroll(context: Context) {
     private var eligible = false
     private var caughtReader = false
     private var historyTapEligible = false
+    private var trackingTouch = false
+    private var awaitingSource = false
+    val hasActiveTouch: Boolean get() = trackingTouch
 
     fun reset() {
-        stopTouch()
+        cancelTouch()
         reader.clear()
     }
 
-    private fun stopTouch() {
+    fun cancelTouch() {
         scroller.forceFinished(true)
         velocity?.recycle()
         velocity = null
@@ -35,6 +38,8 @@ internal class HerdrNativeScroll(context: Context) {
         eligible = false
         caughtReader = false
         historyTapEligible = false
+        trackingTouch = false
+        awaitingSource = false
     }
 
     fun updateSource(source: HerdrPaneHistory?) {
@@ -52,7 +57,7 @@ internal class HerdrNativeScroll(context: Context) {
     ): Boolean {
         if (event.pointerCount != 1 || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             val consumed = dragging || caughtReader
-            stopTouch()
+            cancelTouch()
             return consumed
         }
         when (event.actionMasked) {
@@ -63,19 +68,23 @@ internal class HerdrNativeScroll(context: Context) {
                 velocity = VelocityTracker.obtain().also { it.addMovement(event) }
                 downX = event.x
                 downY = event.y
+                trackingTouch = true
                 lastY = event.y
                 dragging = false
                 caughtReader = reader.snapshot != null
                 val target = reader.snapshot ?: source
-                eligible = target != null && event.x >= paddingX + target.x * cellWidth &&
-                    event.x < paddingX + (target.x + target.columns) * cellWidth &&
-                    event.y >= paddingY + target.y * lineHeight &&
-                    event.y < paddingY + (target.y + target.rows) * lineHeight
+                awaitingSource = target == null
+                eligible = target != null && containsDown(target, cellWidth, lineHeight, paddingX, paddingY)
                 if (caughtReader && !eligible) reset()
                 historyTapEligible = caughtReader && eligible && !catchingFling
                 return caughtReader
             }
             MotionEvent.ACTION_MOVE -> {
+                if (!trackingTouch) return false
+                if (awaitingSource && source != null) {
+                    awaitingSource = false
+                    eligible = containsDown(source, cellWidth, lineHeight, paddingX, paddingY)
+                }
                 velocity?.addMovement(event)
                 if (abs(event.x - downX) > configuration.scaledTouchSlop ||
                     abs(event.y - downY) > configuration.scaledTouchSlop
@@ -117,12 +126,18 @@ internal class HerdrNativeScroll(context: Context) {
                 caughtReader = false
                 eligible = false
                 historyTapEligible = false
+                trackingTouch = false
+                awaitingSource = false
                 if (historyTap) onHistoryTap(event.x, event.y)
                 return consumed
             }
         }
         return dragging || caughtReader
     }
+
+    private fun containsDown(source: HerdrPaneHistory, cellWidth: Float, lineHeight: Float, paddingX: Float, paddingY: Float) =
+        downX >= paddingX + source.x * cellWidth && downX < paddingX + (source.x + source.columns) * cellWidth &&
+            downY >= paddingY + source.y * lineHeight && downY < paddingY + (source.y + source.rows) * lineHeight
 
     fun animate(): Boolean {
         if (!scroller.computeScrollOffset()) return false

@@ -9,9 +9,13 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -21,6 +25,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.BuildConfig
 import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.ui.releasenotes.ReleaseNotesDialog
+import com.yanjiyu.terminalspike.ui.releasenotes.bundledReleaseNotes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,6 +41,13 @@ private sealed interface ThirdPartyNoticesState {
 @Composable
 internal fun AboutSection() {
     val context = LocalContext.current
+    var updateHistoryVisible by rememberSaveable { mutableStateOf(false) }
+    if (updateHistoryVisible) {
+        ReleaseNotesDialog(
+            notes = bundledReleaseNotes,
+            onDismiss = { updateHistoryVisible = false },
+        )
+    }
     val noticesState by produceState<ThirdPartyNoticesState>(
         initialValue = ThirdPartyNoticesState.Loading,
         key1 = context,
@@ -80,6 +93,11 @@ internal fun AboutSection() {
                 text = stringResource(R.string.about_local_first_privacy),
                 style = MaterialTheme.typography.bodyMedium,
             )
+        }
+        item {
+            TextButton(onClick = { updateHistoryVisible = true }) {
+                Text(stringResource(R.string.release_notes_history))
+            }
         }
         item { HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp)) }
         item {

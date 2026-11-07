@@ -91,6 +91,11 @@ internal enum class SettingsCategory(
         R.string.settings_category_mosh_summary,
         "mosh extension plugin version api licence source signature",
     ),
+    GUIDE(
+        R.string.guide_title,
+        R.string.guide_summary,
+        "guide help tutorial onboarding tour getting started gestures herdr setup foldable sidebar 配置 折叠屏 使用指南 帮助 入门",
+    ),
     ABOUT(
         R.string.settings_category_about,
         R.string.settings_category_about_summary,
@@ -794,6 +799,7 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.SECURITY,
     SettingsCategory.LOCAL_ARCH,
     SettingsCategory.MOSH,
+    SettingsCategory.GUIDE,
     SettingsCategory.ABOUT,
     SettingsCategory.DEVELOPER,
     SettingsCategory.ADVANCED,

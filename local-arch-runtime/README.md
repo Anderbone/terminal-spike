@@ -53,6 +53,12 @@ linked talloc library can be rebuilt/replaced through the same route.
   with bounded `PROOT_TMP_DIR` lookup and stops spinning on storage errors.
 - `patches/proot-string-header.patch` declares upstream string functions for modern Clang.
 - `patches/proot-exitkill.patch` enables kernel tracee cleanup when PRoot dies.
+- `patches/proot-shared-unix-sockets.patch` makes opt-in long Unix socket aliases
+  stable across shells sharing a private `PROOT_TMP_DIR`. A short hash names the
+  alias; an atomically created symlink records and checks the full canonical host
+  path to reject collisions. Filesystem lookups restore registered bindings so
+  cross-session symlinks, stat and stale-socket unlink see the same endpoint.
+  Client exit leaves the server's socket intact.
 - The build rewrites talloc SONAME/NEEDED text using same-length NUL padding to
   match Android's extracted `lib*.so` names, sets an explicit non-Termux loader
   default, and pins the version independently of repository HEAD.
@@ -79,3 +85,17 @@ Dependency versions, source archives and licences are unchanged. This patch is
 part of corresponding source for the shipped runtime (`.../shmem-2`). Validate
 with the opt-in real USB `ArchSysVIpcDeviceTest` and actual PostgreSQL startup;
 plain PTY or Node tests do not prove shared-memory compatibility.
+
+### 2026-11-07 Codex daemon compatibility
+
+The `.../sockets-1` runtime enables `PROOT_SHARED_UNIX_SOCKETS=1` for Local Arch.
+Independent PRoot sessions resolve the same long guest socket path to the same
+short host alias. Normal guest unlink operations own socket cleanup; releasing
+a client's private PRoot binding no longer removes another session's endpoint.
+The mapping stays inside the app's private temporary directory and includes the
+canonical rootfs path, keeping separate guests distinct. Short paths and abstract
+sockets retain upstream behavior. This original patch is part of corresponding
+source; component versions, source archives and dependency licences are unchanged.
+The real S10e `ArchCodexDaemonDeviceTest` covers daemon startup, a second shell's
+connection, client exit and subsequent server shutdown.
+It also verifies restart after the owning PRoot shell exits without a clean stop.

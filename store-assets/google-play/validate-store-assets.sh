@@ -65,7 +65,7 @@ for category in ("phone", "tablet-7", "tablet-10"):
         print(f"{state} {path.relative_to(root)}: {width}x{height}, {size} bytes")
         failed |= state == "ERROR"
 
-manifest_path = root / "sources/phone-s23/manifest.json"
+manifest_path = root / "sources/phone-release-0.0.13/manifest.json"
 if not manifest_path.is_file():
     print("ERROR missing phone capture provenance manifest")
     failed = True

@@ -21,11 +21,14 @@ class PlayPublishingTest(unittest.TestCase):
         self.state.parent.mkdir(parents=True)
         self.bundle = self.state.parent / "app-release.aab"
         self.bundle.write_bytes(b"verified bundle")
+        notes = self.root / "store-assets/google-play/release-notes/main-en-US.txt"
+        notes.parent.mkdir(parents=True)
+        notes.write_text("Reviewed release notes.\n")
         self.manifest = {"schema": 1, "package": PLAY.PACKAGE, "track": "internal", "versionCode": 10,
                          "versionName": "0.0.7", "source": "fingerprint",
                          "sha256": hashlib.sha256(self.bundle.read_bytes()).hexdigest()}
         self.state.write_text(json.dumps(self.manifest))
-        self.args = argparse.Namespace(require_green_ci=False, with_store_assets=False, credential=self.root / "external.json",
+        self.args = argparse.Namespace(track="internal", require_green_ci=False, with_store_assets=False, credential=self.root / "external.json",
                                        signing_dir=self.root / "signing", version_name="0.0.7")
         self.patches = [patch.object(PLAY, "ROOT", self.root), patch.object(PLAY, "STATE", self.state),
                         patch.object(PLAY, "source_fingerprint", return_value="fingerprint"),
@@ -74,6 +77,45 @@ class PlayPublishingTest(unittest.TestCase):
         self.assertFalse(any("production" in url for _, url, _ in self.calls))
         receipt = json.loads((self.state.parent / "publish-receipt.json").read_text())
         self.assertEqual("completed", receipt["state"])
+
+    def test_production_requires_matching_prepared_track_and_includes_release_notes(self):
+        self.args.track = "production"
+        with patch.object(PLAY, "request") as api:
+            with self.assertRaisesRegex(RuntimeError, "prepared source/artifact changed"):
+                PLAY.publish(self.args, {9})
+            api.assert_not_called()
+        self.manifest["track"] = "production"
+        self.state.write_text(json.dumps(self.manifest))
+        notes = self.root / "store-assets/google-play/release-notes/main-en-US.txt"
+        notes.parent.mkdir(parents=True, exist_ok=True)
+        notes.write_text("New browser, guides and terminal improvements.\n")
+        track = {"track": "production", "releases": [{"versionCodes": ["10"], "status": "completed"}]}
+        with patch.object(PLAY, "command", side_effect=self.git), patch.object(PLAY, "request", side_effect=self.api), \
+                patch.object(PLAY, "inspect_play", return_value=({10}, track)) as inspect, patch("builtins.print"):
+            PLAY.publish(self.args, {9})
+        inspect.assert_called_once_with("secret-token", "production")
+        updates = [(url, data) for method, url, data in self.calls if method == "PUT"]
+        self.assertEqual(1, len(updates))
+        self.assertTrue(updates[0][0].endswith("/tracks/production"))
+        self.assertEqual("production", updates[0][1]["track"])
+        self.assertEqual("completed", updates[0][1]["releases"][0]["status"])
+        self.assertEqual(notes.read_text().strip(), updates[0][1]["releases"][0]["releaseNotes"][0]["text"])
+        self.assertEqual(1, sum("uploadType=media" in url for _, url, _ in self.calls))
+
+    def test_missing_or_oversized_production_notes_block_upload(self):
+        self.args.track = "production"
+        self.manifest["track"] = "production"
+        self.state.write_text(json.dumps(self.manifest))
+        notes = self.root / "store-assets/google-play/release-notes/main-en-US.txt"
+        notes.unlink()
+        for content in (None, "", "x" * 501):
+            if content is not None:
+                notes.write_text(content)
+            with self.subTest(content=content), patch.object(PLAY, "command", side_effect=self.git), \
+                    patch.object(PLAY, "request") as api:
+                with self.assertRaises((OSError, RuntimeError)):
+                    PLAY.publish(self.args, {9})
+                api.assert_not_called()
 
     def test_changed_source_artifact_consumed_code_and_unpushed_commit_block_upload(self):
         for case in ("source", "artifact", "consumed", "dirty", "unpushed"):

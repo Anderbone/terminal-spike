@@ -16,7 +16,8 @@ class ProotCommandTest {
         assertEquals(listOf("/bin/bash", "--login"), command.arguments.takeLast(2))
         assertEquals("-i", command.arguments[command.arguments.indexOf("/usr/bin/env") + 1])
         assertEquals("/apk/lib/arm64/libproot_loader.so", command.environment["PROOT_LOADER"])
-        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "LD_LIBRARY_PATH"), command.environment.keys)
+        assertEquals("1", command.environment["PROOT_SHARED_UNIX_SOCKETS"])
+        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "PROOT_SHARED_UNIX_SOCKETS", "LD_LIBRARY_PATH"), command.environment.keys)
         assertTrue(command.arguments.contains("--kill-on-exit"))
         assertTrue(command.arguments.contains("--link2symlink"))
         assertTrue(command.arguments.contains("--sysvipc"))
@@ -26,6 +27,14 @@ class ProotCommandTest {
     @Test(expected = IllegalArgumentException::class)
     fun ambiguousBindPathIsRejectedBeforeLaunching() {
         ProotCommand.archShell(File("/apk/lib"), File("/private/root:other"), File("/private/tmp"))
+    }
+
+    @Test
+    fun bootTimeOverrideFollowsTheRealProcBindAndLeavesProcessEntriesUnchanged() {
+        val command = ProotCommand.archShell(File("/apk/lib"), File("/private/root"), File("/private/tmp"),
+            procStat = File("/private/tmp/proc-stat-boot"))
+        assertTrue(command.arguments.indexOf("/proc") < command.arguments.indexOf("/private/tmp/proc-stat-boot:/proc/stat"))
+        assertFalse(command.arguments.any { it.endsWith(":/proc/uptime") || it.endsWith(":/proc/self/stat") })
     }
 
     @Test(expected = IllegalArgumentException::class)

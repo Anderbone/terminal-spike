@@ -13,6 +13,17 @@ class ArchEnvironmentStoreTest {
 
     @After fun cleanup() = ArchEnvironmentStore.deleteTree(directory.toPath())
 
+    @Test fun shellLeaseInitializesAndReleasesItsInstallation() {
+        install()
+        val command = ProotCommand("/unused", emptyList(), emptyMap(), directory.path)
+        val shell = ArchEnvironment.ShellLease(store.acquire(), command)
+        assertSame(command, shell.command)
+        assertThrows(IllegalStateException::class.java) { store.beginOperation() }
+        shell.close()
+        shell.close()
+        store.beginOperation().use { }
+    }
+
     @Test fun interruptedInstallNeverBecomesInstalledAndIsCleanedOnRetry() {
         val abandoned = store.beginOperation().use { operation ->
             operation.prepare()

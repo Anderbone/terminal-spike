@@ -1,10 +1,14 @@
 package com.yanjiyu.terminalspike.ui.terminal
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -70,6 +74,7 @@ internal fun TerminalSnippetsPage(
     onSave: suspend (Snippet) -> Result<Unit>,
     onEditorClosed: () -> Unit,
     snippetForEditing: (Long) -> Snippet? = { null },
+    onDelete: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val preferences = remember(context) {
@@ -92,6 +97,9 @@ internal fun TerminalSnippetsPage(
     var dropTarget by remember { mutableStateOf<Long?>(null) }
     var editingSnippetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorVisible by rememberSaveable { mutableStateOf(false) }
+    var managementRequested by rememberSaveable { mutableStateOf(false) }
+    val managing = managementRequested && canSave
+    BackHandler(enabled = managing && !editorVisible) { managementRequested = false }
     fun move(from: Long, to: Long) {
         val updated = currentOrder.toMutableList()
         val destination = updated.indexOf(to)
@@ -117,106 +125,135 @@ internal fun TerminalSnippetsPage(
     }
     val moveEarlier = stringResource(R.string.snippet_move_earlier)
     val moveLater = stringResource(R.string.snippet_move_later)
-    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 36.dp) {
-        CompactSnippetLayout(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                .onGloballyPositioned { viewport = it.boundsInRoot() }
-                .verticalScroll(scroll, enabled = dragging == null)
-                .onGloballyPositioned { origin = it.positionInRoot() }
-                .pointerInput(Unit) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { point ->
-                            val absolute = origin + point
-                            dragging = currentOrder.firstOrNull { bounds[it]?.contains(absolute) == true }
-                            dragScrollStart = scroll.value
-                            dragStart = absolute
-                            dragPosition = absolute
-                        },
-                        onDrag = { change, delta ->
-                            if (dragging != null) {
-                                change.consume()
-                                dragPosition += delta
-                                dropTarget = currentOrder.firstOrNull {
-                                    it != dragging && bounds[it]?.contains(dragPosition) == true
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            val from = dragging
-                            val to = dropTarget
-                            if (from != null && to != null) move(from, to)
-                            dragging = null
-                            dropTarget = null
-                        },
-                        onDragCancel = { dragging = null; dropTarget = null },
-                    )
-                },
-        ) {
-            val addDescription = stringResource(R.string.snippet_accessory_add)
-            FilledTonalButton(
-                enabled = canSave,
-                onClick = { editingSnippetId = null; editorVisible = true },
-                modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp)
-                    .semantics { contentDescription = addDescription },
-                contentPadding = PaddingValues(4.dp),
-            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            order.forEachIndexed { index, id ->
-                key(id) {
-                    Surface(
-                        shape = ButtonDefaults.shape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (canSend) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                        border = BorderStroke(
-                            if (dropTarget == id || dragging == id) 2.dp else 1.dp,
-                            if (dropTarget == id || dragging == id) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline,
-                        ),
-                        modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 32.dp)
-                            .combinedClickable(
-                                role = Role.Button,
-                                enabled = canSend || (id != 0L && canSave),
-                                onClick = {
-                                    if (canSend) {
-                                        if (id == 0L) onNewCodex() else onSend(id)
+    Column {
+        if (managing) {
+            Text(
+                text = stringResource(R.string.snippet_management_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 36.dp) {
+            CompactSnippetLayout(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    .onGloballyPositioned { viewport = it.boundsInRoot() }
+                    .verticalScroll(scroll, enabled = dragging == null)
+                    .onGloballyPositioned { origin = it.positionInRoot() }
+                    .pointerInput(managing) {
+                        if (!managing) return@pointerInput
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { point ->
+                                val absolute = origin + point
+                                dragging = currentOrder.firstOrNull { bounds[it]?.contains(absolute) == true }
+                                dragScrollStart = scroll.value
+                                dragStart = absolute
+                                dragPosition = absolute
+                            },
+                            onDrag = { change, delta ->
+                                if (dragging != null) {
+                                    change.consume()
+                                    dragPosition += delta
+                                    dropTarget = currentOrder.firstOrNull {
+                                        it != dragging && bounds[it]?.contains(dragPosition) == true
                                     }
-                                },
-                                onDoubleClick = if (id != 0L && canSave) {
-                                    {
-                                        if (snippetForEditing(id) != null) {
-                                            editingSnippetId = id
-                                            editorVisible = true
-                                        }
-                                    }
-                                } else null,
-                            )
-                            .onGloballyPositioned { bounds[id] = it.boundsInRoot() }
-                            .zIndex(if (dragging == id) 1f else 0f)
-                            .graphicsLayer {
-                                if (dragging == id) {
-                                    translationX = dragPosition.x - dragStart.x
-                                    translationY = dragPosition.y - dragStart.y + scroll.value - dragScrollStart
-                                    alpha = 0.8f
-                                }
-                            }
-                            .semantics {
-                                customActions = buildList {
-                                    if (index > 0) add(CustomAccessibilityAction(moveEarlier) {
-                                        move(id, order[index - 1]); true
-                                    })
-                                    if (index < order.lastIndex) add(CustomAccessibilityAction(moveLater) {
-                                        move(id, order[index + 1]); true
-                                    })
                                 }
                             },
+                            onDragEnd = {
+                                val from = dragging
+                                val to = dropTarget
+                                if (from != null && to != null) move(from, to)
+                                dragging = null
+                                dropTarget = null
+                            },
+                            onDragCancel = { dragging = null; dropTarget = null },
+                        )
+                    },
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val manageDescription = stringResource(
+                        if (managing) R.string.snippet_management_done else R.string.snippet_management_start,
+                    )
+                    FilledTonalButton(
+                        enabled = canSave,
+                        onClick = { managementRequested = !managing },
+                        modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp)
+                            .semantics { contentDescription = manageDescription },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                     ) {
                         Text(
-                            text = if (id == 0L) stringResource(R.string.snippet_accessory_example)
-                            else snippets.first { it.id == id }.label,
+                            if (managing) stringResource(R.string.done) else "✎",
                             style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                .wrapContentSize(Alignment.Center),
                         )
+                    }
+                    val addDescription = stringResource(R.string.snippet_accessory_add)
+                    FilledTonalButton(
+                        enabled = canSave,
+                        onClick = { editingSnippetId = null; editorVisible = true },
+                        modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp)
+                            .semantics { contentDescription = addDescription },
+                        contentPadding = PaddingValues(4.dp),
+                    ) { Text("+", style = MaterialTheme.typography.titleMedium) }
+                }
+                order.forEachIndexed { index, id ->
+                    key(id) {
+                        Surface(
+                            shape = ButtonDefaults.shape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (managing && id == 0L) MaterialTheme.colorScheme.onSurfaceVariant
+                            else if (managing || canSend) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            border = BorderStroke(
+                                if (dropTarget == id || dragging == id) 2.dp else 1.dp,
+                                if (dropTarget == id || dragging == id) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline,
+                            ),
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 32.dp)
+                                .clickable(
+                                    role = Role.Button,
+                                    enabled = if (managing) id != 0L else canSend,
+                                    onClick = {
+                                        if (managing) {
+                                            if (snippetForEditing(id) != null) {
+                                                editingSnippetId = id
+                                                editorVisible = true
+                                            }
+                                        } else if (canSend) {
+                                            if (id == 0L) onNewCodex() else onSend(id)
+                                        }
+                                    },
+                                )
+                                .onGloballyPositioned { bounds[id] = it.boundsInRoot() }
+                                .zIndex(if (dragging == id) 1f else 0f)
+                                .graphicsLayer {
+                                    if (dragging == id) {
+                                        translationX = dragPosition.x - dragStart.x
+                                        translationY = dragPosition.y - dragStart.y + scroll.value - dragScrollStart
+                                        alpha = 0.8f
+                                    }
+                                }
+                                .semantics {
+                                    customActions = buildList {
+                                        if (managing && index > 0) add(CustomAccessibilityAction(moveEarlier) {
+                                            move(id, order[index - 1]); true
+                                        })
+                                        if (managing && index < order.lastIndex) add(CustomAccessibilityAction(moveLater) {
+                                            move(id, order[index + 1]); true
+                                        })
+                                    }
+                                },
+                        ) {
+                            Text(
+                                text = if (id == 0L) stringResource(
+                                    if (managing) R.string.snippet_accessory_example_builtin
+                                    else R.string.snippet_accessory_example,
+                                )
+                                else snippets.first { it.id == id }.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .wrapContentSize(Alignment.Center),
+                            )
+                        }
                     }
                 }
             }
@@ -227,24 +264,25 @@ internal fun TerminalSnippetsPage(
             initial = editingSnippetId?.let(snippetForEditing)?.toEditorDraft() ?: SnippetEditorDraft(),
             onDismiss = { editorVisible = false; onEditorClosed() },
             onSave = onSave,
+            onDelete = onDelete,
         )
     }
 }
 
-// Reserve space for Add only in the first row, leaving later rows the full width.
+// Reserve space for the management/add controls in the first row only.
 @Composable
 private fun CompactSnippetLayout(modifier: Modifier, content: @Composable () -> Unit) {
     Layout(content = content, modifier = modifier) { measurables, constraints ->
         val gap = 4.dp.roundToPx()
         val rowGap = 2.dp.roundToPx()
         val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-        val add = measurables.first().measure(childConstraints)
+        val controls = measurables.first().measure(childConstraints)
         val width = constraints.maxWidth
         val placements = mutableListOf<Triple<androidx.compose.ui.layout.Placeable, Int, Int>>()
         var x = 0
         var y = 0
-        var rowHeight = add.height
-        var rowWidth = (width - add.width - gap).coerceAtLeast(0)
+        var rowHeight = controls.height
+        var rowWidth = (width - controls.width - gap).coerceAtLeast(0)
         measurables.drop(1).forEach { measurable ->
             val child = measurable.measure(childConstraints)
             if (x + child.width > rowWidth && (x > 0 || y == 0)) {
@@ -258,7 +296,7 @@ private fun CompactSnippetLayout(modifier: Modifier, content: @Composable () -> 
             rowHeight = maxOf(rowHeight, child.height)
         }
         layout(width, constraints.constrainHeight(y + rowHeight)) {
-            add.placeRelative(width - add.width, 0)
+            controls.placeRelative(width - controls.width, 0)
             placements.forEach { (child, left, top) -> child.placeRelative(left, top) }
         }
     }

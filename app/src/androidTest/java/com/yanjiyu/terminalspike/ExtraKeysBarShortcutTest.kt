@@ -22,6 +22,10 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
+import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
+import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
+import com.yanjiyu.terminalspike.ui.TerminalAccessoryBar
 import com.yanjiyu.terminalspike.ui.BufferedInputDraftState
 import com.yanjiyu.terminalspike.ui.ExtraKeysBar
 import org.junit.Assert.assertEquals
@@ -33,6 +37,41 @@ import org.junit.Test
 class ExtraKeysBarShortcutTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun imageKeyTapSelectsPhotosAndLongPressSelectsFilesWithoutAlsoOpeningPhotos() {
+        var photos = 0
+        var files = 0
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    TerminalAccessoryBar(
+                        actions = listOf(TerminalAccessoryAction.Local(TerminalLocalAccessoryAction.SELECT_IMAGES)),
+                        modifiers = AccessoryModifierSnapshot(),
+                        customizationEnabled = true,
+                        inputTargetId = 11L,
+                        bufferedInputSendEnabled = true,
+                        bufferedInputDraftState = remember { BufferedInputDraftState() },
+                        onAction = { photos++ },
+                        onSelectFiles = { files++ },
+                        onCustomize = {},
+                        onSendBufferedInput = { _, _ -> true },
+                        onBufferedInputModeChanged = {},
+                        onDirectInputMode = {},
+                    )
+                }
+            }
+        }
+        val image = composeRule.onNodeWithContentDescription("Select images and videos")
+        image.performClick()
+        composeRule.runOnIdle { assertEquals(1, photos); assertEquals(0, files) }
+        image.performTouchInput { down(center) }
+        composeRule.waitUntil(timeoutMillis = 5_000) { files == 1 }
+        image.performTouchInput { up() }
+        composeRule.runOnIdle { assertEquals(1, photos); assertEquals(1, files) }
+        image.performClick()
+        composeRule.runOnIdle { assertEquals(2, photos); assertEquals(1, files) }
+    }
 
     @Test
     fun compactDeckShowsDirectControlChordsWithFullAccessibilityAtLargeFontScale() {
@@ -61,7 +100,8 @@ class ExtraKeysBarShortcutTest {
         composeRule.onNodeWithContentDescription("Shift Left").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.SHIFT_LEFT, activated) }
         composeRule.onNodeWithContentDescription("Control C").performClick()
-        composeRule.onNodeWithContentDescription("Terminal key PGUP").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Terminal key PGUP").assertDoesNotExist()
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Hide software keyboard").assertIsDisplayed()
 
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.CTRL_C, activated) }
@@ -108,7 +148,9 @@ class ExtraKeysBarShortcutTest {
     }
 
     private fun assertShortcutAreaIsNineByTwo() {
-        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot { it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB }.map { if (it == TerminalExtraKey.CTRL) TerminalExtraKey.SHIFT_LEFT else it }.map { key ->
+        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot {
+            it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB || it == TerminalExtraKey.PAGE_UP
+        }.map { if (it == TerminalExtraKey.CTRL) TerminalExtraKey.SHIFT_LEFT else it }.map { key ->
             composeRule.onNodeWithContentDescription(
                 key.accessibilityDescription.resolve(
                     InstrumentationRegistry.getInstrumentation().targetContext.resources,
@@ -118,11 +160,21 @@ class ExtraKeysBarShortcutTest {
                 .assertHeightIsAtLeast(48.dp)
                 .fetchSemanticsNode()
                 .boundsInRoot
-        }
+        } + composeRule.onNodeWithTag("terminal_toggle_pinned_snippets")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .fetchSemanticsNode().boundsInRoot
         val deckBounds = composeRule.onNodeWithTag("terminal_input_pager")
             .fetchSemanticsNode()
             .boundsInRoot
         val rows = firstPageBounds.groupBy { bounds -> bounds.top.toInt() }
+        val backspaceBounds = composeRule.onNodeWithContentDescription("Terminal key ⌫")
+            .fetchSemanticsNode().boundsInRoot
+        val toggleBounds = composeRule.onNodeWithTag("terminal_toggle_pinned_snippets")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(backspaceBounds.top, toggleBounds.top, 0.5f)
+        assertTrue(backspaceBounds.right < toggleBounds.left)
+        assertEquals(firstPageBounds.maxOf { it.right }, toggleBounds.right, 0.5f)
 
         val escapeBounds = composeRule.onNodeWithContentDescription("Terminal key ESC")
             .fetchSemanticsNode().boundsInRoot

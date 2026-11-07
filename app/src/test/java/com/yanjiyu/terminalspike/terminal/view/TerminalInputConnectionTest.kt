@@ -22,7 +22,7 @@ class TerminalInputConnectionTest {
         assertTrue(editorInfo.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0)
         assertFalse(editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0)
         assertArrayEquals(
-            arrayOf("image/png", "image/jpeg", "image/webp", "image/gif"),
+            arrayOf("*/*"),
             editorInfo.contentMimeTypes,
         )
     }

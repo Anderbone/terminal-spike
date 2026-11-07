@@ -73,6 +73,21 @@ import org.junit.Test
 import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
+    @Test
+    fun userGuideIsSearchableAndOpensTheTourFromSettings() {
+        composeRule.setContent {
+            MaterialTheme { TestSettingsScreen() }
+        }
+        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("guide")
+        composeRule.onNodeWithText("User guide").performClick()
+        composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
+        composeRule.onNodeWithTag("user-guide-index").performScrollToNode(hasText("Start guide"))
+        composeRule.onNodeWithText("Start guide").performClick()
+        composeRule.onNodeWithTag("guide-title-0").assertIsDisplayed()
+        composeRule.onNodeWithText("Close").performClick()
+        composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
+    }
+
     @get:Rule
     val composeRule = createComposeRule()
 

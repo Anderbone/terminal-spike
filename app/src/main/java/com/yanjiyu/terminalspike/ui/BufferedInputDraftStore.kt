@@ -10,7 +10,6 @@ internal class BufferedInputDraftStore(context: Context) {
     )
 
     fun load(): String = preferences.getString("text", "").orEmpty()
-        .take(MAX_BUFFERED_INPUT_CHARACTERS)
 
     fun save(text: String) {
         // Queue each edit immediately without blocking keyboard input on disk I/O.

@@ -47,8 +47,15 @@ internal class LocalSession(private val launch: (Int, Int) -> LocalPty) : Connec
             pump.start(
                 object : OutputStream() {
                     override fun write(value: Int) = pty.write(byteArrayOf(value.toByte()))
-                    override fun write(bytes: ByteArray, offset: Int, length: Int) =
-                        pty.write(if (offset == 0 && length == bytes.size) bytes else bytes.copyOfRange(offset, offset + length))
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        var position = offset
+                        val end = offset + length
+                        while (position < end) {
+                            val next = minOf(end, position + NativePty.MAX_WRITE_BYTES)
+                            pty.write(bytes.copyOfRange(position, next))
+                            position = next
+                        }
+                    }
                 },
                 onFailure = {
                     if (!closed.get()) states.publish(ConnectionState.Failed("Local terminal input failed"))
@@ -89,7 +96,7 @@ internal class LocalSession(private val launch: (Int, Int) -> LocalPty) : Connec
     }
 
     override fun trySend(bytes: ByteArray): Boolean = synchronized(lock) {
-        !closed.get() && bytes.size <= NativePty.MAX_WRITE_BYTES && writer?.offer(bytes) == true
+        !closed.get() && writer?.offer(bytes) == true
     }
 
     override fun send(bytes: ByteArray) {

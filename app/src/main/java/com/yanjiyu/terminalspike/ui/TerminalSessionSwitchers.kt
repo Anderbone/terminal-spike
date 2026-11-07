@@ -63,6 +63,10 @@ internal fun AppSessionSwitcherDialog(
     onSelectProject: () -> Unit = {},
     filesTitle: String? = null,
     onSelectFiles: () -> Unit = {},
+    webBrowserTitle: String? = null,
+    onSelectWebBrowser: () -> Unit = {},
+    browserTitle: String? = null,
+    onSelectBrowser: () -> Unit = {},
 ) {
     WindowSwitcherDialog(
         title = stringResource(R.string.app_session_switcher_title),
@@ -79,6 +83,16 @@ internal fun AppSessionSwitcherDialog(
         },
     ) {
         SwitcherGrid {
+            if (webBrowserTitle != null) {
+                item(key = "web-browser") {
+                    TextButton(onClick = { onDismiss(); onSelectWebBrowser() }) { Text(webBrowserTitle) }
+                }
+            }
+            if (browserTitle != null) {
+                item(key = "browser") {
+                    TextButton(onClick = { onDismiss(); onSelectBrowser() }) { Text(browserTitle) }
+                }
+            }
             if (projectTitle != null) {
                 item(key = "project") {
                     TextButton(onClick = { onDismiss(); onSelectProject() }) {

@@ -74,6 +74,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -115,12 +116,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-internal const val MAX_BUFFERED_INPUT_CHARACTERS = 4_096
-
 private const val TARGET_SHORTCUT_COLUMNS = 10
 private const val MIN_COMPACT_SHORTCUT_KEY_WIDTH_DP = 29f
 private const val SHORTCUT_KEY_SPACING_DP = 2f
 private const val SHORTCUT_HORIZONTAL_PADDING_DP = 3f
+private val defaultSnippetToggle = TerminalAccessoryAction.Local(
+    TerminalLocalAccessoryAction.SNIPPETS,
+    stableId = "default:toggle_pinned_snippets",
+)
 
 @Stable
 class BufferedInputDraftState(
@@ -141,18 +144,15 @@ class BufferedInputDraftState(
         private set
 
     fun update(nextValue: TextFieldValue, activeSessionId: Long) {
-        if (nextValue.text.length > MAX_BUFFERED_INPUT_CHARACTERS) {
-            validationMessage = uiText(
-                R.string.terminal_buffer_limit_unchanged,
-                MAX_BUFFERED_INPUT_CHARACTERS,
-            )
-            return
-        }
         validationMessage = null
         lastSentValue = null
         val textChanged = value.text != nextValue.text
         value = nextValue
         if (textChanged) persistText(value.text)
+    }
+
+    internal fun finishComposition() {
+        value = value.copy(composition = null)
     }
 
     fun restoreLastSent() {
@@ -280,6 +280,7 @@ fun TerminalAccessoryBar(
     imageContentCallback: TerminalImageContentCallback? = null,
     snippetsContent: (@Composable () -> Unit)? = null,
     snippetsAboveKeyboard: Boolean = false,
+    onSelectFiles: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -289,6 +290,12 @@ fun TerminalAccessoryBar(
     var pinnedSnippetsExpanded by remember(snippetPreferences) {
         mutableStateOf(snippetPreferences.getBoolean("expanded", true))
     }
+    val onToggleSnippets: (() -> Unit)? = if (snippetsAboveKeyboard && snippetsContent != null) {
+        {
+            pinnedSnippetsExpanded = !pinnedSnippetsExpanded
+            snippetPreferences.edit().putBoolean("expanded", pinnedSnippetsExpanded).apply()
+        }
+    } else null
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val currentOnBufferedInputModeChanged by rememberUpdatedState(onBufferedInputModeChanged)
@@ -327,10 +334,13 @@ fun TerminalAccessoryBar(
             val keyWidth = (maxWidth - 6.dp - 2.dp * columnCount) / (columnCount + 1)
             val rowCount = layout.rowCount
             val displayedActions = if (actions.matchDefaultAccessoryDeck()) {
-                actions.map { action ->
-                    if (action.defaultDeckKeyOrNull() == TerminalExtraKey.CTRL) {
-                        TerminalExtraKey.SHIFT_LEFT.toAccessoryAction()
-                    } else action
+                actions.flatMap { action ->
+                    when (action.defaultDeckKeyOrNull()) {
+                        TerminalExtraKey.PAGE_UP -> emptyList()
+                        TerminalExtraKey.BACKSPACE -> listOf(action, defaultSnippetToggle)
+                        TerminalExtraKey.CTRL -> listOf(TerminalExtraKey.SHIFT_LEFT.toAccessoryAction())
+                        else -> listOf(action)
+                    }
                 }
             } else actions
             val shortcutActions = displayedActions.filterNot {
@@ -375,12 +385,7 @@ fun TerminalAccessoryBar(
                             onToggleTyping = { manualInputMode = false },
                             onInputInteraction = { manualInputMode = true },
                             snippetsExpanded = pinnedSnippetsExpanded,
-                            onToggleSnippets = if (snippetsAboveKeyboard && snippetsContent != null) {
-                                {
-                                    pinnedSnippetsExpanded = !pinnedSnippetsExpanded
-                                    snippetPreferences.edit().putBoolean("expanded", pinnedSnippetsExpanded).apply()
-                                }
-                            } else null,
+                            onToggleSnippets = onToggleSnippets,
                         )
                     }
                 }
@@ -417,6 +422,9 @@ fun TerminalAccessoryBar(
                             },
                             onAction = onAction,
                             onCustomize = onCustomize,
+                            onSelectFiles = onSelectFiles,
+                            snippetsExpanded = pinnedSnippetsExpanded,
+                            onToggleSnippets = onToggleSnippets,
                         )
                     }
                 }
@@ -605,6 +613,10 @@ private fun BufferedInputPage(
     }
 
     fun sendDraft(submit: Boolean = false) {
+        // Explicit Send/Enter confirms the word even if the IME still marks it composing.
+        draftState.finishComposition()
+        val draft = draftState.value
+        val validationMessage = draftState.validationMessage
         if (submit && sendEnabled && draft.text.isEmpty() && validationMessage == null) {
             onEnter()
             return
@@ -643,7 +655,7 @@ private fun BufferedInputPage(
                 label = stringResource(R.string.terminal_enter_short),
                 description = enterDescription,
                 onClick = { sendDraft(submit = true) },
-                enabled = sendEnabled && validationMessage == null && draft.composition == null,
+                enabled = sendEnabled && validationMessage == null,
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("buffered_input_enter"),
             )
             TypingToggle(active = true, onClick = onToggleTyping, modifier = Modifier.weight(1f))
@@ -883,6 +895,9 @@ private fun ExtraKeyPage(
     onPressFeedback: () -> Unit,
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
+    snippetsExpanded: Boolean,
+    onToggleSnippets: (() -> Unit)?,
+    onSelectFiles: (() -> Unit)?,
 ) {
     val rows = cells.chunked(columnCount)
 
@@ -900,6 +915,9 @@ private fun ExtraKeyPage(
                 onPressFeedback = onPressFeedback,
                 onAction = onAction,
                 onCustomize = onCustomize,
+                onSelectFiles = onSelectFiles,
+                snippetsExpanded = snippetsExpanded,
+                onToggleSnippets = onToggleSnippets,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -916,6 +934,9 @@ private fun ExtraKeyRow(
     onPressFeedback: () -> Unit,
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
+    snippetsExpanded: Boolean,
+    onToggleSnippets: (() -> Unit)?,
+    onSelectFiles: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val editLabel = stringResource(R.string.terminal_edit_keys_short)
@@ -938,6 +959,21 @@ private fun ExtraKeyRow(
                     glyph = null,
                     onPressFeedback = onPressFeedback,
                     onClick = onCustomize,
+                )
+            } else if (cell == defaultSnippetToggle) {
+                val expanded = onToggleSnippets != null && snippetsExpanded
+                val description = stringResource(
+                    if (expanded) R.string.terminal_hide_pinned_snippets
+                    else R.string.terminal_show_pinned_snippets,
+                )
+                ExtraKeyButton(
+                    modifier = Modifier.weight(1f).testTag("terminal_toggle_pinned_snippets"),
+                    label = description,
+                    description = description,
+                    glyph = ConnectionsGlyph.BACK,
+                    glyphRotation = if (expanded) -90f else 90f,
+                    onPressFeedback = onPressFeedback,
+                    onClick = onToggleSnippets ?: { onAction(cell) },
                 )
             } else {
                 val dispatch = cell.resolve(modifiers)
@@ -962,6 +998,10 @@ private fun ExtraKeyRow(
                     },
                     onPressFeedback = onPressFeedback,
                     onClick = { onAction(cell) },
+                    onLongClick = onSelectFiles.takeIf {
+                        (cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.SELECT_IMAGES
+                    },
+                    onLongClickLabel = stringResource(R.string.terminal_select_files),
                 )
             }
         }
@@ -980,8 +1020,11 @@ private fun ExtraKeyButton(
     disabledReason: String? = null,
     repeatEnabled: Boolean = false,
     glyph: ConnectionsGlyph? = null,
+    glyphRotation: Float = 0f,
     emphasized: Boolean = false,
     onPressFeedback: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
 ) {
     val baseFontSizeSp = terminalShortcutLabelFontSizeSp(label.length)
     val modifierStateDescription = modifierState?.let { state ->
@@ -1015,6 +1058,8 @@ private fun ExtraKeyButton(
                 repeatEnabled = repeatEnabled,
                 onPressFeedback = onPressFeedback,
                 onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
             )
             .semantics {
                 contentDescription = description
@@ -1036,7 +1081,7 @@ private fun ExtraKeyButton(
             if (glyph != null) {
                 ConnectionsGlyphIcon(
                     glyph = glyph,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(20.dp).rotate(glyphRotation),
                 )
             } else {
                 Text(
@@ -1068,16 +1113,27 @@ private fun Modifier.accessoryKeyInput(
     repeatEnabled: Boolean,
     onPressFeedback: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    onLongClickLabel: String?,
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val indication = LocalIndication.current
     val currentOnPressFeedback by rememberUpdatedState(onPressFeedback)
     val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
     return this
         .indication(interactionSource, indication)
         .semantics {
             role = Role.Button
             if (!enabled) disabled()
+            if (onLongClick != null) {
+                onLongClick(label = onLongClickLabel) {
+                    if (!enabled) return@onLongClick false
+                    currentOnPressFeedback()
+                    currentOnLongClick?.invoke()
+                    true
+                }
+            }
             onClick {
                 if (!enabled) return@onClick false
                 currentOnPressFeedback()
@@ -1085,7 +1141,7 @@ private fun Modifier.accessoryKeyInput(
                 true
             }
         }
-        .pointerInput(enabled, repeatEnabled) {
+        .pointerInput(enabled, repeatEnabled, onLongClick != null) {
             if (!enabled) return@pointerInput
             kotlinx.coroutines.coroutineScope {
                 val repeatScope = this
@@ -1095,7 +1151,13 @@ private fun Modifier.accessoryKeyInput(
                     interactionSource.tryEmit(press)
                     currentOnPressFeedback()
                     var repeated = false
-                    val repeatJob = if (repeatEnabled) {
+                    val repeatJob = if (currentOnLongClick != null) {
+                        repeatScope.launch {
+                            delay(viewConfiguration.longPressTimeoutMillis)
+                            repeated = true
+                            currentOnLongClick?.invoke()
+                        }
+                    } else if (repeatEnabled) {
                         repeatScope.launch {
                             delay(LONG_PRESS_REPEAT_INITIAL_DELAY_MS)
                             while (isActive) {

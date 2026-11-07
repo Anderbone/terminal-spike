@@ -6,6 +6,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HerdrPaneHistoryTest {
+    @Test fun wrappedThousandLineTranscriptKeepsBoundedHistoryAndAllNewestMarkers() {
+        val content = ((1..800).map { "x".repeat(96) } +
+            (1..200).map { "CODEX_SCROLL_%03d".format(it) }).joinToString("\n", postfix = "\n").toByteArray()
+        val result = readHerdrPaneHistory({ command ->
+            if ("'read'" in command) TmuxExecOutput(content, 0) else fixtureResponse(command)
+        }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+        assertTrue("A valid transcript must remain locally scrollable after narrow-screen wrapping", result is HerdrHistoryRead.Available)
+        val history = (result as HerdrHistoryRead.Available).history
+        assertEquals(HerdrPaneHistory.ROW_LIMIT, history.lines.size)
+        assertEquals((1..200).map { "CODEX_SCROLL_%03d".format(it) },
+            history.lines.map { it.text }.filter { it.startsWith("CODEX_SCROLL_") })
+        assertEquals("CODEX_SCROLL_200", history.lines.last().text)
+    }
+
     @Test fun ansiHistoryPreservesObsidianOsc8TargetsAndStillRejectsOtherSchemes() {
         val uri = "obsidian://open?vault=Obsjiyu&file=notes%2Fhistory"
         for (target in listOf(uri, "file:///private/note", "javascript:alert(1)")) {

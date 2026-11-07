@@ -19,6 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -40,6 +44,8 @@ import com.yanjiyu.terminalspike.ui.AppLockGate
 import com.yanjiyu.terminalspike.ui.StartupRecoveryGate
 import com.yanjiyu.terminalspike.ui.TerminalSpikeScreen
 import com.yanjiyu.terminalspike.ui.TerminalSpikeViewModel
+import com.yanjiyu.terminalspike.ui.guide.QuickStartGuide
+import com.yanjiyu.terminalspike.ui.guide.QuickStartState
 import com.yanjiyu.terminalspike.ui.theme.AppThemeMode
 import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
 import kotlinx.coroutines.CancellationException
@@ -54,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private val currentSettings = MutableStateFlow<AppSettings?>(null)
     private val disconnectAllConfirmationRequested = MutableStateFlow(false)
     private val openTerminalSessionRequested = MutableStateFlow<Long?>(null)
+    private val quickStartAllowed = MutableStateFlow(true)
     private var settingsJob: Job? = null
     private lateinit var appContainer: AppContainer
     private lateinit var appLockAuthenticator: AndroidAppLockAuthenticator
@@ -70,6 +77,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         disconnectAllConfirmationRequested.value =
             savedInstanceState?.getBoolean(STATE_DISCONNECT_ALL_CONFIRMATION) == true
+        quickStartAllowed.value = savedInstanceState?.getBoolean(STATE_QUICK_START_ALLOWED, true) ?: true
         captureNotificationAction(intent)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -79,7 +87,10 @@ class MainActivity : ComponentActivity() {
             deviceCredentialLauncher.launch(intent)
         }
         collectSettings(appContainer)
+        val quickStartState = QuickStartState(this)
         setContent {
+            var quickStartPending by rememberSaveable { mutableStateOf(quickStartState.shouldIntroduce) }
+            val allowQuickStart = quickStartAllowed.collectAsStateWithLifecycle().value
             val settings = currentSettings.collectAsStateWithLifecycle().value
             val lockState = appLockViewModel.controller.state.collectAsStateWithLifecycle().value
             val authorityState = appContainer.authoritativeData.state
@@ -165,11 +176,21 @@ class MainActivity : ComponentActivity() {
                 MainContentStateHost(visible = mainRoot == MainRoot.CONTENT) {
                     TerminalSpikeScreen(
                         viewModel = viewModel,
+                        releaseNotesEnabled = !disconnectAllRequested && openTerminalSessionId == null &&
+                            !(quickStartPending && allowQuickStart),
                         openTerminalSessionId = openTerminalSessionId,
                         onOpenTerminalSessionConsumed = {
                             openTerminalSessionRequested.value = null
                         },
                     )
+                }
+                if (mainRoot == MainRoot.CONTENT && quickStartPending && allowQuickStart &&
+                    !disconnectAllRequested && openTerminalSessionId == null
+                ) {
+                    QuickStartGuide(firstRun = true, onDismiss = {
+                        quickStartState.acknowledge()
+                        quickStartPending = false
+                    })
                 }
                 if (
                     shouldShowDisconnectAllConfirmation(
@@ -203,6 +224,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_QUICK_START_ALLOWED, quickStartAllowed.value)
         outState.putBoolean(
             STATE_DISCONNECT_ALL_CONFIRMATION,
             disconnectAllConfirmationRequested.value,
@@ -308,6 +330,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun captureNotificationAction(source: Intent?) {
+        if (source?.action == ACTION_CONFIRM_DISCONNECT_ALL || source?.action == ACTION_OPEN_TERMINAL_SESSION) {
+            quickStartAllowed.value = false
+        }
         when (source?.action) {
             ACTION_CONFIRM_DISCONNECT_ALL -> disconnectAllConfirmationRequested.value = true
             ACTION_OPEN_TERMINAL_SESSION -> source
@@ -349,6 +374,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val STATE_QUICK_START_ALLOWED = "quick_start_allowed"
         internal const val ACTION_CONFIRM_DISCONNECT_ALL =
             "com.yanjiyu.terminalspike.action.CONFIRM_DISCONNECT_ALL_REMOTE_TERMINALS"
         internal const val ACTION_OPEN_TERMINAL_SESSION =

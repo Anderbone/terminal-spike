@@ -14,6 +14,20 @@ class AppSettingsRepository internal constructor(
 ) {
     val settings: Flow<AppSettings> = store.data
 
+    /** Establish the baseline once; concurrent startup/acknowledgement must never reset it. */
+    internal suspend fun initializeReleaseNotes(revision: Int): AppSettings = update { builder ->
+        require(revision >= 0)
+        if (!builder.hasReleaseNotesSeenRevision()) builder.setReleaseNotesSeenRevision(revision)
+    }
+
+    internal suspend fun acknowledgeReleaseNotes(revision: Int): AppSettings = update { builder ->
+        require(revision >= 0)
+        val seen = Integer.toUnsignedLong(builder.releaseNotesSeenRevision)
+        if (!builder.hasReleaseNotesSeenRevision() || revision.toLong() > seen) {
+            builder.setReleaseNotesSeenRevision(revision)
+        }
+    }
+
     suspend fun update(transform: (AppSettings.Builder) -> Unit): AppSettings =
         store.updateData { current ->
             val updated = current.toBuilder()

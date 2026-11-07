@@ -94,6 +94,7 @@ internal fun TerminalSessionActions(
     onOpenKeyboardSettings: (Long) -> Unit,
     onOpenProject: ((Long) -> Unit)? = null,
     onOpenFiles: ((Long) -> Unit)? = null,
+    onOpenBrowser: ((Long) -> Unit)? = null,
 ) {
     LaunchedEffect(session?.id) {
         if (session == null) onDismiss()
@@ -135,6 +136,12 @@ internal fun TerminalSessionActions(
             if (availability.disconnect) {
                 SessionActionRow(R.string.session_action_disconnect) {
                     destructive = DestructiveSessionAction.DISCONNECT
+                }
+            }
+            onOpenBrowser?.let { openBrowser ->
+                SessionActionRow(R.string.browser_open) {
+                    onDismiss()
+                    openBrowser(target.id)
                 }
             }
             onOpenProject?.let { openProject ->

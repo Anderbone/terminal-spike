@@ -11,6 +11,26 @@ data class TerminalLinePosition(
 
 /** Cell/text mapping used only for gestures, selection and links, never for the draw hot path. */
 object TerminalLineGeometry {
+    /** Crop only complete terminal cells, preserving run style and hyperlink metadata. */
+    internal fun sliceColumns(line: TerminalLine, start: Int, end: Int): TerminalLine? {
+        if (start < 0 || end <= start) return null
+        var fallbackColumn = 0
+        val runs = ArrayList<TerminalRun>()
+        for (run in line.runs) {
+            val bounds = geometry(run, fallbackColumn)
+            fallbackColumn = maxOf(fallbackColumn, bounds.endColumn)
+            val left = maxOf(start, bounds.startColumn)
+            val right = minOf(end, bounds.endColumn)
+            if (left >= right) continue
+            val first = bounds.positionAtColumn(left - bounds.startColumn)
+            val last = bounds.positionAtColumn(right - bounds.startColumn)
+            if (bounds.startColumn + first.column != left || bounds.startColumn + last.column != right) return null
+            runs += run.copy(text = run.text.substring(first.textOffset, last.textOffset),
+                startColumn = left - start, columnWidth = right - left)
+        }
+        return TerminalLine.styled(runs, line.softWrappedToNext)
+    }
+
     fun positionAtColumn(line: TerminalLine, requestedColumn: Int): TerminalLinePosition {
         val target = requestedColumn.coerceAtLeast(0)
         var textOffset = 0

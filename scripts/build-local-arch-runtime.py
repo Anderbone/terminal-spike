@@ -99,6 +99,7 @@ def main():
     proot = source_root / "proot-5.1.107.81/src"
     run(["patch", "--batch", "--fuzz=0", "-p1", "-i", RUNTIME / "patches/proot-string-header.patch"], proot.parent, env)
     run(["patch", "--batch", "--fuzz=0", "-p1", "-i", RUNTIME / "patches/proot-exitkill.patch"], proot.parent, env)
+    run(["patch", "--batch", "--fuzz=0", "-p1", "-i", RUNTIME / "patches/proot-shared-unix-sockets.patch"], proot.parent, env)
     proot_env = dict(env)
     proot_env.update(
         # This impossible default prevents reliance on a Termux-owned data path.

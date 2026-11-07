@@ -4,7 +4,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,24 +79,21 @@ class BufferedInputValueTest {
     }
 
     @Test
-    fun oversizedChangeIsRejectedWithoutCreatingAPartialDraft() {
-        val draftState = BufferedInputDraftState()
-        val original = TextFieldValue("keep this exact")
-        var dispatchCount = 0
-        draftState.update(original, activeSessionId = 11L)
-
-        draftState.update(
-            TextFieldValue("a".repeat(MAX_BUFFERED_INPUT_CHARACTERS) + "😀"),
-            activeSessionId = 11L,
-        )
-        draftState.dispatch(activeSessionId = 11L, sendEnabled = true) { _, _ ->
-            dispatchCount += 1
+    fun largeDraftSurvivesEditingPersistenceSendAndUndoWithoutTruncation() {
+        var stored = ""
+        val draftState = BufferedInputDraftState { stored = it }
+        val text = "large draft 😀\n".repeat(10_000)
+        draftState.update(TextFieldValue(text), activeSessionId = 11L)
+        assertEquals(text, stored)
+        assertEquals(text, BufferedInputDraftState(stored).value.text)
+        draftState.dispatch(activeSessionId = 11L, sendEnabled = true) { _, sent ->
+            assertEquals(text, sent)
             true
         }
-
-        assertEquals(original, draftState.value)
-        assertNotNull(draftState.validationMessage)
-        assertEquals(0, dispatchCount)
+        assertEquals("", stored)
+        draftState.restoreLastSent()
+        assertEquals(text, draftState.value.text)
+        assertEquals(text, stored)
     }
 
     @Test

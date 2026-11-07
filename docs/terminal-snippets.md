@@ -1,10 +1,14 @@
 # Keyboard snippets
 
 Swipe left across the keyboard helper area to reach Snippets. Snippets wrap to the available width
-and scroll vertically when needed. Each action has a bordered button. Long-press a button,
-then drag it onto another button and release to move it to that position. The order,
+and scroll vertically when needed. Each action has a bordered button. Tap a button to use it.
+Tap **Manage snippets** (✎), beside **Add snippet**, to enter management mode. In this mode,
+tap a saved snippet to edit it, or long-press a button and drag it onto another button to
+reorder it. Buttons never send commands in management mode. **New Codex · Built-in** can
+be reordered but cannot be edited or executed in this mode. Tap **Done** or press Back
+to return to normal use; double-tapping no longer opens the editor. The order,
 including **New Codex**, is remembered on this device across app restarts. Accessibility
-actions also allow moving a button earlier or later. **Add snippet** is a separate,
+actions in management mode also allow moving a button earlier or later. **Add snippet** is a separate,
 contrasting button at the top right. **Add snippet** opens the same encrypted snippet
 editor used by the catalog. **New Codex** immediately runs the built-in sequence below in the active terminal,
 without opening an editor or saving a snippet. It is disabled when terminal input is unavailable.

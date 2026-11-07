@@ -1,8 +1,12 @@
 # Herdr recent project picker
 
-Long-press **new** in the desktop Spaces footer to open the Android project
-picker. A normal tap keeps Herdr's existing New action. Existing Space and tab
-menus, the footer menu button, and terminal text selection keep their actions.
+Long-press **+ new workspace** in the grouped desktop sidebar or mobile Switch
+list, or **new** in the legacy desktop Spaces footer, to open the Android project
+picker. The grouped sidebar requires its collapse control and tab strip; only
+the action's text cells inside the sidebar open the picker, including when the
+action is on the first row. A normal tap keeps Herdr's existing New action.
+Existing Space and tab menus, the footer menu button, and terminal text selection
+keep their actions.
 
 The picker reads `zoxide query --list` on the connected host over the existing
 authenticated SSH side channel (also for Mosh). It keeps zoxide's ranking, shows

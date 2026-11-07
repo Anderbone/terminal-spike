@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Process
+import com.yanjiyu.terminalspike.terminal.view.storeTerminalAttachment
 import java.io.File
+import java.io.InputStream
 import java.io.IOException
 import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
@@ -38,10 +40,11 @@ internal class ArchEnvironment(
     context: Context,
     private val directory: File = File(context.applicationContext.filesDir, "local-arch"),
     private val temporaryDirectory: File = File(context.applicationContext.filesDir, "arch-tmp"),
+    private val prepareShellTools: (File) -> Unit = {},
 ) {
     private val appContext = context.applicationContext
     private val store by lazy { ArchEnvironmentStore(directory) }
-    private val bootstrap = ArchBootstrap(File(appContext.applicationInfo.nativeLibraryDir))
+    private val bootstrap = ArchBootstrap(File(appContext.applicationInfo.nativeLibraryDir), ArchProcStat.forAndroid(appContext))
     private val operationMutex = Mutex()
     private val mutableState = MutableStateFlow(ArchEnvironmentState(
         supported = Process.is64Bit() && "arm64-v8a" in Build.SUPPORTED_ABIS,
@@ -169,9 +172,21 @@ internal class ArchEnvironment(
         try {
             // Offline launch remains supported. User-modified DNS is left intact.
             runCatching { bootstrap.refreshDns(lease.installation.rootfs, networkDns()) }
+            prepareShellTools(lease.installation.rootfs)
             block(ShellLease(lease, bootstrap.command(lease.installation.rootfs, temporaryDirectory, guestCommand)))
         } finally {
             lease.close()
+        }
+    }
+
+    /** Keep the installation leased while importing into the guest's private home. */
+    suspend fun storeAttachment(fileName: String, source: InputStream): String = withContext(Dispatchers.IO) {
+        store.acquire().use { lease ->
+            val guestDirectory = "/root/.cache/terminal-spike/pasted-images"
+            storeTerminalAttachment(
+                File(lease.installation.rootfs, guestDirectory.removePrefix("/")), fileName, source,
+            )
+            "$guestDirectory/$fileName"
         }
     }
 

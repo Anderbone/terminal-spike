@@ -2,15 +2,16 @@
 
 All entries are under 140 characters and describe only visible, relevant content.
 
-## Phone (English, 2026-10-06)
+## Phone (English, 2026-11-07)
 
-- `01-colour-terminal.png`: Atlas workspace in a real SSH terminal, with colourful shell output and a customizable extra-key bar.
-- `02-tmux-session-picker.png`: Terminal Spike session picker showing the demo tmux sessions atlas, docs and workbench.
-- `03-snippets.png`: Saved snippets for working-tree status, disk space, recent commits and listening ports.
-- `04-ssh-keys.png`: SSH key generation dialog with an Atlas demo key name, Ed25519 and RSA 4096 options, and passphrase fields.
-- `05-themes.png`: Appearance settings with terminal colour choices and a live terminal preview.
-- `06-port-forwarding.png`: Local TCP forwarding configuration for port 5173, with loopback listen and destination addresses.
-- `07-sftp.png`: SFTP browser showing folders, a README, Makefile and example configuration in the Atlas demo workspace.
+- `01-workspace.png`: A connected Atlas SSH terminal with real project output and compact session tabs.
+- `02-code-review.png`: Native project reader showing an actual Git diff of a small JavaScript change.
+- `03-code-server.png`: A real code-server editor open inside Terminal Spike with an Atlas project file.
+- `04-browser.png`: The built-in web browser displaying the Atlas demo project notes.
+- `05-snippets.png`: Pinned command snippets in management mode above the terminal shortcut keys.
+- `06-buffered-input.png`: Buffered terminal input containing an unsent example draft above the keyboard.
+- `07-files.png`: The SFTP file browser connected to the Atlas demo workspace.
+- `08-user-guide.png`: The built-in user guide with real recordings and tips for terminal workflows.
 
 ## 7-inch tablet
 

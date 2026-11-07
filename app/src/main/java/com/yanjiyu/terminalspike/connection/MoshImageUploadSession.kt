@@ -17,11 +17,10 @@ internal class MoshImageUploadSession(
     private val factory: MoshSshExecSessionFactory,
 ) : MoshSshExecSession by original {
     private val lock = Any()
-    private val uploadLock = Any()
     private var closed = false
-    private var connecting: AutoCloseable? = null
+    private val connecting = mutableSetOf<AutoCloseable>()
 
-    override fun uploadPastedImage(fileName: String, source: InputStream): String = synchronized(uploadLock) {
+    override fun uploadPastedImage(fileName: String, source: InputStream): String {
         synchronized(lock) { check(!closed) { "The Mosh session is closed." } }
         // Keep healthy connections (including one-time host trust) working. A failed attempt
         // may only fall back before it reads the file; the caller still owns the source stream.
@@ -40,7 +39,7 @@ internal class MoshImageUploadSession(
             override fun close() = Unit
         }
         try {
-            return@synchronized original.uploadPastedImage(fileName, borrowed)
+            return original.uploadPastedImage(fileName, borrowed)
         } catch (error: Exception) {
             if (error is CancellationException || readStarted ||
                 !config.authentication.canReloadForImageUpload()
@@ -55,6 +54,7 @@ internal class MoshImageUploadSession(
             keepaliveIntervalSeconds = config.keepaliveIntervalSeconds,
         )
         var session: MoshSshExecSession? = null
+        var pending: AutoCloseable? = null
         try {
             session = runBlocking {
                 factory.open(
@@ -69,7 +69,8 @@ internal class MoshImageUploadSession(
                     registerConnectingSession = { resource ->
                         synchronized(lock) {
                             if (closed) false else {
-                                connecting = resource
+                                pending = resource
+                                connecting.add(resource)
                                 true
                             }
                         }
@@ -78,10 +79,10 @@ internal class MoshImageUploadSession(
             }
             checkNotNull(session) { "The Mosh upload connection was cancelled." }
             synchronized(lock) { check(!closed) { "The Mosh session is closed." } }
-            session.uploadPastedImage(fileName, source)
+            return session.uploadPastedImage(fileName, source)
         } finally {
             session?.close()
-            val pending = synchronized(lock) { connecting.also { connecting = null } }
+            synchronized(lock) { pending?.let(connecting::remove) }
             if (pending !== session) pending?.close()
         }
     }
@@ -90,10 +91,10 @@ internal class MoshImageUploadSession(
         val pending = synchronized(lock) {
             if (closed) return
             closed = true
-            connecting.also { connecting = null }
+            connecting.toList().also { connecting.clear() }
         }
         try {
-            pending?.close()
+            pending.forEach { runCatching { it.close() } }
         } finally {
             original.close()
         }
