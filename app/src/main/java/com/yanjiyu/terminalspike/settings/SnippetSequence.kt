@@ -11,6 +11,7 @@ object SnippetSequence {
         data class Text(val value: String) : Step
         data class Key(val value: Byte) : Step
         data class Wait(val millis: Long) : Step
+        data class Chord(val value: String) : Step
     }
 
     suspend fun execute(
@@ -18,12 +19,14 @@ object SnippetSequence {
         canContinue: () -> Boolean,
         sendText: (String) -> Boolean,
         sendKey: (Byte) -> Boolean,
+        sendChord: (ByteArray) -> Boolean = { bytes -> bytes.all(sendKey) },
     ): Boolean {
         for (step in steps) {
             if (!canContinue()) return false
             val accepted = when (step) {
                 is Step.Text -> sendText(step.value)
                 is Step.Key -> sendKey(step.value)
+                is Step.Chord -> sendChord(SnippetKeyChord.encode(step.value)!!)
                 is Step.Wait -> { delay(step.millis); true }
             }
             if (!accepted) return false
@@ -45,7 +48,10 @@ object SnippetSequence {
                     line.removePrefix("wait ").toLongOrNull()?.takeIf { it in 1..10_000 }
                         ?: throw IllegalArgumentException("Wait must be 1–10000 ms (line ${index + 2})."),
                 )
-                else -> throw IllegalArgumentException("Unknown sequence action on line ${index + 2}.")
+                else -> {
+                    require(SnippetKeyChord.encode(line) != null) { "Unknown sequence action on line ${index + 2}." }
+                    Step.Chord(line)
+                }
             }
         }
         require(steps.isNotEmpty()) { "Add at least one sequence action." }

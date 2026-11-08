@@ -5,6 +5,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SnippetSequenceTest {
+    @Test fun chordsEncodeModifiersAndNavigation() {
+        val cases = mapOf(
+            "shift+enter" to "\u001b[13;2u",
+            "ctrl+alt+left" to "\u001b[1;7D",
+            "shift+tab" to "\u001b[Z",
+            "ctrl+alt+c" to "\u001b\u0003",
+            "shift+1" to "!",
+            "alt+plus" to "\u001b+",
+            "super+f12" to "\u001b[24;9~",
+            "ctrl+shift+alt+enter" to "\u001b[13;8u",
+        )
+        cases.forEach { (chord, bytes) ->
+            assertArrayEquals(chord, bytes.toByteArray(), SnippetKeyChord.encode(chord))
+            assertNotNull(SnippetSequence.parse("#!keys\n$chord"))
+        }
+        listOf("ctrl+ctrl+a", "hyper+a", "shift+", "f13", "ctrl+unknown").forEach {
+            assertNull(it, SnippetKeyChord.encode(it))
+        }
+    }
+
+    @Test fun chordIsSentAtomicallyWithoutPasting() = runTest {
+        val sent = mutableListOf<String>()
+        assertTrue(SnippetSequence.execute(
+            SnippetSequence.parse("#!keys\nshift+enter\nenter")!!,
+            { true }, { error("Must not paste key sequences") },
+            { sent += "byte:$it"; true },
+            { sent += it.toString(Charsets.US_ASCII); true },
+        ))
+        assertEquals(listOf("\u001b[13;2u", "byte:13"), sent)
+    }
+
     @Test fun plainTextRemainsLiteral() {
         for (text in listOf("ctrl+c", "text hello\nenter", "echo '#!keys'", "#!keys extra")) {
             assertNull(SnippetSequence.parse(text))

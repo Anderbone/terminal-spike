@@ -7,9 +7,9 @@
     <string name="snippet_management_done">Finish managing snippets</string>
     <string name="snippet_management_hint">Tap to edit · Long-press and drag to reorder</string>
     <string name="snippet_codex_example_name">Clear and start Codex</string>
-    <string name="snippet_sequence_help">Plain text is inserted literally. For a sequence, start with #!keys, then one action per line: text …, ctrl+c, enter, tab, escape, or wait 500 (milliseconds).</string>
+    <string name="snippet_sequence_help">Plain text is inserted literally. For a sequence, start with #!keys, then one action per line: text …, ctrl+c, shift+enter, ctrl+alt+left, F1–F12, tab, escape, or wait 500 (milliseconds).</string>
     <string name="snippet_sequence_execution">Key sequences run their actions in order after confirmation.</string>
-    <string name="snippet_sequence_invalid">Invalid key sequence. Use text …, ctrl+a through ctrl+z, enter, tab, escape, or wait 1–10000. Total waits must not exceed 60000 ms.</string>
+    <string name="snippet_sequence_invalid">Invalid key sequence. Use text …, a key (enter, tab, escape, arrows, home, end, pageup, pagedown, insert, delete, backspace, F1–F12, space, plus, or a character) with ctrl/alt/shift/meta/super joined by +, or wait 1–10000. Total waits must not exceed 60000 ms.</string>
     <string name="snippet_move_earlier">Move earlier</string>
     <string name="snippet_move_later">Move later</string>
     <string name="terminal_hide_pinned_snippets">Hide snippets</string>

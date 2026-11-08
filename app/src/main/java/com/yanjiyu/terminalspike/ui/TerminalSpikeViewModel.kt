@@ -4206,6 +4206,7 @@ class TerminalSpikeViewModel(
                             },
                             sendText = { activeController.sendPaste(it) },
                             sendKey = { activeController.trySend(byteArrayOf(it)) },
+                            sendChord = { activeController.trySend(it) },
                         )
                         if (!completed) {
                             _uiState.update { it.copy(notice = uiText(R.string.notice_snippet_queue_failed)) }
