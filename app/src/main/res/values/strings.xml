@@ -227,7 +227,7 @@
     <string name="settings_keyboard_preset_vim">Vim</string>
     <string name="settings_keyboard_preset_minimal">Minimal</string>
     <string name="settings_keyboard_preset_custom">Custom</string>
-    <string name="settings_keyboard_replace_hint">Tap a key below to replace it in that position.</string>
+    <string name="settings_keyboard_replace_hint">Tap a configured key to replace it. Swipe for more keys, or edit the full layout below.</string>
     <string name="settings_keyboard_replace_title">Replace %1$s</string>
     <string name="settings_keyboard_replace_summary">Choose the key or action for this position.</string>
     <string name="settings_keyboard_replace_search">Find a key</string>

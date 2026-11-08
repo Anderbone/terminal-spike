@@ -62,6 +62,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -111,6 +112,46 @@ internal fun ConnectionsHeader(
         )
     }
     val backDescription = stringResource(R.string.connections_back)
+    if (selectedTab == ConnectionsTab.HOSTS) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(ConnectionsHeaderTestTag)
+                .padding(horizontal = MaterialTheme.spacing.medium, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            onNavigateBack?.let { navigateBack ->
+                IconButton(onClick = navigateBack) {
+                    ConnectionsGlyphIcon(
+                        ConnectionsGlyph.BACK,
+                        Modifier.size(MaterialTheme.iconMetrics.standard)
+                            .semantics { contentDescription = backDescription },
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.connections_title),
+                modifier = Modifier.weight(1f).semantics { heading() },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            addActions.singleOrNull()?.let { action ->
+                val addDescription = stringResource(action.labelRes)
+                IconButton(
+                    onClick = action.onClick,
+                    modifier = Modifier.semantics { contentDescription = addDescription },
+                ) {
+                    ConnectionsGlyphIcon(
+                        ConnectionsGlyph.ADD,
+                        Modifier.size(MaterialTheme.iconMetrics.standard),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+        return
+    }
+
     val searchDescription = stringResource(selectedTab.searchLabelResId)
     val clearSearchDescription = stringResource(R.string.connections_clear_search)
     val hostControlsDescription = stringResource(
@@ -166,8 +207,8 @@ internal fun ConnectionsHeader(
                         modifier = Modifier.semantics {
                             heading()
                         },
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
                 ConnectionsAddButton(actions = addActions)
@@ -220,7 +261,8 @@ internal fun ConnectionsHeader(
                     singleLine = true,
                     shape = MaterialTheme.shapes.medium,
                     colors = appSearchFieldColors(),
-                    placeholder = { Text(searchDescription) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    placeholder = { Text(searchDescription, style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = {
                         ConnectionsGlyphIcon(
                             glyph = ConnectionsGlyph.SEARCH,
@@ -269,7 +311,7 @@ internal fun ConnectionsHeader(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Box(
                         modifier = Modifier.size(MaterialTheme.iconMetrics.minimumTouchTarget),
@@ -317,12 +359,11 @@ private fun ConnectionsAddButton(actions: List<CatalogAddAction>) {
         stringResource(R.string.connections_add_item)
     }
     Box {
-        Button(
+        FilledTonalButton(
             onClick = {
                 if (actions.size == 1) actions.single().onClick() else expanded = true
             },
             modifier = Modifier
-                .heightIn(min = MaterialTheme.iconMetrics.minimumTouchTarget)
                 .semantics {
                     contentDescription = buttonDescription
                 },
@@ -771,7 +812,7 @@ private fun HostCatalogList(
             )
             HorizontalDivider(
                 modifier = Modifier.padding(start = 76.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             )
         }
     }
@@ -824,7 +865,7 @@ private fun KeyCatalogList(
             )
             HorizontalDivider(
                 modifier = Modifier.padding(start = 76.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             )
         }
     }
@@ -893,7 +934,7 @@ private fun SnippetCatalogList(
             )
             HorizontalDivider(
                 modifier = Modifier.padding(start = 76.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             )
         }
     }
@@ -925,6 +966,9 @@ private fun HostCatalogRow(
     onDelete: ((HostRowUi) -> Unit)?,
 ) {
     val favouriteDescription = stringResource(R.string.connections_favourite_host)
+    val activityLabel = host.lastSessionActivityAtEpochMillis?.let {
+        formatHostLastUsed(it, nowEpochMillis).resolve()
+    }
     val detailsDescription = stringResource(R.string.connections_show_details, host.displayName)
     val container by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -942,6 +986,11 @@ private fun HostCatalogRow(
             )
             .semantics {
                 if (onActivate != null) contentDescription = activationDescription
+                stateDescription = listOfNotNull(
+                    host.group,
+                    host.tags.takeIf { it.isNotEmpty() }?.joinToString(" · "),
+                    activityLabel,
+                ).joinToString(" · ")
             }
             .testTag("connections-host-${host.id}"),
         color = container,
@@ -949,8 +998,8 @@ private fun HostCatalogRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 84.dp)
-                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 14.dp, bottom = 14.dp),
+                .heightIn(min = 72.dp)
+                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CatalogIconContainer(glyph = ConnectionsGlyph.HOST, active = host.activeSessionStatus != null)
@@ -960,7 +1009,10 @@ private fun HostCatalogRow(
                     .padding(horizontal = MaterialTheme.spacing.medium),
                 verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
                         text = host.displayName,
                         modifier = Modifier.weight(1f, fill = false),
@@ -979,6 +1031,8 @@ private fun HostCatalogRow(
                             color = MaterialTheme.colorScheme.tertiary,
                         )
                     }
+                    ProtocolLabel(host.protocol)
+                    HostActiveStatusLabel(host)
                 }
                 Text(
                     text = host.secondaryLine,
@@ -988,39 +1042,13 @@ private fun HostCatalogRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ProtocolLabel(host.protocol)
-                    HostActiveStatusLabel(host)
-                    val location = listOfNotNull(
-                        host.group,
-                        host.tags.takeIf { it.isNotEmpty() }?.joinToString(" · ") { "#$it" },
-                    )
-                        .joinToString(" · ")
-                    if (location.isNotEmpty()) {
-                        Text(
-                            text = location,
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-                if (host.activeSessionStatus == null && host.lastSessionActivityAtEpochMillis != null) {
+                activityLabel?.let { label ->
                     Text(
-                        text = formatHostLastUsed(
-                            host.lastSessionActivityAtEpochMillis,
-                            nowEpochMillis,
-                        ).resolve(),
+                        text = label,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -1055,6 +1083,7 @@ private fun KeyCatalogRow(
     onDelete: ((KeyRowUi) -> Unit)?,
 ) {
     val detailsDescription = stringResource(R.string.connections_show_details, key.name)
+    val keyProtectionDescription = stringResource(R.string.connections_key_protected)
     val container by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = androidx.compose.animation.core.tween(MaterialTheme.motion.standardDurationMillis),
@@ -1078,8 +1107,8 @@ private fun KeyCatalogRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 84.dp)
-                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 14.dp, bottom = 14.dp),
+                .heightIn(min = 72.dp)
+                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CatalogIconContainer(glyph = ConnectionsGlyph.KEY, active = false)
@@ -1087,38 +1116,41 @@ private fun KeyCatalogRow(
                 modifier = Modifier.weight(1f).padding(horizontal = MaterialTheme.spacing.medium),
                 verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
             ) {
-                Text(
-                    text = key.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = key.shortFingerprint,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    Text(
+                        text = key.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     MetadataLabel(key.algorithm)
-                    MetadataLabel(stringResource(key.origin.labelResId))
                     if (key.isPassphraseProtected) {
                         ConnectionsGlyphIcon(
                             ConnectionsGlyph.LOCK,
-                            Modifier.size(MaterialTheme.iconMetrics.compact),
-                        )
-                        Text(
-                            text = stringResource(R.string.connections_key_protected),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall,
+                            Modifier.size(14.dp).semantics {
+                                contentDescription = keyProtectionDescription
+                            },
                         )
                     }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = key.shortFingerprint,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    MetadataLabel(stringResource(key.origin.labelResId))
                 }
             }
             KeyOverflowMenu(key, onCopyPublicKey, onViewFingerprint, onRename, onDelete)
@@ -1162,8 +1194,8 @@ private fun SnippetCatalogRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 90.dp)
-                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 14.dp, bottom = 14.dp),
+                .heightIn(min = 72.dp)
+                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CatalogIconContainer(glyph = ConnectionsGlyph.SNIPPET, active = false)
@@ -1192,17 +1224,10 @@ private fun SnippetCatalogRow(
                     }
                 }
                 Text(
-                    text = safeSnippetPreview(snippet.command, maxCodePoints = 120, maxLines = 2),
+                    text = safeSnippetPreview(snippet.command, maxCodePoints = 120, maxLines = 1),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = snippet.metadataSummary().resolve(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

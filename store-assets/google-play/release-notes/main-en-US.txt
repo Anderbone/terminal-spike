@@ -1,6 +1,4 @@
-• Browse the web and use code-server inside your workspace.
-• New quick-start guide with short demonstrations and offline update history.
-• Compare staged, unstaged and branch changes in the project reader.
-• Attach files to local or remote terminals and manage snippets from the picker.
-• Improved Herdr history handling and local Arch Linux support, including optional local-agent settings access.
-• Fixes buffered-input Send handling.
+• Refreshed interface typography with a bundled font that works offline.
+• Settings → Keyboard now previews the terminal shortcut-key layout; tap a preview key to replace it.
+• More compact connection, settings and project screens, with clearer code-server naming.
+• Tap a numbered Herdr tab directly while the mobile switcher is open.

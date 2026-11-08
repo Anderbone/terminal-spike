@@ -1333,3 +1333,11 @@ for PRoot 5.1.107.81. The modified GPL-2.0-or-later source is reproducible from
 `local-arch-runtime/patches/proot-shared-unix-sockets.patch`, the pinned source
 archive and the existing build inputs in this public repository. Preserve these
 inputs and the PRoot notices when redistributing the modified runtime.
+
+## Inter interface font
+
+Inter 4.1 — Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter).
+The unmodified Regular, Medium, SemiBold and Bold fonts are distributed under the
+SIL Open Font License 1.1. The full upstream copyright and licence are bundled in
+`app/src/main/assets/licenses/inter-OFL.txt`.
+Source: https://github.com/rsms/inter/releases/tag/v4.1.

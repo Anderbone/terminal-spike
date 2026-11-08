@@ -148,6 +148,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardContentKind
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardRequest
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
+import com.yanjiyu.terminalspike.ui.TerminalShortcutPreview
 import com.yanjiyu.terminalspike.ui.AboutSection
 import com.yanjiyu.terminalspike.ui.guide.UserGuideIndex
 import com.yanjiyu.terminalspike.ui.AdaptivePrimaryNavigation
@@ -603,8 +604,8 @@ private fun SettingsCategoryList(
                     )
                     .testTag(SettingsCategoryTitleTestTag)
                     .semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
             )
             OutlinedTextField(
                 value = query,
@@ -612,7 +613,8 @@ private fun SettingsCategoryList(
                 modifier = Modifier.fillMaxWidth().testTag(SettingsSearchTestTag),
                 shape = MaterialTheme.shapes.medium,
                 colors = appSearchFieldColors(),
-                placeholder = { Text(stringResource(R.string.settings_search_hint)) },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                placeholder = { Text(stringResource(R.string.settings_search_hint), style = MaterialTheme.typography.bodyMedium) },
                 leadingIcon = {
                     ConnectionsGlyphIcon(
                         glyph = ConnectionsGlyph.SEARCH,
@@ -687,7 +689,7 @@ private fun SettingsCategoryRow(
         shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AppGlyphIcon(
@@ -710,7 +712,7 @@ private fun SettingsCategoryRow(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1440,6 +1442,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 KeyboardDeckPreview(
                     profile = profile,
                     onKeyClick = { index -> replacementIndex = index },
+                    onEditKeys = { editKeys = true },
                 )
                 Button(
                     onClick = { editKeys = true },
@@ -1564,57 +1567,17 @@ internal const val KeyboardPreviewKeyTestTagPrefix = "keyboard-preview-key-"
 private fun KeyboardDeckPreview(
     profile: KeyboardProfile,
     onKeyClick: (Int) -> Unit,
+    onEditKeys: () -> Unit,
 ) {
-    val rowCount = profile.layout.rowCount
-    val columns = ((profile.orderedActions.size + rowCount - 1) / rowCount).coerceAtLeast(1)
-    Surface(
-        modifier = Modifier.fillMaxWidth().testTag(KeyboardPreviewTestTag),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            profile.orderedActions.chunked(columns).forEachIndexed { rowIndex, rowActions ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    rowActions.forEachIndexed { columnIndex, action ->
-                        val index = rowIndex * columns + columnIndex
-                        val label = keyboardActionLabel(action)
-                        val replaceDescription = stringResource(
-                            R.string.settings_keyboard_replace_description,
-                            label,
-                            index + 1,
-                        )
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .testTag("$KeyboardPreviewKeyTestTagPrefix$index")
-                                .clickable(role = Role.Button) { onKeyClick(index) }
-                                .semantics {
-                                    contentDescription = replaceDescription
-                                },
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(8.dp),
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                    repeat(columns - rowActions.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
+    val runtimeActions = profile.toRuntimeAccessoryActionsOrNull().orEmpty()
+    Box(Modifier.fillMaxWidth().testTag(KeyboardPreviewTestTag)) {
+        TerminalShortcutPreview(
+            actions = runtimeActions,
+            layout = profile.layout,
+            keyTagPrefix = KeyboardPreviewKeyTestTagPrefix,
+            onKeyClick = onKeyClick,
+            onEditKeys = onEditKeys,
+        )
     }
 }
 
@@ -2702,7 +2665,7 @@ private fun DetailHeading(@StringRes title: Int, @StringRes summary: Int) {
         Text(
             text = stringResource(title),
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { heading() },
         )
         Text(

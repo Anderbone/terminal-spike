@@ -325,6 +325,11 @@ class SettingsScreenTest {
             }
         }
 
+        // The settings preview includes the live fixed input rail and default-deck controls.
+        composeRule.onNodeWithTag("terminal_typing_toggle").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Shift Left").assertIsDisplayed()
+
         composeRule.onNodeWithTag("$KeyboardPreviewKeyTestTagPrefix${0}")
             .assertHeightIsAtLeast(48.dp)
             .performClick()

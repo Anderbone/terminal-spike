@@ -1530,12 +1530,6 @@ fun TerminalSpikeScreen(
                                     projectSelected = false
                                 },
                                 modifier = Modifier.weight(1f),
-                                onOpenBrowser = {
-                                    projectState.sessionId?.let { id ->
-                                        browserSessionId = id
-                                        viewModel.openBrowser(id, projectState.snapshot?.root)
-                                    }
-                                },
                             )
                         } else if (filesVisible) {
                             SftpScreen(

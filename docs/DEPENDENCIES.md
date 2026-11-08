@@ -293,3 +293,12 @@ The 2026-11-07 PRoot runtime patch shares long Unix-socket aliases between local
 sessions. It changes the existing PRoot dependency only; its GPL-2.0-or-later
 source obligations include `local-arch-runtime/patches/proot-shared-unix-sockets.patch`
 and the pinned source archive and build inputs already distributed in this repository.
+
+## Interface typography
+
+Inter 4.1 (static Regular, Medium, SemiBold and Bold TTFs) is bundled for application
+UI typography; system fallback covers Chinese and other missing glyphs.
+Source: https://github.com/rsms/inter/releases/tag/v4.1 (unmodified `extras/ttf` files).
+Licence: SIL Open Font License 1.1. Preserve the copyright and full licence in
+`app/src/main/assets/licenses/inter-OFL.txt`; font binaries are pinned by
+`scripts/verify-bundled-fonts.sh`. No runtime download is used.

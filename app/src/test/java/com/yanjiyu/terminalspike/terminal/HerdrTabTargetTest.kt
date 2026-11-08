@@ -8,6 +8,52 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HerdrTabTargetTest {
+    @Test fun switcherTabTapClosesOverlayBeforeClickingAndLeavesListClicksUntouched() {
+        for (bottom in listOf(false, true)) for (left in listOf(false, true)) {
+            val frames = ArrayDeque<android.view.Choreographer.FrameCallback>()
+            val scheduler = object : TerminalFrameScheduler {
+                override fun postFrame(callback: android.view.Choreographer.FrameCallback) { frames.addLast(callback) }
+            }
+            val sent = mutableListOf<ByteArray>()
+            val controller = TerminalController(TerminalBuffer(), scheduler)
+            controller.setInputSink(object : TerminalInputSink {
+                override fun send(bytes: ByteArray) { sent += bytes }
+            }, onResize = { _, _ -> })
+            controller.reportTerminalSize(40, 10)
+            controller.herdrSessionActive = true
+            val top = if (bottom) 8 else 1
+            val rule = if (bottom) 7 else 3
+            val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(40, 10)
+            val output = buildString {
+                append("\u001B[?1000;1006h\u001B[H 1  2 \u001B[38;5;245m + \u001B[0m")
+                append("\u001B[${top + 1};1H")
+                append(if (left) " close   │ switch" else " switch                       │ close")
+                append("\u001B[${top + 2};1H")
+                append(if (left) "    ×    │" else "                              │ ×")
+                append("\u001B[${rule + 1};1H" + "─".repeat(40))
+            }
+            controller.updateTerminalFrame(engine.accept(output.toByteArray()))
+            while (frames.isNotEmpty()) frames.removeFirst().doFrame(1L)
+            val closeColumn = if (left) 1 else 31
+            val dismiss = "\u001B[<0;${closeColumn + 1};${top + 1}M\u001B[<0;${closeColumn + 1};${top + 1}m"
+            for (column in listOf(1, 4, 7)) {
+                sent.clear()
+                assertTrue(controller.sendMouseClick(column, 0))
+                org.junit.Assert.assertEquals(dismiss + "\u001B[<0;${column + 1};1M\u001B[<0;${column + 1};1m",
+                    sent.single().toString(Charsets.US_ASCII))
+            }
+            for ((column, row) in listOf(3 to (if (bottom) 2 else 5), 20 to 0)) {
+                sent.clear()
+                assertTrue(controller.sendMouseClick(column, row))
+                org.junit.Assert.assertEquals("\u001B[<0;${column + 1};${row + 1}M\u001B[<0;${column + 1};${row + 1}m",
+                    sent.single().toString(Charsets.US_ASCII))
+            }
+            sent.clear()
+            assertTrue(controller.sendMouseClick(1, 0, secondary = true))
+            org.junit.Assert.assertEquals("\u001B[<2;2;1M\u001B[<2;2;1m", sent.single().toString(Charsets.US_ASCII))
+        }
+    }
+
     @Test fun mobileSwitchHeadersAllowDividersInTheStatusText() {
         for (bottom in listOf(false, true)) {
             for (left in listOf(false, true)) {

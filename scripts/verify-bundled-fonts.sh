@@ -11,6 +11,10 @@ expected_files=(
   cascadia_mono_regular.ttf
   ibm_plex_mono_bold.ttf
   ibm_plex_mono_regular.ttf
+  inter_bold.ttf
+  inter_medium.ttf
+  inter_regular.ttf
+  inter_semibold.ttf
   jetbrains_mono_bold.ttf
   jetbrains_mono_regular.ttf
   source_code_pro_bold.ttf
@@ -49,6 +53,10 @@ a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f  app/src/main/r
 b2095e0d657e6d28dc32444a9dacabab0c9241d0bf39d96371756cc9bdbc3a5f  app/src/main/res/font/source_code_pro_bold.ttf
 74bd80d3e42a08517cd7e1108ba3d86f2da29ac0f3065be95e0357956ab9db37  app/src/main/res/font/source_code_pro_regular.ttf
 2dc316f2505a0cbfbcf6060a1b4ba85b0a2974189e30c0037cdedc436a25a4ff  app/src/main/res/font/symbols_nerd_font_mono_regular.ttf
+288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f  app/src/main/res/font/inter_bold.ttf
+97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872  app/src/main/res/font/inter_medium.ttf
+40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82  app/src/main/res/font/inter_regular.ttf
+78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3  app/src/main/res/font/inter_semibold.ttf
 CHECKSUMS
 
 printf 'Verified %d bundled font binaries.\n' "${#expected_files[@]}"

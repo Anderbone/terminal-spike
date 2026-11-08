@@ -95,7 +95,6 @@ internal fun ProjectScreen(
     onPasteToTerminal: (Long, String) -> Boolean,
     onReturnToTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenBrowser: (() -> Unit)? = null,
 ) {
     // Capture immutable values before the provider lambda: an old provider must never observe
     // another tab's live state before its saved scroll state has been collected.
@@ -140,7 +139,7 @@ internal fun ProjectScreen(
                     HorizontalDivider()
                     key(state.tabId) {
                         saved.SaveableStateProvider(state.tabId) {
-                            ProjectWorkspace(state, controller, onPasteToTerminal, onReturnToTerminal, Modifier.weight(1f), onOpenBrowser)
+                            ProjectWorkspace(state, controller, onPasteToTerminal, onReturnToTerminal, Modifier.weight(1f))
                         }
                     }
                 }
@@ -157,7 +156,6 @@ private fun ProjectWorkspace(
     onPasteToTerminal: (Long, String) -> Boolean,
     onReturnToTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenBrowser: (() -> Unit)? = null,
 ) {
     var directoryDialog by rememberSaveable { mutableStateOf(false) }
     var reviewDialog by rememberSaveable { mutableStateOf(false) }
@@ -180,17 +178,6 @@ private fun ProjectWorkspace(
     PullToRefreshBox(isRefreshing = state.busy, onRefresh = controller::refresh,
         modifier = modifier.fillMaxSize().testTag("project-pull-refresh")) {
         Column(Modifier.fillMaxSize().testTag("project-screen")) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(state.snapshot?.let { "${state.title} · ${it.branch}" } ?: state.title,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 3.dp))
-                ProjectAction(onClick = { directoryDialog = true }, enabled = !state.busy) { Text(stringResource(R.string.project_directory)) }
-                onOpenBrowser?.let { open ->
-                    ProjectAction(onClick = open) { Text(stringResource(R.string.browser_code_server)) }
-                }
-                ProjectAction(onClick = controller::refresh, enabled = !state.busy) { Text(stringResource(R.string.project_refresh)) }
-            }
             Box(Modifier.fillMaxWidth().height(4.dp)) {
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxSize())
             }

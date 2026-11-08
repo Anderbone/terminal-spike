@@ -23,4 +23,8 @@
     <string name="release_notes_2_snippets">Edit or delete snippets from the snippet picker, and show or hide pinned snippets from the keyboard toolbar.</string>
     <string name="release_notes_2_history">Herdr history handles delayed snapshots, redraws and narrow screens more reliably.</string>
     <string name="release_notes_2_input">Keyboard Send handles newly typed or dictated buffered input more reliably.</string>
+    <string name="release_notes_3_typography">A bundled Inter font gives the app interface consistent typography, including offline.</string>
+    <string name="release_notes_3_keyboard">The preview in Settings → Keyboard now uses the same shortcut-key layout as the terminal. Tap a key in the preview to replace it.</string>
+    <string name="release_notes_3_screens">More compact connection, settings and project screens leave more room for your work, with clearer code-server naming.</string>
+    <string name="release_notes_3_herdr">Tap a numbered Herdr tab directly while the mobile switcher is open.</string>
 </resources>

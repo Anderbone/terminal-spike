@@ -17,6 +17,20 @@ internal data class ReleaseNotes(
 /** Newest first. Revisions identify authored release notes, independently of APK build codes. */
 internal val bundledReleaseNotes = listOf(
     ReleaseNotes(
+        revision = 3,
+        versionName = "0.0.14",
+        sections = listOf(
+            ReleaseNoteSection(
+                R.string.release_notes_improved,
+                listOf(R.string.release_notes_3_typography, R.string.release_notes_3_keyboard, R.string.release_notes_3_screens),
+            ),
+            ReleaseNoteSection(
+                R.string.release_notes_fixed,
+                listOf(R.string.release_notes_3_herdr),
+            ),
+        ),
+    ),
+    ReleaseNotes(
         revision = 2,
         versionName = "0.0.13",
         sections = listOf(

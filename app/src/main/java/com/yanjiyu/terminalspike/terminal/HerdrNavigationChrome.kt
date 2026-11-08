@@ -61,6 +61,30 @@ internal object HerdrNavigationChrome {
     private fun mobileBarTops(rows: Int, hasTopTabs: Boolean): List<Int> =
         if (hasTopTabs) listOf(0, 1, rows - 2).distinct() else listOf(0, rows - 2).distinct()
 
+    /** Navigate mode consumes tab clicks until its visible close button is pressed. */
+    fun switcherCloseForTabClick(
+        screen: List<TerminalLine>, columns: Int, rows: Int, column: Int, row: Int,
+    ): Pair<Int, Int>? {
+        if (column !in 0 until columns || row != 0 ||
+            mobileSwitcherBody(screen, columns, rows) == null ||
+            tabRows(screen, 0, rows).singleOrNull() != 0
+        ) return null
+        val addTab = screen[0].runs.firstOrNull {
+            it.columnWidth in 1..3 && it.text.trim() == "+"
+        } ?: return null
+        if (column >= addTab.startColumn + addTab.columnWidth) return null
+        for (top in mobileBarTops(rows, true)) {
+            val header = screen[top]
+            val divider = header.text.indexOf('│')
+            if (divider < 0) continue
+            val sides = header.text.split('│')
+            if (sides.size != 2 || sides.none { it.trim() == "switch" }) continue
+            val dividerColumn = TerminalLineGeometry.columnAtOffset(header, divider)
+            return (if (sides[0].trim() == "switch") dividerColumn + 1 else 1) to top
+        }
+        return null
+    }
+
     fun isContextMenuCell(
         screen: List<TerminalLine>,
         columns: Int,

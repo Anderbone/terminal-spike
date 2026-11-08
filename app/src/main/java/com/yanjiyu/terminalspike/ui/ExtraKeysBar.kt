@@ -307,7 +307,6 @@ fun TerminalAccessoryBar(
         tonalElevation = 0.dp,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
             val keyboardVisible = rememberTerminalKeyboardVisible()
             var manualInputMode by remember(inputTargetId) { mutableStateOf<Boolean?>(null) }
             var inputContextIdentity by remember(inputTargetId) { mutableStateOf(inputContext.identity) }
@@ -333,16 +332,7 @@ fun TerminalAccessoryBar(
             val columnCount = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
             val keyWidth = (maxWidth - 6.dp - 2.dp * columnCount) / (columnCount + 1)
             val rowCount = layout.rowCount
-            val displayedActions = if (actions.matchDefaultAccessoryDeck()) {
-                actions.flatMap { action ->
-                    when (action.defaultDeckKeyOrNull()) {
-                        TerminalExtraKey.PAGE_UP -> emptyList()
-                        TerminalExtraKey.BACKSPACE -> listOf(action, defaultSnippetToggle)
-                        TerminalExtraKey.CTRL -> listOf(TerminalExtraKey.SHIFT_LEFT.toAccessoryAction())
-                        else -> listOf(action)
-                    }
-                }
-            } else actions
+            val displayedActions = displayedAccessoryActions(actions)
             val shortcutActions = displayedActions.filterNot {
                 it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
                     it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
@@ -391,44 +381,18 @@ fun TerminalAccessoryBar(
                 }
             }
             val shortcutContent: @Composable (Int) -> Unit = { page ->
-                Row(Modifier.fillMaxSize()) {
-                    Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
-                        .padding(start = 3.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ExtraKeyButton(
-                            label = stringResource(R.string.terminal_escape_short),
-                            description = escapeDescription,
-                            onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                        TypingToggle(
-                            active = false,
-                            onClick = { manualInputMode = true },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
-                        ExtraKeyPage(
-                            cells = shortcutPages[page],
-                            columnCount = columnCount,
-                            rowCount = rowCount,
-                            modifiers = modifiers,
-                            customizationEnabled = customizationEnabled,
-                            keyRepeatEnabled = keyRepeatEnabled,
-                            onPressFeedback = {
-                                if (hapticFeedbackEnabled) {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
-                                }
-                            },
-                            onAction = onAction,
-                            onCustomize = onCustomize,
-                            onSelectFiles = onSelectFiles,
-                            snippetsExpanded = pinnedSnippetsExpanded,
-                            onToggleSnippets = onToggleSnippets,
-                        )
-                    }
-                }
+                ShortcutDeckPage(
+                    shortcutPages, page, keyWidth, columnCount, rowCount, modifiers,
+                    customizationEnabled, keyRepeatEnabled,
+                    onPressFeedback = {
+                        if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                    },
+                    onAction = onAction, onCustomize = onCustomize,
+                    onTyping = { manualInputMode = true }, onSelectFiles = onSelectFiles,
+                    snippetsExpanded = pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
+                )
             }
+
             Column {
                 if (snippetsAboveKeyboard && snippetsContent != null && pinnedSnippetsExpanded) {
                     Box(Modifier.fillMaxWidth().heightIn(max = 106.dp).testTag("terminal_pinned_snippets")) {
@@ -451,6 +415,118 @@ fun TerminalAccessoryBar(
                 }
             }
 
+        }
+    }
+}
+
+private fun displayedAccessoryActions(actions: List<TerminalAccessoryAction>): List<TerminalAccessoryAction> =
+    if (actions.matchDefaultAccessoryDeck()) {
+        actions.flatMap { action ->
+            when (action.defaultDeckKeyOrNull()) {
+                TerminalExtraKey.PAGE_UP -> emptyList()
+                TerminalExtraKey.BACKSPACE -> listOf(action, defaultSnippetToggle)
+                TerminalExtraKey.CTRL -> listOf(TerminalExtraKey.SHIFT_LEFT.toAccessoryAction())
+                else -> listOf(action)
+            }
+        }
+    } else actions
+
+@Composable
+private fun ShortcutDeckPage(
+    shortcutPages: List<List<TerminalAccessoryAction?>>,
+    page: Int,
+    keyWidth: Dp,
+    columnCount: Int,
+    rowCount: Int,
+    modifiers: AccessoryModifierSnapshot,
+    customizationEnabled: Boolean,
+    keyRepeatEnabled: Boolean,
+    onPressFeedback: () -> Unit,
+    onAction: (TerminalAccessoryAction) -> Unit,
+    onCustomize: () -> Unit,
+    onTyping: () -> Unit,
+    onSelectFiles: (() -> Unit)?,
+    snippetsExpanded: Boolean,
+    onToggleSnippets: (() -> Unit)?,
+    keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
+) {
+    val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
+            .padding(start = 3.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ExtraKeyButton(
+                label = stringResource(R.string.terminal_escape_short),
+                description = escapeDescription,
+                onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
+                modifier = keyModifier(TerminalExtraKey.ESC.toAccessoryAction()).weight(1f).fillMaxWidth(),
+            )
+            TypingToggle(
+                active = false,
+                onClick = onTyping,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            ExtraKeyPage(
+                cells = shortcutPages[page],
+                columnCount = columnCount,
+                rowCount = rowCount,
+                modifiers = modifiers,
+                customizationEnabled = customizationEnabled,
+                keyRepeatEnabled = keyRepeatEnabled,
+                onPressFeedback = onPressFeedback,
+                onAction = onAction,
+                onCustomize = onCustomize,
+                onSelectFiles = onSelectFiles,
+                snippetsExpanded = snippetsExpanded,
+                keyModifier = keyModifier,
+                onToggleSnippets = onToggleSnippets,
+            )
+        }
+    }
+}
+
+/** Settings uses the live shortcut renderer without starting terminal input or IME state. */
+@Composable
+internal fun TerminalShortcutPreview(
+    actions: List<TerminalAccessoryAction>,
+    layout: KeyboardLayout,
+    keyTagPrefix: String,
+    onKeyClick: (Int) -> Unit,
+    onEditKeys: () -> Unit,
+) {
+    fun sourceIndex(action: TerminalAccessoryAction): Int = actions.indexOfFirst {
+        it.stableId == action.stableId ||
+            (action.defaultDeckKeyOrNull() != null && it.defaultDeckKeyOrNull() == action.defaultDeckKeyOrNull())
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(106.dp)) {
+            val columns = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
+            val keyWidth = (maxWidth - 6.dp - 2.dp * columns) / (columns + 1)
+            val shortcuts = displayedAccessoryActions(actions).filterNot {
+                it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
+                    it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+            }
+            val pages = terminalAccessoryPages(shortcuts, columns, layout.rowCount,
+                !actions.matchDefaultAccessoryDeck())
+            val pager = rememberPagerState { pages.size }
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+                ShortcutDeckPage(
+                    pages, page, keyWidth, columns, layout.rowCount, AccessoryModifierSnapshot(),
+                    customizationEnabled = true, keyRepeatEnabled = false, onPressFeedback = {},
+                    onAction = { action ->
+                        val index = sourceIndex(action)
+                        if (index >= 0) onKeyClick(index) else onEditKeys()
+                    },
+                    onCustomize = onEditKeys, onTyping = onEditKeys, onSelectFiles = null,
+                    snippetsExpanded = false, onToggleSnippets = null,
+                    keyModifier = { action ->
+                        val index = sourceIndex(action)
+                        if (index >= 0) Modifier.testTag("$keyTagPrefix$index") else Modifier
+                    },
+                )
+            }
         }
     }
 }
@@ -898,6 +974,7 @@ private fun ExtraKeyPage(
     snippetsExpanded: Boolean,
     onToggleSnippets: (() -> Unit)?,
     onSelectFiles: (() -> Unit)?,
+    keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
     val rows = cells.chunked(columnCount)
 
@@ -907,6 +984,7 @@ private fun ExtraKeyPage(
     ) {
         repeat(rowCount) { rowIndex ->
             ExtraKeyRow(
+                keyModifier = keyModifier,
                 cells = rows.getOrElse(rowIndex) { emptyList() },
                 columnCount = columnCount,
                 modifiers = modifiers,
@@ -938,6 +1016,7 @@ private fun ExtraKeyRow(
     onToggleSnippets: (() -> Unit)?,
     onSelectFiles: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
     val editLabel = stringResource(R.string.terminal_edit_keys_short)
     val customizeDescription = stringResource(R.string.terminal_customize_keys)
@@ -967,7 +1046,7 @@ private fun ExtraKeyRow(
                     else R.string.terminal_show_pinned_snippets,
                 )
                 ExtraKeyButton(
-                    modifier = Modifier.weight(1f).testTag("terminal_toggle_pinned_snippets"),
+                    modifier = keyModifier(cell).weight(1f).testTag("terminal_toggle_pinned_snippets"),
                     label = description,
                     description = description,
                     glyph = ConnectionsGlyph.BACK,
@@ -983,7 +1062,7 @@ private fun ExtraKeyRow(
                     ?.explanation
                     ?.resolve()
                 ExtraKeyButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = keyModifier(cell).weight(1f),
                     label = cell.label.resolve(),
                     modifierState = modifierState,
                     enabled = disabledReason == null,

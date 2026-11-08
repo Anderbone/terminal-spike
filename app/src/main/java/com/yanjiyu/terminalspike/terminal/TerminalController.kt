@@ -390,8 +390,15 @@ class TerminalController(
     fun sendMouseClick(column: Int, row: Int, secondary: Boolean = false): Boolean {
         if (!terminalModes.mouseTracking || !viewport.autoFollow) return false
         if (column !in 0 until terminalColumns || row !in 0 until terminalRows) return false
+        val close = if (herdrSessionActive && !secondary) terminalScreen?.let {
+            HerdrNavigationChrome.switcherCloseForTabClick(it, terminalColumns, terminalRows, column, row)
+        } else null
+        val dismiss = close?.let { (closeColumn, closeRow) ->
+            TerminalMouseSequences.click(closeColumn, closeRow, terminalModes.sgrMouseEncoding,
+                reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10)
+        } ?: byteArrayOf()
         return trySendUserInput(
-            bytes = TerminalMouseSequences.click(
+            bytes = dismiss + TerminalMouseSequences.click(
                 column = column,
                 row = row,
                 sgrEncoding = terminalModes.sgrMouseEncoding,

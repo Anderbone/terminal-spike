@@ -199,7 +199,11 @@ internal fun ConnectionsScreen(
     val pendingEditor = pendingEditorToken?.let(::decodePendingConnectionsEditor)
     val readyEditorCatalog = (state.loadState as? ConnectionsLoadState.Ready)?.editorCatalog
     val editorCatalog = readyEditorCatalog ?: ConnectionsEditorCatalog()
-    val displayedState = state.copy(selectedTab = displayedTab)
+    val displayedState = state.copy(
+        selectedTab = displayedTab,
+        searchQuery = if (displayedTab == ConnectionsTab.HOSTS) "" else state.searchQuery,
+        hostFilters = if (displayedTab == ConnectionsTab.HOSTS) HostFilters() else state.hostFilters,
+    )
 
     LaunchedEffect(initialHostEditorId) {
         if (initialHostEditorId != null) {
