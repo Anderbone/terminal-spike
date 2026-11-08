@@ -89,7 +89,7 @@ internal class ArchBootstrap(
             val buffer = ByteArray(32 * 1024)
             while (true) {
                 checkCancelled()
-                if (System.nanoTime() >= deadline) throw IOException("Arch command timed out")
+                if (System.nanoTime() >= deadline) throw IOException("Arch command timed out.\n" + archDiagnosticOutput(output.toString()).takeLast(8 * 1024))
                 val count = pty.read(buffer)
                 if (count < 0) break
                 if (count > 0) output.append(String(buffer, 0, count, Charsets.UTF_8))
@@ -102,8 +102,7 @@ internal class ArchBootstrap(
                 exitCode = pty.exitCode()
             }
             if (exitCode != 0) {
-                throw IOException("Arch command exited with status $exitCode: " + output.take(3072) +
-                    if (output.length > 3072) "\n[...bounded output...]\n" + output.takeLast(2048) else "")
+                throw IOException("Arch command exited with status $exitCode:\n" + archDiagnosticOutput(output.toString()).takeLast(8 * 1024))
             }
             return output.toString()
         }

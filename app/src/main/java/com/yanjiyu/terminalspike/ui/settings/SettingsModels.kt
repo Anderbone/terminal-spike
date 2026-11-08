@@ -183,7 +183,8 @@ internal data class AppPreferences(
     val sensitiveClipboardClearSeconds: Int = 0,
     val multilinePasteConfirmationEnabled: Boolean = false,
     val snippetsAboveKeyboard: Boolean = false,
-    val voiceInputEnabled: Boolean = true,
+    val voiceInputEnabled: Boolean = false,
+    val inputButtonsOnRight: Boolean = false,
     val voiceInputLanguage: VoiceInputLanguage = VoiceInputLanguage.DEVICE_DEFAULT,
 )
 
@@ -502,6 +503,16 @@ internal fun KeyboardProfile.isUntouchedShippedKeyboardDeck(): Boolean =
 private const val SHIPPED_KEYBOARD_PROFILE_NAME = "Default"
 
 private val previousGeneralKeyboardActionOrders: List<List<KeyboardAction>> = listOf(
+    KeyboardAction.DEFAULT_ORDER.map {
+        if (it == KeyboardAction.AI_AGENTS) KeyboardAction.TMUX_SESSIONS else it
+    },
+    KeyboardAction.DEFAULT_ORDER.map {
+        when (it) {
+            KeyboardAction.AI_AGENTS -> KeyboardAction.TMUX_SESSIONS
+            KeyboardAction.SELECT_IMAGES -> KeyboardAction.PASTE
+            else -> it
+        }
+    },
     KeyboardAction.DEFAULT_ORDER.map { action ->
         if (action == KeyboardAction.SELECT_IMAGES) KeyboardAction.PASTE else action
     },
@@ -677,6 +688,10 @@ private fun KeyboardAction.toRuntimeAccessoryActionOrNull(
         action = TerminalLocalAccessoryAction.SNIPPETS,
         stableId = wireCode,
     )
+    KeyboardAction.AI_AGENTS -> TerminalAccessoryAction.Local(
+        action = TerminalLocalAccessoryAction.AI_AGENTS,
+        stableId = wireCode,
+    )
     KeyboardAction.TMUX_SESSIONS -> TerminalAccessoryAction.Local(
         action = TerminalLocalAccessoryAction.TMUX_SESSIONS,
         stableId = wireCode,
@@ -768,6 +783,7 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.SELECT_IMAGES,
     KeyboardAction.SNIPPETS,
     KeyboardAction.TMUX_SESSIONS,
+    KeyboardAction.AI_AGENTS,
     KeyboardAction.KEYBOARD_SETTINGS,
     -> null
     else -> runCatching { TerminalExtraKey.valueOf(name) }.getOrNull()
@@ -842,7 +858,8 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     sensitiveClipboardClearSeconds = sensitiveClipboardClearSeconds,
     multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
     snippetsAboveKeyboard = snippetsAboveKeyboard,
-    voiceInputEnabled = !voiceInputDisabled,
+    voiceInputEnabled = hasVoiceInputDisabled() && !voiceInputDisabled,
+    inputButtonsOnRight = inputButtonsOnRight,
     voiceInputLanguage = VoiceInputLanguage.fromLanguageTag(voiceInputLanguageTag),
 )
 

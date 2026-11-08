@@ -1,5 +1,8 @@
 package com.yanjiyu.terminalspike.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.animation.animateColorAsState
@@ -38,8 +41,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -196,7 +200,9 @@ fun ExtraKeysBar(
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
-    voiceInputEnabled: Boolean = true,
+    voiceInputEnabled: Boolean = false,
+    inputButtonsOnRight: Boolean = false,
+    onInputButtonsOnRight: (Boolean) -> Unit = {},
     voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
@@ -223,6 +229,8 @@ fun ExtraKeysBar(
         keyRepeatEnabled = keyRepeatEnabled,
         multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
         voiceInputEnabled = voiceInputEnabled,
+        inputButtonsOnRight = inputButtonsOnRight,
+        onInputButtonsOnRight = onInputButtonsOnRight,
         voiceInputLanguageTag = voiceInputLanguageTag,
         customizationEnabled = customizationEnabled,
         inputTargetId = inputTargetId,
@@ -264,7 +272,9 @@ fun TerminalAccessoryBar(
     hapticFeedbackEnabled: Boolean = false,
     keyRepeatEnabled: Boolean = true,
     multilinePasteConfirmationEnabled: Boolean = true,
-    voiceInputEnabled: Boolean = true,
+    voiceInputEnabled: Boolean = false,
+    inputButtonsOnRight: Boolean = false,
+    onInputButtonsOnRight: (Boolean) -> Unit = {},
     voiceInputLanguageTag: String = "",
     customizationEnabled: Boolean,
     inputTargetId: Long,
@@ -281,8 +291,18 @@ fun TerminalAccessoryBar(
     snippetsContent: (@Composable () -> Unit)? = null,
     snippetsAboveKeyboard: Boolean = false,
     onSelectFiles: (() -> Unit)? = null,
+    onEditAiAgents: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    var expandedKeyboard by remember(inputTargetId) { mutableStateOf(false) }
+    BackHandler(enabled = expandedKeyboard) { expandedKeyboard = false }
+    val dispatchAction: (TerminalAccessoryAction) -> Unit = { action ->
+        if ((action as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.EXPANDED_KEYBOARD) {
+            expandedKeyboard = !expandedKeyboard
+        } else {
+            onAction(action)
+        }
+    }
     val context = LocalContext.current
     val snippetPreferences = remember(context) {
         context.applicationContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
@@ -290,9 +310,11 @@ fun TerminalAccessoryBar(
     var pinnedSnippetsExpanded by remember(snippetPreferences) {
         mutableStateOf(snippetPreferences.getBoolean("expanded", true))
     }
-    val onToggleSnippets: (() -> Unit)? = if (snippetsAboveKeyboard && snippetsContent != null) {
+    var pinSnippets by rememberSaveable(snippetsAboveKeyboard) { mutableStateOf(snippetsAboveKeyboard) }
+    val onToggleSnippets: (() -> Unit)? = if (snippetsContent != null) {
         {
-            pinnedSnippetsExpanded = !pinnedSnippetsExpanded
+            pinnedSnippetsExpanded = !pinSnippets || !pinnedSnippetsExpanded
+            pinSnippets = true
             snippetPreferences.edit().putBoolean("expanded", pinnedSnippetsExpanded).apply()
         }
     } else null
@@ -342,9 +364,9 @@ fun TerminalAccessoryBar(
                 customizationEnabled && !actions.matchDefaultAccessoryDeck(),
             )
             val inputPageCount = if (bufferedInputMode) 1 else shortcutPages.size
-            val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null && !snippetsAboveKeyboard) 1 else 0 }
+            val pagerState = rememberPagerState { inputPageCount + if (snippetsContent != null && !pinSnippets) 1 else 0 }
             // Snippets send into the terminal, so the hidden draft must not keep owning the IME.
-            val bufferedInputPageActive = bufferedInputMode && (snippetsAboveKeyboard || pagerState.currentPage == 0)
+            val bufferedInputPageActive = bufferedInputMode && (pinSnippets || pagerState.currentPage == 0)
             LaunchedEffect(bufferedInputPageActive, keyboardVisible) {
                 currentOnBufferedInputModeChanged(bufferedInputPageActive && keyboardVisible)
                 if (!bufferedInputPageActive && bufferedInputPageWasActive) {
@@ -368,13 +390,15 @@ fun TerminalAccessoryBar(
                             active = keyboardVisible && bufferedInputPageActive,
                             multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
                             voiceInputEnabled = voiceInputEnabled,
+                            inputButtonsOnRight = inputButtonsOnRight,
+                            onInputButtonsOnRight = onInputButtonsOnRight,
                             voiceInputLanguageTag = voiceInputLanguageTag,
                             onSend = onSendBufferedInput,
                             onSubmit = onSubmitBufferedInput,
                             onEnter = { onAction(TerminalExtraKey.ENTER.toAccessoryAction()) },
                             onToggleTyping = { manualInputMode = false },
                             onInputInteraction = { manualInputMode = true },
-                            snippetsExpanded = pinnedSnippetsExpanded,
+                            snippetsExpanded = pinSnippets && pinnedSnippetsExpanded,
                             onToggleSnippets = onToggleSnippets,
                         )
                     }
@@ -387,14 +411,26 @@ fun TerminalAccessoryBar(
                     onPressFeedback = {
                         if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     },
-                    onAction = onAction, onCustomize = onCustomize,
+                    onAction = dispatchAction, onCustomize = onCustomize,
                     onTyping = { manualInputMode = true }, onSelectFiles = onSelectFiles,
-                    snippetsExpanded = pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
+                    onEditAiAgents = onEditAiAgents,
+                    snippetsExpanded = pinSnippets && pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
                 )
             }
 
             Column {
-                if (snippetsAboveKeyboard && snippetsContent != null && pinnedSnippetsExpanded) {
+                if (expandedKeyboard) {
+                    ExpandedTerminalKeyboard(
+                        modifiers = modifiers,
+                        keyRepeatEnabled = keyRepeatEnabled,
+                        onPressFeedback = {
+                            if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                        },
+                        onAction = onAction,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (!expandedKeyboard && pinSnippets && snippetsContent != null && pinnedSnippetsExpanded) {
                     Box(Modifier.fillMaxWidth().heightIn(max = 106.dp).testTag("terminal_pinned_snippets")) {
                         snippetsContent()
                     }
@@ -404,7 +440,7 @@ fun TerminalAccessoryBar(
                         state = pagerState,
                         modifier = Modifier.weight(1f).fillMaxHeight().testTag("terminal_input_pager"),
                     ) { page ->
-                        if (!snippetsAboveKeyboard && snippetsContent != null && page == inputPageCount) {
+                        if (!pinSnippets && snippetsContent != null && page == inputPageCount) {
                             snippetsContent()
                         } else if (bufferedInputMode) {
                             bufferedContent()
@@ -423,6 +459,10 @@ private fun displayedAccessoryActions(actions: List<TerminalAccessoryAction>): L
     if (actions.matchDefaultAccessoryDeck()) {
         actions.flatMap { action ->
             when (action.defaultDeckKeyOrNull()) {
+                TerminalExtraKey.CTRL_W -> listOf(TerminalAccessoryAction.Local(
+                    TerminalLocalAccessoryAction.EXPANDED_KEYBOARD,
+                    stableId = action.stableId,
+                ))
                 TerminalExtraKey.PAGE_UP -> emptyList()
                 TerminalExtraKey.BACKSPACE -> listOf(action, defaultSnippetToggle)
                 TerminalExtraKey.CTRL -> listOf(TerminalExtraKey.SHIFT_LEFT.toAccessoryAction())
@@ -430,6 +470,44 @@ private fun displayedAccessoryActions(actions: List<TerminalAccessoryAction>): L
             }
         }
     } else actions
+
+/** A non-modal panel keeps key dispatch and modifier state attached to the active terminal. */
+@Composable
+private fun ExpandedTerminalKeyboard(
+    modifiers: AccessoryModifierSnapshot,
+    keyRepeatEnabled: Boolean,
+    onPressFeedback: () -> Unit,
+    onAction: (TerminalAccessoryAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val keys = remember {
+        val first = listOf(TerminalExtraKey.ESC, TerminalExtraKey.TAB) +
+            TerminalExtraKey.entries.filter { it.name.matches(Regex("F[0-9]+")) }
+        (first + TerminalExtraKey.entries.filter { !it.isLocalAction }).distinct()
+            .map { it.toAccessoryAction() } +
+            TerminalAccessoryAction.Modifier(TerminalAccessoryModifier.SHIFT)
+    }
+    Column(modifier.fillMaxWidth().fillMaxHeight().testTag("terminal_expanded_keyboard")) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val columns = (maxWidth.value / 52f).toInt().coerceIn(1, 10)
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                keys.chunked(columns).forEach { row ->
+                    ExtraKeyRow(
+                        cells = row, columnCount = columns, modifiers = modifiers,
+                        customizationEnabled = false, keyRepeatEnabled = keyRepeatEnabled,
+                        onPressFeedback = onPressFeedback, onAction = onAction,
+                        onCustomize = {}, snippetsExpanded = false, onToggleSnippets = null,
+                        onSelectFiles = null, modifier = Modifier.height(48.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ShortcutDeckPage(
@@ -446,6 +524,7 @@ private fun ShortcutDeckPage(
     onCustomize: () -> Unit,
     onTyping: () -> Unit,
     onSelectFiles: (() -> Unit)?,
+    onEditAiAgents: (() -> Unit)? = null,
     snippetsExpanded: Boolean,
     onToggleSnippets: (() -> Unit)?,
     keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
@@ -479,6 +558,7 @@ private fun ShortcutDeckPage(
                 onAction = onAction,
                 onCustomize = onCustomize,
                 onSelectFiles = onSelectFiles,
+                onEditAiAgents = onEditAiAgents,
                 snippetsExpanded = snippetsExpanded,
                 keyModifier = keyModifier,
                 onToggleSnippets = onToggleSnippets,
@@ -599,11 +679,13 @@ private fun TerminalAccessoryAction.defaultDeckKeyOrNull(): TerminalExtraKey? = 
 }
 
 @Composable
-private fun TypingToggle(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun TypingToggle(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null) {
     ExtraKeyButton(
         label = stringResource(R.string.terminal_typing_toggle),
         description = stringResource(R.string.terminal_typing_toggle),
         onClick = onClick,
+        onLongClick = onLongClick,
+        onLongClickLabel = stringResource(R.string.settings_input_buttons_right_summary),
         glyph = ConnectionsGlyph.WRITE,
         emphasized = true,
         modifier = modifier.fillMaxWidth().testTag("terminal_typing_toggle").semantics {
@@ -621,6 +703,8 @@ private fun BufferedInputPage(
     active: Boolean,
     multilineConfirmationEnabled: Boolean,
     voiceInputEnabled: Boolean,
+    inputButtonsOnRight: Boolean,
+    onInputButtonsOnRight: (Boolean) -> Unit,
     voiceInputLanguageTag: String,
     onSend: (Long, String) -> Boolean,
     onSubmit: (Long, String) -> Boolean,
@@ -725,17 +809,27 @@ private fun BufferedInputPage(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.width(keyWidth).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ExtraKeyButton(
-                label = stringResource(R.string.terminal_enter_short),
-                description = enterDescription,
-                onClick = { sendDraft(submit = true) },
-                enabled = sendEnabled && validationMessage == null,
-                modifier = Modifier.weight(1f).fillMaxWidth().testTag("buffered_input_enter"),
-            )
-            TypingToggle(active = true, onClick = onToggleTyping, modifier = Modifier.weight(1f))
+        val buttons: @Composable () -> Unit = {
+            Column(
+                Modifier.width(keyWidth).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ExtraKeyButton(
+                    label = stringResource(R.string.terminal_enter_short),
+                    description = enterDescription,
+                    onClick = { sendDraft(submit = true) },
+                    enabled = sendEnabled && validationMessage == null,
+                    modifier = Modifier.weight(1f).fillMaxWidth().testTag("buffered_input_enter"),
+                )
+                TypingToggle(
+                    active = true,
+                    onClick = onToggleTyping,
+                    modifier = Modifier.weight(1f),
+                    onLongClick = { onInputButtonsOnRight(!inputButtonsOnRight) },
+                )
+            }
         }
+        if (!inputButtonsOnRight) buttons()
         val voiceStatus = if (voiceInputEnabled) {
             voiceInputStatus(voicePhase, partialTranscript, voiceFailure)
         } else null
@@ -895,10 +989,11 @@ private fun BufferedInputPage(
                 }
             },
         )
+        if (inputButtonsOnRight) buttons()
     }
 
     if (confirmingMultilinePaste) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { confirmingMultilinePaste = false },
             title = { Text(stringResource(R.string.terminal_multiline_paste_title)) },
             text = {
@@ -974,6 +1069,7 @@ private fun ExtraKeyPage(
     snippetsExpanded: Boolean,
     onToggleSnippets: (() -> Unit)?,
     onSelectFiles: (() -> Unit)?,
+    onEditAiAgents: (() -> Unit)? = null,
     keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
     val rows = cells.chunked(columnCount)
@@ -994,6 +1090,7 @@ private fun ExtraKeyPage(
                 onAction = onAction,
                 onCustomize = onCustomize,
                 onSelectFiles = onSelectFiles,
+                onEditAiAgents = onEditAiAgents,
                 snippetsExpanded = snippetsExpanded,
                 onToggleSnippets = onToggleSnippets,
                 modifier = Modifier.weight(1f),
@@ -1015,6 +1112,7 @@ private fun ExtraKeyRow(
     snippetsExpanded: Boolean,
     onToggleSnippets: (() -> Unit)?,
     onSelectFiles: (() -> Unit)?,
+    onEditAiAgents: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
@@ -1073,14 +1171,20 @@ private fun ExtraKeyRow(
                         TerminalLocalAccessoryAction.TMUX_SESSIONS -> ConnectionsGlyph.WINDOWS
                         TerminalLocalAccessoryAction.SELECT_IMAGES -> ConnectionsGlyph.IMAGE
                         TerminalLocalAccessoryAction.HIDE_KEYBOARD -> ConnectionsGlyph.KEYBOARD
+                        TerminalLocalAccessoryAction.EXPANDED_KEYBOARD -> ConnectionsGlyph.EXPANDED_KEYBOARD
                         else -> null
                     },
                     onPressFeedback = onPressFeedback,
                     onClick = { onAction(cell) },
-                    onLongClick = onSelectFiles.takeIf {
-                        (cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.SELECT_IMAGES
+                    onLongClick = when ((cell as? TerminalAccessoryAction.Local)?.action) {
+                        TerminalLocalAccessoryAction.SELECT_IMAGES -> onSelectFiles
+                        TerminalLocalAccessoryAction.AI_AGENTS -> onEditAiAgents
+                        else -> null
                     },
-                    onLongClickLabel = stringResource(R.string.terminal_select_files),
+                    onLongClickLabel = stringResource(
+                        if ((cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.AI_AGENTS)
+                            R.string.ai_agents_edit else R.string.terminal_select_files,
+                    ),
                 )
             }
         }

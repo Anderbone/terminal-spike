@@ -43,6 +43,7 @@ internal data class ProotCommand(
                     listOf(
                         "--cwd=/root", "-k", "5.4.0", "/usr/bin/env", "-i",
                         "HOME=/root", "USER=root", "LOGNAME=root", "TERM=xterm-256color",
+                        "BROWSER=/usr/local/bin/spike-open",
                         "LANG=C.UTF-8", "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                     ) + guestCommand,
                 environment = mapOf(

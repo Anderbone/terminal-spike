@@ -1323,6 +1323,7 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.SELECT_IMAGES,
     KeyboardAction.SNIPPETS,
     KeyboardAction.TMUX_SESSIONS,
+    KeyboardAction.AI_AGENTS,
     KeyboardAction.KEYBOARD_SETTINGS,
     -> null
 }

@@ -42,7 +42,7 @@ class ModelEnumsTest {
             "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
             "ctrl_c", "ctrl_d", "ctrl_l", "ctrl_r", "ctrl_w", "ctrl_u", "ctrl_a", "ctrl_b",
             "ctrl_e", "ctrl_k", "ctrl_z",
-            "tmux_prefix", "paste", "select_images", "snippets", "tmux_sessions", "hide_keyboard",
+            "tmux_prefix", "paste", "select_images", "snippets", "tmux_sessions", "ai_agents", "hide_keyboard",
             "keyboard_settings",
             "colon", "semicolon", "hash", "dollar", "equals", "space", "exclamation", "question",
             "asterisk", "plus", "period", "comma", "left_paren", "right_paren", "left_bracket",

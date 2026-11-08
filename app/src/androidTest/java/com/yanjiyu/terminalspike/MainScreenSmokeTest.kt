@@ -167,7 +167,8 @@ class MainScreenSmokeTest {
     fun shortcutPageShowsDirectControlChords() {
         openRendererLab()
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Control W").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Open expanded terminal keyboard").assertIsDisplayed()
     }
 
     @Test

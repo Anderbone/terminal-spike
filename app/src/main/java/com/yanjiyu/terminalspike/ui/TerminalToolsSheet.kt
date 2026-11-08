@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -539,7 +539,7 @@ internal fun MoshExtensionSection(
 
 @Composable
 private fun MoshInstallationHelpDialog(onDismiss: () -> Unit) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(MoshExtensionInstallationHelpDialogTestTag),
         title = { Text(stringResource(R.string.mosh_installation_help_title)) },
@@ -661,7 +661,7 @@ private fun ToolDeletionConfirmationDialog(
             confirmLabel = "Delete snippet"
         }
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(message) },
@@ -1345,7 +1345,7 @@ private fun ProfileEditorDialog(
         host.isNotBlank() && host.none(Char::isWhitespace) &&
         username.isNotBlank() && username.none { it.isWhitespace() || it.isISOControl() } &&
         port.toIntOrNull()?.let { it in 1..65_535 } == true
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (profile == null) "Save SSH host" else "Edit SSH host") },
         text = {
@@ -1382,7 +1382,7 @@ private fun SnippetEditorDialog(
     val sequenceValid = runCatching { com.yanjiyu.terminalspike.settings.SnippetSequence.parse(command) }.isSuccess
     val valid = sequenceValid && label.isNotBlank() && label.none(Char::isISOControl) && command.isNotBlank() &&
         command.none { it.isISOControl() && it !in "\r\n\t" }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (snippet == null) "New command snippet" else "Edit command snippet") },
         text = {

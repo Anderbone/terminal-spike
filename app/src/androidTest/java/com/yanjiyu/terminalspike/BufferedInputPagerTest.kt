@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
@@ -198,6 +199,14 @@ class BufferedInputPagerTest {
         composeRule.runOnIdle { placement.value = false }
         composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
         composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+        // Existing installations using the swipe layout still expose the draft's toggle.
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertIsDisplayed()
+        composeRule.onNodeWithText("Pinned snippet").assertIsDisplayed()
+        composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
+        composeRule.onNodeWithText("preserve this").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }
     }
 
     private fun withPinnedSnippetsPreference(block: () -> Unit) {
@@ -611,6 +620,7 @@ class BufferedInputPagerTest {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val inputTargetId = mutableLongStateOf(11L)
         val voiceInputEnabled = mutableStateOf(true)
+        val buttonsOnRight = mutableStateOf(false)
         var sendCount = 0
         var sentTargetId: Long? = null
         var sentText: String? = null
@@ -625,6 +635,8 @@ class BufferedInputPagerTest {
                     customizationEnabled = true,
                     inputTargetId = inputTargetId.longValue,
                     voiceInputEnabled = voiceInputEnabled.value,
+                    inputButtonsOnRight = buttonsOnRight.value,
+                    onInputButtonsOnRight = { buttonsOnRight.value = it },
                     bufferedInputSendEnabled = true,
                     bufferedInputDraftState = draftState,
                     inputContext = TerminalInputContext("test-agent", agent = true),
@@ -644,6 +656,18 @@ class BufferedInputPagerTest {
 
         composeRule.onNodeWithContentDescription(resources.getString(R.string.terminal_buffered_input_description))
             .performTextInput("printf 'exact ✓'")
+        fun assertButtonSide(right: Boolean) {
+            val enter = composeRule.onNodeWithTag("buffered_input_enter").fetchSemanticsNode().boundsInRoot
+            val input = composeRule.onNodeWithTag("buffered_terminal_input").fetchSemanticsNode().boundsInRoot
+            assertTrue(if (right) enter.left >= input.right else enter.right <= input.left)
+            composeRule.onNodeWithText("printf 'exact ✓'").assertIsDisplayed()
+            composeRule.runOnIdle { assertEquals(0, sendCount) }
+        }
+        assertButtonSide(false)
+        composeRule.onNodeWithTag("terminal_typing_toggle").performTouchInput { longClick() }
+        assertButtonSide(true)
+        composeRule.onNodeWithTag("terminal_typing_toggle").performTouchInput { longClick() }
+        assertButtonSide(false)
         val typingSize = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot.size
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()

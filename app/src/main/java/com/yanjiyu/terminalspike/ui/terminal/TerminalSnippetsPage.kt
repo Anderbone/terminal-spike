@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.zIndex
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.Snippet
+import com.yanjiyu.terminalspike.settings.SnippetSequence
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.ui.connections.SnippetEditorDialog
 import com.yanjiyu.terminalspike.ui.connections.SnippetEditorDraft
@@ -83,7 +84,25 @@ internal fun TerminalSnippetsPage(
     var savedOrder by remember {
         mutableStateOf(preferences.getString("order", "").orEmpty().split(',').mapNotNull(String::toLongOrNull))
     }
-    val order = snippetToolbarOrder(savedOrder, snippets.map { it.id } + 0L)
+    var codexReplaced by remember {
+        mutableStateOf(preferences.getBoolean("codex-replaced", false))
+    }
+    fun removeDefaultCodex() {
+        preferences.edit().putBoolean("codex-replaced", true).apply()
+        codexReplaced = true
+    }
+    val codexName = stringResource(R.string.snippet_accessory_example)
+    val defaultCodex = remember(codexName) {
+        val now = System.currentTimeMillis()
+        Snippet(
+            id = java.util.UUID.randomUUID().toString(),
+            name = codexName,
+            command = SnippetSequence.CODEX_EXAMPLE,
+            createdAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+        )
+    }
+    val order = snippetToolbarOrder(savedOrder, snippets.map { it.id } + if (codexReplaced) emptyList() else listOf(0L))
     val currentOrder by rememberUpdatedState(order)
     val bounds = remember { mutableMapOf<Long, Rect>() }
     val scroll = rememberScrollState()
@@ -200,8 +219,7 @@ internal fun TerminalSnippetsPage(
                         Surface(
                             shape = ButtonDefaults.shape,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = if (managing && id == 0L) MaterialTheme.colorScheme.onSurfaceVariant
-                            else if (managing || canSend) MaterialTheme.colorScheme.primary
+                            contentColor = if (managing || canSend) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             border = BorderStroke(
                                 if (dropTarget == id || dragging == id) 2.dp else 1.dp,
@@ -211,10 +229,10 @@ internal fun TerminalSnippetsPage(
                             modifier = Modifier.defaultMinSize(minWidth = 1.dp, minHeight = 32.dp)
                                 .clickable(
                                     role = Role.Button,
-                                    enabled = if (managing) id != 0L else canSend,
+                                    enabled = managing || canSend,
                                     onClick = {
                                         if (managing) {
-                                            if (snippetForEditing(id) != null) {
+                                            if (id == 0L || snippetForEditing(id) != null) {
                                                 editingSnippetId = id
                                                 editorVisible = true
                                             }
@@ -244,10 +262,7 @@ internal fun TerminalSnippetsPage(
                                 },
                         ) {
                             Text(
-                                text = if (id == 0L) stringResource(
-                                    if (managing) R.string.snippet_accessory_example_builtin
-                                    else R.string.snippet_accessory_example,
-                                )
+                                text = if (id == 0L) stringResource(R.string.snippet_accessory_example)
                                 else snippets.first { it.id == id }.label,
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -261,10 +276,15 @@ internal fun TerminalSnippetsPage(
     }
     if (editorVisible) {
         SnippetEditorDialog(
-            initial = editingSnippetId?.let(snippetForEditing)?.toEditorDraft() ?: SnippetEditorDraft(),
+            initial = if (editingSnippetId == 0L) defaultCodex.toEditorDraft()
+            else editingSnippetId?.let(snippetForEditing)?.toEditorDraft() ?: SnippetEditorDraft(),
             onDismiss = { editorVisible = false; onEditorClosed() },
-            onSave = onSave,
-            onDelete = onDelete,
+            onSave = { snippet ->
+                onSave(snippet).also { result ->
+                    if (result.isSuccess && editingSnippetId == 0L) removeDefaultCodex()
+                }
+            },
+            onDelete = if (editingSnippetId == 0L) ({ removeDefaultCodex() }) else onDelete,
         )
     }
 }

@@ -7,7 +7,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 internal const val CURRENT_APP_SETTINGS_SCHEMA = 1
-internal const val CURRENT_KEYBOARD_DECK_REVISION = 7
+internal const val CURRENT_KEYBOARD_DECK_REVISION = 8
 
 internal object AppSettingsSerializer : Serializer<AppSettings> {
     override val defaultValue: AppSettings = AppSettings.newBuilder()
@@ -24,6 +24,8 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         .setMultilinePasteConfirmationEnabled(false)
         .setLastBackupMode("standard")
         .setKeyboardDeckRevision(CURRENT_KEYBOARD_DECK_REVISION)
+        .setVoiceInputDisabled(true)
+        .setSnippetsAboveKeyboard(true)
         .build()
         .let(AppSettingsValidator::requireValidCurrent)
 
@@ -38,7 +40,10 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
             throw UnsupportedAppSettingsVersionException(schemaRevision)
         }
         return if (settings.schemaRevision == CURRENT_APP_SETTINGS_SCHEMA) {
-            AppSettingsValidator.requireValidCurrent(settings)
+            AppSettingsValidator.requireValidCurrent(
+                if (settings.hasVoiceInputDisabled()) settings
+                else settings.toBuilder().setVoiceInputDisabled(true).build(),
+            )
         } else {
             settings
         }

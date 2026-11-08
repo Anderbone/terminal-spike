@@ -2,12 +2,12 @@
 
 All entries are under 140 characters and describe only visible, relevant content.
 
-## Phone (English, 2026-11-07)
+## Phone (English, 2026-11-08)
 
-- `01-workspace.png`: A connected Atlas SSH terminal with real project output and compact session tabs.
-- `02-code-review.png`: Native project reader showing an actual Git diff of a small JavaScript change.
-- `03-code-server.png`: A real code-server editor open inside Terminal Spike with an Atlas project file.
-- `04-browser.png`: The built-in web browser displaying the Atlas demo project notes.
+- `01-mosh-workspaces.png`: User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.
+- `02-workspace.png`: A connected Atlas SSH terminal with real project output and compact session tabs.
+- `03-code-review.png`: Native project reader showing an actual Git diff of a small JavaScript change.
+- `04-code-server.png`: A real code-server editor open inside Terminal Spike with an Atlas project file.
 - `05-snippets.png`: Pinned command snippets in management mode above the terminal shortcut keys.
 - `06-buffered-input.png`: Buffered terminal input containing an unsent example draft above the keyboard.
 - `07-files.png`: The SFTP file browser connected to the Atlas demo workspace.

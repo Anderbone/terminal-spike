@@ -52,7 +52,20 @@ font downloads are not supported. App theme mode and terminal palette are separa
       [--layout CODE] [--modifier-behavior CODE] [--input-mode raw|text]
       [--haptic-feedback-enabled true|false] [--key-repeat-enabled true|false]
       [--tmux-prefix C-b]
+  spikectl credentials list
   spikectl connections list
+  spikectl connections get --id UUID
+  spikectl connections add --name NAME --hostname HOST --username USER
+      [--port NUMBER] [--protocol ssh|mosh] [--credential-id UUID]
+      [--terminal-profile-id UUID] [--keyboard-profile-id UUID]
+      [--is-favorite true|false] [--group TEXT] [--tag TEXT]
+  spikectl connections update --id UUID --revision NUMBER [same fields as add]
+
+New connections default to SSH port 22 and prompt for a password when connecting.
+Use credentials list to select existing authentication by ID (no secrets exposed).
+An empty credential-id selects a new password prompt; empty profile IDs inherit
+the defaults. Empty group/tag clears them. Connection edits apply on next connect.
+
   spikectl forwards list --connection UUID
   spikectl forwards add --connection UUID --revision NUMBER
       --listen-port NUMBER --destination-port NUMBER
@@ -72,15 +85,15 @@ replace flags with --json '{...}' or --json-file PATH (camelCase property names)
 function parse(args) {
   if (!args.length || args.includes('--help') || args[0] === 'help') return null;
   let method = args.shift();
-  if (['appearance', 'terminal', 'themes', 'fonts', 'snippets', 'keyboard', 'connections', 'forwards'].includes(method)) {
+  if (['appearance', 'terminal', 'themes', 'fonts', 'snippets', 'keyboard', 'connections', 'credentials', 'forwards'].includes(method)) {
     if (!args.length || args[0].startsWith('--')) throw new Error('Missing subcommand.');
     method += '.' + args.shift();
   }
   let params = {};
-  const integers = new Set(['revision', 'listenPort', 'destinationPort', 'index']);
+  const integers = new Set(['revision', 'port', 'listenPort', 'destinationPort', 'index']);
   const numbers = new Set(['fontSizeSp', 'lineHeightMultiplier', 'letterSpacingEm']);
   const booleans = new Set(['appendEnter', 'isFavorite', 'hapticFeedbackEnabled', 'keyRepeatEnabled', 'enabled',
-    'dynamicColorEnabled', 'boldRenderingEnabled', 'ligaturesEnabled', 'pinchZoomEnabled', 'cursorBlinkEnabled', 'boldUsesBrightColours']);
+    'inputButtonsOnRight', 'voiceInputEnabled', 'dynamicColorEnabled', 'boldRenderingEnabled', 'ligaturesEnabled', 'pinchZoomEnabled', 'cursorBlinkEnabled', 'boldUsesBrightColours']);
   const seen = new Set();
   while (args.length) {
     const flag = args.shift();

@@ -63,7 +63,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -196,6 +197,7 @@ internal data class SettingsActions(
     val onMultilinePasteConfirmation: (Boolean) -> Unit,
     val onVoiceInputLanguage: (VoiceInputLanguage) -> Unit = {},
     val onSnippetsAboveKeyboard: (Boolean) -> Unit = {},
+    val onInputButtonsOnRight: (Boolean) -> Unit = {},
     val onVoiceInputEnabled: (Boolean) -> Unit = {},
     val onResetTerminal: () -> Unit,
     val onKeyboardPreset: (String) -> Unit,
@@ -332,6 +334,7 @@ internal fun SettingsDestination(
             onMultilinePasteConfirmation = settingsViewModel::setMultilinePasteConfirmation,
             onVoiceInputLanguage = settingsViewModel::setVoiceInputLanguage,
             onSnippetsAboveKeyboard = settingsViewModel::setSnippetsAboveKeyboard,
+            onInputButtonsOnRight = settingsViewModel::setInputButtonsOnRight,
             onVoiceInputEnabled = settingsViewModel::setVoiceInputEnabled,
             onResetTerminal = settingsViewModel::resetTerminalBehavior,
             onKeyboardPreset = settingsViewModel::applyKeyboardPreset,
@@ -555,7 +558,7 @@ internal fun SettingsScreen(
         }
     }
     pendingKnownHost?.let { knownHost ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { pendingKnownHost = null },
             title = { Text(stringResource(R.string.settings_forget_known_host_title, knownHost.host)) },
             text = { Text(stringResource(R.string.settings_forget_known_host_message)) },
@@ -583,6 +586,7 @@ private fun SettingsCategoryList(
     onSelected: (SettingsCategory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val uriHandler = LocalUriHandler.current
     val clearDescription = stringResource(R.string.settings_clear_search)
     val listDescription = stringResource(R.string.settings_category_list_description)
     LazyColumn(
@@ -666,6 +670,16 @@ private fun SettingsCategoryList(
                 summary = settingsCategorySummary(category, state).resolve(),
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        }
+        if (query.isBlank()) {
+            item(key = "support_development") {
+                TextButton(
+                    onClick = { uriHandler.openUri("https://buymeacoffee.com/jiyuyan") },
+                    modifier = Modifier.fillMaxWidth().padding(top = MaterialTheme.spacing.medium),
+                ) {
+                    Text(stringResource(R.string.settings_buy_me_a_coffee))
+                }
+            }
         }
     }
 }
@@ -1482,6 +1496,14 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 )
             }
             item { SectionDivider() }
+            item {
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_input_buttons_right),
+                    summary = stringResource(R.string.settings_input_buttons_right_summary),
+                    checked = state.preferences.inputButtonsOnRight,
+                    onCheckedChange = actions.onInputButtonsOnRight,
+                )
+            }
             item { SectionLabel(R.string.settings_voice_input_heading) }
             item {
                 SettingSwitchRow(
@@ -1592,7 +1614,7 @@ private fun KeyboardKeyReplacementDialog(
     val choices = runtimeSupportedKeyboardActions.filter { action ->
         keyboardActionSearchText(action).contains(search.trim(), ignoreCase = true)
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
@@ -1725,7 +1747,7 @@ private fun KeyboardActionsDialog(
     val available = runtimeSupportedKeyboardActions.filter { action ->
         action !in actions && keyboardActionSearchText(action).contains(search.trim(), ignoreCase = true)
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_edit_keyboard_keys)) },
         text = {
@@ -1981,6 +2003,7 @@ private fun keyboardActionLabel(action: KeyboardAction): String = when (action) 
     KeyboardAction.PASTE -> stringResource(R.string.settings_keyboard_action_paste)
     KeyboardAction.SELECT_IMAGES -> stringResource(R.string.settings_keyboard_action_select_images)
     KeyboardAction.SNIPPETS -> stringResource(R.string.settings_keyboard_action_snippets)
+    KeyboardAction.AI_AGENTS -> stringResource(R.string.ai_agents_title)
     KeyboardAction.TMUX_SESSIONS -> stringResource(R.string.settings_keyboard_action_tmux_sessions)
     KeyboardAction.HIDE_KEYBOARD -> stringResource(R.string.settings_keyboard_action_hide)
     KeyboardAction.KEYBOARD_SETTINGS -> stringResource(R.string.settings_keyboard_action_keys)
@@ -2466,7 +2489,7 @@ private fun SavedCredentialClearDialog(
         SavedCredentialClearUiState.Idle,
         SavedCredentialClearUiState.LoadingPreview -> Unit
 
-        SavedCredentialClearUiState.PreviewFailed -> AlertDialog(
+        SavedCredentialClearUiState.PreviewFailed -> AppDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.settings_clear_saved_credentials)) },
             text = { Text(stringResource(R.string.settings_clear_credentials_preview_failed)) },
@@ -2485,7 +2508,7 @@ private fun SavedCredentialClearDialog(
                 state.credentialCount,
                 state.keyIdentityCount,
             ) { mutableStateOf("") }
-            AlertDialog(
+            AppDialog(
                 onDismissRequest = { if (!state.clearing) onDismiss() },
                 title = { Text(stringResource(R.string.settings_clear_saved_credentials_title)) },
                 text = {
@@ -2546,7 +2569,7 @@ private fun SavedCredentialClearDialog(
             )
         }
 
-        is SavedCredentialClearUiState.Completed -> AlertDialog(
+        is SavedCredentialClearUiState.Completed -> AppDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.settings_clear_saved_credentials_complete)) },
             text = {
@@ -2772,7 +2795,7 @@ private fun ResetDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(title)) },
         text = { Text(stringResource(message)) },

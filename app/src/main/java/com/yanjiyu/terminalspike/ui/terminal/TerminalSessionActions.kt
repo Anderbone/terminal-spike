@@ -11,7 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -206,7 +206,7 @@ internal fun TerminalSessionActions(
             DestructiveSessionAction.CLEAR_LOCAL_SCROLLBACK ->
                 stringResource(R.string.session_clear_scrollback_detail)
         }
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { destructive = null },
             title = { Text(title) },
             text = { Text(detail) },
@@ -275,7 +275,7 @@ private fun TerminalConnectionDetails(
     onDismiss: () -> Unit,
 ) {
     var revealEndpoint by remember(session.id) { mutableStateOf(false) }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(TerminalSessionDetailsTestTag),
         title = { Text(stringResource(R.string.session_action_connection_details)) },

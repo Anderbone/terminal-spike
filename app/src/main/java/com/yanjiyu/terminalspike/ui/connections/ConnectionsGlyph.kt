@@ -22,6 +22,7 @@ internal enum class ConnectionsGlyph {
     UNDO,
     SEARCH,
     CLOSE,
+    DELETE,
     ADD,
     FILTER,
     MORE,
@@ -36,6 +37,7 @@ internal enum class ConnectionsGlyph {
     WINDOWS,
     IMAGE,
     KEYBOARD,
+    EXPANDED_KEYBOARD,
     WRITE,
     MIC,
     STOP,
@@ -171,6 +173,19 @@ internal fun ConnectionsGlyphIcon(
                 drawPath(left, resolvedColor, style = stroke)
                 drawPath(right, resolvedColor, style = stroke)
             }
+            ConnectionsGlyph.DELETE -> {
+                drawLine(resolvedColor, point(0.2f, 0.28f), point(0.8f, 0.28f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.38f, 0.15f), point(0.62f, 0.15f), strokeWidth, StrokeCap.Round)
+                val bin = Path().apply {
+                    moveTo(width * 0.27f, height * 0.29f)
+                    lineTo(width * 0.32f, height * 0.85f)
+                    lineTo(width * 0.68f, height * 0.85f)
+                    lineTo(width * 0.73f, height * 0.29f)
+                }
+                drawPath(bin, resolvedColor, style = stroke)
+                drawLine(resolvedColor, point(0.43f, 0.43f), point(0.45f, 0.7f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.57f, 0.43f), point(0.55f, 0.7f), strokeWidth, StrokeCap.Round)
+            }
             ConnectionsGlyph.STAR -> {
                 val star = Path()
                 repeat(10) { index ->
@@ -282,6 +297,22 @@ internal fun ConnectionsGlyphIcon(
                     lineTo(width * 0.38f, height * 0.82f)
                 }
                 drawPath(pencil, resolvedColor, style = stroke)
+            }
+            ConnectionsGlyph.EXPANDED_KEYBOARD -> {
+                // A raised chevron distinguishes the terminal key panel from the IME toggle.
+                drawLine(resolvedColor, point(0.36f, 0.23f), point(0.5f, 0.09f), strokeWidth, StrokeCap.Round)
+                drawLine(resolvedColor, point(0.5f, 0.09f), point(0.64f, 0.23f), strokeWidth, StrokeCap.Round)
+                drawRoundRect(
+                    color = resolvedColor,
+                    topLeft = point(0.08f, 0.36f),
+                    size = Size(width * 0.84f, height * 0.53f),
+                    cornerRadius = CornerRadius(width * 0.06f),
+                    style = stroke,
+                )
+                listOf(0.25f, 0.42f, 0.59f, 0.76f).forEach { x ->
+                    drawCircle(resolvedColor, radius = strokeWidth * 0.55f, center = point(x, 0.54f))
+                }
+                drawLine(resolvedColor, point(0.27f, 0.73f), point(0.73f, 0.73f), strokeWidth, StrokeCap.Round)
             }
             ConnectionsGlyph.KEYBOARD -> {
                 drawRoundRect(

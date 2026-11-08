@@ -2407,9 +2407,12 @@ private class DefaultSshSessionTerminal(
     }
 
     private fun refreshInputContext(connection: Connection) {
+        val generationAtCapture = controller.herdrHistoryGeneration
         val context = runCatching { connection.captureInputContext() }.getOrDefault(TerminalInputContext())
         synchronized(tmuxHistoryLock) {
-            if (!stopped && attachedConnection === connection) controller.publishInputContext(context)
+            if (!stopped && attachedConnection === connection &&
+                controller.herdrHistoryGeneration == generationAtCapture
+            ) controller.publishInputContext(context)
         }
     }
 
@@ -2423,16 +2426,19 @@ private class DefaultSshSessionTerminal(
             }, pinned)
         }
         val sourceAtCapture = controller.herdrHistory
+        val generationAtCapture = controller.herdrHistoryGeneration
         val result = runCatching {
             connection.readHerdrHistory(previous, pinned)
         }.getOrElse { HerdrHistoryRead.Retry() }
         synchronized(tmuxHistoryLock) {
-            if (!stopped && attachedConnection === connection) {
+            if (!stopped && attachedConnection === connection &&
+                controller.herdrHistoryGeneration == generationAtCapture
+            ) {
                 // Herdr's pane revision is metadata, not a terminal-content revision.
                 // Reuse idle live rows only without new output. A latest overlay must
                 // poll: output below a scrolled remote viewport may emit no Mosh frame.
                 if (result is HerdrHistoryRead.Available && !pinned) herdrCapturedOutputRevision = revision
-                controller.publishHerdrHistoryRead(result, sourceAtCapture)
+                controller.publishHerdrHistoryRead(result, sourceAtCapture, generationAtCapture)
             }
         }
     }

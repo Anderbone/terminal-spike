@@ -43,6 +43,8 @@ internal class AppControlApi(
                     put("letterSpacingEmRange", JsonArray(listOf(ModelLimits.MIN_LETTER_SPACING_EM, ModelLimits.MAX_LETTER_SPACING_EM).map(::JsonPrimitive)))
                     put("colourFormat", "#RRGGBB")
                     put("portForwardEffect", "next_connection")
+                    put("connectionEffect", "next_connection")
+                    put("connectionProtocols", JsonArray(ConnectionProtocol.entries.map { JsonPrimitive(it.wireCode) }))
                 }
             }
             else -> {
@@ -116,6 +118,18 @@ internal class AppControlApi(
             p.requireFields()
             JsonArray(container.hostProfiles.observeAll().first().map { it.json() })
         }
+        "connections.get" -> {
+            p.requireFields("id")
+            host(p.string("id")).json()
+        }
+        "credentials.list" -> {
+            p.requireFields()
+            JsonArray(container.sshCredentials.observeAll().first().map { credential ->
+                buildJsonObject {
+                    put("id", credential.id); put("name", credential.displayName); put("kind", credential.kind.wireCode)
+                }
+            })
+        }
         "forwards.list" -> {
             p.requireFields("connection")
             host(p.string("connection")).json()
@@ -124,6 +138,27 @@ internal class AppControlApi(
     }
 
     private suspend fun write(method: String, p: JsonObject): JsonElement = when (method) {
+        "connections.add", "connections.update" -> {
+            p.requireFields(*CONTROL_CONNECTION_FIELDS)
+            val current = if (method == "connections.update") host(p.string("id")) else null
+            if (current == null) require("id" !in p && "revision" !in p)
+            val edited = patchControlConnection(current, p)
+            edited.terminalProfileId?.let { require(container.terminalProfiles.get(it) != null) }
+            edited.keyboardProfileId?.let { require(container.keyboardProfiles.get(it) != null) }
+            val credentialId = if (current == null || "credentialId" in p) {
+                p["credentialId"]?.let { p.string("credentialId").ifEmpty { null } }?.also {
+                    require(container.sshCredentials.get(it) != null)
+                } ?: UUID.randomUUID().toString().also { id ->
+                    container.sshCredentials.saveMetadata(SshCredential(
+                        id = id, displayName = edited.displayName, authentication = SshAuthentication.Password(),
+                        createdAtEpochMillis = edited.updatedAtEpochMillis, updatedAtEpochMillis = edited.updatedAtEpochMillis,
+                    ))
+                }
+            } else current.credentialId
+            val saved = edited.copy(credentialId = credentialId)
+            if (current == null) container.hostProfiles.insert(saved) else check(container.hostProfiles.update(saved))
+            saved.json()
+        }
         "snippets.add" -> {
             p.requireFields("name", "command", "group", "appendEnter", "tapAction", "isFavorite")
             require(container.snippets.observeAll().first().size < UserSettings.MAX_SNIPPETS) { "Too many snippets." }
@@ -208,8 +243,8 @@ internal class AppControlApi(
     private fun missing(): Nothing = throw ControlFailure("NOT_FOUND", "The requested record no longer exists.")
 
     private companion object {
-        val READ_METHODS = setOf("snippets.list", "snippets.get", "keyboard.list", "keyboard.get", "connections.list", "forwards.list") + AppearanceControl.READ_METHODS
-        val METHODS = READ_METHODS + setOf("status", "capabilities", "snippets.add", "snippets.update", "snippets.delete", "keyboard.update", "forwards.add", "forwards.remove") + AppearanceControl.WRITE_METHODS
+        val READ_METHODS = setOf("snippets.list", "snippets.get", "keyboard.list", "keyboard.get", "connections.list", "connections.get", "credentials.list", "forwards.list") + AppearanceControl.READ_METHODS
+        val METHODS = READ_METHODS + setOf("status", "capabilities", "snippets.add", "snippets.update", "snippets.delete", "keyboard.update", "connections.add", "connections.update", "forwards.add", "forwards.remove") + AppearanceControl.WRITE_METHODS
     }
 }
 
@@ -253,6 +288,9 @@ private fun KeyboardProfile.json(defaultId: String) = buildJsonObject {
 private fun HostProfile.json() = buildJsonObject {
     put("id", id); put("revision", updatedAtEpochMillis); put("name", displayName)
     put("hostname", hostname); put("port", port); put("username", username); put("protocol", protocol.wireCode)
+    put("credentialId", credentialId?.let(::JsonPrimitive) ?: JsonNull)
+    put("isFavorite", isFavorite); put("group", group?.let(::JsonPrimitive) ?: JsonNull)
+    put("tag", tag?.let(::JsonPrimitive) ?: JsonNull)
     put("keyboardProfileId", keyboardProfileId?.let(::JsonPrimitive) ?: JsonNull)
     put("terminalProfileId", terminalProfileId?.let(::JsonPrimitive) ?: JsonNull)
     put("portForwards", JsonArray(portForwards.mapIndexed { index, rule -> buildJsonObject {

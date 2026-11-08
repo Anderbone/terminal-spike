@@ -52,6 +52,20 @@ class SpikectlTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["params"], {"name": "My theme", "base": "nord", "background": "#000000", "ansi16": ["#000000", "#FFFFFF"]})
 
+    def test_connections_parse_port_protocol_and_credential_as_typed_data(self):
+        result = self.parse(["connections", "add", "--name", "My server", "--hostname", "example.com",
+                             "--username", "me", "--port", "2222", "--protocol", "mosh",
+                             "--credential-id", "uuid", "--is-favorite", "true"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["params"], {
+            "name": "My server", "hostname": "example.com", "username": "me", "port": 2222,
+            "protocol": "mosh", "credentialId": "uuid", "isFavorite": True})
+        self.assertNotEqual(self.parse(["connections", "update", "--port", "22.5"]).returncode, 0)
+        result = self.parse(["connections", "update", "--id", "uuid", "--revision", "20",
+                             "--credential-id", "", "--group", ""])
+        self.assertEqual(json.loads(result.stdout)["params"]["credentialId"], "")
+        self.assertEqual(json.loads(self.parse(["credentials", "list"]).stdout)["method"], "credentials.list")
+
     def test_help_does_not_require_a_running_phone(self):
         result = subprocess.run(["node", str(CLI), "--help"], text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0)

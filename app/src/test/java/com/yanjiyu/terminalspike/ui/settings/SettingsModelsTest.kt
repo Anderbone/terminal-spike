@@ -102,7 +102,7 @@ class SettingsModelsTest {
                 KeyboardAction.BACKSPACE,
                 KeyboardAction.TAB,
                 KeyboardAction.CONTROL,
-                KeyboardAction.TMUX_SESSIONS,
+                KeyboardAction.AI_AGENTS,
                 KeyboardAction.CTRL_C,
                 KeyboardAction.CTRL_W,
                 KeyboardAction.ARROW_LEFT,
@@ -141,9 +141,25 @@ class SettingsModelsTest {
             (runtime?.get(4) as TerminalAccessoryAction.Local).action,
         )
         assertEquals(
-            TerminalLocalAccessoryAction.TMUX_SESSIONS,
+            TerminalLocalAccessoryAction.AI_AGENTS,
             (runtime[12] as TerminalAccessoryAction.Local).action,
         )
+    }
+
+    @Test
+    fun shippedTmuxButtonUpgradesToAiAgentsWithoutChangingCustomizedDecks() {
+        val previous = KeyboardAction.DEFAULT_ORDER.map {
+            if (it == KeyboardAction.AI_AGENTS) KeyboardAction.TMUX_SESSIONS else it
+        }
+        val profile = shippedOneRowProfile().copy(
+            orderedActions = previous, layout = KeyboardLayout.TWO_ROWS,
+        )
+        assertEquals(KeyboardAction.DEFAULT_ORDER, planKeyboardDeckMigration(
+            CURRENT_KEYBOARD_DECK_REVISION - 1, profile, 9L,
+        ).upgradedProfile?.orderedActions)
+        assertEquals(null, planKeyboardDeckMigration(
+            CURRENT_KEYBOARD_DECK_REVISION - 1, profile.copy(name = "My keys"), 9L,
+        ).upgradedProfile)
     }
 
     @Test

@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -209,7 +209,7 @@ private fun ExportSetupDialog(
         confirmation.wipe()
         actions.onDismiss()
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = ::dismissAndWipe,
         title = { Text(stringResource(R.string.settings_backup_create_title)) },
         text = {
@@ -318,7 +318,7 @@ private fun RestorePassphraseDialog(
         passphrase.wipe()
         actions.onDismiss()
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = ::dismissAndWipe,
         title = { Text(stringResource(R.string.settings_backup_unlock_title)) },
         text = {
@@ -363,7 +363,7 @@ private fun AuthenticatedPreviewDialog(
     actions: BackupSettingsActions,
 ) {
     val archive = state.archive ?: return
-    AlertDialog(
+    AppDialog(
         onDismissRequest = actions.onDismiss,
         title = { Text(stringResource(R.string.settings_backup_authenticated_title)) },
         text = {
@@ -412,7 +412,7 @@ private fun ImportReviewDialog(
     actions: BackupSettingsActions,
 ) {
     val plan = state.plan ?: return
-    AlertDialog(
+    AppDialog(
         onDismissRequest = actions.onDismiss,
         title = { Text(stringResource(R.string.settings_backup_review_title)) },
         text = {
@@ -460,7 +460,7 @@ private fun ImportReviewDialog(
 
 @Composable
 private fun BusyBackupDialog(step: BackupWorkflowStep) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = {},
         title = { Text(stringResource(R.string.settings_backup_working_title)) },
         text = {
@@ -481,7 +481,7 @@ private fun BackupCompletedDialog(
     state: BackupWorkflowUiState,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
@@ -522,7 +522,7 @@ private fun BackupFailureDialog(
     state: BackupWorkflowUiState,
     actions: BackupSettingsActions,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = actions.onDismiss,
         title = { Text(stringResource(R.string.settings_backup_failed_title)) },
         text = { BackupErrorText(state.error ?: BackupWorkflowError.IMPORT_FAILED) },

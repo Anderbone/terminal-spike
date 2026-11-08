@@ -2,12 +2,25 @@
   "captured_at": "2026-11-07T23:36:05.253053+00:00",
   "device": "Android API 35 phone emulator / 1080x1920 / density 360",
   "build": "0.0.13 (versionCode 21), signed release",
-  "status": "Captured from the final locally verified release APK; actual MainActivity and live demo services; no synthetic app UI.",
+  "status": "Mixed real captures: signed 0.0.13 emulator captures plus the user-supplied Mosh workspace image. See per-image provenance; no synthetic app UI.",
   "installed_apk_sha256": "710ac7e7c9b5619aa65ed08e6b76d1b60598b7b76886fcf9b1a4c9cc38f69843",
   "screenshots": [
     {
+      "source": "user-mosh-workspaces.jpg",
+      "output": "01-mosh-workspaces.png",
+      "headline": [
+        "Your projects.",
+        "One terminal."
+      ],
+      "subtitle": "Mosh sessions. Workspaces. Buffered input.",
+      "alt": "User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.",
+      "crop": "1080x2520+0+0",
+      "source_sha256": "8b3c2ee5240118ea0e39c77bb4154134b9af77774927f0c5c8edcd71e2e56b05",
+      "provenance": "User-supplied real phone screenshot, approved for GitHub and Play listing use on 2026-11-08. Device and build unverified."
+    },
+    {
       "source": "terminal.png",
-      "output": "01-workspace.png",
+      "output": "02-workspace.png",
       "headline": [
         "Your whole",
         "workspace."
@@ -19,7 +32,7 @@
     },
     {
       "source": "project.png",
-      "output": "02-code-review.png",
+      "output": "03-code-review.png",
       "headline": [
         "Review code.",
         "Keep context."
@@ -31,7 +44,7 @@
     },
     {
       "source": "editor.png",
-      "output": "03-code-server.png",
+      "output": "04-code-server.png",
       "headline": [
         "Your editor.",
         "Still here."
@@ -40,18 +53,6 @@
       "alt": "A real code-server editor open inside Terminal Spike with an Atlas project file.",
       "crop": "1080x1920+0+0",
       "source_sha256": "0b7a9f0e27a75d13adf29e26fd3a221e3989cdb1f4f617548bde44cf6b1ed33d"
-    },
-    {
-      "source": "browser.png",
-      "output": "04-browser.png",
-      "headline": [
-        "A real browser.",
-        "In your flow."
-      ],
-      "subtitle": "Project docs and web tools, in the workspace.",
-      "alt": "The built-in web browser displaying the Atlas demo project notes.",
-      "crop": "1080x1920+0+0",
-      "source_sha256": "88f00ece5a4312fd552c56a15b314d6ddf9bfa023d9aea97a79044d2f82f3827"
     },
     {
       "source": "snippets.png",

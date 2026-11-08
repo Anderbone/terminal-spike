@@ -47,8 +47,13 @@ message AppSettings {
   // Device-local BCP-47 tag used by Android speech recognition. Empty follows device language.
   string voice_input_language_tag = 26;
 
-  // Device-local. Negative storage preserves the visible microphone for existing installs.
-  bool voice_input_disabled = 27;
+  // Device-local. Presence preserves explicit choices; absent preferences default to disabled.
+  optional bool voice_input_disabled = 27;
+
+  bool input_buttons_on_right = 30;
+
+  // Message presence distinguishes an untouched install from an intentionally empty agent list.
+  AiAgentConfiguration ai_agents = 31;
 
   // False preserves the swipe layout on existing installs.
   bool snippets_above_keyboard = 28;
@@ -77,4 +82,16 @@ message AppSettings {
     OSC52_POLICY_DISABLED = 1;
     OSC52_POLICY_ASK = 2;
   }
+}
+
+message AiAgentConfiguration {
+  repeated AiAgentCommand entries = 1;
+  // Empty means always show the picker.
+  string default_id = 2;
+}
+
+message AiAgentCommand {
+  string id = 1;
+  string name = 2;
+  string command = 3;
 }

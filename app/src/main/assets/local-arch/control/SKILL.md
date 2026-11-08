@@ -1,6 +1,6 @@
 ---
 name: terminal-spike-settings
-description: Configure the Terminal Spike app on this phone from natural-language requests. Use for colours, themes, fonts, text size, spacing, saved command snippets, shortcut buttons, app keyboard keys and behavior, or saved SSH/Mosh port forwarding rules. The user does not need to name this skill or its command-line tool.
+description: Configure the Terminal Spike app on this phone from natural-language requests. Use for colours, themes, fonts, text size, spacing, saved command snippets, shortcut buttons, app keyboard keys and behavior, saved SSH/Mosh connections, or their port forwarding rules. The user does not need to name this skill or its command-line tool.
 ---
 
 <!-- Managed by Terminal Spike. Updated when a Local Arch shell opens. -->
@@ -46,6 +46,17 @@ when the user wants to change that shared named theme. Colour values are opaque
 and already-imported fonts. If a requested font is unavailable, explain how to
 import it in the app rather than changing files or downloading fonts silently.
 
+For connection requests use connections list/get/add/update. Creation requires name,
+hostname, and username; SSH and port 22 are defaults. Use credentials list to
+resolve existing authentication by display name and kind; only metadata is exposed.
+Omit credentialId on creation for a password prompt at connection time. On update,
+omitting it preserves authentication; an empty string selects a new password prompt.
+Never request passwords or private keys for this tool. Credentials must be created
+or imported through the app. Empty terminalProfileId/keyboardProfileId inherits the
+default; empty group/tag clears it. Preserve unspecified fields. Switching Mosh to
+SSH clears Mosh-only overrides. Connection edits take effect on next connection;
+the tool does not open or reconnect sessions.
+
 For multiline commands, use a JSON file or stdin with `--json-file -` instead of
 building shell source from user text. Snippet creation only saves text and never
 executes it. Preserve confirmation settings. Port forwarding changes only saved
@@ -55,3 +66,5 @@ tunnel is running based on a successful configuration write.
 The tool exposes no passwords, private keys, credential exports, terminal input,
 or automatic reconnect. It supports loopback listeners only. Read the operation
 result back to verify the requested saved change, and report any limits or errors.
+
+Input bar: `appearance.get` reports `inputButtonsOnRight` and `voiceInputEnabled`. Use `appearance.update` with the latest revision and `--input-buttons-on-right true|false` / `--voice-input-enabled true|false` to adjust the same saved preferences as Android Settings.

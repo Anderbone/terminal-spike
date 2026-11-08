@@ -20,12 +20,12 @@ If interrupted, choose Local Arch Linux again and retry. An incomplete generatio
 is never marked installed. Reinstallation retains the previous environment until
 the replacement has validated successfully.
 
-Fresh installations include Git, GitHub CLI (`gh`), Codex, Bash completion, zoxide (`z`), ripgrep (`rg`), fd,
+Fresh installations include Git, GitHub CLI (`gh`), Codex, Claude Code (`claude`), OpenCode (`opencode`), Pi (`pi`), Bash completion, zoxide (`z`), ripgrep (`rg`), fd,
 fzf, bat, eza, jq, Nano, less, ZIP tools, curl, OpenSSH, rsync, base-devel, Node 24
 LTS and npm. Existing installations can choose **Settings → Local Arch Linux →
 Install starter tools** after closing local shells. This preserves projects,
-existing Node and Codex installations, credentials, and shell customizations.
-The version-2 upgrade is offered even if the earlier starter tools are installed. It includes a full package
+existing Node and coding CLI installations, credentials, and shell customizations.
+The version-3 upgrade is offered even if the earlier starter tools are installed. It includes a full package
 upgrade; it does not reinstall the root filesystem. AUR helpers are separate:
 `makepkg` refuses root, and AUR recipes need ARM compatibility review.
 
@@ -142,16 +142,57 @@ for browser logins, cloning and the Codex handoff. The same guide is installed a
 `/usr/local/share/terminal-spike/cable-flow-phone.md` inside Arch so the phone agent
 can read the verified PostgreSQL recipe without access to the workstation vault.
 
-### GitHub and Codex sign-in from Settings
+### GitHub, Codex and Claude Code sign-in from Settings
 
-Open **Settings → Local Arch Linux → Sign in to GitHub / Codex** after installation.
-The app starts the installed CLI, displays its one-time device code, and offers
-**Copy code and open browser**. Approve in the browser and return to Settings for
-the completion result. No terminal commands or token pasting are required.
+Open **Settings → Local Arch Linux → Sign in to GitHub / Codex / Claude Code**
+after installation. GitHub and Codex copy the one-time device code and open the
+phone browser automatically. **Copy code and open browser** retries the launch;
+**Choose another browser** opens Android's chooser. Enable **Ask which browser to
+use for Local Linux links** to use the chooser for automatic launches too.
+Approve in the browser, then press Back to see the CLI's completion result.
 GitHub uses HTTPS and configures Git's credential helper after successful login.
 Codex requires device-code login enabled in ChatGPT security settings or by the
 workspace administrator: https://developers.openai.com/codex/auth/.
 GitHub's browser flow is documented at https://cli.github.com/manual/gh_auth_login.
+Claude Code uses `claude auth login`, with the subscription sign-in flow rather
+than Console/API billing. Its loopback callback can complete on the same phone.
+If the browser instead supplies an authorization code, paste it into the one-use
+field and submit. See https://code.claude.com/docs/en/authentication.
+
+### Browser links from other local command-line tools
+
+New local shells receive `BROWSER=/usr/local/bin/spike-open`. The managed
+`xdg-open` launcher also opens HTTP(S) links in Android; an existing user-owned
+`/usr/local/bin/xdg-open` is preserved. `spike-open --choose URL` explicitly asks
+which app to use. Helpers refresh whenever a new local shell/login starts;
+existing running shells need `export BROWSER=/usr/local/bin/spike-open` or a new tab.
+Node from the starter tools is required. Linux tools that ignore both `BROWSER`
+and `xdg-open` still need their own browser/link option.
+
+The bridge uses a separate same-Android-UID abstract Unix socket, independent of
+the agent settings grant, with one bounded pending request. It opens only HTTP(S)
+URLs while the app is unlocked and resumed, acknowledges actual Android launch,
+and rejects background/locked attempts after a short timeout. It never stores
+or logs authorization URLs and never reads the browser's cookies or credentials.
+The browser calls the CLI's existing localhost listener directly: there is no
+OAuth URL rewriting, token interception or new HTTP listener in the app.
+A successful browser launch is not proof of account authorization; only the CLI
+exit status completes a Settings login. Automatic focus back to Android is
+provider-specific; press Back for tools whose callback leaves a browser page.
+Remote SSH/Mosh hosts are outside this local bridge and may need port forwarding.
+The opt-in `LocalBrowserDeviceTest` checks the production Android launch and a
+fixture redirect to a phone loopback listener on an authorized S10e/S23. It does
+not authorize real accounts or stand in for provider acceptance.
+
+Verification on 2026-11-08: the shared local gate passed; the final affected app
+checks passed 1,300 JVM tests, debug/release lint, APK builds and the release bundle.
+Six focused dialog/editor checks passed on the authorized wireless SM-G9708.
+The browser fixture successfully launched Samsung Internet, but its first-use
+terms screen prevented navigation to the loopback fixture, so that callback gate
+remains unverified until the user completes browser setup. Do not count this as
+an OAuth success or repeatedly retry it without changing that prerequisite.
+The final standard debug APK was installed without incremental installation on
+SM-F976B and MainActivity was confirmed resumed; no tests ran on that phone.
 
 Login runs under the existing foreground service, survives activity recreation,
 can be cancelled, and times out after 16 minutes. Android receives only the
@@ -160,14 +201,15 @@ The CLIs retain their own credentials in the private Arch filesystem. Resetting
 Arch deletes those credentials too. Completion describes this login attempt,
 not a continuously refreshed account-status check. Existing environments can
 use **Install starter tools** without resetting files; new installs automatically
-include GitHub CLI and the pinned stable Codex package.
+include GitHub CLI, Codex, Claude Code, OpenCode and Pi at pinned stable versions.
 
 Settings login verification (2026-09-09): the opt-in
 `ArchLoginDeviceTest#settingsRequestRealCodesAndCancelAcrossRecreation` passed
 on USB `RZCW81JZ9CP` / `SM-S911B` using the isolated `.archverify` app
 (1 test, 20.532 seconds). Both real providers issued codes; recreation retained
 the code, cancellation cleared it, and buttons became available again.
-The test never opens the approval page or completes account authorization.
+That original test did not open the approval page or complete account authorization;
+the current flow automatically opens the browser and returns before recreation.
 Initial device failures exposed UI-thread process startup and Codex's longer
 code format; the final implementation dispatches startup to IO and waits for
 a complete, whitespace-terminated code. Unit coverage includes one-byte

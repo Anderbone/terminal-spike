@@ -17,7 +17,7 @@ class ArchBootstrapDeviceTest {
     @Test
     fun pinnedArchInstallsValidatesAndSharesPersistentFilesBetweenRealShells() = runBlocking<Unit> {
         assumeTrue(InstrumentationRegistry.getArguments().getString("localArchBootstrap") == "true")
-        assertEquals("SM-S911B", Build.MODEL)
+        assertTrue("Use an authorized old-phone target", Build.MODEL in setOf("SM-S911B", "SM-G9708"))
         assertTrue("arm64-v8a" in Build.SUPPORTED_ABIS)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val directory = File(context.filesDir, "local-arch-device-bootstrap")

@@ -7,6 +7,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ControlProtocolTest {
+    @Test fun inputPreferencesShareRevisionAndRejectInvalidTypes() {
+        val current = com.yanjiyu.terminalspike.core.data.settings.AppSettings.newBuilder()
+            .setVoiceInputDisabled(true).build()
+        val revision = appearanceRevision(current)
+        val patched = patchControlAppAppearance(current, json(
+            """{"revision":$revision,"inputButtonsOnRight":true,"voiceInputEnabled":true}""",
+        ))
+        assertTrue(patched.inputButtonsOnRight)
+        assertFalse(patched.voiceInputDisabled)
+        assertNotEquals(revision, appearanceRevision(patched))
+        assertThrows(ControlFailure::class.java) {
+            patchControlAppAppearance(patched, json("""{"revision":$revision,"inputButtonsOnRight":false}"""))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            patchControlAppAppearance(current, json("""{"revision":$revision,"inputButtonsOnRight":"true"}"""))
+        }
+    }
+
     @Test fun framingRejectsIncompleteAndOversizedRequestsButAcceptsTheExactLimit() {
         assertEquals("é", readControlFrame(ByteArrayInputStream("é\nignored".toByteArray())))
         assertEquals(CONTROL_MAX_REQUEST_BYTES, readControlFrame(ByteArrayInputStream(("x".repeat(CONTROL_MAX_REQUEST_BYTES) + "\n").toByteArray())).length)
@@ -49,6 +67,44 @@ class ControlProtocolTest {
             """{"revision":20,"hapticFeedbackEnabled":"false"}""", """{"revision":20,"layout":"unknown"}""",
             """{"revision":20,"tmuxPrefix":"invalid-prefix"}""", """{"revision":20}""",
         ).forEach { fields -> assertThrows(IllegalArgumentException::class.java) { patchControlKeyboard(keyboard(), json(fields)) } }
+    }
+
+    @Test fun connectionPatchPreservesAuthenticationForwardingAndTransportSettings() {
+        val current = HostProfile(
+            id = "00000000-0000-0000-0000-000000000001", displayName = "Server",
+            hostname = "old.example", port = 22, username = "user", protocol = ConnectionProtocol.MOSH,
+            credentialId = "00000000-0000-0000-0000-000000000002", startupCommand = "keep command",
+            moshPort = 60001, moshLocale = "C.UTF-8",
+            portForwards = listOf(PortForwardRule(listenPort = 8080, destinationPort = 80)),
+            createdAtEpochMillis = 10, updatedAtEpochMillis = 20,
+        )
+        val changed = patchControlConnection(current, json("""{"revision":20,"hostname":"new.example","port":2222,"group":"work"}"""))
+        assertEquals(current.copy(hostname = "new.example", port = 2222, group = "work",
+            updatedAtEpochMillis = changed.updatedAtEpochMillis), changed)
+        val ssh = patchControlConnection(current, json("""{"revision":20,"protocol":"ssh"}"""))
+        assertNull(ssh.moshPort)
+        assertNull(ssh.moshLocale)
+        assertEquals(current.portForwards, ssh.portForwards)
+        assertEquals(current.credentialId, ssh.credentialId)
+        assertEquals("CONFLICT", assertThrows(ControlFailure::class.java) {
+            patchControlConnection(current, json("""{"revision":19,"name":"Stale"}"""))
+        }.code)
+    }
+
+    @Test fun connectionCreationValidatesRequiredFieldsTypesAndRejectsSecrets() {
+        val created = patchControlConnection(null, json("""{"name":"中文 server","hostname":"example.com","username":"me"}"""))
+        assertEquals(ConnectionProtocol.SSH, created.protocol)
+        assertEquals(22, created.port)
+        listOf(
+            """{"name":"Server","hostname":"example.com"}""",
+            """{"name":"Server","hostname":"example.com","username":"me","port":0}""",
+            """{"name":"Server","hostname":"example.com","username":"me","port":"22"}""",
+            """{"name":"Server","hostname":"example.com","username":"me","protocol":"telnet"}""",
+            """{"name":"Server","hostname":"example.com","username":"me","password":"secret"}""",
+            """{"name":"Server","hostname":"example.com","username":"me","startupCommand":"execute"}""",
+        ).forEach { fields ->
+            assertThrows(IllegalArgumentException::class.java) { patchControlConnection(null, json(fields)) }
+        }
     }
 
     private fun json(text: String) = Json.parseToJsonElement(text).jsonObject

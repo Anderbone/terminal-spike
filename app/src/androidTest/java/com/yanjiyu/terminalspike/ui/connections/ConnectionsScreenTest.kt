@@ -32,6 +32,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -66,6 +68,35 @@ class ConnectionsScreenTest {
     val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 
     @Test
+    fun longPressDragReordersLocalAndRemoteConnectionsAndPersists() {
+        val preferences = composeRule.activity.getSharedPreferences("connection_order", android.content.Context.MODE_PRIVATE)
+        preferences.edit().clear().commit()
+        var opened = false
+        try {
+            render(populatedState(), callbacks = callbacks().copy(onOpenLocalArch = { opened = true }))
+            val local = composeRule.onNodeWithTag("connections-local-arch")
+            val host = composeRule.onNodeWithTag("connections-host-$HOST_ID")
+            val distance = host.fetchSemanticsNode().boundsInRoot.center.y -
+                local.fetchSemanticsNode().boundsInRoot.center.y
+            local.performTouchInput {
+                down(center)
+                advanceEventTime(700)
+                moveTo(center, delayMillis = 16)
+                for (step in 1..20) {
+                    moveTo(center + Offset(0f, distance * step / 20), delayMillis = 16)
+                }
+                up()
+            }
+            composeRule.waitForIdle()
+            assertTrue("order=${preferences.getString("ids", null)} local=${local.fetchSemanticsNode().boundsInRoot} host=${host.fetchSemanticsNode().boundsInRoot}", host.fetchSemanticsNode().boundsInRoot.top < local.fetchSemanticsNode().boundsInRoot.top)
+            assertEquals("[\"host:$HOST_ID\",\"local-arch\"]", preferences.getString("ids", null))
+            assertTrue(!opened)
+        } finally {
+            preferences.edit().clear().commit()
+        }
+    }
+
+    @Test
     fun hostCatalogHeaderKeepsScreenIdentityBesideItsPrimaryAction() {
         render(state = populatedState())
 
@@ -79,7 +110,7 @@ class ConnectionsScreenTest {
     @Test
     fun newHostKeepsOnlyEssentialsVisibleAndRequiresOptInToSavePassword() {
         render(
-            state = editorState(),
+            state = editorState(hasKeys = false),
             callbacks = callbacks(onSaveHost = { Result.success(Unit) }),
         )
 
@@ -95,6 +126,10 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithText("Profiles").assertDoesNotExist()
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).assertDoesNotExist()
 
+        composeRule.onNodeWithText("Private key").performClick()
+        composeRule.onNodeWithText("No SSH keys yet. Import or generate one in Settings → SSH keys, then select it here.")
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Password", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
 
         composeRule.onNodeWithText("Profiles").assertExists()
@@ -249,13 +284,20 @@ class ConnectionsScreenTest {
                         Result.success(Unit)
                     }
                 },
-            ),
+            ).copy(onTestHost = { submission ->
+                assertEquals("retry-secret", submission.secret.concatToString())
+                submission.wipe()
+                1L
+            }),
         )
 
         composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
         composeRule.onNodeWithText("Edit").performClick()
         onView(withTagValue(equalTo(HostEditorSecretTestTag)))
             .perform(replaceText("retry-secret"))
+        composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+        // Testing owns a disposable copy; saving must still receive the original input.
+        composeRule.onNodeWithTag(EditorSecretReentryTestTag).assertDoesNotExist()
         composeRule.onNodeWithTag(HostEditorSaveTestTag).performClick()
 
         waitForNodeWithTag(EditorPersistenceErrorTestTag)
@@ -444,11 +486,13 @@ class ConnectionsScreenTest {
     }
 
     @Test
-    fun searchFilterAndSortControlsDispatchControlledStateCallbacks() {
+    fun hostListIgnoresStaleFiltersWhileKeySearchDispatchesQuery() {
         var query: String? = null
         var sort: HostSort? = null
         var favourites: Boolean? = null
-        val renderedState = mutableStateOf(populatedState())
+        val renderedState = mutableStateOf(populatedState().copy(
+            searchQuery = "does-not-exist", hostFilters = HostFilters(favouritesOnly = true),
+        ))
         composeRule.setContent {
             TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 ConnectionsScreen(
@@ -480,20 +524,18 @@ class ConnectionsScreenTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("Show host filters and sorting").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("Favourites").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithText("Favourites").performClick()
-        composeRule.onNodeWithText("Sort: Name").performClick()
-        composeRule.onNodeWithText("Recent").performClick()
-        composeRule.onNodeWithContentDescription("Search hosts").performTextInput("prod")
-
-        composeRule.waitUntil(timeoutMillis = 5_000) { renderedState.value.searchQuery == "prod" }
+        composeRule.onNodeWithContentDescription("Search hosts").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Show host filters and sorting").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Connect to Production").assertIsDisplayed()
         composeRule.runOnIdle {
-            assertEquals("prod", query)
-            assertEquals(HostSort.RECENT, sort)
-            assertEquals(true, favourites)
+            renderedState.value = renderedState.value.copy(selectedTab = ConnectionsTab.KEYS, searchQuery = "")
+        }
+        composeRule.onNodeWithContentDescription("Search keys").performTextInput("Deploy")
+        composeRule.waitUntil(timeoutMillis = 5_000) { renderedState.value.searchQuery == "Deploy" }
+        composeRule.runOnIdle {
+            assertEquals("Deploy", query)
+            assertNull(sort)
+            assertNull(favourites)
         }
     }
 
@@ -535,9 +577,9 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithText("No hosts yet").assertIsDisplayed()
 
         composeRule.runOnIdle {
-            renderedState.value = populatedState().copy(searchQuery = "does-not-exist")
+            renderedState.value = populatedState().copy(selectedTab = ConnectionsTab.KEYS, searchQuery = "does-not-exist")
         }
-        composeRule.onNodeWithText("No matching hosts").assertIsDisplayed()
+        composeRule.onNodeWithText("No matching keys").assertIsDisplayed()
         composeRule.onNodeWithText("Clear search and filters").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(1, retries) }
     }
@@ -620,14 +662,15 @@ class ConnectionsScreenTest {
     }
 
     @Test
-    fun compactSplitScreenAtStandardTextKeepsSearchAvailable() {
+    fun compactSplitScreenAtStandardTextKeepsHostListAvailable() {
         render(
             state = populatedState(),
             width = 320.dp,
             height = 480.dp,
         )
 
-        composeRule.onNodeWithContentDescription("Search hosts").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Search hosts").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Connect to Production").assertIsDisplayed()
     }
 
     @Test
@@ -791,6 +834,7 @@ class ConnectionsScreenTest {
         protocol: ConnectionProtocol = ConnectionProtocol.SSH,
         savedSecretAvailable: Boolean = false,
         keyReferenceCount: Int = 0,
+        hasKeys: Boolean = true,
     ): ConnectionsUiState {
         val base = populatedState()
         val ready = base.loadState as ConnectionsLoadState.Ready
@@ -811,7 +855,7 @@ class ConnectionsScreenTest {
                             savedSecretAvailable = savedSecretAvailable,
                         ),
                     ),
-                    keys = listOf(
+                    keys = if (!hasKeys) emptyList() else listOf(
                         KeyEditorSeed(
                             persistentId = KEY_ID,
                             name = "Deploy key",

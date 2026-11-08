@@ -77,6 +77,9 @@ class TerminalController(
 
     internal fun publishInputContext(context: TerminalInputContext) {
         mutableInputContext.value = context
+        if (context.identity.isNotEmpty() && herdrHistory?.let { context.identity != "herdr/${it.identity}" } == true) {
+            invalidateHerdrHistory()
+        }
     }
 
     val viewport = TerminalViewport()
@@ -135,6 +138,16 @@ class TerminalController(
 
     internal fun dismissHerdrProjectPicker() { mutableHerdrProjectPicker.value = null }
 
+    internal fun completeHerdrProjectSelection(source: Connection) {
+        if (mutableHerdrProjectPicker.value !== source) return
+        if (herdrSessionActive) {
+            terminalScreen?.let { screen ->
+                HerdrNavigationChrome.switcherClose(screen, terminalColumns, terminalRows)
+            }?.let { (column, row) -> sendMouseClick(column, row) }
+        }
+        dismissHerdrProjectPicker()
+    }
+
     internal fun showHerdrProjectPickerAt(column: Int, row: Int): Boolean {
         val screen = terminalScreen ?: return false
         val connection = inputSink as? Connection ?: return false
@@ -181,6 +194,17 @@ class TerminalController(
             terminalScreen?.getOrNull(1)?.text,
         ) != false
 
+    @Volatile
+    internal var herdrHistoryGeneration: Long = 0L
+        private set
+
+    private fun invalidateHerdrHistory() {
+        herdrHistoryGeneration++
+        herdrHistoryReading = false
+        herdrHistoryPinned = false
+        publishHerdrHistory(null)
+    }
+
     internal fun publishHerdrHistory(snapshot: HerdrPaneHistory?) {
         if (herdrHistory === snapshot) return
         herdrHistory = snapshot
@@ -190,7 +214,9 @@ class TerminalController(
     internal fun publishHerdrHistoryRead(
         result: HerdrHistoryRead,
         sourceAtCapture: HerdrPaneHistory?,
+        generationAtCapture: Long = herdrHistoryGeneration,
     ) {
+        if (generationAtCapture != herdrHistoryGeneration) return
         when (result) {
             is HerdrHistoryRead.Available -> {
                 val current = herdrHistory
@@ -393,6 +419,11 @@ class TerminalController(
         val close = if (herdrSessionActive && !secondary) terminalScreen?.let {
             HerdrNavigationChrome.switcherCloseForTabClick(it, terminalColumns, terminalRows, column, row)
         } else null
+        // Navigation changes history ownership before the slower SSH poll can observe it.
+        if (herdrSessionActive && !secondary && terminalScreen?.let {
+                HerdrNavigationChrome.isContextMenuCell(it, terminalColumns, terminalRows, column, row)
+            } == true
+        ) invalidateHerdrHistory()
         val dismiss = close?.let { (closeColumn, closeRow) ->
             TerminalMouseSequences.click(closeColumn, closeRow, terminalModes.sgrMouseEncoding,
                 reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10)

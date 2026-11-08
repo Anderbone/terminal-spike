@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import com.yanjiyu.terminalspike.ui.theme.AppEditorDialog
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -225,7 +225,7 @@ internal fun CustomTerminalThemeEditorDialog(
     )
 
     if (deleteRequested && initialTheme != null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleteRequested = false },
             title = { Text(stringResource(R.string.settings_terminal_theme_delete_title)) },
             text = { Text(stringResource(R.string.settings_terminal_theme_delete_message)) },

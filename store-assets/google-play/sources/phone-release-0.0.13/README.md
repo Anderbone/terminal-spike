@@ -1,6 +1,16 @@
-# Signed release capture recipe
+# Capture provenance
 
-These eight English phone images show the real main application from the signed
+The 2026-11-08 listing selection includes `user-mosh-workspaces.jpg`, supplied and
+explicitly approved by the user for GitHub and Play screenshots. It is preserved
+without retouching, including workspace names and the floating overlay. Its phone
+model, app version and signing status are unverified; the release APK hash below
+does not apply to this image. The manifest records its separate provenance/hash.
+The browser capture remains archived here but is excluded from output. The code-server
+capture is included in both the Play selection and GitHub README.
+
+# Original signed release capture recipe
+
+The original eight English phone images show the real main application from the signed
 0.0.13 release candidate on an isolated API 35 phone emulator. The manifest records
 the installed APK hash, device configuration and every unmodified capture hash.
 No debug-only capture screen, synthetic app UI, personal account or work transcript

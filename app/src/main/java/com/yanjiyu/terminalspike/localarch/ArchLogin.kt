@@ -8,6 +8,7 @@ internal enum class ArchLoginProvider(val label: String, val verificationUrl: St
     GITHUB("GitHub", "https://github.com/login/device",
         "set -e; export GH_BROWSER=true GH_PROMPT_DISABLED=1; gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key </dev/null; gh auth setup-git --hostname github.com"),
     CODEX("Codex", "https://auth.openai.com/codex/device", "exec codex login --device-auth"),
+    CLAUDE("Claude Code", "", "exec claude auth login"),
     ;
 
     val command: List<String> get() = listOf("/bin/bash", "--noprofile", "--norc", "-c", script)

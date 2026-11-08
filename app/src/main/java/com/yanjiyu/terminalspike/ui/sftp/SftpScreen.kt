@@ -26,7 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -391,7 +391,7 @@ internal fun SftpBrowser(
             },
         )
     }
-    if (confirmDelete) AlertDialog(
+    if (confirmDelete) AppDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Delete selected item?") },
         text = { Text("Folders and all of their contents will be deleted permanently.") },
@@ -404,7 +404,7 @@ internal fun SftpBrowser(
         },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
     )
-    if (chooseUpload) AlertDialog(
+    if (chooseUpload) AppDialog(
         onDismissRequest = { chooseUpload = false },
         title = { Text("Copy from phone") },
         text = { Text("Choose files or a whole folder to upload into ${state.path}.") },
@@ -493,7 +493,7 @@ private enum class SftpEditDialog { NewFolder, Rename }
 @Composable
 private fun NameDialog(title: String, initialName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var value by remember(title, initialName) { mutableStateOf(initialName) }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { OutlinedTextField(value, { value = it }, singleLine = true, label = { Text("Name") }) },
@@ -509,7 +509,7 @@ private fun SftpAuthenticationDialog(
     onClose: () -> Unit,
 ) {
     val secret = remember(state.hostId) { WipeableSecretInputState() }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onClose,
         title = { Text("Open files on ${state.hostName}") },
         text = {
@@ -527,7 +527,7 @@ private fun SftpAuthenticationDialog(
 @Composable
 private fun HostIdentityDialog(prompt: HostIdentityPrompt, onDecision: (Long, HostIdentityDecision) -> Unit) {
     val changed = prompt is HostIdentityPrompt.Changed
-    AlertDialog(
+    AppDialog(
         onDismissRequest = { onDecision(prompt.promptToken, HostIdentityDecision.Reject) },
         title = { Text(if (changed) "Host key changed" else "Verify host") },
         text = {
@@ -557,7 +557,7 @@ private fun KeyboardInteractiveDialog(
     onCancel: () -> Unit,
 ) {
     val states = remember(challenge.challengeToken) { challenge.questions.map { WipeableSecretInputState() } }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onCancel,
         title = { Text(challenge.name.ifBlank { "Authentication" }) },
         text = {

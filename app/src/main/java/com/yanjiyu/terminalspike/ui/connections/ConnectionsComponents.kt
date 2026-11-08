@@ -9,6 +9,19 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import android.content.Context
+import org.json.JSONArray
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -139,7 +152,8 @@ internal fun ConnectionsHeader(
                 val addDescription = stringResource(action.labelRes)
                 IconButton(
                     onClick = action.onClick,
-                    modifier = Modifier.semantics { contentDescription = addDescription },
+                    modifier = Modifier.size(MaterialTheme.iconMetrics.minimumTouchTarget)
+                        .semantics { contentDescription = addDescription },
                 ) {
                     ConnectionsGlyphIcon(
                         ConnectionsGlyph.ADD,
@@ -616,6 +630,9 @@ internal fun ConnectionsReadyContent(
     onDeleteSnippet: ((SnippetRowUi) -> Unit)?,
     onEmptyAction: (() -> Unit)?,
     onClearNoResults: () -> Unit,
+    onOpenLocalArch: (() -> Unit)? = null,
+    onConnectLocalArch: (() -> Unit)? = null,
+    localArchLastUsed: Long = 0L,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val listDetail = navigationExpanded && maxWidth >= ExpandedConnectionsMinimumContentWidth
@@ -628,6 +645,9 @@ internal fun ConnectionsReadyContent(
                     list = {
                         HostCatalogList(
                             content = rows.content,
+                            onOpenLocalArch = onOpenLocalArch,
+                            onConnectLocalArch = onConnectLocalArch,
+                            localArchLastUsed = localArchLastUsed,
                             selectedId = selection?.id,
                             listDetail = listDetail,
                             nowEpochMillis = nowEpochMillis,
@@ -770,8 +790,12 @@ private fun HostCatalogList(
     onDelete: ((HostRowUi) -> Unit)?,
     onEmptyAction: (() -> Unit)?,
     onClearNoResults: () -> Unit,
+    onOpenLocalArch: (() -> Unit)?,
+    onConnectLocalArch: (() -> Unit)?,
+    localArchLastUsed: Long,
 ) {
-    if (content.emptyState != null) {
+    val localArchVisible by com.yanjiyu.terminalspike.ui.rememberLocalArchConnectionVisible()
+    if (content.emptyState != null && (onOpenLocalArch == null || !localArchVisible)) {
         ConnectionsCatalogEmptyState(
             tab = ConnectionsTab.HOSTS,
             reason = content.emptyState,
@@ -780,11 +804,89 @@ private fun HostCatalogList(
         )
         return
     }
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("connection_order", Context.MODE_PRIVATE)
+    }
+    var savedOrder by remember {
+        mutableStateOf(runCatching {
+            val array = JSONArray(preferences.getString("ids", "[]"))
+            List(array.length()) { array.getString(it) }
+        }.getOrDefault(emptyList()))
+    }
+    val hosts = content.rows.associateBy { "host:${it.id}" }
+    val ids = orderedConnectionIds(
+        listOfNotNull("local-arch".takeIf { onOpenLocalArch != null && localArchVisible }) + hosts.keys,
+        savedOrder,
+    )
+    val currentIds by rememberUpdatedState(ids)
+    val listState = rememberLazyListState()
+    val haptics = LocalHapticFeedback.current
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    var dragCenter by remember { mutableStateOf(0f) }
+    var edgeScroll by remember { mutableStateOf(0f) }
+    fun moveAtCenter() {
+        val dragged = draggedId ?: return
+        val target = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+            it.key in currentIds && it.key != dragged &&
+                dragCenter >= it.offset && dragCenter < it.offset + it.size
+        }?.key as? String ?: return
+        savedOrder = moveConnection(currentIds, dragged, target) +
+            savedOrder.filter { it !in currentIds }
+    }
+    fun finishDrag() {
+        if (draggedId != null) {
+            // Keep hidden entries (for example when a filter is active) in the stored order.
+            savedOrder = currentIds + savedOrder.filter { it !in currentIds }
+            preferences.edit().putString("ids", JSONArray(savedOrder).toString()).apply()
+        }
+        draggedId = null
+        edgeScroll = 0f
+    }
+    LaunchedEffect(draggedId) {
+        while (draggedId != null) {
+            withFrameMillis { }
+            if (edgeScroll != 0f) {
+                listState.scroll { scrollBy(edgeScroll) }
+                moveAtCenter()
+            }
+        }
+    }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        modifier = Modifier.fillMaxSize().pointerInput(listState) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { position ->
+                    val item = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                        it.key in currentIds && position.y >= it.offset && position.y < it.offset + it.size
+                    }
+                    draggedId = item?.key as? String
+                    if (item != null) {
+                        dragCenter = item.offset + item.size / 2f
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                },
+                onDragEnd = { finishDrag() },
+                onDragCancel = { finishDrag() },
+                onDrag = { change, amount ->
+                    if (draggedId != null) {
+                        change.consume()
+                        dragCenter += amount.y
+                        val layout = listState.layoutInfo
+                        val edge = 56.dp.toPx()
+                        edgeScroll = when {
+                            change.position.y < layout.viewportStartOffset + edge -> -12.dp.toPx()
+                            change.position.y > layout.viewportEndOffset - edge -> 12.dp.toPx()
+                            else -> 0f
+                        }
+                        moveAtCenter()
+                    }
+                },
+            )
+        },
         contentPadding = PaddingValues(bottom = MaterialTheme.spacing.extraLarge),
     ) {
-        item {
+        item(key = "count") {
             CatalogCountHeader(
                 pluralStringResource(
                     R.plurals.connections_host_count,
@@ -793,27 +895,45 @@ private fun HostCatalogList(
                 ),
             )
         }
-        items(content.rows, key = HostRowUi::id) { host ->
-            val activationDescription = stringResource(
-                R.string.connections_connect_to,
-                host.displayName,
-            )
-            HostCatalogRow(
-                host = host,
-                selected = listDetail && selectedId == host.id,
-                nowEpochMillis = nowEpochMillis,
-                onActivate = onConnect?.let { connect -> { connect(host.id) } },
-                activationDescription = activationDescription,
-                onShowDetails = if (listDetail) ({ onSelect(host.id) }) else null,
-                onConnect = onConnect,
-                onOpenSftp = onOpenSftp,
-                onEdit = onEdit,
-                onDelete = onDelete,
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 76.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            )
+        items(ids, key = { it }) { id ->
+            val dragging = id == draggedId
+            Column(
+                Modifier.zIndex(if (dragging) 1f else 0f)
+                    .graphicsLayer {
+                        translationY = 0f
+                        shadowElevation = 0f
+                        if (dragging) {
+                            val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id }
+                            translationY = item?.let { dragCenter - it.offset - it.size / 2f } ?: 0f
+                            shadowElevation = 8.dp.toPx()
+                        }
+                    }
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                val host = hosts[id]
+                if (host == null) {
+                    onOpenLocalArch?.let { open ->
+                        LocalArchConnectionRow(open, onConnectLocalArch, localArchLastUsed, nowEpochMillis)
+                    }
+                } else {
+                    HostCatalogRow(
+                        host = host,
+                        selected = listDetail && selectedId == host.id,
+                        nowEpochMillis = nowEpochMillis,
+                        onActivate = onConnect?.let { connect -> { connect(host.id) } },
+                        activationDescription = stringResource(R.string.connections_connect_to, host.displayName),
+                        onShowDetails = if (listDetail) ({ onSelect(host.id) }) else null,
+                        onConnect = onConnect,
+                        onOpenSftp = onOpenSftp,
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 76.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+            }
         }
     }
 }
@@ -950,6 +1070,69 @@ private fun CatalogCountHeader(label: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.labelMedium,
     )
+}
+
+@Composable
+private fun LocalArchConnectionRow(
+    onOpen: () -> Unit,
+    onConnect: (() -> Unit)?,
+    lastUsed: Long,
+    nowEpochMillis: Long,
+) {
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onOpen)
+            .testTag("connections-local-arch"),
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 72.dp)
+                .padding(start = MaterialTheme.spacing.large, end = MaterialTheme.spacing.small, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CatalogIconContainer(glyph = ConnectionsGlyph.HOST, active = false)
+            Column(
+                modifier = Modifier.weight(1f).padding(horizontal = MaterialTheme.spacing.medium),
+                verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            ) {
+                Text(
+                    text = stringResource(R.string.local_arch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.local_arch_open),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (lastUsed > 0L) {
+                    Text(
+                        text = formatHostLastUsed(lastUsed, nowEpochMillis).resolve(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            CatalogOverflowMenu(
+                description = stringResource(R.string.connections_host_actions, stringResource(R.string.local_arch_title)),
+                actions = listOfNotNull(onConnect?.let {
+                    CatalogMenuAction(R.string.connections_action_connect, onClick = it)
+                }) + CatalogMenuAction(R.string.local_arch_hide_connection, onClick = {
+                    com.yanjiyu.terminalspike.ui.setLocalArchConnectionVisible(context, false)
+                }),
+            )
+        }
+    }
 }
 
 @Composable

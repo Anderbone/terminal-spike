@@ -53,7 +53,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
@@ -720,6 +720,7 @@ fun TerminalSpikeScreen(
     var localArchInstallVisible by rememberSaveable { mutableStateOf(false) }
     val localArchState by viewModel.localArchState.collectAsStateWithLifecycle()
     val localArchRuntime by viewModel.localArchRuntime.collectAsStateWithLifecycle()
+    val localArchLastUsed by viewModel.localArchLastUsed.collectAsStateWithLifecycle()
     var pendingTerminalAuthenticationHostId by rememberSaveable { mutableStateOf<String?>(null) }
     var terminalOwner by rememberSaveable { mutableStateOf(TerminalOwner.WORKSPACE) }
     var catalogReturnDestination by rememberSaveable { mutableStateOf(AppRoute.WORKSPACE) }
@@ -735,6 +736,8 @@ fun TerminalSpikeScreen(
     var dismissedMoshFallbackSessionId by remember { mutableStateOf<Long?>(null) }
     var focusSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
     var findSessionId by remember { mutableStateOf<Long?>(null) }
+    var aiAgentPickerTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showAiAgentEditor by rememberSaveable { mutableStateOf(false) }
     var snippetPickerTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var restoreTerminalFocusAfterSnippetPicker by remember { mutableStateOf(false) }
     var pendingAccessoryPaste by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -1270,6 +1273,18 @@ fun TerminalSpikeScreen(
         }
     }
 
+    val openLocalArch: () -> Unit = {
+        newSessionPickerVisible = false
+        filesSelected = false
+        if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
+            if (viewModel.openLocalArch()) {
+                hideBrowsers()
+                projectSelected = false
+                destination = AppRoute.TERMINAL_DETAIL
+            }
+        } else localArchInstallVisible = true
+    }
+
     var localArchProgressVisible by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(localArchRuntime.installationActive) {
         if (localArchRuntime.installationActive) localArchProgressVisible = true
@@ -1320,10 +1335,20 @@ fun TerminalSpikeScreen(
                 AppRoute.CONNECTIONS,
                 -> ConnectionsScreen(
                     state = connectionsState,
+                    localArchLastUsed = localArchLastUsed,
                     initialHostEditorId = catalogEditHostId.takeIf {
                         target == AppRoute.CONNECTIONS
                     },
                     callbacks = ConnectionsCallbacks(
+                        onOpenLocalArch = {
+                            if (viewModel.openExistingLocalArch()) {
+                                hideBrowsers()
+                                filesSelected = false
+                                projectSelected = false
+                                destination = AppRoute.TERMINAL_DETAIL
+                            } else openLocalArch()
+                        },
+                        onConnectLocalArch = openLocalArch,
                         onOpenBrowser = {
                             browserSessionId = null
                             viewModel.webBrowser.hide()
@@ -1601,7 +1626,7 @@ fun TerminalSpikeScreen(
                                 TerminalAccessoryBar(
                                     snippetsContent = {
                                         com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage(
-                                            snippets = state.snippets,
+                                            snippets = state.snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.text,
                                             snippetForEditing = viewModel::terminalSnippetForEditing,
                                             canSave = state.settingsReady,
                                             canSend = state.canSendTerminalInput,
@@ -1642,6 +1667,8 @@ fun TerminalSpikeScreen(
                                     voiceInputLanguageTag = state.voiceInputLanguageTag,
                                     snippetsAboveKeyboard = state.snippetsAboveKeyboard,
                                     voiceInputEnabled = state.voiceInputEnabled,
+                                    inputButtonsOnRight = state.inputButtonsOnRight,
+                                    onInputButtonsOnRight = viewModel::setInputButtonsOnRight,
                                     customizationEnabled = state.settingsReady,
                                     inputTargetId = state.activeSessionId,
                                     bufferedInputSendEnabled = state.canSendTerminalInput,
@@ -1660,8 +1687,17 @@ fun TerminalSpikeScreen(
                                                 }
                                                 TerminalLocalAccessoryAction.SNIPPETS ->
                                                     showTools(ToolSection.SNIPPETS, state.activeSessionId)
+                                                TerminalLocalAccessoryAction.AI_AGENTS -> {
+                                                    val default = state.aiAgents.defaultAgent
+                                                    if (default == null) aiAgentPickerTargetId = state.activeSessionId
+                                                    else {
+                                                        terminalInputFocusRequester.resetComposingInput()
+                                                        viewModel.runAiAgent(default.id, state.activeSessionId)
+                                                    }
+                                                }
                                                 TerminalLocalAccessoryAction.TMUX_SESSIONS ->
                                                     openTmuxSessionSwitcher(state.activeSessionId)
+                                                TerminalLocalAccessoryAction.EXPANDED_KEYBOARD -> Unit // Owned by the accessory bar.
                                                 TerminalLocalAccessoryAction.KEYBOARD_SETTINGS ->
                                                     showTools(ToolSection.KEYS, state.activeSessionId)
                                                 TerminalLocalAccessoryAction.HIDE_KEYBOARD ->
@@ -1672,6 +1708,7 @@ fun TerminalSpikeScreen(
                                             viewModel.activateTerminalAccessoryAction(action)
                                         }
                                     },
+                                    onEditAiAgents = { showAiAgentEditor = true },
                                     onCustomize = { showTools(ToolSection.KEYS) },
                                     onSelectFiles = {
                                         imagePickerTargetSessionId = state.activeSessionId
@@ -1798,7 +1835,7 @@ fun TerminalSpikeScreen(
                 it.id == tmuxSessionId
             }
             if (selected != null) {
-                AlertDialog(
+                AppDialog(
                     onDismissRequest = { tmuxDeleteTargetId = null },
                     title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
                     text = {
@@ -1910,13 +1947,34 @@ fun TerminalSpikeScreen(
             )
         }
 
+        aiAgentPickerTargetId?.let { targetId ->
+            if (state.sessions.none { it.id == targetId }) {
+                LaunchedEffect(targetId) { aiAgentPickerTargetId = null }
+            } else com.yanjiyu.terminalspike.ui.terminal.AiAgentPickerDialog(
+                agents = state.aiAgents,
+                onSelect = { id ->
+                    terminalInputFocusRequester.resetComposingInput()
+                    if (viewModel.runAiAgent(id, targetId)) {
+                        aiAgentPickerTargetId = null
+                        terminalInputFocusRequester.requestFocus(showKeyboard = false)
+                    }
+                },
+                onEdit = { aiAgentPickerTargetId = null; showAiAgentEditor = true },
+                onDismiss = { aiAgentPickerTargetId = null },
+            )
+        }
+        if (showAiAgentEditor) com.yanjiyu.terminalspike.ui.terminal.AiAgentEditorDialog(
+            agents = state.aiAgents,
+            onSave = viewModel::saveAiAgents,
+            onDismiss = { showAiAgentEditor = false },
+        )
         snippetPickerTargetId?.let { targetId ->
             state.sessions.firstOrNull { it.id == targetId }?.let { target ->
                 TerminalSnippetPickerDialog(
                     sessionTitle = target.title.ifBlank {
                         stringResource(R.string.navigation_terminal)
                     },
-                    snippets = state.snippets,
+                    snippets = state.snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all,
                     onDismiss = {
                         snippetPickerTargetId = null
                         restoreTerminalFocusAfterSnippetPicker = true
@@ -1945,7 +2003,7 @@ fun TerminalSpikeScreen(
         }
 
         pendingAccessoryPaste?.let { (targetId, text) ->
-            AlertDialog(
+            AppDialog(
                 onDismissRequest = { pendingAccessoryPaste = null },
                 title = { Text(stringResource(R.string.terminal_multiline_paste_title)) },
                 text = {
@@ -2012,17 +2070,7 @@ fun TerminalSpikeScreen(
     if (newSessionPickerVisible) {
         SavedConnectionPickerDialog(
             loadState = connectionsState.loadState,
-            onLocalArch = {
-                newSessionPickerVisible = false
-                filesSelected = false
-                if (localArchState.installed && !localArchState.busy && !localArchRuntime.installationActive) {
-                    if (viewModel.openLocalArch()) {
-                        hideBrowsers()
-                        projectSelected = false
-                        destination = AppRoute.TERMINAL_DETAIL
-                    }
-                } else localArchInstallVisible = true
-            },
+            onLocalArch = openLocalArch,
             onOpenFiles = { host ->
                 newSessionPickerVisible = false
                 val hostId = requireNotNull(host.draft.persistentId)
@@ -2200,7 +2248,7 @@ fun TerminalSpikeScreen(
     }
     state.pendingSnippetSendId?.let { snippetId ->
         state.snippets.firstOrNull { it.id == snippetId }?.let { snippet ->
-            AlertDialog(
+            AppDialog(
                 onDismissRequest = viewModel::cancelSnippetSend,
                 title = { Text(stringResource(R.string.terminal_snippet_multiline_title)) },
                 text = {
@@ -2223,7 +2271,7 @@ fun TerminalSpikeScreen(
     }
     state.remoteClipboardPrompt?.let { prompt ->
         var allowForConnection by remember(prompt) { mutableStateOf(false) }
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { viewModel.denyRemoteClipboardRequest(prompt) },
             title = { Text(stringResource(R.string.terminal_remote_clipboard_title)) },
             text = {
@@ -2262,7 +2310,7 @@ fun TerminalSpikeScreen(
     state.activeSession.takeIf { session ->
         shouldOfferFreshSshFallback(session, dismissedMoshFallbackSessionId)
     }?.let { failedMoshSession ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { dismissedMoshFallbackSessionId = failedMoshSession.id },
             title = { Text(stringResource(R.string.mosh_fallback_title)) },
             text = { Text(stringResource(R.string.mosh_fallback_message)) },
@@ -2286,7 +2334,7 @@ fun TerminalSpikeScreen(
         )
     }
     if (state.notificationPermissionPromptVisible) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = viewModel::dismissNotificationPermissionPrompt,
             title = { Text(stringResource(R.string.terminal_notification_permission_title)) },
             text = {

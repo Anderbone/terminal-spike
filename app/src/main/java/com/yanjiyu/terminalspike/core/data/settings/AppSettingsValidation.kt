@@ -17,6 +17,7 @@ internal enum class AppSettingsViolation(val fieldCode: String) {
     OSC52_POLICY("osc52_policy"),
     LAST_BACKUP_MODE("last_backup_mode"),
     VOICE_INPUT_LANGUAGE("voice_input_language_tag"),
+    AI_AGENTS("ai_agents"),
 }
 
 /**
@@ -47,6 +48,9 @@ internal object AppSettingsValidator {
         }
 
         val violations = buildSet {
+            if (!com.yanjiyu.terminalspike.settings.AiAgents.from(settings).isValid()) {
+                add(AppSettingsViolation.AI_AGENTS)
+            }
             if (settings.themeMode !in SUPPORTED_THEME_MODES) add(AppSettingsViolation.THEME_MODE)
             if (settings.accentPreset.isNotEmpty() && !settings.accentPreset.isValidIdentifier()) {
                 add(AppSettingsViolation.ACCENT_PRESET)

@@ -1,6 +1,9 @@
 #!/bin/bash
-# Signed Arch ARM packages and the stable official Codex npm distribution. No account setup.
+# Signed Arch ARM packages and pinned official coding CLIs. No account setup.
 set -euo pipefail
+# PTY setup output must stay readable and retain failures instead of npm spinners.
+export npm_config_progress=false npm_config_color=false
+trap 'status=$?; printf "\nStarter tools failed (exit %s), line %s: %s\n" "$status" "$LINENO" "$BASH_COMMAND" >&2; exit "$status"' ERR
 packages=(git github-cli bash-completion zoxide ripgrep fd fzf bat eza jq nano less unzip zip curl openssh rsync base-devel npm)
 # Keep an existing user's Node choice; fresh environments get Cable Flow's Node 24 LTS.
 if ! command -v node >/dev/null 2>&1; then
@@ -15,8 +18,28 @@ done
 if ! command -v codex >/dev/null 2>&1; then
     npm install --global --registry=https://registry.npmjs.org @openai/codex@0.153.4
 fi
+# Keep installed CLI versions and credentials; only fill missing commands.
+if ! command -v claude >/dev/null 2>&1; then
+    npm install --global --registry=https://registry.npmjs.org --include=optional --ignore-scripts=false \
+        --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@2.1.319
+elif ! claude --version; then
+    # Repair npm's native-binary placement without changing the installed version.
+    npm rebuild --global --ignore-scripts=false --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code
+fi
+if ! command -v opencode >/dev/null 2>&1; then
+    npm install --global --registry=https://registry.npmjs.org --include=optional --ignore-scripts=false \
+        --allow-scripts=@opencode/cli @opencode/cli@2.2.6
+elif ! opencode --version; then
+    npm rebuild --global --ignore-scripts=false --allow-scripts=@opencode/cli @opencode/cli
+fi
+if ! command -v pi >/dev/null 2>&1; then
+    npm install --global --registry=https://registry.npmjs.org @earendil-works/pi-coding-agent@1.5.0
+fi
 gh --version
 codex --version
+claude --version
+opencode --version
+pi --version
 # App-owned documentation, passed as data rather than evaluated shell source.
 mkdir -p /usr/local/share/terminal-spike
 printf '%s\n' "$1" > /usr/local/share/terminal-spike/cable-flow-phone.md

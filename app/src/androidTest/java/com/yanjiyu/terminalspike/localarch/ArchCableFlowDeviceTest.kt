@@ -63,12 +63,12 @@ class ArchCableFlowDeviceTest {
             environment.withShell { lease ->
                 val output = bootstrap.runGuest(lease.lease.installation.rootfs, temporaryDirectory,
                     listOf("/bin/bash", "--login", "-c", "set -e; gh --version; gh auth login --help >/dev/null; " +
-                        "codex --version; codex login --help >/dev/null; " +
+                        "codex --version; codex login --help >/dev/null; claude --version; opencode --version; pi --version; " +
                         "test -s /usr/local/share/terminal-spike/cable-flow-phone.md; " +
                         "printf 'ARCH_STARTER_V2_OK\\n'"), 30_000L)
                 instrumentation.sendStatus(0, Bundle().apply { putString("stream", output) })
                 assertTrue(output.contains("ARCH_STARTER_V2_OK"))
-                assertEquals("2\n", File(lease.lease.installation.rootfs.parentFile, "starter-tools.version").readText())
+                assertEquals("3\n", File(lease.lease.installation.rootfs.parentFile, "starter-tools.version").readText())
             }
         }
     }

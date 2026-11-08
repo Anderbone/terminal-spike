@@ -51,6 +51,8 @@ class LocalAgentControlInstrumentedTest {
         val id = UUID.randomUUID().toString()
         val hostId = UUID.randomUUID().toString()
         var snippetId: String? = null
+        var createdHostId: String? = null
+        var createdCredentialId: String? = null
         var enabled = true
         val api = AppControlApi(container) { enabled }
         suspend fun call(method: String, params: JsonObject = buildJsonObject {}) = api.handle(request(method, params))
@@ -97,7 +99,8 @@ class LocalAgentControlInstrumentedTest {
             assertEquals("next_connection", forwarded.string("effect"))
             assertEquals("keep-this-field", container.hostProfiles.get(hostId)!!.startupCommand)
             assertEquals(id, container.hostProfiles.get(hostId)!!.keyboardProfileId)
-            assertFalse(forwarded.containsKey("credentialId"))
+            assertTrue(forwarded["credentialId"] is JsonNull)
+            assertFalse(forwarded.containsKey("startupCommand"))
             val unsafe = call("forwards.add", buildJsonObject {
                 put("connection", hostId); put("revision", forwarded.long("revision")); put("bindAddress", "0.0.0.0"); put("listenPort", 15174); put("destinationPort", 5174)
             })
@@ -105,7 +108,52 @@ class LocalAgentControlInstrumentedTest {
             assertEquals(1, container.hostProfiles.get(hostId)!!.portForwards.size)
             val removed = result("forwards.remove", buildJsonObject { put("connection", hostId); put("revision", forwarded.long("revision")); put("index", 1) })
             assertTrue(removed["portForwards"]!!.jsonArray.isEmpty())
+            val newHost = result("connections.add", buildJsonObject {
+                put("name", "Agent created 中文"); put("hostname", "created.invalid"); put("username", "tester"); put("protocol", "mosh")
+            })
+            createdHostId = newHost.string("id")
+            createdCredentialId = newHost.string("credentialId")
+            assertEquals(SshAuthentication.Password(), container.sshCredentials.get(createdCredentialId)!!.authentication)
+            assertEquals(22, newHost.int("port"))
+            val credentialList = call("credentials.list")["result"]!!.jsonArray
+            val credential = credentialList.single { it.jsonObject.string("id") == createdCredentialId }.jsonObject
+            assertEquals(setOf("id", "name", "kind"), credential.keys)
+            assertEquals("password", credential.string("kind"))
+            val changedHost = result("connections.update", buildJsonObject {
+                put("id", hostId); put("revision", removed.long("revision")); put("hostname", "updated.invalid")
+                put("port", 2222); put("credentialId", createdCredentialId); put("isFavorite", true)
+            })
+            val savedHost = container.hostProfiles.get(hostId)!!
+            assertEquals("updated.invalid", savedHost.hostname)
+            assertEquals(2222, savedHost.port)
+            assertEquals(createdCredentialId, savedHost.credentialId)
+            assertEquals("keep-this-field", savedHost.startupCommand)
+            assertEquals(id, savedHost.keyboardProfileId)
+            assertEquals(changedHost, result("connections.get", buildJsonObject { put("id", hostId) }))
+            val staleHost = call("connections.update", buildJsonObject {
+                put("id", hostId); put("revision", removed.long("revision")); put("name", "stale")
+            })
+            assertEquals("CONFLICT", staleHost["error"]!!.jsonObject.string("code"))
+            for (invalid in listOf(
+                buildJsonObject { put("credentialId", UUID.randomUUID().toString()) },
+                buildJsonObject { put("keyboardProfileId", UUID.randomUUID().toString()) },
+                buildJsonObject { put("password", "never store this") },
+                buildJsonObject { put("port", 0) },
+            )) {
+                val failed = call("connections.update", buildJsonObject {
+                    put("id", hostId); put("revision", changedHost.long("revision"))
+                    invalid.forEach { (key, value) -> put(key, value) }
+                })
+                assertEquals("INVALID_ARGUMENT", failed["error"]!!.jsonObject.string("code"))
+                assertEquals(savedHost, container.hostProfiles.get(hostId))
+            }
+            assertEquals("updated.invalid", container.terminalDataRepository.loadCatalog().catalog!!.hosts
+                .single { it.profile.id == hostId }.profile.hostname)
             enabled = false
+            val deniedHost = call("connections.add", buildJsonObject {
+                put("name", "denied"); put("hostname", "denied.invalid"); put("username", "tester")
+            })
+            assertEquals("PERMISSION_REQUIRED", deniedHost["error"]!!.jsonObject.string("code"))
             val denied = call("snippets.delete", buildJsonObject { put("id", snippetId); put("revision", updated.long("revision")) })
             assertEquals("PERMISSION_REQUIRED", denied["error"]!!.jsonObject.string("code"))
             assertNotNull(container.snippets.get(snippetId))
@@ -113,6 +161,8 @@ class LocalAgentControlInstrumentedTest {
             container.authoritativeData.withMutation {
                 snippetId?.let { container.snippets.delete(it) }
                 container.hostProfiles.delete(hostId)
+                createdHostId?.let { container.hostProfiles.delete(it) }
+                createdCredentialId?.let { container.sshCredentials.delete(it) }
                 container.profileDefaults.deleteKeyboardProfile(id)
                 markCommitted()
             }
