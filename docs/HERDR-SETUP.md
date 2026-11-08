@@ -160,11 +160,98 @@ the supported settings can still be configured.
 ### English
 
 ```text
-Configure Herdr for Terminal Spike on the computer my SSH/Mosh connection uses. Identify the host, executable/version and actual config path, respecting HERDR_CONFIG_PATH/XDG_CONFIG_HOME. Inspect supported keys, back up the file, and merge these [ui] values for the compact phone/foldable preset: mouse_capture=true, mobile_width_threshold=64, status_indicators="dots", pane_gaps=false, pane_outer_borders=false, pane_scrollbars=false, prompt_new_tab_name=false. Enable grouped_sidebar=true only if the installed build supports it. Preserve all other settings, keybindings, connections, integrations and running tasks; do not duplicate TOML tables. Distinguish upstream configuration from Terminal Spike's development Herdr client/server features: grouping, numbered top tabs, Git headings and automatic task names cannot be enabled on an unsupported binary by adding settings. Keep an existing Git-status provider; if it is missing, report that requirement instead of installing a monitor or claiming the worktree is clean. Do not download/replace binaries, patch source, stop servers, kill panes or recreate workspaces. Validate TOML, reload the intended session's config, inspect diagnostics and state which checks actually passed. Explain any needed client detach/reattach and phone fold/unfold checks, without claiming unperformed checks passed. Report the config path, minimal diff and rollback steps, omitting secrets.
+Configure Herdr for Terminal Spike
+on the computer my SSH/Mosh
+connection uses. Identify the host,
+executable/version and actual config
+path, respecting
+HERDR_CONFIG_PATH/XDG_CONFIG_HOME.
+Inspect supported keys, back up the
+file, and merge these [ui] values
+for the compact phone/foldable
+preset: mouse_capture=true,
+mobile_width_threshold=64,
+status_indicators="dots",
+pane_gaps=false,
+pane_outer_borders=false,
+pane_scrollbars=false,
+prompt_new_tab_name=false. Enable
+grouped_sidebar=true only if the
+installed build supports it.
+Preserve all other settings,
+keybindings, connections,
+integrations and running tasks; do
+not duplicate TOML tables.
+Distinguish upstream configuration
+from Terminal Spike's development
+Herdr client/server features:
+grouping, numbered top tabs, Git
+headings and automatic task names
+cannot be enabled on an unsupported
+binary by adding settings. Keep an
+existing Git-status provider; if it
+is missing, report that requirement
+instead of installing a monitor or
+claiming the worktree is clean. Do
+not download/replace binaries, patch
+source, stop servers, kill panes or
+recreate workspaces. Validate TOML,
+reload the intended session's
+config, inspect diagnostics and
+state which checks actually passed.
+Explain any needed client
+detach/reattach and phone
+fold/unfold checks, without claiming
+unperformed checks passed. Report
+the config path, minimal diff and
+rollback steps, omitting secrets.
 ```
 
 ### 中文：可直接转发
 
 ```text
-请在我用 Terminal Spike 通过 SSH/Mosh 连接的电脑上配置 Herdr。先确认目标主机、实际启动的 Herdr 路径/版本及配置文件路径，尊重 HERDR_CONFIG_PATH、XDG_CONFIG_HOME 等已有设置。检查版本支持后，备份文件，并把紧凑手机/折叠屏预设合并进已有 [ui]：mouse_capture=true、mobile_width_threshold=64、status_indicators="dots"、pane_gaps=false、pane_outer_borders=false、pane_scrollbars=false、prompt_new_tab_name=false。仅在当前 Herdr 构建支持时添加 grouped_sidebar=true。保留其余配置、快捷键、连接、集成和运行任务，不要重复添加 TOML 表。明确区分上游配置项与 Terminal Spike 开发版 Herdr 才有的分组、数字顶栏、项目 Git 标记和自动任务命名；缺少兼容版本时说明限制，先完成可用的配置，不要假称全部功能已启用。保留现有 Git 状态数据源；缺少时说明，不擅自安装后台监控，也不把无数据当作干净。不要下载或替换二进制、改源码、停止服务端、杀 pane 或重建 workspace。校验 TOML，重载正确 session/socket 的配置并检查诊断；说明是否需要 detach 后重进客户端，以及手机折叠/展开还需验证哪些项目，没做的检查不能说通过。最后给出配置路径、最小 diff、实际验证结果和回滚方法，不输出密钥或密码。
+请在我用 Terminal Spike
+通过 SSH/Mosh 连接的电脑上
+配置 Herdr。先确认目标主机、
+实际启动的 Herdr 路径/版本
+及配置文件路径，尊重
+HERDR_CONFIG_PATH、
+XDG_CONFIG_HOME 等已有设置。
+检查版本支持后，备份文件，
+并把紧凑手机/折叠屏预设
+合并进已有 [ui]：
+mouse_capture=true、
+mobile_width_threshold=64、
+status_indicators="dots"、
+pane_gaps=false、
+pane_outer_borders=false、
+pane_scrollbars=false、
+prompt_new_tab_name=false。
+仅在当前 Herdr 构建支持时
+添加 grouped_sidebar=true。
+保留其余配置、快捷键、连接、
+集成和运行任务，
+不要重复添加 TOML 表。
+明确区分上游配置项与
+Terminal Spike 开发版 Herdr
+才有的分组、数字顶栏、
+项目 Git 标记和自动任务命名；
+缺少兼容版本时说明限制，
+先完成可用的配置，
+不要假称全部功能已启用。
+保留现有 Git 状态数据源；
+缺少时说明，
+不擅自安装后台监控，
+也不把无数据当作干净。
+不要下载或替换二进制、
+改源码、停止服务端、
+杀 pane 或重建 workspace。
+校验 TOML，重载正确
+session/socket 的配置并检查诊断；
+说明是否需要 detach 后重进客户端，
+以及手机折叠/展开还需验证哪些项目，
+没做的检查不能说通过。
+最后给出配置路径、最小 diff、
+实际验证结果和回滚方法，
+不输出密钥或密码。
 ```

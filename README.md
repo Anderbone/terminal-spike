@@ -8,10 +8,10 @@ No ads, analytics or subscriptions. Android 8.0+.
 **[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/download/v0.0.4/terminal-spike-0.0.4.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases)
 
 <p>
-  <img src="store-assets/google-play/screenshots/phone/01-colour-terminal.png" width="240" alt="Terminal Spike running a colourful shell with terminal shortcut keys">
-  <img src="store-assets/google-play/screenshots/phone/02-tmux-session-picker.png" width="240" alt="Choose and resume a tmux session">
-  <img src="store-assets/readme/58e62ec4-d2c8-42bc-8a5a-8065a3b6d388.jpg" width="240" alt="Herdr layout and session screenshot">
-  <img src="store-assets/readme/94eaa821-b240-4f4c-a3cf-783d1920da8c.jpg" width="240" alt="Herdr terminal session screenshot">
+  <img src="store-assets/google-play/screenshots/phone/01-workspace.png" width="240" alt="Terminal Spike SSH terminal workspace with shortcut keys">
+  <img src="store-assets/google-play/screenshots/phone/02-code-review.png" width="240" alt="Review staged and unstaged project changes in Terminal Spike">
+  <img src="store-assets/google-play/screenshots/phone/03-code-server.png" width="240" alt="Use the code-server editor inside Terminal Spike">
+  <img src="store-assets/google-play/screenshots/phone/04-browser.png" width="240" alt="Browse a website alongside your terminal workspace">
 </p>
 
 - **Connect your way:** SSH passwords or keys, plus Mosh in the same app.
