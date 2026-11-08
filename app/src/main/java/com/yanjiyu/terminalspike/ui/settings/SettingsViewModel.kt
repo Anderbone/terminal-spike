@@ -275,6 +275,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun setSnippetsAboveKeyboard(enabled: Boolean) =
         updateGlobal { it.setSnippetsAboveKeyboard(enabled) }
 
+    fun setInputButtonsOnRight(value: Boolean) =
+        updateGlobal { it.setInputButtonsOnRight(value) }
+
     fun setVoiceInputEnabled(enabled: Boolean) =
         updateGlobal { it.setVoiceInputDisabled(!enabled) }
 

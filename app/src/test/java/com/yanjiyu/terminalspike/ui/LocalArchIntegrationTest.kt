@@ -13,6 +13,21 @@ class LocalArchIntegrationTest {
     private val local = LocalSessionSnapshot(-1, "Local Arch 1", ConnectionState.Connected)
     private val remote = SshSessionSnapshot(1, "Remote", ConnectionState.Connected)
 
+    @Test fun connectionEntryReusesActiveLocalOrMostRecentlyUsedLiveLocal() {
+        val second = local.copy(id = -2, lastActivityAtEpochMillis = 20)
+        val state = TerminalSpikeUiState().withLocalSessionSnapshots(listOf(local, second), local.id)
+            .withRemoteSessionSnapshots(listOf(remote))
+        assertEquals(local.id, state.existingLocalArchSession()?.id)
+        assertEquals(second.id, state.copy(activeSessionId = remote.id).existingLocalArchSession()?.id)
+        val ended = state.withLocalSessionSnapshots(listOf(
+            local.copy(connectionState = ConnectionState.Disconnected),
+            second.copy(connectionState = ConnectionState.Failed("ended")),
+        ))
+        assertNull(ended.existingLocalArchSession())
+        val starting = ended.withLocalSessionSnapshots(listOf(local.copy(connectionState = ConnectionState.Connecting)))
+        assertEquals(local.id, starting.existingLocalArchSession()?.id)
+    }
+
     @Test fun alternatingRuntimeUpdatesKeepTabsInOpeningOrder() {
         for (localFirst in listOf(true, false)) {
             var state = if (localFirst) {

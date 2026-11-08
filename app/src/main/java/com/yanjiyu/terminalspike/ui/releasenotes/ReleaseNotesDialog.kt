@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -38,7 +38,7 @@ internal fun ReleaseNotesDialog(
     var showingHistory by rememberSaveable { mutableStateOf(false) }
     val isHistory = history == null || showingHistory
     val visibleNotes = if (showingHistory) history.orEmpty() else notes
-    AlertDialog(
+    AppDialog(
         modifier = Modifier.testTag("release-notes-dialog"),
         onDismissRequest = {
             if (!saving) {

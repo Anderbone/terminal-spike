@@ -363,6 +363,17 @@ class AppContainer internal constructor(
         }
     }
 
+    internal val localBrowser by lazy {
+        val preferences = applicationContext.getSharedPreferences("local-browser", android.content.Context.MODE_PRIVATE)
+        com.yanjiyu.terminalspike.localarch.LocalBrowserBridge(
+            preferences.getBoolean("choose-browser", false),
+            { value -> preferences.edit().putBoolean("choose-browser", value).apply(); Unit },
+        )
+    }
+    private val localBrowserControl by lazy {
+        com.yanjiyu.terminalspike.localarch.control.LocalAgentControl(applicationScope, localBrowser::handle)
+    }
+
     /** Persistent Arch storage and application-owned local shell processes. */
     internal val localSessionRepository: com.yanjiyu.terminalspike.localarch.LocalSessionRepository by lazy {
         com.yanjiyu.terminalspike.localarch.LocalSessionRepository(
@@ -370,11 +381,15 @@ class AppContainer internal constructor(
                 applicationContext,
                 prepareShellTools = { rootfs ->
                     com.yanjiyu.terminalspike.localarch.control.ControlToolsInstaller(applicationContext)
-                        .install(rootfs, localAgentControl.connectionInfo())
+                        .apply {
+                            install(rootfs, localAgentControl.connectionInfo())
+                            installBrowser(rootfs, localBrowserControl.connectionInfo())
+                        }
                 },
             ),
             scope = applicationScope,
             foregroundStarter = AndroidSessionForegroundStarter(applicationContext),
+            openLoginBrowser = { url, code -> localBrowser.open(url, code = code) },
         )
     }
 

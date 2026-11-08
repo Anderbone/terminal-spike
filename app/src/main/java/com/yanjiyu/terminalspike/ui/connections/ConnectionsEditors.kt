@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike.ui.connections
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -16,7 +20,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import com.yanjiyu.terminalspike.ui.theme.AppButtonLabel
 import com.yanjiyu.terminalspike.ui.theme.AppEditorDialog
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -238,7 +242,7 @@ internal fun HostEditorDialog(
         val value = validation.value?.takeIf { nextErrors.isEmpty } ?: return null
         return HostEditorSubmission(
             value = value,
-            secret = secretState.takeChars(),
+            secret = if (forTest) secretState.copyChars() else secretState.takeChars(),
             savePassword = draft.authenticationMethod == HostAuthenticationMethod.PASSWORD &&
                 savePassword,
         )
@@ -291,6 +295,7 @@ internal fun HostEditorDialog(
         onDismissRequest = ::requestDismiss,
         modifier = Modifier.testTag(HostEditorDialogTestTag),
         scrollState = editorScrollState,
+        dense = true,
         title = {
             Text(
                 stringResource(
@@ -306,7 +311,7 @@ internal fun HostEditorDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 saveFailure?.let {
                     Text(
@@ -323,17 +328,17 @@ internal fun HostEditorDialog(
                         modifier = Modifier.testTag(EditorSecretReentryTestTag),
                     )
                 }
-                Text(
-                    stringResource(R.string.host_editor_connection_heading),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    stringResource(R.string.host_editor_protocol),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.host_editor_protocol),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.weight(1f),
+                    )
                     ConnectionProtocol.entries.forEach { protocol ->
-                        FilterChip(
+                        HostEditorOption(
                             selected = draft.protocol == protocol,
                             onClick = { updateDraft(draft.copy(protocol = protocol)) },
                             enabled = editorControlsEnabled,
@@ -372,7 +377,7 @@ internal fun HostEditorDialog(
                         }
                     }
                 }
-                OutlinedTextField(
+                HostEditorTextField(
                     value = draft.hostname,
                     onValueChange = { updateDraft(draft.copy(hostname = it.take(253))) },
                     modifier = Modifier.fillMaxWidth().testTag(HostEditorHostnameTestTag),
@@ -386,7 +391,7 @@ internal fun HostEditorDialog(
                     singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    HostEditorTextField(
                         value = draft.username,
                         onValueChange = { updateDraft(draft.copy(username = it.take(64))) },
                         modifier = Modifier.weight(1f).testTag(HostEditorUsernameTestTag),
@@ -399,7 +404,7 @@ internal fun HostEditorDialog(
                         enabled = editorControlsEnabled,
                         singleLine = true,
                     )
-                    OutlinedTextField(
+                    HostEditorTextField(
                         value = draft.port,
                         onValueChange = { value ->
                             updateDraft(
@@ -429,10 +434,9 @@ internal fun HostEditorDialog(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     HostAuthenticationMethod.entries.forEach { method ->
-                        FilterChip(
+                        HostEditorOption(
                             selected = draft.authenticationMethod == method,
-                            enabled = editorControlsEnabled &&
-                                (method != HostAuthenticationMethod.PRIVATE_KEY || catalog.keys.isNotEmpty()),
+                            enabled = editorControlsEnabled,
                             onClick = {
                                 updateDraft(
                                     draft.copy(
@@ -468,7 +472,14 @@ internal fun HostEditorDialog(
                         )
                     }
                 }
-                if (draft.authenticationMethod == HostAuthenticationMethod.PRIVATE_KEY) {
+                if (draft.authenticationMethod == HostAuthenticationMethod.PRIVATE_KEY && catalog.keys.isEmpty()) {
+                    Text(
+                        stringResource(R.string.host_editor_no_keys_guidance),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (draft.authenticationMethod == HostAuthenticationMethod.PRIVATE_KEY && catalog.keys.isNotEmpty()) {
                     SimpleOptionMenu(
                         label = stringResource(R.string.host_editor_ssh_key),
                         selectedId = draft.keyIdentityId,
@@ -485,6 +496,7 @@ internal fun HostEditorDialog(
                     }
                     WipeableSecretInput(
                         state = secretState,
+                        compact = true,
                         label = label,
                         testTag = HostEditorSecretTestTag,
                         modifier = Modifier.fillMaxWidth(),
@@ -495,7 +507,7 @@ internal fun HostEditorDialog(
                                 stringResource(R.string.host_editor_secret_session_only)
                             savedSecretAvailable && !secretState.hasValue ->
                                 stringResource(R.string.host_editor_retain_saved_password)
-                            else -> stringResource(R.string.host_editor_password_storage_condition)
+                            else -> null
                         },
                         onPresenceChanged = { present ->
                             if (present) {
@@ -513,18 +525,19 @@ internal fun HostEditorDialog(
                                 enabled = editorControlsEnabled,
                             )
                             Column {
-                                Text(stringResource(R.string.host_editor_save_password))
+                                Text(stringResource(R.string.host_editor_save_password), style = MaterialTheme.typography.bodySmall)
                                 Text(
-                                    stringResource(R.string.host_editor_save_password_detail),
+                                    stringResource(R.string.host_editor_save_password_compact_detail),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
                         }
                     }
-                } else {
+                } else if (catalog.keys.isNotEmpty()) {
                     WipeableSecretInput(
                         state = secretState,
+                        compact = true,
                         label = stringResource(R.string.host_editor_key_passphrase_test),
                         testTag = HostEditorSecretTestTag,
                         modifier = Modifier.fillMaxWidth(),
@@ -543,7 +556,7 @@ internal fun HostEditorDialog(
                 errors.authentication
                     ?.takeUnless { transientSecretNeedsReentry && it == secretReentryMessage }
                     ?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                OutlinedTextField(
+                HostEditorTextField(
                     value = draft.displayName,
                     onValueChange = { updateDraft(draft.copy(displayName = it.take(96))) },
                     modifier = Modifier.fillMaxWidth().testTag(HostEditorNameTestTag),
@@ -556,7 +569,7 @@ internal fun HostEditorDialog(
                     singleLine = true,
                 )
 
-                OutlinedButton(
+                TextButton(
                     onClick = { advancedExpanded = !advancedExpanded },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = editorControlsEnabled,
@@ -616,7 +629,7 @@ internal fun HostEditorDialog(
                         )
                         Text(stringResource(R.string.host_editor_favourite))
                     }
-                    OutlinedTextField(
+                    HostEditorTextField(
                         value = draft.group,
                         onValueChange = { updateDraft(draft.copy(group = it.take(64))) },
                         modifier = Modifier.fillMaxWidth(),
@@ -628,7 +641,7 @@ internal fun HostEditorDialog(
                         enabled = editorControlsEnabled,
                         singleLine = true,
                     )
-                    OutlinedTextField(
+                    HostEditorTextField(
                         value = draft.tag,
                         onValueChange = { updateDraft(draft.copy(tag = it.take(48))) },
                         modifier = Modifier.fillMaxWidth(),
@@ -640,7 +653,7 @@ internal fun HostEditorDialog(
                         enabled = editorControlsEnabled,
                         singleLine = true,
                     )
-                    OutlinedTextField(
+                    HostEditorTextField(
                         value = draft.startupCommand,
                         onValueChange = {
                             updateDraft(draft.copy(startupCommand = it.take(4096)))
@@ -678,7 +691,7 @@ internal fun HostEditorDialog(
                         enabled = editorControlsEnabled,
                     )
                     if (draft.keepaliveMode == HostKeepaliveMode.CUSTOM) {
-                        OutlinedTextField(
+                        HostEditorTextField(
                             value = draft.keepaliveSeconds,
                             onValueChange = { value ->
                                 updateDraft(
@@ -726,7 +739,7 @@ internal fun HostEditorDialog(
                         )
                         when (draft.moshPortMode) {
                             MoshPortMode.AUTOMATIC -> Unit
-                            MoshPortMode.SINGLE -> OutlinedTextField(
+                            MoshPortMode.SINGLE -> HostEditorTextField(
                                 value = draft.moshPort,
                                 onValueChange = { value ->
                                     updateDraft(
@@ -741,7 +754,7 @@ internal fun HostEditorDialog(
                                 singleLine = true,
                             )
                             MoshPortMode.RANGE -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
+                                HostEditorTextField(
                                     value = draft.moshRangeFirst,
                                     onValueChange = { value ->
                                         updateDraft(
@@ -755,7 +768,7 @@ internal fun HostEditorDialog(
                                     enabled = editorControlsEnabled,
                                     singleLine = true,
                                 )
-                                OutlinedTextField(
+                                HostEditorTextField(
                                     value = draft.moshRangeLast,
                                     onValueChange = { value ->
                                         updateDraft(
@@ -772,7 +785,7 @@ internal fun HostEditorDialog(
                             }
                         }
                         errors.moshPort?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                        OutlinedTextField(
+                        HostEditorTextField(
                             value = draft.moshServerCommand,
                             onValueChange = {
                                 updateDraft(draft.copy(moshServerCommand = it.take(512)))
@@ -787,7 +800,7 @@ internal fun HostEditorDialog(
                             singleLine = true,
                         )
                         errors.moshServerCommand?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                        OutlinedTextField(
+                        HostEditorTextField(
                             value = draft.moshLocale,
                             onValueChange = {
                                 updateDraft(draft.copy(moshLocale = it.take(64)))
@@ -935,7 +948,7 @@ internal fun HostEditorDialog(
     }
 
     if (discardConfirmation) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { discardConfirmation = false },
             title = { Text(stringResource(R.string.host_editor_discard_title)) },
             text = { Text(stringResource(R.string.host_editor_discard_detail)) },
@@ -1083,7 +1096,7 @@ private fun NearbySshDiscoveryDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(NearbySshDiscoveryDialogTestTag),
         title = { Text(stringResource(R.string.connections_nearby_ssh_title)) },
@@ -1167,7 +1180,7 @@ private fun HostTestFirstContactDialog(
     onDecision: (HostIdentityDecision) -> Unit,
     onCancel: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onCancel,
         modifier = Modifier.testTag(HostTestIdentityDialogTestTag),
         title = { Text(stringResource(R.string.host_test_first_contact_title)) },
@@ -1216,7 +1229,7 @@ private fun HostTestChangedIdentityDialog(
     onReject: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onCancel,
         modifier = Modifier.testTag(HostTestIdentityDialogTestTag),
         title = {
@@ -1323,7 +1336,7 @@ private fun HostTestKeyboardInteractiveDialog(
         List(challenge.questions.size) { WipeableSecretInputState() }
     }
     fun wipeFields() = fields.forEach(WipeableSecretInputState::wipe)
-    AlertDialog(
+    AppDialog(
         onDismissRequest = {
             wipeFields()
             onCancelTest()
@@ -1338,7 +1351,7 @@ private fun HostTestKeyboardInteractiveDialog(
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 challenge.instruction.takeIf(String::isNotBlank)?.let { Text(it) }
                 challenge.questions.forEachIndexed { index, question ->
@@ -1468,6 +1481,7 @@ internal fun SnippetEditorDialog(
         mutableStateOf(initial)
     }
     var errors by remember { mutableStateOf(SnippetEditorErrors()) }
+    var formatHelpVisible by rememberSaveable(initial.persistentId) { mutableStateOf(false) }
     var discardConfirmation by remember { mutableStateOf(false) }
     var deleteConfirmation by rememberSaveable(initial.persistentId) { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
@@ -1516,11 +1530,16 @@ internal fun SnippetEditorDialog(
                     supportingText = errors.command?.let { message -> ({ Text(message.resolve()) }) },
                     isError = errors.command != null,
                     enabled = !saving,
-                    minLines = 4,
+                    minLines = 3,
                     maxLines = 10,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 )
-                Text(stringResource(R.string.snippet_sequence_help), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { formatHelpVisible = !formatHelpVisible }) {
+                    Text(stringResource(if (formatHelpVisible) R.string.snippet_hide_command_format else R.string.snippet_command_format))
+                }
+                if (formatHelpVisible) {
+                    Text(stringResource(R.string.snippet_sequence_help), style = MaterialTheme.typography.bodySmall)
+                }
                 val sequence = draft.command.lineSequence().firstOrNull() ==
                     com.yanjiyu.terminalspike.settings.SnippetSequence.HEADER
                 if (sequence) {
@@ -1620,7 +1639,7 @@ internal fun SnippetEditorDialog(
         },
     )
     if (deleteConfirmation && initial.persistentId != null && onDelete != null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleteConfirmation = false },
             title = { Text(stringResource(R.string.connections_delete_title, initial.name)) },
             text = { Text(stringResource(R.string.connections_delete_snippet_detail)) },
@@ -1643,7 +1662,7 @@ internal fun SnippetEditorDialog(
         )
     }
     if (discardConfirmation) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { discardConfirmation = false },
             title = { Text(stringResource(R.string.snippet_editor_discard_title)) },
             text = { Text(stringResource(R.string.snippet_editor_discard_detail)) },
@@ -1823,7 +1842,7 @@ internal fun RenameKeyDialog(
     var error by remember { mutableStateOf<UiText?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    AlertDialog(
+    AppDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(R.string.key_editor_rename_title)) },
         text = {
@@ -1879,7 +1898,7 @@ internal fun RenameKeyDialog(
 
 @Composable
 internal fun KeyFingerprintDialog(key: KeyEditorSeed, onDismiss: () -> Unit) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(key.name) },
         text = {
@@ -1926,7 +1945,7 @@ internal fun HostAuthenticationPromptDialog(
         }
         onDismiss()
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = ::dismissAndWipe,
         title = { Text(stringResource(R.string.connections_connect_to, host.draft.displayName)) },
         text = {
@@ -2126,3 +2145,90 @@ internal const val SnippetEditorNameTestTag = "snippet-editor-name"
 internal const val SnippetEditorCommandTestTag = "snippet-editor-command"
 internal const val SnippetEditorSaveTestTag = "snippet-editor-save"
 internal const val GenerateKeyDialogTestTag = "generate-key-dialog"
+
+/** A 44dp field with a persistent small label and no Material floating-label padding. */
+@Composable
+private fun HostEditorTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: @Composable () -> Unit,
+    supportingText: (@Composable () -> Unit)? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    isError: Boolean = false,
+    enabled: Boolean = true,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+) {
+    val interactions = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val focused by interactions.collectIsFocusedAsState()
+    val colors = MaterialTheme.colorScheme
+    androidx.compose.foundation.text.BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        textStyle = MaterialTheme.typography.bodySmall.copy(color = if (enabled) colors.onSurface else colors.onSurfaceVariant),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
+        keyboardOptions = keyboardOptions,
+        enabled = enabled,
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
+        interactionSource = interactions,
+        decorationBox = { inner ->
+            Column {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                        .background(colors.surfaceContainer, androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                        .border(
+                            1.dp,
+                            when { isError -> colors.error; focused -> colors.primary; else -> colors.outlineVariant.copy(alpha = 0.35f) },
+                            androidx.compose.foundation.shape.RoundedCornerShape(7.dp),
+                        ).padding(horizontal = 12.dp, vertical = 5.dp),
+                ) {
+                    androidx.compose.material3.ProvideTextStyle(
+                        MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
+                    ) {
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.compose.material3.LocalContentColor provides if (isError) colors.error else colors.onSurfaceVariant,
+                            content = label,
+                        )
+                    }
+                    inner()
+                }
+                supportingText?.let { content ->
+                    androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.compose.material3.LocalContentColor provides if (isError) colors.error else colors.onSurfaceVariant,
+                        ) { content() }
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun HostEditorOption(
+    selected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    label: @Composable () -> Unit,
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        enabled = enabled,
+        selected = selected,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(7.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.heightIn(min = 36.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelSmall, content = label)
+        }
+    }
+}

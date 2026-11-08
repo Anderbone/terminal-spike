@@ -120,6 +120,16 @@
         "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#packagedProotExecutesWithItsPrivateLibraryDependencies",
         "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#realPtyPropagatesResizeAndControlCharacters"
       ]
+    },
+    {
+      "id": "local-browser-authorized-phone-opt-in",
+      "reason": "Requires localBrowser=true on an authorized S10e or S23 with an enabled phone browser; no real account authorization.",
+      "suites": [
+        "full"
+      ],
+      "tests": [
+        "com.yanjiyu.terminalspike.localarch.LocalBrowserDeviceTest#externalBrowserReturnsAuthorizationToThePhoneLoopbackListener"
+      ]
     }
   ],
   "schema": 1,
@@ -206,6 +216,7 @@
         "com.yanjiyu.terminalspike.DeveloperSettingsNavigationTest#rendererLabLivesUnderDebugDeveloperSettingsAndBackReturnsThere",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#compactDeckShowsDirectControlChordsWithFullAccessibilityAtLargeFontScale",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#customDeckKeepsAdditionalKeysAndCustomizeActionOnASecondPage",
+        "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#expandedKeyboardReplacesControlWAndDispatchesTabAndF2WithoutClosing",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#imageKeyTapSelectsPhotosAndLongPressSelectsFilesWithoutAlsoOpeningPhotos",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#phoneWidthDeckKeepsNineUnclippedShortcutsBesideTheFixedControls",
         "com.yanjiyu.terminalspike.LocalNetworkPermissionRuntimeTest#activityRecreationWhilePromptIsOpenStillResumesOnce",
@@ -324,6 +335,8 @@
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#accessoryManagementEditsWithoutSendingAndDoneRestoresActions",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#accessoryPageAddsPlainTextWithoutSendingIt",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#accessoryPageRunsNewCodexWithoutOpeningEditor",
+        "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#defaultCodexCanBeEditedAndReplaced",
+        "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#defaultCodexDeletionPersists",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#emptyPickerStaysAQuickDialog",
         "com.yanjiyu.terminalspike.TerminalSnippetPickerDialogTest#listsExistingSnippetsAndReturnsSelectedSnippet",
         "com.yanjiyu.terminalspike.TerminalTaskIndicatorTest#appSwitcherReflectsBackgroundTaskState",
@@ -477,6 +490,7 @@
         "com.yanjiyu.terminalspike.localarch.ArchPrismaDeviceTest#stablePrismaSqliteCompatibility",
         "com.yanjiyu.terminalspike.localarch.ArchSysVIpcDeviceTest#removedSharedMemoryKeyCanBeReusedWithoutDeadlock",
         "com.yanjiyu.terminalspike.localarch.LocalArchUiDeviceTest#installsFromNewSessionAndUsesTheExistingTerminalUi",
+        "com.yanjiyu.terminalspike.localarch.LocalBrowserDeviceTest#externalBrowserReturnsAuthorizationToThePhoneLoopbackListener",
         "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#closingOnePtyDoesNotCloseOrResizeAnother",
         "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#missingExecutableFailsAtLaunchInsteadOfPretendingToConnect",
         "com.yanjiyu.terminalspike.localarch.NativePtyDeviceTest#packagedProotExecutesWithItsPrivateLibraryDependencies",
@@ -572,7 +586,7 @@
         "com.yanjiyu.terminalspike.ui.browser.BrowserWorkspaceTest#ordinaryBrowserHasAnAddressBarAndKeepsCodeServerIndependent",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#compactHostCatalogShowsPolishedMetadataAndDispatchesConnect",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#compactSplitScreenAtLargeTextKeepsHostActionsReachableAndTouchSized",
-        "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#compactSplitScreenAtStandardTextKeepsSearchAvailable",
+        "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#compactSplitScreenAtStandardTextKeepsHostListAvailable",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#dirtyMoshEditorConfirmsDiscardBeforeOpeningExtensionStatus",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#editHostDialogDeletesTheHostAfterConfirmation",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#existingEncryptedPasswordIsPresentedAsSavedWithoutExposingItsValue",
@@ -582,16 +596,17 @@
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#failedKeyGenerationRequiresPassphraseReentryAndDismissesOnlyAfterSuccess",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#hostCatalogHeaderKeepsScreenIdentityBesideItsPrimaryAction",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#hostDeleteFromOverflowRequiresConfirmation",
+        "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#hostListIgnoresStaleFiltersWhileKeySearchDispatchesQuery",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#inUseKeyDeleteShowsReferenceCountAndNeverDispatchesDeletion",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#keyTabShowsOnlyPublicMetadataAndOffersExplicitActions",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#lightAndDarkThemesRetainTheirExpectedSurfacePolarity",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#loadingErrorEmptyAndNoResultsAreHonestAndActionable",
+        "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#longPressDragReordersLocalAndRemoteConnectionsAndPersists",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#multilineImmediateSnippetConfirmsBeforeRunAndSanitizesPreview",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#nearbySshNoResultsIsHonestAndEditorDismissStopsController",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#nearbySshSelectionPrefillsOnlyEndpointFields",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#newHostKeepsOnlyEssentialsVisibleAndRequiresOptInToSavePassword",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#pendingHostAndNonSecretDraftRestoreWhileTransientSecretRequiresReentry",
-        "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#searchFilterAndSortControlsDispatchControlledStateCallbacks",
         "com.yanjiyu.terminalspike.ui.connections.ConnectionsScreenTest#terminalPrimaryDestinationDispatchesCallback",
         "com.yanjiyu.terminalspike.ui.connections.PortForwardEditorTest#addsEditsAndRemovesAValidatedForward",
         "com.yanjiyu.terminalspike.ui.connections.SavedConnectionPickerDialogTest#emptyCatalogDirectsTheUserToConnections",
@@ -635,7 +650,10 @@
         "com.yanjiyu.terminalspike.ui.sftp.SftpScreenTest#fromPhoneOffersFilesAndFolders",
         "com.yanjiyu.terminalspike.ui.sftp.SftpScreenTest#savedHostAuthenticationCanBeCancelledWithoutOpeningNetwork",
         "com.yanjiyu.terminalspike.ui.sftp.SftpScreenTest#selectedFolderCanDownloadToDownloadsOrAChosenPhoneFolder",
-        "com.yanjiyu.terminalspike.ui.sftp.SftpScreenTest#tappingAFileOpensItWithoutUsingTapAsSelection"
+        "com.yanjiyu.terminalspike.ui.sftp.SftpScreenTest#tappingAFileOpensItWithoutUsingTapAsSelection",
+        "com.yanjiyu.terminalspike.ui.theme.AppDialogTest#actualSnippetEditorUsesTheCompactFrameAndRetainsItsActions",
+        "com.yanjiyu.terminalspike.ui.theme.AppDialogTest#longEditorScrollsWhileTitleAndActionsStayVisibleWithKeyboard",
+        "com.yanjiyu.terminalspike.ui.theme.AppDialogTest#shortConfirmationWrapsContentAndRetainsTouchSizedActions"
       ]
     }
   },

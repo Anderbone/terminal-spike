@@ -31,9 +31,30 @@ class AppSettingsSerializerTest {
         assertFalse(defaults.keepCpuAwake)
         assertFalse(defaults.tmuxSessionSelectorDisabled)
         assertEquals("", defaults.voiceInputLanguageTag)
-        assertFalse(defaults.voiceInputDisabled)
-        assertFalse(defaults.snippetsAboveKeyboard)
+        assertTrue(defaults.voiceInputDisabled)
+        assertTrue(defaults.snippetsAboveKeyboard)
         assertSame(defaults, AppSettingsValidator.requireValidCurrent(defaults))
+    }
+
+    @Test
+    fun missingVoicePreferenceDefaultsOffAndExplicitChoiceSurvives() = runTest {
+        for (disabled in listOf(null, false, true)) {
+            val builder = AppSettingsSerializer.defaultValue.toBuilder().clearVoiceInputDisabled()
+            if (disabled != null) builder.setVoiceInputDisabled(disabled)
+            val restored = AppSettingsSerializer.readFrom(ByteArrayInputStream(builder.build().toByteArray()))
+            assertTrue(restored.hasVoiceInputDisabled())
+            assertEquals(disabled ?: true, restored.voiceInputDisabled)
+        }
+    }
+
+    @Test
+    fun inputButtonSideSurvivesReload() = runTest {
+        for (onRight in listOf(false, true)) {
+            val settings = AppSettingsSerializer.defaultValue.toBuilder()
+                .setInputButtonsOnRight(onRight).build()
+            val restored = AppSettingsSerializer.readFrom(ByteArrayInputStream(settings.toByteArray()))
+            assertEquals(onRight, restored.inputButtonsOnRight)
+        }
     }
 
     @Test

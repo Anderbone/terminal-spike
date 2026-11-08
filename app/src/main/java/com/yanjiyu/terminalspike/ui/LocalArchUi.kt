@@ -1,6 +1,9 @@
 package com.yanjiyu.terminalspike.ui
 
 import android.text.format.Formatter
+import android.os.SystemClock
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.displayCutoutPadding
@@ -11,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +48,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun LocalArchInstallDialog(state: ArchEnvironmentState, onInstall: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("local-arch-install"),
         title = { Text(stringResource(R.string.local_arch_title)) },
@@ -67,6 +70,7 @@ internal fun LocalArchSettings() {
     val repository = remember(context) { (context.applicationContext as TerminalSpikeApplication).container.localSessionRepository }
     val agentControl = remember(context) { (context.applicationContext as TerminalSpikeApplication).container.localAgentControl }
     val agentAccess by agentControl.enabled.collectAsStateWithLifecycle()
+    val connectionVisible by rememberLocalArchConnectionVisible()
     val state by repository.environment.state.collectAsStateWithLifecycle()
     val runtime by repository.runtime.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -75,6 +79,16 @@ internal fun LocalArchSettings() {
     LaunchedEffect(repository) { repository.environment.refresh() }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.local_arch_title), style = MaterialTheme.typography.headlineSmall)
+        Row(
+            Modifier.fillMaxWidth().testTag("local-arch-show-connection").toggleable(
+                value = connectionVisible, role = Role.Switch,
+                onValueChange = { setLocalArchConnectionVisible(context, it) },
+            ),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(stringResource(R.string.local_arch_show_connection), modifier = Modifier.weight(1f))
+            Switch(checked = connectionVisible, onCheckedChange = null)
+        }
         LocalArchStatus(state)
         runtime.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LocalArchAccounts()
@@ -115,7 +129,7 @@ internal fun LocalArchSettings() {
         }
     }
     destructive?.let { action ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { destructive = null },
             title = { Text(stringResource(if (action == "reset") R.string.local_arch_reset else R.string.local_arch_reinstall)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -163,14 +177,43 @@ private fun LocalArchStatus(state: ArchEnvironmentState) {
 
 @Composable
 private fun LocalArchProgressIndicator(state: ArchEnvironmentState) {
+    val context = LocalContext.current
+    val latestBytes by rememberUpdatedState(state.downloadedBytes)
+    var bytesPerSecond by remember(state.phase) { mutableStateOf<Long?>(null) }
+    var elapsedSeconds by remember(state.phase) { mutableStateOf(0L) }
+    LaunchedEffect(state.phase) {
+        val started = SystemClock.elapsedRealtime()
+        // Allow the downloader to report its resume offset before sampling throughput.
+        delay(1000)
+        var previousBytes = latestBytes
+        var previousTime = SystemClock.elapsedRealtime()
+        while (true) {
+            delay(1000)
+            val now = SystemClock.elapsedRealtime()
+            val received = latestBytes
+            bytesPerSecond = ((received - previousBytes).coerceAtLeast(0) * 1000 / (now - previousTime).coerceAtLeast(1))
+            elapsedSeconds = (now - started) / 1000
+            previousBytes = received
+            previousTime = now
+        }
+    }
     if (state.phase == ArchInstallPhase.DOWNLOADING) {
-        LinearProgressIndicator(
-            progress = {
-                (state.downloadedBytes.toFloat() / ArchRootfsManifest.DOWNLOAD_BYTES).coerceIn(0f, 1f)
-            },
-            modifier = Modifier.fillMaxWidth(),
+        val fraction = (state.downloadedBytes.toDouble() / ArchRootfsManifest.DOWNLOAD_BYTES).coerceIn(0.0, 1.0)
+        Text(
+            stringResource(R.string.local_arch_download_progress,
+                (fraction * 100).toInt(),
+                Formatter.formatFileSize(context, state.downloadedBytes),
+                Formatter.formatFileSize(context, ArchRootfsManifest.DOWNLOAD_BYTES)),
+            style = MaterialTheme.typography.bodySmall,
         )
+        Text(
+            bytesPerSecond?.let { stringResource(R.string.local_arch_download_speed, Formatter.formatFileSize(context, it)) }
+                ?: stringResource(R.string.local_arch_measuring_speed),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        LinearProgressIndicator(progress = { fraction.toFloat() }, modifier = Modifier.fillMaxWidth())
     } else {
+        Text(stringResource(R.string.local_arch_stage_elapsed, elapsedSeconds), style = MaterialTheme.typography.bodySmall)
         LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
@@ -184,6 +227,9 @@ internal fun LocalArchProgressStrip(state: ArchEnvironmentState, running: Boolea
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(when {
                     running && state.phase == ArchInstallPhase.INSTALLING_TOOLS -> R.string.local_arch_installing_tools
+                    running && state.phase == ArchInstallPhase.DOWNLOADING -> R.string.local_arch_downloading
+                    running && state.phase == ArchInstallPhase.EXTRACTING -> R.string.local_arch_extracting
+                    running && state.phase == ArchInstallPhase.VALIDATING -> R.string.local_arch_validating
                     running -> R.string.local_arch_background
                     error != null -> R.string.local_arch_operation_failed
                     state.installed -> R.string.local_arch_ready

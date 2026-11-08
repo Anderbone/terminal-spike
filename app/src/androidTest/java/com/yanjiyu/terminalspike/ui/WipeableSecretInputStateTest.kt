@@ -37,6 +37,12 @@ class WipeableSecretInputStateTest {
             assertEquals(8, second.characterCount)
             assertFalse(first.contentEquals(second))
 
+            val testCopy = first.copyChars()
+            assertArrayEquals("password".toCharArray(), testCopy)
+            testCopy.fill('\u0000')
+            assertTrue(first.hasValue)
+            assertEquals(8, firstEditor.text.length)
+
             val transferred = first.takeChars()
             assertArrayEquals("password".toCharArray(), transferred)
             assertEquals(0, firstEditor.text.length)

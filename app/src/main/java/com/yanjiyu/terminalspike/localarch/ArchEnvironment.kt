@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import com.yanjiyu.terminalspike.terminal.view.storeTerminalAttachment
 import java.io.File
 import java.io.InputStream
@@ -88,10 +89,13 @@ internal class ArchEnvironment(
                     ArchRootfsManifest.MAX_EXPANDED_BYTES + 2L * 1024 * 1024 * 1024
                 if (directory.usableSpace < needed) throw IOException("Free at least 4.3 GiB of internal storage, then retry")
                 mutableState.update { it.copy(phase = ArchInstallPhase.DOWNLOADING) }
+                var lastProgressAt = 0L
                 val archive = ArchRootfsDownloader().download(store.downloadFile, checkCancelled) { received ->
                     // Metadata only. This flow is unrelated to terminal rows or renderer frames.
                     val old = state.value.downloadedBytes
-                    if (received == ArchRootfsManifest.DOWNLOAD_BYTES || received < old || received - old >= 512 * 1024) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (received == ArchRootfsManifest.DOWNLOAD_BYTES || received < old || now - lastProgressAt >= 250) {
+                        lastProgressAt = now
                         mutableState.update { it.copy(downloadedBytes = received) }
                     }
                 }
@@ -217,6 +221,6 @@ internal class ArchEnvironment(
     }
 
     private companion object {
-        const val STARTER_TOOLS_VERSION = "2\n"
+        const val STARTER_TOOLS_VERSION = "3\n"
     }
 }

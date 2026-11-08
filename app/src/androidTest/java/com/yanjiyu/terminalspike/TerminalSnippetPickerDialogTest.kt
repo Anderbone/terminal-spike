@@ -21,12 +21,62 @@ import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerItemTestTagPre
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerTestTag
 import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 class TerminalSnippetPickerDialogTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Before
+    fun resetToolbarPreferences() {
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+            .edit().clear().commit()
+    }
+
+    @Test
+    fun defaultCodexCanBeEditedAndReplaced() {
+        var saved: Snippet? = null
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(emptyList(), true, true,
+                    onSend = { error("Editing must not send") },
+                    onNewCodex = { error("Editing must not start Codex") },
+                    onSave = { saved = it; Result.success(Unit) }, onEditorClosed = {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        composeRule.onNodeWithText("New Codex").performClick()
+        composeRule.onNodeWithTag("snippet-editor-command")
+            .assertTextContains(com.yanjiyu.terminalspike.settings.SnippetSequence.CODEX_EXAMPLE)
+            .performTextReplacement("codex resume")
+        composeRule.onNodeWithTag("snippet-editor-save").performClick()
+        composeRule.runOnIdle { assertEquals("codex resume", saved?.command) }
+        composeRule.onNodeWithText("New Codex").assertDoesNotExist()
+    }
+
+    @Test
+    fun defaultCodexDeletionPersists() {
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(emptyList(), true, true,
+                    onSend = {}, onNewCodex = {},
+                    onSave = { error("Deleting must not save") }, onEditorClosed = {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        composeRule.onNodeWithText("New Codex").performClick()
+        composeRule.onNodeWithText("Delete", ignoreCase = true).performClick()
+        composeRule.onNodeWithText("Delete snippet").performClick()
+        composeRule.onNodeWithText("New Codex").assertDoesNotExist()
+        composeRule.runOnIdle {
+            val preferences = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .targetContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+            assertEquals(true, preferences.getBoolean("codex-replaced", false))
+        }
+    }
 
     @Test
     fun listsExistingSnippetsAndReturnsSelectedSnippet() {
@@ -125,9 +175,6 @@ class TerminalSnippetPickerDialogTest {
             }
         }
         composeRule.onNodeWithContentDescription("Manage snippets").performClick()
-        composeRule.onNodeWithText("New Codex · Built-in").assertIsNotEnabled()
-            .performTouchInput { click() }
-        composeRule.onNodeWithTag("snippet-editor-dialog").assertDoesNotExist()
         composeRule.onNodeWithText("Status").performTouchInput { click() }
         composeRule.onNodeWithTag("snippet-editor-name").assertTextContains("Status")
         composeRule.onNodeWithTag("snippet-editor-command").assertTextContains(original.command)
@@ -224,8 +271,8 @@ class TerminalSnippetPickerDialogTest {
             val movedFirst = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
             val movedSecond = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
             org.junit.Assert.assertTrue(movedSecond.left < movedFirst.left)
-            val codex = composeRule.onNodeWithText("New Codex · Built-in").fetchSemanticsNode().boundsInRoot
-            composeRule.onNodeWithText("New Codex · Built-in").performTouchInput {
+            val codex = composeRule.onNodeWithText("New Codex").fetchSemanticsNode().boundsInRoot
+            composeRule.onNodeWithText("New Codex").performTouchInput {
                 down(center)
                 advanceEventTime(700)
                 moveTo(center + (movedFirst.center - codex.center), delayMillis = 200)

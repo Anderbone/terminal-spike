@@ -155,6 +155,8 @@ class HerdrTabTargetTest {
                 screen[top + 1] = TerminalLine.plain(if (left) "    ×    │" else "                              │ ×")
                 screen[rule] = TerminalLine.plain("─".repeat(40))
                 screen[actionRow] = TerminalLine.plain("│  + new workspace")
+                org.junit.Assert.assertEquals((if (left) 1 else 31) to top,
+                    HerdrNavigationChrome.switcherClose(screen, 40, 8))
                 assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 8, 4, actionRow))
                 assertTrue(HerdrNavigationChrome.isContextMenuCell(screen, 40, 8, 4, actionRow))
                 for (row in listOf(top, top + 1, rule)) {
@@ -230,7 +232,7 @@ class HerdrTabTargetTest {
         ) { _, method, args ->
             when (method.name) {
                 "isHerdrSession" -> true
-                "trySend", "send" -> { sent += args?.firstOrNull(); true }
+                "trySend", "send", "sendWithAcceptance" -> { sent += args?.firstOrNull(); true }
                 "equals" -> false
                 "hashCode" -> 1
                 else -> null
@@ -260,7 +262,10 @@ class HerdrTabTargetTest {
         assertTrue(controller.showHerdrProjectPickerAt(5, 4))
         org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
         assertTrue("Opening recent projects must not send a remote click", sent.isEmpty())
-        controller.dismissHerdrProjectPicker()
+        controller.completeHerdrProjectSelection(connection)
+        org.junit.Assert.assertNull(controller.herdrProjectPicker.value)
+        assertTrue("Successful selection closes the mobile Switch panel", sent.isNotEmpty())
+        sent.clear()
         val grouped = "\u001B[2J\u001B[H┃ + new workspace\u001B[1;26H\u001B[38;5;244m«\u001B[0m" +
             "\u001B[1;27H tab \u001B[38;5;245m + \u001B[0m"
         controller.updateTerminalFrame(engine.accept(grouped.toByteArray()))
@@ -269,6 +274,8 @@ class HerdrTabTargetTest {
         assertTrue(controller.showHerdrProjectPickerAt(5, 0))
         org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
         assertTrue("Grouped sidebar picker must not send a remote click", sent.isEmpty())
+        controller.completeHerdrProjectSelection(connection)
+        assertTrue("Desktop sidebar stays expanded", sent.isEmpty())
         controller.resetInputSink()
         org.junit.Assert.assertNull(controller.herdrProjectPicker.value)
         assertFalse(controller.showHerdrProjectPickerAt(2, 3))

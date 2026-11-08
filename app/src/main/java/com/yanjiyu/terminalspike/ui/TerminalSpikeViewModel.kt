@@ -526,7 +526,8 @@ data class TerminalSpikeUiState(
     val remoteClipboardPrompt: RemoteClipboardPromptUi? = null,
     val multilinePasteConfirmationEnabled: Boolean = false,
     val snippetsAboveKeyboard: Boolean = false,
-    val voiceInputEnabled: Boolean = true,
+    val voiceInputEnabled: Boolean = false,
+    val inputButtonsOnRight: Boolean = false,
     val voiceInputLanguageTag: String = "",
     val settingsReady: Boolean = false,
     val settingsRecoveryFailure: SettingsLoadFailure? = null,
@@ -1563,6 +1564,22 @@ class TerminalSpikeViewModel(
     private val localSessions = appContainer.localSessionRepository
     internal val localArchState = localSessions.environment.state
     internal val localArchRuntime = localSessions.runtime
+    private val localArchUsage = application.getSharedPreferences("local_arch_usage", 0)
+    private val mutableLocalArchLastUsed = MutableStateFlow(localArchUsage.getLong("last_used", 0L))
+    internal val localArchLastUsed = mutableLocalArchLastUsed.asStateFlow()
+
+    private fun recordLocalArchUse() {
+        val now = System.currentTimeMillis()
+        mutableLocalArchLastUsed.value = now
+        localArchUsage.edit().putLong("last_used", now).apply()
+    }
+
+    internal fun openExistingLocalArch(): Boolean {
+        val session = _uiState.value.existingLocalArchSession() ?: return false
+        selectSession(session.id)
+        return true
+    }
+
     private val remoteSessions = appContainer.sshSessionRepository
     private val terminalDataRepository = appContainer.terminalDataRepository
     private val recentSessionRepository = appContainer.recentSessions
@@ -1778,7 +1795,8 @@ class TerminalSpikeViewModel(
                                     snapshot.appSettings.multilinePasteConfirmationEnabled,
                                 voiceInputLanguageTag = snapshot.appSettings.voiceInputLanguageTag,
                                 snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
-                                voiceInputEnabled = !snapshot.appSettings.voiceInputDisabled,
+                                voiceInputEnabled = snapshot.appSettings.hasVoiceInputDisabled() && !snapshot.appSettings.voiceInputDisabled,
+                                inputButtonsOnRight = snapshot.appSettings.inputButtonsOnRight,
                             )
                         }
                     }
@@ -1855,6 +1873,7 @@ class TerminalSpikeViewModel(
             scrollbackLines = activeScrollbackLines,
             rendererProfile = activeRendererProfile,
         )) ?: return false
+        recordLocalArchUse()
         _uiState.update { it.withLocalSessionSnapshots(localSessions.runtime.value.sessions, id) }
         return true
     }
@@ -3537,6 +3556,12 @@ class TerminalSpikeViewModel(
         }
     }
 
+    fun setInputButtonsOnRight(value: Boolean) {
+        viewModelScope.launch {
+            appContainer.settings.update { it.setInputButtonsOnRight(value) }
+        }
+    }
+
     fun dismissNotificationPermissionPrompt() {
         _uiState.update { it.copy(notificationPermissionPromptVisible = false) }
     }
@@ -3574,6 +3599,7 @@ class TerminalSpikeViewModel(
 
     fun selectSession(sessionId: Long) {
         if (_uiState.value.sessions.none { it.id == sessionId }) return
+        if (_uiState.value.sessions.any { it.id == sessionId && it.isLocalArch }) recordLocalArchUse()
         _uiState.update { state ->
             val previousKeyboardId = state.sessions.firstOrNull {
                 it.id == state.activeSessionId
@@ -4100,7 +4126,8 @@ class TerminalSpikeViewModel(
         sendsImmediatelyOverride: Boolean?,
     ): Boolean {
         val state = _uiState.value
-        val snippet = state.snippets.firstOrNull { it.id == id }
+        val snippet = (state.snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all)
+            .firstOrNull { it.id == id }
             ?.let { saved ->
                 sendsImmediatelyOverride?.let { saved.copy(sendsImmediately = it) } ?: saved
             }
@@ -4116,7 +4143,8 @@ class TerminalSpikeViewModel(
         return dispatchSnippet(
             state = state.copy(activeSessionId = targetSessionId),
             snippet = snippet,
-            confirmed = false,
+            // Tapping a saved snippet is the user's execution request.
+            confirmed = true,
         ) != SnippetDispatchOutcome.REJECTED
     }
 

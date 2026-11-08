@@ -20,6 +20,20 @@ internal class ControlToolsInstaller(private val context: Context) {
         write(rootfs, "root/.agents/skills/terminal-spike-settings/SKILL.md", asset("local-arch/control/SKILL.md"))
     }
 
+    fun installBrowser(rootfs: File, connectionInfo: String) {
+        write(rootfs, "usr/local/lib/terminal-spike/spike-open.cjs", asset("local-arch/spike-open.cjs"))
+        val launcher = "#!/bin/sh\nexec node /usr/local/lib/terminal-spike/spike-open.cjs \"\$@\"\n"
+        check(write(rootfs, "usr/local/bin/spike-open", launcher).setExecutable(true, true))
+        write(rootfs, "etc/terminal-spike/browser.json", connectionInfo)
+        // Our PATH precedes /usr/bin. Preserve an existing user-owned local opener.
+        val xdg = File(rootfs, "usr/local/bin/xdg-open").toPath()
+        if (!Files.exists(xdg, NOFOLLOW_LINKS) ||
+            (Files.isRegularFile(xdg, NOFOLLOW_LINKS) && Files.size(xdg) == launcher.toByteArray().size.toLong() &&
+                Files.newInputStream(xdg).bufferedReader().use { it.readText() } == launcher)) {
+            check(write(rootfs, "usr/local/bin/xdg-open", launcher).setExecutable(true, true))
+        }
+    }
+
     private fun asset(path: String): String = context.assets.open(path).bufferedReader().use { it.readText() }
 
     private fun write(rootfs: File, relative: String, content: String): File {

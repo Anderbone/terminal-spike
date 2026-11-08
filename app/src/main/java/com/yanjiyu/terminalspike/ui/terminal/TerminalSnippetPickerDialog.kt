@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,7 +38,7 @@ internal fun TerminalSnippetPickerDialog(
     onDismiss: () -> Unit,
     onSelect: (Long) -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(TerminalSnippetPickerTestTag),
         title = { Text(stringResource(R.string.connections_tab_snippets)) },

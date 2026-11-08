@@ -47,8 +47,10 @@ message AppSettings {
   // Device-local BCP-47 tag used by Android speech recognition. Empty follows device language.
   string voice_input_language_tag = 26;
 
-  // Device-local. Negative storage preserves the visible microphone for existing installs.
-  bool voice_input_disabled = 27;
+  // Device-local. Presence preserves explicit choices; absent preferences default to disabled.
+  optional bool voice_input_disabled = 27;
+
+  bool input_buttons_on_right = 30;
 
   // False preserves the swipe layout on existing installs.
   bool snippets_above_keyboard = 28;

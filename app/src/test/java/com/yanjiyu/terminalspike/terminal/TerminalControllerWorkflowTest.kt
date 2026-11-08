@@ -16,6 +16,46 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalControllerWorkflowTest {
+    @Test fun tabSwitchImmediatelyReleasesOldHistoryAndRejectsItsInFlightRead() {
+        val scheduler = ManualFrameScheduler()
+        val controller = TerminalController(TerminalBuffer(), scheduler)
+        controller.setInputSink(object : TerminalInputSink {
+            override fun send(bytes: ByteArray) = Unit
+        }, onResize = { _, _ -> })
+        controller.reportTerminalSize(40, 10)
+        controller.herdrSessionActive = true
+        val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(40, 10)
+        controller.updateTerminalFrame(engine.accept((
+            "\u001B[?1000;1006h\u001B[H 1  2 \u001B[38;5;245m + \u001B[0m" +
+                "\u001B[10;1Hswitch │ project"
+            ).toByteArray()))
+        scheduler.drainAll()
+        val old = com.yanjiyu.terminalspike.connection.HerdrPaneHistory(
+            "default/w1:p1/term1", 0, 1, 40, 7, 0,
+            List(200) { TerminalLine.plain("old tab $it") },
+        )
+        controller.publishHerdrHistory(old)
+        val generation = controller.herdrHistoryGeneration
+        assertTrue(controller.sendMouseClick(4, 0))
+        assertNull("The first swipe must not adopt the previous tab", controller.herdrHistory)
+        controller.publishHerdrHistoryRead(
+            com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Available(old), old, generation,
+        )
+        assertNull("A read started before the click cannot restore old history", controller.herdrHistory)
+        val next = old.copy(identity = "default/w1:p2/term2",
+            lines = List(200) { TerminalLine.plain("new tab $it") })
+        controller.publishHerdrHistoryRead(
+            com.yanjiyu.terminalspike.connection.HerdrHistoryRead.Available(next), null,
+        )
+        org.junit.Assert.assertSame(next, controller.herdrHistory)
+        controller.herdrHistoryReading = true
+        controller.herdrHistoryPinned = true
+        controller.publishInputContext(TerminalInputContext("herdr/default/w1:p3/term3", true))
+        assertNull("Remote navigation invalidates history without waiting for another history poll", controller.herdrHistory)
+        assertFalse(controller.herdrHistoryReading)
+        assertFalse(controller.herdrHistoryPinned)
+    }
+
     @Test fun resizePlaceholdersDoNotSignalAPublishedRemoteRepaint() {
         val scheduler = ManualFrameScheduler()
         val controller = TerminalController(TerminalBuffer(), scheduler)

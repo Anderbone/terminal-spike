@@ -46,8 +46,19 @@ a security boundary against malicious guest programs.
   layout, modifier behavior, haptics, key repeat, input mode and tmux prefix.
   This changes the app keyboard, not the Android system IME. Hosts may select a
   profile instead of the default; read `keyboardProfileId` before choosing one.
-- Connections: list non-secret endpoint metadata and forwarding rules. Passwords,
-  private keys, credential references and startup commands are not returned.
+- Connections: list/get/add/update saved SSH and Mosh endpoints, including name,
+  hostname, SSH port, username, protocol, favorite, group/tag and terminal/keyboard
+  profile overrides. Creation defaults to SSH port 22 with password prompting.
+  Updates preserve unspecified fields, including forwarding and startup settings.
+  Switching to SSH clears Mosh-only overrides. No connection opens or reconnects.
+- Authentication: credentials list returns only ID, display name and kind, allowing
+  connections to select an existing credential by credentialId. Passwords, private
+  keys, secret-storage references and startup commands are never returned or accepted.
+  Omit credentialId on creation for a new prompt-only password credential; omit it
+  on update to preserve authentication. An empty string selects a new password
+  prompt. Import keys or create other credentials through the app.
+  Empty terminalProfileId/keyboardProfileId inherits the default; empty group/tag
+  clears it. Unknown credential/profile IDs fail without saving.
 - Forwarding: add/remove saved local or remote TCP rules, with loopback listeners
   only. Responses explicitly say `next_connection`; the tool neither reconnects
   a terminal nor claims that an existing tunnel changed. The normal app editor
@@ -60,6 +71,15 @@ edit. Unknown fields and incorrect JSON types fail rather than being ignored.
 `--actions` replaces a complete keyboard action list; preserve unrelated keys.
 For multiline values use `--json-file PATH` or stdin with `--json-file -` to avoid
 shell interpolation. Requests and responses contain user data; do not log them.
+
+For example:
+
+```sh
+spikectl connections add --name "My server" --hostname server.example --username me
+spikectl credentials list
+spikectl connections get --id UUID
+spikectl connections update --id UUID --revision NUMBER --port 2222
+```
 
 ## Implementation and checks
 
@@ -88,3 +108,7 @@ on the Fold. A successful protocol test does not establish actual Codex login or
 an agent-driven change; record those separately when physically verified.
 
 Skill discovery follows [OpenAI's agent skill documentation](https://learn.chatgpt.com/docs/build-skills).
+
+Input bar preferences use `appearance.get` / `appearance.update` with revision checking:
+`spikectl appearance update --revision NUMBER --input-buttons-on-right true --voice-input-enabled false`.
+Both fields are boolean and share the app Settings preferences. Long-press the buffered input toggle to swap the Enter/toggle column and text field. Voice input defaults to disabled; enable it explicitly in Settings.

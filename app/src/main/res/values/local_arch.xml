@@ -24,13 +24,18 @@
     <string name="local_arch_new_session">New session</string>
     <string name="local_arch_disconnect_detail">This stops the local shell and its running programs. Your Arch files and installed packages remain available when you open a new Local Arch tab.</string>
     <string name="local_arch_install_tools">Install starter tools</string>
-    <string name="local_arch_tools_detail">Includes Git, GitHub CLI, Codex, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node and Codex installations are kept. Package installation includes a full system update. Sign into GitHub and Codex below after setup.</string>
+    <string name="local_arch_tools_detail">Includes Git, GitHub CLI, Codex, Claude Code, OpenCode, Pi, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node and coding CLI installations are kept. Package installation includes a full system update. Sign into GitHub and Codex below after setup.</string>
     <string name="local_arch_installing_tools">Installing starter tools and system updates…</string>
     <string name="local_arch_background">Arch setup is running in the background…</string>
     <string name="local_arch_ready">Arch is ready</string>
     <string name="local_arch_operation_failed">Arch setup needs attention</string>
     <string name="local_arch_details">Details</string>
-    <string name="local_arch_accounts_detail">Sign in here without typing terminal commands. Copy the one-time code, approve in your browser, then return here. Credentials stay inside your private Arch environment. For Codex, first enable device code login in ChatGPT security settings (or ask your workspace admin).</string>
+    <string name="local_arch_accounts_detail">Sign in here without typing terminal commands. Your phone browser opens for approval; return here to see the result. GitHub and Codex codes are copied for you. Credentials stay inside your private Arch environment. For Codex, first enable device code login in ChatGPT security settings (or ask your workspace admin).</string>
+    <string name="local_arch_claude_login_waiting">Complete Claude Code sign-in in your phone browser, then return here. If the browser gives you a code instead of completing automatically, paste it below.</string>
+    <string name="local_arch_login_return_code">Browser authorization code (if requested)</string>
+    <string name="local_arch_login_submit_code">Submit code</string>
+    <string name="local_arch_login_choose_browser">Choose another browser</string>
+    <string name="local_arch_choose_browser_always">Ask which browser to use for Local Linux links</string>
     <string name="local_arch_sign_in">Sign in to %1$s</string>
     <string name="local_arch_login_starting">Requesting a sign-in code…</string>
     <string name="local_arch_login_code">One-time code: %1$s</string>
@@ -38,4 +43,10 @@
     <string name="local_arch_login_success">%1$s sign-in completed. Local Arch shells can now use this account.</string>
     <string name="local_arch_login_failed">Sign-in did not complete. Check your connection and device-login permissions, then retry. If a CLI was removed, reinstall the starter tools.</string>
     <string name="local_arch_login_browser_failed">Could not open a browser. Install or enable a browser, then try again.</string>
+    <string name="local_arch_hide_connection">Hide</string>
+    <string name="local_arch_show_connection">Show Arch Linux in Connections</string>
+    <string name="local_arch_download_progress">%1$d%% · %2$s / %3$s</string>
+    <string name="local_arch_download_speed">%1$s/s</string>
+    <string name="local_arch_measuring_speed">Measuring download speed…</string>
+    <string name="local_arch_stage_elapsed">Current step open for %1$d s</string>
 </resources>

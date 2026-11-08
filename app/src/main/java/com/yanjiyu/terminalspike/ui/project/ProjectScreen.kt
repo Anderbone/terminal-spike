@@ -32,7 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -287,7 +287,7 @@ private fun ProjectWorkspace(
     }
     if (directoryDialog) {
         var directory by remember { mutableStateOf(state.directory) }
-        AlertDialog(onDismissRequest = { directoryDialog = false },
+        AppDialog(onDismissRequest = { directoryDialog = false },
             title = { Text(stringResource(R.string.project_open)) },
             text = { Column {
                 Text(stringResource(R.string.project_path_detail))
@@ -300,7 +300,7 @@ private fun ProjectWorkspace(
     }
     if (baseDialog) {
         var base by remember { mutableStateOf(state.comparison.base) }
-        AlertDialog(onDismissRequest = { baseDialog = false },
+        AppDialog(onDismissRequest = { baseDialog = false },
             title = { Text(stringResource(R.string.project_base)) },
             text = { OutlinedTextField(base, { base = it }, singleLine = true,
                 label = { Text(stringResource(R.string.project_base_hint)) }, modifier = Modifier.testTag("project-base-input")) },
@@ -564,7 +564,7 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
         val target = number.toIntOrNull()?.let { line ->
             document.lines.indexOfFirst { it.number == line && it.kind != ProjectLineKind.DELETED }.takeIf { it >= 0 }
         }
-        AlertDialog(onDismissRequest = { goToVisible = false }, title = { Text(stringResource(R.string.project_go_to_line)) },
+        AppDialog(onDismissRequest = { goToVisible = false }, title = { Text(stringResource(R.string.project_go_to_line)) },
             text = { OutlinedTextField(number, { number = it.filter(Char::isDigit).take(8) }, singleLine = true,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                 modifier = Modifier.testTag("project-line-input")) },
@@ -580,7 +580,7 @@ private fun ProjectCode(document: ProjectDocument, feedback: List<ProjectFeedbac
         val range = selection ?: return
         var message by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
-        AlertDialog(onDismissRequest = { commentDialog = false }, title = { Text(stringResource(R.string.project_add_feedback)) },
+        AppDialog(onDismissRequest = { commentDialog = false }, title = { Text(stringResource(R.string.project_add_feedback)) },
             text = { Column {
                 Text("${document.path}:${document.lines[range.first].number}–${document.lines[range.last].number}")
                 OutlinedTextField(message, { if (it.length <= 4_000) message = it }, minLines = 3,
@@ -603,7 +603,7 @@ private fun ProjectReview(state: ProjectUiState, onRemove: (String) -> Unit, onE
     var editing by remember { mutableStateOf<ProjectFeedback?>(null) }
     var error by remember { mutableStateOf(false) }
     val text = remember(state.feedback, state.snapshot?.root) { projectFeedbackText(state.snapshot?.root.orEmpty(), state.feedback) }
-    AlertDialog(onDismissRequest = onDismiss,
+    AppDialog(onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.project_feedback_count, state.feedback.size)) },
         text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.project_feedback_target, state.title))
@@ -638,7 +638,7 @@ private fun ProjectReview(state: ProjectUiState, onRemove: (String) -> Unit, onE
     editing?.let { item ->
         var message by remember(item.id) { mutableStateOf(item.message) }
         var editError by remember(item.id) { mutableStateOf<String?>(null) }
-        AlertDialog(onDismissRequest = { editing = null }, title = { Text(stringResource(R.string.project_edit)) },
+        AppDialog(onDismissRequest = { editing = null }, title = { Text(stringResource(R.string.project_edit)) },
             text = { Column {
                 OutlinedTextField(message, { if (it.length <= 4_000) message = it }, minLines = 3)
                 editError?.let { Text(it, color = MaterialTheme.colorScheme.error) }

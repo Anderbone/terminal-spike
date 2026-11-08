@@ -62,6 +62,8 @@ internal class AppearanceControl(private val container: AppContainer) {
             builder.setThemeMode(patched.themeMode)
                 .setDynamicColorEnabled(patched.dynamicColorEnabled)
                 .setAccentPreset(patched.accentPreset)
+                .setInputButtonsOnRight(patched.inputButtonsOnRight)
+                .setVoiceInputDisabled(patched.voiceInputDisabled)
         }
         return saved.appearanceJson()
     }
@@ -116,14 +118,14 @@ internal class AppearanceControl(private val container: AppContainer) {
 
 /** A safe-integer token of just the editable appearance fields; unrelated settings do not conflict. */
 internal fun appearanceRevision(settings: AppSettings): Long {
-    val bytes = "${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}".toByteArray()
+    val bytes = "${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}\u0000${settings.inputButtonsOnRight}\u0000${settings.hasVoiceInputDisabled() && !settings.voiceInputDisabled}".toByteArray()
     return MessageDigest.getInstance("SHA-256").digest(bytes).take(6).fold(0L) { value, byte ->
         (value shl 8) or (byte.toLong() and 0xff)
     }
 }
 
 internal fun patchControlAppAppearance(current: AppSettings, p: JsonObject): AppSettings {
-    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset")
+    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset", "inputButtonsOnRight", "voiceInputEnabled")
     p.requireRevision(appearanceRevision(current))
     require(p.keys.any { it != "revision" })
     return current.toBuilder().also { builder ->
@@ -133,6 +135,8 @@ internal fun patchControlAppAppearance(current: AppSettings, p: JsonObject): App
             "dark" -> AppSettings.ThemeMode.THEME_MODE_DARK
             else -> throw IllegalArgumentException("Unsupported app theme mode.")
         }) }
+        p["inputButtonsOnRight"]?.let { builder.setInputButtonsOnRight(p.boolean("inputButtonsOnRight")) }
+        p["voiceInputEnabled"]?.let { builder.setVoiceInputDisabled(!p.boolean("voiceInputEnabled")) }
         p["dynamicColorEnabled"]?.let { builder.setDynamicColorEnabled(p.boolean("dynamicColorEnabled")) }
         p["accentPreset"]?.let {
             val accent = p.string("accentPreset")
@@ -213,6 +217,8 @@ private fun AppSettings.appearanceJson(): JsonObject = buildJsonObject {
         AppSettings.ThemeMode.THEME_MODE_DARK -> "dark"
         else -> "system"
     })
+    put("inputButtonsOnRight", inputButtonsOnRight)
+    put("voiceInputEnabled", hasVoiceInputDisabled() && !voiceInputDisabled)
     put("dynamicColorEnabled", dynamicColorEnabled); put("accentPreset", accentPreset.ifEmpty { "mint" })
     put("effect", "app_theme_updated")
 }

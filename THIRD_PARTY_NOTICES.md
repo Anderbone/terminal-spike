@@ -1341,3 +1341,19 @@ The unmodified Regular, Medium, SemiBold and Bold fonts are distributed under th
 SIL Open Font License 1.1. The full upstream copyright and licence are bundled in
 `app/src/main/assets/licenses/inter-OFL.txt`.
 Source: https://github.com/rsms/inter/releases/tag/v4.1.
+
+## User-requested default coding CLIs (starter tools version 3)
+
+Installed into the user's Arch guest on installation or explicit **Install starter tools**,
+from the official npm registry; executable binaries are not bundled in the APK.
+Only missing commands are installed. Existing versions and credentials are preserved.
+No account login or model request is started by installation; validation runs `--version`.
+
+| Direct guest dependency | Purpose | Source | Licence / notice obligations |
+| --- | --- | --- | --- |
+| @anthropic-ai/claude-code 2.1.319 | Claude Code CLI (`claude`), Linux ARM64 optional binary at the same version | https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.319 ; https://github.com/anthropics/claude-code | Proprietary; npm declares SEE LICENSE IN README.md, which refers to Anthropic Commercial Terms of Service and Privacy Policy. Retain packaged terms/notices; do not treat as MIT or redistribute its binaries as part of the APK. |
+| @opencode/cli 2.2.6 | OpenCode CLI (`opencode`), Linux ARM64 optional binary at the same version | https://registry.npmjs.org/@opencode/cli/2.2.6 ; https://github.com/anomalyco/opencode | MIT; retain copyright, permission notice and bundled component notices on redistribution. |
+| @earendil-works/pi-coding-agent 1.5.0 | Pi coding CLI (`pi`), current official package after the pi-mono rename | https://registry.npmjs.org/@earendil-works/pi-coding-agent/1.5.0 ; https://github.com/earendil-works/pi | MIT; retain copyright, permission notice and transitive component notices on redistribution. |
+
+Package-provided licences and component notices remain inside the guest. These tools
+use their own provider credentials and terms when the user launches and configures them.

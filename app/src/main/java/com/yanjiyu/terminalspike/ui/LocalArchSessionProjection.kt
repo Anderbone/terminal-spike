@@ -21,3 +21,12 @@ internal fun TerminalSpikeUiState.withLocalSessionSnapshots(
     }
     return copy(sessions = tabs, activeSessionId = active)
 }
+
+internal fun TerminalSpikeUiState.existingLocalArchSession(): SessionTabUi? {
+    val candidates = sessions.filter {
+        it.isLocalArch && (it.connectionState is com.yanjiyu.terminalspike.connection.ConnectionState.Connected ||
+            it.connectionState is com.yanjiyu.terminalspike.connection.ConnectionState.Connecting)
+    }
+    return candidates.firstOrNull { it.id == activeSessionId }
+        ?: candidates.maxByOrNull { it.lastActivityAtEpochMillis }
+}

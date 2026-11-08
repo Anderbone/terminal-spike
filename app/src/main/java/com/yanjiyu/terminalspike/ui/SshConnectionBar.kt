@@ -18,7 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -469,7 +469,7 @@ private fun TmuxSessionDialog(
 ) {
     var deleteTarget by remember(prompt.promptToken, prompt.sessions) { mutableStateOf<String?>(null) }
     var menuTarget by remember(prompt.promptToken) { mutableStateOf<String?>(null) }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onOpenShell,
         modifier = Modifier.testTag(TmuxSessionDialogTestTag),
         title = { Text(stringResource(R.string.tmux_selector_title)) },
@@ -650,7 +650,7 @@ private fun TmuxSessionDialog(
     )
     val selected = prompt.sessions.firstOrNull { it.id == deleteTarget }
     if (selected != null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
             text = { Text(stringResource(R.string.tmux_selector_delete_message, selected.name)) },
@@ -701,7 +701,7 @@ private fun KeyboardInteractiveDialog(
         onDispose(::wipeFields)
     }
 
-    AlertDialog(
+    AppDialog(
         onDismissRequest = {
             wipeFields()
             onCancel()
@@ -774,7 +774,7 @@ private fun HostIdentityDialog(
     onDecision: (HostIdentityDecision) -> Unit,
 ) {
     when (prompt) {
-        is HostIdentityPrompt.FirstContact -> AlertDialog(
+        is HostIdentityPrompt.FirstContact -> AppDialog(
             onDismissRequest = { onDecision(HostIdentityDecision.Reject) },
             title = { Text(stringResource(R.string.ssh_trust_first_contact_title)) },
             text = {
@@ -804,7 +804,7 @@ private fun HostIdentityDialog(
         )
 
         is HostIdentityPrompt.Changed -> if (replacementConfirmation) {
-            AlertDialog(
+            AppDialog(
                 onDismissRequest = onBackFromReplacement,
                 title = { Text(stringResource(R.string.ssh_replace_host_key_title)) },
                 text = {
@@ -828,7 +828,7 @@ private fun HostIdentityDialog(
                 },
             )
         } else {
-            AlertDialog(
+            AppDialog(
                 onDismissRequest = { onDecision(HostIdentityDecision.Reject) },
                 title = { Text(stringResource(R.string.ssh_host_key_changed_title)) },
                 text = {
@@ -1103,7 +1103,7 @@ internal fun SshConnectDialog(
     }
 
     if (confirmingForgetPasswordFor == null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = ::dismissAndClearSecrets,
             title = {
                 Text(
@@ -1482,7 +1482,7 @@ internal fun SshConnectDialog(
         )
     }
     confirmingForgetPasswordFor?.let { profile ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { confirmingForgetPasswordFor = null },
             title = { Text(stringResource(R.string.ssh_connect_forget_password_title)) },
             text = {

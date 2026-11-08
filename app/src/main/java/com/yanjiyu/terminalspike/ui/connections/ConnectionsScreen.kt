@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -90,6 +90,8 @@ internal data class ConnectionsCallbacks(
     val onRenameKeyMetadata: (suspend (String, String, String?) -> Result<Unit>)? = null,
     val onOpenMoshStatus: (() -> Unit)? = null,
     val nearbySshDiscoveryControllerFactory: NearbySshDiscoveryControllerFactory? = null,
+    val onOpenLocalArch: (() -> Unit)? = null,
+    val onConnectLocalArch: (() -> Unit)? = null,
     val onOpenBrowser: (() -> Unit)? = null,
     val onOpenWebBrowser: (() -> Unit)? = null,
 )
@@ -182,6 +184,7 @@ internal fun ConnectionsScreen(
     moshAvailable: Boolean = false,
     displayedTab: ConnectionsTab = state.selectedTab,
     primaryDestination: AppDestination = AppDestination.CONNECTIONS,
+    localArchLastUsed: Long = 0L,
 ) {
     val context = LocalContext.current
     val screenDescription = stringResource(R.string.connections_screen_description)
@@ -292,6 +295,9 @@ internal fun ConnectionsScreen(
                             )
                             is ConnectionsPresentationUi.Ready -> ConnectionsReadyContent(
                                 rows = presentation.rows,
+                                onOpenLocalArch = callbacks.onOpenLocalArch,
+                                onConnectLocalArch = callbacks.onConnectLocalArch,
+                                localArchLastUsed = localArchLastUsed,
                                 navigationExpanded = navigationExpanded,
                                 nowEpochMillis = nowEpochMillis,
                                 selectedHostId = selectedHostId,
@@ -579,7 +585,7 @@ private fun CatalogDeletionConfirmationDialog(
             action = stringResource(R.string.connections_delete_snippet)
         }
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(detail) },
@@ -617,7 +623,7 @@ private fun SnippetExecutionConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.connections_run_snippet_title, snippet.name)) },
         text = {

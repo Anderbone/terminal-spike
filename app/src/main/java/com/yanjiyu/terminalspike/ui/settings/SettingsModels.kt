@@ -183,7 +183,8 @@ internal data class AppPreferences(
     val sensitiveClipboardClearSeconds: Int = 0,
     val multilinePasteConfirmationEnabled: Boolean = false,
     val snippetsAboveKeyboard: Boolean = false,
-    val voiceInputEnabled: Boolean = true,
+    val voiceInputEnabled: Boolean = false,
+    val inputButtonsOnRight: Boolean = false,
     val voiceInputLanguage: VoiceInputLanguage = VoiceInputLanguage.DEVICE_DEFAULT,
 )
 
@@ -842,7 +843,8 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     sensitiveClipboardClearSeconds = sensitiveClipboardClearSeconds,
     multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
     snippetsAboveKeyboard = snippetsAboveKeyboard,
-    voiceInputEnabled = !voiceInputDisabled,
+    voiceInputEnabled = hasVoiceInputDisabled() && !voiceInputDisabled,
+    inputButtonsOnRight = inputButtonsOnRight,
     voiceInputLanguage = VoiceInputLanguage.fromLanguageTag(voiceInputLanguageTag),
 )
 

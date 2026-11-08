@@ -7,6 +7,9 @@ import android.text.TextWatcher
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.FocusInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -74,6 +77,12 @@ internal class WipeableSecretInputState {
         updateContentMetadata(editable, contentChanged = true)
     }
 
+    /** Caller owns and wipes this copy; the open editor retains its input for test/save retries. */
+    fun copyChars(): CharArray {
+        val editable = editor?.text ?: return CharArray(0)
+        return CharArray(editable.length) { index -> editable[index] }
+    }
+
     fun takeChars(): CharArray {
         val editable = editor?.text
         if (editable == null || editable.isEmpty()) return CharArray(0)
@@ -136,6 +145,7 @@ internal fun WipeableSecretInput(
     label: String,
     testTag: String,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     masked: Boolean = true,
     enabled: Boolean = true,
     isError: Boolean = false,
@@ -147,102 +157,121 @@ internal fun WipeableSecretInput(
     val context = LocalContext.current
     val textColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f).toArgb()
     val interactionSource = remember { MutableInteractionSource() }
-    Box(modifier = modifier.fillMaxWidth().padding(top = 8.dp)
-        .pointerInput(state, enabled) { detectTapGestures { if (enabled) state.requestFocus() } }) {
-        OutlinedTextFieldDefaults.DecorationBox(
-            // Decoration observes presence only. Secret characters remain in the native Editable.
-            value = if (state.hasValue) "•" else "",
-            enabled = enabled,
-            singleLine = true,
-            visualTransformation = VisualTransformation.None,
-            interactionSource = interactionSource,
-            isError = isError,
-            label = { Text(label) },
-            supportingText = supportingText?.let { message -> ({ Text(message) }) },
-            innerTextField = {
-                AndroidView(
-                    factory = {
-                        EditText(context).apply {
-                            tag = testTag
-                            contentDescription = label
-                            background = null
-                            setPadding(0, 0, 0, 0)
-                            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
-                            minimumHeight = 0
-                            var focusInteraction: FocusInteraction.Focus? = null
-                            onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
-                                if (hasFocus) {
-                                    FocusInteraction.Focus().also {
-                                        focusInteraction = it
-                                        interactionSource.tryEmit(it)
-                                    }
-                                } else {
-                                    focusInteraction?.let { interactionSource.tryEmit(FocusInteraction.Unfocus(it)) }
-                                    focusInteraction = null
-                                }
+    val input: @Composable () -> Unit = {
+        AndroidView(
+            factory = {
+                EditText(context).apply {
+                    tag = testTag
+                    contentDescription = label
+                    background = null
+                    setPadding(0, 0, 0, 0)
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, if (compact) 12f else 16f)
+                    minimumHeight = 0
+                    var focusInteraction: FocusInteraction.Focus? = null
+                    onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+                        if (hasFocus) {
+                            FocusInteraction.Focus().also {
+                                focusInteraction = it
+                                interactionSource.tryEmit(it)
                             }
-                            isEnabled = enabled
-                            isSingleLine = true
-                            inputType = secretInputType(masked)
-                            imeOptions = imeAction.toEditorInfoAction() or
-                                EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-                            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-                            filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
-                            setTextColor(textColor)
-                            addTextChangedListener(
-                                object : TextWatcher {
-                                    override fun beforeTextChanged(
-                                        text: CharSequence?,
-                                        start: Int,
-                                        count: Int,
-                                        after: Int,
-                                    ) = Unit
+                        } else {
+                            focusInteraction?.let { interactionSource.tryEmit(FocusInteraction.Unfocus(it)) }
+                            focusInteraction = null
+                        }
+                    }
+                    isEnabled = enabled
+                    isSingleLine = true
+                    inputType = secretInputType(masked)
+                    imeOptions = imeAction.toEditorInfoAction() or
+                        EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                    importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                    filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
+                    setTextColor(textColor)
+                    addTextChangedListener(
+                        object : TextWatcher {
+                            override fun beforeTextChanged(
+                                text: CharSequence?,
+                                start: Int,
+                                count: Int,
+                                after: Int,
+                            ) = Unit
 
-                                    override fun onTextChanged(
-                                        text: CharSequence?,
-                                        start: Int,
-                                        before: Int,
-                                        count: Int,
-                                    ) = Unit
+                            override fun onTextChanged(
+                                text: CharSequence?,
+                                start: Int,
+                                before: Int,
+                                count: Int,
+                            ) = Unit
 
-                                    override fun afterTextChanged(editable: Editable?) {
-                                        state.onTextChanged(editable)
-                                    }
-                                },
-                            )
-                            state.bind(this, onPresenceChanged)
-                        }
-                    },
-                    update = { editor ->
-                        if (editor.tag != testTag) editor.tag = testTag
-                        if (editor.contentDescription != label) editor.contentDescription = label
-                        if (editor.isEnabled != enabled) editor.isEnabled = enabled
-                        val lengthFilter = editor.filters.singleOrNull() as? InputFilter.LengthFilter
-                        if (lengthFilter?.max != maxCharacters) {
-                            editor.filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
-                        }
-                        if (editor.currentTextColor != textColor) editor.setTextColor(textColor)
-                        val nextInputType = secretInputType(masked)
-                        if (editor.inputType != nextInputType) {
-                            editor.inputType = nextInputType
-                            editor.setSelection(editor.text?.length ?: 0)
-                        }
-                        val nextImeOptions = imeAction.toEditorInfoAction() or
-                            EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-                        if (editor.imeOptions != nextImeOptions) editor.imeOptions = nextImeOptions
-                        if (editor.importantForAutofill != View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS) {
-                            editor.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-                        }
-                        state.bind(editor, onPresenceChanged)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 24.dp)
-                        .testTag(testTag),
-                )
+                            override fun afterTextChanged(editable: Editable?) {
+                                state.onTextChanged(editable)
+                            }
+                        },
+                    )
+                    state.bind(this, onPresenceChanged)
+                }
             },
+            update = { editor ->
+                if (editor.tag != testTag) editor.tag = testTag
+                if (editor.contentDescription != label) editor.contentDescription = label
+                if (editor.isEnabled != enabled) editor.isEnabled = enabled
+                val lengthFilter = editor.filters.singleOrNull() as? InputFilter.LengthFilter
+                if (lengthFilter?.max != maxCharacters) {
+                    editor.filters = arrayOf(InputFilter.LengthFilter(maxCharacters))
+                }
+                if (editor.currentTextColor != textColor) editor.setTextColor(textColor)
+                val nextInputType = secretInputType(masked)
+                if (editor.inputType != nextInputType) {
+                    editor.inputType = nextInputType
+                    editor.setSelection(editor.text?.length ?: 0)
+                }
+                val nextImeOptions = imeAction.toEditorInfoAction() or
+                    EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                if (editor.imeOptions != nextImeOptions) editor.imeOptions = nextImeOptions
+                if (editor.importantForAutofill != View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS) {
+                    editor.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                }
+                state.bind(editor, onPresenceChanged)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = if (compact) 18.dp else 24.dp)
+                .testTag(testTag),
         )
     }
+    if (compact) {
+        androidx.compose.foundation.layout.Column(modifier.fillMaxWidth()) {
+            val colors = MaterialTheme.colorScheme
+            androidx.compose.foundation.layout.Column(
+                Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    .background(colors.surfaceContainer, androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                    .border(1.dp, if (isError) colors.error else colors.outlineVariant.copy(alpha = 0.35f), androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                    .pointerInput(state, enabled) { detectTapGestures { if (enabled) state.requestFocus() } },
+            ) {
+                Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp), color = colors.onSurfaceVariant)
+                input()
+            }
+            supportingText?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
+        }
+    } else {
+        Box(modifier = modifier.fillMaxWidth().padding(top = 8.dp)
+            .pointerInput(state, enabled) { detectTapGestures { if (enabled) state.requestFocus() } }) {
+            OutlinedTextFieldDefaults.DecorationBox(
+                // Decoration observes presence only; content stays in the native Editable.
+                value = if (state.hasValue) "•" else "",
+                enabled = enabled,
+                singleLine = true,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interactionSource,
+                isError = isError,
+                label = { Text(label) },
+                supportingText = supportingText?.let { message -> ({ Text(message) }) },
+                innerTextField = input,
+            )
+        }
+    }
+
     DisposableEffect(state) {
         onDispose {
             state.dispose()

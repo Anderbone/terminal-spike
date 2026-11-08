@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -46,7 +46,7 @@ internal fun HerdrRecentProjectsDialog(controller: TerminalController) {
         loading = false
     }
     val projectPaths = projects.orEmpty()
-    AlertDialog(
+    AppDialog(
         onDismissRequest = { if (!opening) controller.dismissHerdrProjectPicker() },
         title = { Text(stringResource(R.string.herdr_recent_projects)) },
         text = {
@@ -74,7 +74,7 @@ internal fun HerdrRecentProjectsDialog(controller: TerminalController) {
                                     }
                                     opening = false
                                     if (controller.herdrProjectPicker.value === source) {
-                                        if (success) controller.dismissHerdrProjectPicker() else failed = true
+                                        if (success) controller.completeHerdrProjectSelection(source) else failed = true
                                     }
                                 }
                             }.padding(vertical = 12.dp)) {

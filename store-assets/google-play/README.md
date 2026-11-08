@@ -1,17 +1,17 @@
 # Google Play listing package
 
 Local artwork and copy for the next Terminal Spike release. Nothing in this directory uploads to
-Play or publishes an app. The 2026-11-07 refresh focuses on the English phone listing.
+Play or publishes an app. The 2026-11-08 refresh focuses on the English phone listing.
 
 ## What to use
 
 - `metadata/en-US/`: refreshed title, short description and About this app copy, highlighting
   SSH/Mosh, native project review, the embedded browser and code-server, local Linux, snippets and SFTP.
-- `screenshots/phone/`: numbered 1080 × 1920 English artwork. Real captures, large headlines, and a
+- `screenshots/phone/`: numbered 1080 × 1920 English artwork. Eight real captures, large headlines, and a
   consistent dark green/mint design. Use filename order.
 - `graphics/feature-graphic-1024x500.png`: matching opaque feature graphic; its editable SVG is
   next to it. The icon is unchanged.
-- `sources/phone-release-0.0.13/`: raw captures, a provenance/headline manifest and the capture recipe.
+- `sources/phone-release-0.0.13/`: raw captures, a provenance/headline manifest and the capture recipe. The lead image is supplied by the user; its device/build are unverified.
 - `fixtures/`: non-private sample workspace and suggested snippet data.
 - `preview-phone.jpg`: contact sheet for review; do not upload it as a screenshot.
 - `SCREENSHOT_ALT_TEXT.md`: descriptions for the prepared images.
@@ -37,7 +37,7 @@ Liberation Sans regular/bold. No Android dependencies or bundled fonts are added
 bounds, uniformly scales the real app image, and places it in an SVG composition. It does not
 paint over app content, replace text inside the UI, or generate terminal output. Headlines occupy
 the top 340px (under 20% of the canvas); each explains the feature visible below it. No AI image
-generation is used. Terminal examples are actual shell output from an isolated demo workspace.
+generation is used. The supplied lead image shows the user’s actual workspace; other terminal examples are actual shell output from an isolated demo workspace.
 
 The feature graphic is original vector artwork, not a simulated application screenshot. The
 legacy tablet builder preserves the existing real unfolded-device capture workflow.
@@ -62,3 +62,7 @@ Recheck Google's requirements before upload:
 - [Preview assets](https://support.google.com/googleplay/android-developer/answer/9866151)
 - [Metadata policy](https://support.google.com/googleplay/android-developer/answer/9898842)
 - [SSH over Tailscale](https://tailscale.com/docs/reference/ssh-over-tailscale)
+
+The phone/GitHub selection includes code-server and excludes the embedded-browser image. Its original
+raw capture is retained for provenance but are not part of the upload set. The supplied
+Mosh screenshot is reproduced as provided, including workspace names and the floating overlay.

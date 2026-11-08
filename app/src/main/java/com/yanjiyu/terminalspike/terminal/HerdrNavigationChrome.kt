@@ -73,7 +73,14 @@ internal object HerdrNavigationChrome {
             it.columnWidth in 1..3 && it.text.trim() == "+"
         } ?: return null
         if (column >= addTab.startColumn + addTab.columnWidth) return null
-        for (top in mobileBarTops(rows, true)) {
+        return switcherClose(screen, columns, rows)
+    }
+
+    /** Close only a verified mobile Switch panel; desktop sidebars stay expanded. */
+    fun switcherClose(screen: List<TerminalLine>, columns: Int, rows: Int): Pair<Int, Int>? {
+        if (mobileSwitcherBody(screen, columns, rows) == null) return null
+        val hasTopTabs = tabRows(screen, 0, rows).singleOrNull() == 0
+        for (top in mobileBarTops(rows, hasTopTabs)) {
             val header = screen[top]
             val divider = header.text.indexOf('│')
             if (divider < 0) continue

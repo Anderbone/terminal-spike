@@ -542,7 +542,7 @@
     <string name="snippet_editor_tap_action">Tap action</string>
     <string name="snippet_editor_insert">Insert</string>
     <string name="snippet_editor_run_immediately">Run immediately</string>
-    <string name="snippet_editor_multiline_confirmation">Multiline snippets always require confirmation before they run.</string>
+    <string name="snippet_editor_multiline_confirmation">Tap a saved snippet in the terminal to run it directly.</string>
     <string name="snippet_editor_append_enter">Append Enter</string>
     <string name="snippet_editor_favourite">Favourite</string>
     <string name="snippet_editor_save_failed">Could not save this snippet. Your changes are still here; try again.</string>
@@ -622,4 +622,6 @@
     <string name="default_option">Default</string>
     <string name="files_session_title">Files · %1$s</string>
     <string name="files_session_close">Close files tab</string>
+    <string name="host_editor_no_keys_guidance">No SSH keys yet. Import or generate one in Settings → SSH keys, then select it here.</string>
+    <string name="host_editor_save_password_compact_detail">Encrypted on this device</string>
 </resources>

@@ -4,7 +4,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,7 +53,7 @@ internal fun SettingsRecoveryDialog(
         SettingsLoadFailure.APP_DATA_UNAVAILABLE ->
             stringResource(R.string.local_data_recovery_unavailable_message)
     }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = {},
         title = { Text(title) },
         text = {
@@ -93,7 +93,7 @@ internal fun PermanentLocalDataResetConfirmation(
     onResetConfirmed: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = {},
         title = { Text(stringResource(R.string.local_data_reset_title)) },
         text = {

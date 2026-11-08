@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -190,7 +190,7 @@ internal fun ActiveTmuxSessionSwitcherDialog(
         }
     }
     catalog?.sessions?.firstOrNull { it.id == deleteTarget }?.let { session ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
             text = { Text(stringResource(R.string.tmux_selector_delete_message, session.name)) },
@@ -225,7 +225,7 @@ private fun WindowSwitcherDialog(
     action: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp),
         shape = MaterialTheme.shapes.extraLarge,

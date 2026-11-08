@@ -8,10 +8,10 @@ No ads, analytics or subscriptions. Android 8.0+.
 **[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/download/v0.0.4/terminal-spike-0.0.4.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases)
 
 <p>
-  <img src="store-assets/google-play/screenshots/phone/01-workspace.png" width="240" alt="Terminal Spike SSH terminal workspace with shortcut keys">
-  <img src="store-assets/google-play/screenshots/phone/02-code-review.png" width="240" alt="Review staged and unstaged project changes in Terminal Spike">
-  <img src="store-assets/google-play/screenshots/phone/03-code-server.png" width="240" alt="Use the code-server editor inside Terminal Spike">
-  <img src="store-assets/google-play/screenshots/phone/04-browser.png" width="240" alt="Browse a website alongside your terminal workspace">
+  <img src="store-assets/google-play/screenshots/phone/01-mosh-workspaces.png" width="240" alt="User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.">
+  <img src="store-assets/google-play/screenshots/phone/02-workspace.png" width="240" alt="A connected Atlas SSH terminal with real project output and compact session tabs.">
+  <img src="store-assets/google-play/screenshots/phone/03-code-review.png" width="240" alt="Native project reader showing an actual Git diff of a small JavaScript change.">
+  <img src="store-assets/google-play/screenshots/phone/04-code-server.png" width="240" alt="A real code-server editor open inside Terminal Spike with an Atlas project file.">
 </p>
 
 - **Connect your way:** SSH passwords or keys, plus Mosh in the same app.
@@ -70,3 +70,7 @@ Found a bug? [Open an issue](https://github.com/Anderbone/terminal-spike/issues)
 
 GPL-3.0-or-later; component licences and credits are in [Third-party notices](THIRD_PARTY_NOTICES.md).
 Terminal Spike is not affiliated with the Mosh project.
+
+## Support development
+
+Enjoying Terminal Spike? [☕ Buy me a coffee](https://buymeacoffee.com/jiyuyan) to support its development.

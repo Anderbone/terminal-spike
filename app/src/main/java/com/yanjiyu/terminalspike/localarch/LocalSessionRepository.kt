@@ -20,6 +20,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 
 internal data class LocalSessionSnapshot(
     val id: Long,
@@ -45,12 +46,14 @@ internal class LocalSessionRepository(
     val environment: ArchEnvironment,
     private val scope: CoroutineScope,
     private val foregroundStarter: SessionForegroundStarter,
+    private val openLoginBrowser: suspend (String, String) -> Boolean = { _, _ -> false },
 ) {
     private val lock = Any()
     private val entries = linkedMapOf<Long, Entry>()
     private var nextId = -1L
     private var installJob: Job? = null
     private var loginJob: Job? = null
+    private var loginPty: LocalPty? = null
     private val mutableLogin = MutableStateFlow(ArchLoginState())
     val login = mutableLogin.asStateFlow()
     private var installationActive = false
@@ -146,8 +149,19 @@ internal class LocalSessionRepository(
             try {
                 succeeded = environment.withShell(provider.command) { lease ->
                     lease.command.start(100, 30).use { pty ->
-                        runArchLogin(pty) { code ->
-                            mutableLogin.value = mutableLogin.value.copy(code = code)
+                        synchronized(lock) { loginPty = pty }
+                        try {
+                            coroutineScope {
+                                runArchLogin(pty) { code ->
+                                    if (provider == ArchLoginProvider.CLAUDE) return@runArchLogin
+                                    mutableLogin.value = mutableLogin.value.copy(code = code)
+                                    if (provider.verificationUrl.isNotEmpty()) launch {
+                                        openLoginBrowser(provider.verificationUrl, code)
+                                    }
+                                }
+                            }
+                        } finally {
+                            synchronized(lock) { loginPty = null }
                         }
                     }
                 }
@@ -166,6 +180,30 @@ internal class LocalSessionRepository(
     }
 
     fun cancelLogin() = synchronized(lock) { loginJob?.cancel() }
+
+    /** One-use fallback code goes only to the waiting CLI, never into saved settings or logs. */
+    fun submitLoginCode(code: CharArray) {
+        try {
+            if (code.isEmpty() || code.size > 4096 || code.any { it.isISOControl() || it.isWhitespace() }) return
+            val target = synchronized(lock) {
+                loginPty?.takeIf { mutableLogin.value.active && mutableLogin.value.provider == ArchLoginProvider.CLAUDE }
+            } ?: return
+            val buffer = Charsets.UTF_8.encode(java.nio.CharBuffer.wrap(code))
+            val bytes = ByteArray(buffer.remaining() + 1)
+            buffer.get(bytes, 0, bytes.size - 1)
+            bytes[bytes.lastIndex] = 10
+            if (buffer.hasArray()) buffer.array().fill(0)
+            scope.launch(Dispatchers.IO) {
+                try {
+                    synchronized(lock) {
+                        if (loginPty === target && mutableLogin.value.active) {
+                            target.write(bytes)
+                        }
+                    }
+                } finally { bytes.fill(0) }
+            }
+        } finally { code.fill('\u0000') }
+    }
 
     fun controllerFor(id: Long): TerminalController? = synchronized(lock) { entries[id]?.terminal?.controller }
 

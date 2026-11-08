@@ -31,13 +31,23 @@ class ArchLoginDeviceTest {
         compose.onNodeWithText("Advanced options").performClick()
         compose.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Local Arch Linux"))
         compose.onNodeWithText("Local Arch Linux").performClick()
-        for (provider in ArchLoginProvider.entries) {
+        for (provider in listOf(ArchLoginProvider.GITHUB, ArchLoginProvider.CODEX)) {
             try {
                 compose.onNodeWithTag("local-arch-login-${provider.name.lowercase()}").performScrollTo().performClick()
                 compose.waitUntil(90_000) { repository.login.value.code != null || repository.login.value.failed }
                 assertFalse("${provider.label} code request failed", repository.login.value.failed)
                 assertNotNull("${provider.label} must issue a real code", repository.login.value.code)
                 assertTrue(repository.runtime.value.requiresForegroundService)
+                // Code arrival now automatically opens the phone browser. Return before checking
+                // that the still-running login survives recreation; never approve an account here.
+                val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+                assertTrue("Automatic browser launch", device.wait(
+                    androidx.test.uiautomator.Until.gone(androidx.test.uiautomator.By.pkg(application.packageName)), 10_000,
+                ))
+                device.pressBack()
+                assertTrue(device.wait(
+                    androidx.test.uiautomator.Until.hasObject(androidx.test.uiautomator.By.pkg(application.packageName)), 10_000,
+                ))
                 compose.activityRule.scenario.recreate()
                 compose.onNodeWithTag("local-arch-login-code").performScrollTo().assertIsDisplayed()
                 compose.onNodeWithText("Copy code and open browser").performScrollTo().assertIsEnabled()

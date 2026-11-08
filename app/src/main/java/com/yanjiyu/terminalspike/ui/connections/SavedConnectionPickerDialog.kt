@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -63,86 +63,96 @@ internal fun SavedConnectionPickerDialog(
         compareByDescending<HostEditorSeed> { it.draft.isFavourite }
             .thenBy(String.CASE_INSENSITIVE_ORDER) { it.draft.displayName },
     )
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(if (onLocalArch != null) "new-session-picker" else SavedConnectionPickerTestTag),
         title = { Text(stringResource(if (onLocalArch != null) R.string.local_arch_new_session else R.string.terminal_saved_connection_picker_title)) },
         text = {
-            when {
-                loadState is ConnectionsLoadState.Loading -> Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator()
+            Column {
+                if (onLocalArch != null && catalog == null) {
+                    LocalArchPickerRow(onClick = onLocalArch)
                 }
-                loadState is ConnectionsLoadState.Error -> Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(stringResource(R.string.connections_unavailable_title))
-                    Text(
-                        loadState.message.resolve(),
+                when {
+                    loadState is ConnectionsLoadState.Loading -> Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                    loadState is ConnectionsLoadState.Error -> Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.connections_unavailable_title))
+                        Text(
+                            loadState.message.resolve(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    hosts.isEmpty() && onLocalArch == null -> Text(
+                        stringResource(R.string.terminal_saved_connection_picker_empty),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
                     )
-                }
-                hosts.isEmpty() -> Text(
-                    stringResource(R.string.terminal_saved_connection_picker_empty),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        stringResource(R.string.terminal_saved_connection_picker_detail),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                        items(
-                            items = hosts,
-                            key = { requireNotNull(it.draft.persistentId) },
-                        ) { host ->
-                            val hostId = requireNotNull(host.draft.persistentId)
-                            val connectDescription = stringResource(
-                                R.string.connections_connect_to,
-                                host.draft.displayName,
-                            )
-                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { onSelectHost(host) }
-                                        .semantics { contentDescription = connectDescription }
-                                        .testTag(SavedConnectionPickerHostTestTagPrefix + hostId)
-                                        .padding(vertical = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        text = host.draft.displayName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = host.draft.endpointLabel(),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    text = host.draft.protocol.name,
-                                    modifier = Modifier.width(56.dp).padding(start = 8.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                                if (onOpenFiles != null) {
-                                    TextButton(
-                                        onClick = { onOpenFiles(host) },
-                                        modifier = Modifier.testTag("saved-connection-files-$hostId"),
-                                    ) { Text(stringResource(R.string.connections_action_open_files)) }
+                    else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            stringResource(R.string.terminal_saved_connection_picker_detail),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                            if (onLocalArch != null) {
+                                item(key = "local-arch") {
+                                    LocalArchPickerRow(onClick = onLocalArch)
                                 }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            items(
+                                items = hosts,
+                                key = { requireNotNull(it.draft.persistentId) },
+                            ) { host ->
+                                val hostId = requireNotNull(host.draft.persistentId)
+                                val connectDescription = stringResource(
+                                    R.string.connections_connect_to,
+                                    host.draft.displayName,
+                                )
+                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { onSelectHost(host) }
+                                            .semantics { contentDescription = connectDescription }
+                                            .testTag(SavedConnectionPickerHostTestTagPrefix + hostId)
+                                            .padding(vertical = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        Text(
+                                            text = host.draft.displayName,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = host.draft.endpointLabel(),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Text(
+                                        text = host.draft.protocol.name,
+                                        modifier = Modifier.width(56.dp).padding(start = 8.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                    if (onOpenFiles != null) {
+                                        TextButton(
+                                            onClick = { onOpenFiles(host) },
+                                            modifier = Modifier.testTag("saved-connection-files-$hostId"),
+                                        ) { Text(stringResource(R.string.connections_action_open_files)) }
+                                    }
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            }
                         }
                     }
                 }
@@ -154,11 +164,6 @@ internal fun SavedConnectionPickerDialog(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (onLocalArch != null) {
-                    TextButton(onClick = onLocalArch, modifier = Modifier.fillMaxWidth().testTag("new-local-arch")) {
-                        Text(stringResource(R.string.local_arch_title))
-                    }
-                }
                 if (catalog != null) {
                     TextButton(onClick = onOpenConnections, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.terminal_saved_connection_picker_open_connections))
@@ -168,6 +173,35 @@ internal fun SavedConnectionPickerDialog(
             }
         },
     )
+}
+
+@Composable
+private fun LocalArchPickerRow(onClick: () -> Unit) {
+    val name = stringResource(R.string.local_arch_title)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = name }
+            .testTag("new-local-arch")
+            .padding(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = stringResource(R.string.local_arch_open),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 private fun HostEditorDraft.endpointLabel(): String {

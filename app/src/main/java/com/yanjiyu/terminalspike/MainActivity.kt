@@ -11,7 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.material3.AlertDialog
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -141,6 +141,9 @@ class MainActivity : ComponentActivity() {
                     settingsLoaded = settings != null,
                     lockState = visibleLockState,
                     authorityState = authorityState,
+                )
+                com.yanjiyu.terminalspike.ui.LocalBrowserLaunchEffect(
+                    appContainer.localBrowser, enabled = mainRoot == MainRoot.CONTENT,
                 )
                 LaunchedEffect(mainRoot, disconnectAllRequested, allActiveTerminalSessionCount) {
                     if (
@@ -390,7 +393,7 @@ internal fun DisconnectAllSessionsConfirmation(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.session_disconnect_all_confirmation_title)) },
         text = {

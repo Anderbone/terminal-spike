@@ -66,6 +66,7 @@ enum class TerminalLocalAccessoryAction {
     SNIPPETS,
     TMUX_SESSIONS,
     KEYBOARD_SETTINGS,
+    EXPANDED_KEYBOARD,
     HIDE_KEYBOARD,
 }
 
@@ -144,6 +145,7 @@ sealed interface TerminalAccessoryAction {
                 TerminalLocalAccessoryAction.SNIPPETS -> uiText(R.string.terminal_key_snippets_label)
                 TerminalLocalAccessoryAction.TMUX_SESSIONS ->
                     uiText(R.string.terminal_key_tmux_sessions_label)
+                TerminalLocalAccessoryAction.EXPANDED_KEYBOARD -> uiText(R.string.terminal_more_keys_label)
                 TerminalLocalAccessoryAction.KEYBOARD_SETTINGS -> uiText(R.string.terminal_key_settings_label)
                 TerminalLocalAccessoryAction.HIDE_KEYBOARD -> uiText(R.string.terminal_key_hide_label)
             }
@@ -155,6 +157,7 @@ sealed interface TerminalAccessoryAction {
                 TerminalLocalAccessoryAction.SNIPPETS -> uiText(R.string.terminal_key_snippets_description)
                 TerminalLocalAccessoryAction.TMUX_SESSIONS ->
                     uiText(R.string.terminal_key_tmux_sessions_description)
+                TerminalLocalAccessoryAction.EXPANDED_KEYBOARD -> uiText(R.string.terminal_more_keys_description)
                 TerminalLocalAccessoryAction.KEYBOARD_SETTINGS -> uiText(R.string.terminal_key_settings_description)
                 TerminalLocalAccessoryAction.HIDE_KEYBOARD -> uiText(R.string.terminal_key_hide_keyboard)
             }

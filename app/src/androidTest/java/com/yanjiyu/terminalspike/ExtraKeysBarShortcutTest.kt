@@ -39,6 +39,35 @@ class ExtraKeysBarShortcutTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun expandedKeyboardReplacesControlWAndDispatchesTabAndF2WithoutClosing() {
+        val received = mutableListOf<TerminalExtraKey>()
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    TestExtraKeysBar(keys = TerminalExtraKey.DEFAULT_ORDER, onKey = { received += it })
+                }
+            }
+        }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithContentDescription("Control W").assertDoesNotExist()
+        val compactBefore = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithContentDescription("Open expanded terminal keyboard").performClick()
+        composeRule.onNodeWithText("Close expanded keyboard").assertDoesNotExist()
+        val compactAfter = composeRule.onNodeWithTag("terminal_input_pager").fetchSemanticsNode().boundsInRoot
+        assertEquals(compactBefore.width, compactAfter.width, 0.5f)
+        assertEquals(compactBefore.height, compactAfter.height, 0.5f)
+        composeRule.onNodeWithTag("terminal_expanded_keyboard").assertIsDisplayed().assertHeightIsAtLeast(260.dp)
+        composeRule.onNodeWithContentDescription("Terminal key TAB").performClick()
+        composeRule.onNodeWithContentDescription("Terminal key F2").performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf(TerminalExtraKey.TAB, TerminalExtraKey.F2), received)
+        }
+        composeRule.onNodeWithTag("terminal_expanded_keyboard").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open expanded terminal keyboard").performClick()
+        composeRule.onNodeWithTag("terminal_expanded_keyboard").assertDoesNotExist()
+    }
+
+    @Test
     fun imageKeyTapSelectsPhotosAndLongPressSelectsFilesWithoutAlsoOpeningPhotos() {
         var photos = 0
         var files = 0
@@ -93,10 +122,10 @@ class ExtraKeysBarShortcutTest {
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithText("^C").assertIsDisplayed()
-        composeRule.onNodeWithText("^W").assertIsDisplayed()
+        composeRule.onNodeWithText("^W").assertDoesNotExist()
         composeRule.onNodeWithText("CTRL+C").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed().performClick()
-        composeRule.onNodeWithContentDescription("Control W").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open expanded terminal keyboard").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Shift Left").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(TerminalExtraKey.SHIFT_LEFT, activated) }
         composeRule.onNodeWithContentDescription("Control C").performClick()
@@ -152,7 +181,8 @@ class ExtraKeysBarShortcutTest {
             it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB || it == TerminalExtraKey.PAGE_UP
         }.map { if (it == TerminalExtraKey.CTRL) TerminalExtraKey.SHIFT_LEFT else it }.map { key ->
             composeRule.onNodeWithContentDescription(
-                key.accessibilityDescription.resolve(
+                if (key == TerminalExtraKey.CTRL_W) "Open expanded terminal keyboard"
+                else key.accessibilityDescription.resolve(
                     InstrumentationRegistry.getInstrumentation().targetContext.resources,
                 ),
             )

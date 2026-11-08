@@ -590,4 +590,8 @@
     <string name="settings_snippets_display_swipe">Swipe to show</string>
     <string name="settings_snippets_display_above">Above keyboard keys</string>
     <string name="settings_snippets_display_summary">Keep snippets above the shortcut keys, using only the space they need. The typing button replaces the keys with an input field.</string>
+    <string name="terminal_more_keys_label">Keys</string>
+    <string name="terminal_more_keys_description">Open expanded terminal keyboard</string>
+    <string name="settings_input_buttons_right">Input buttons on the right</string>
+    <string name="settings_input_buttons_right_summary">Move Enter and the input toggle to the right. Long-press the input toggle to swap sides.</string>
 </resources>
