@@ -68,7 +68,7 @@ class ArchCableFlowDeviceTest {
                         "printf 'ARCH_STARTER_V2_OK\\n'"), 30_000L)
                 instrumentation.sendStatus(0, Bundle().apply { putString("stream", output) })
                 assertTrue(output.contains("ARCH_STARTER_V2_OK"))
-                assertEquals("3\n", File(lease.lease.installation.rootfs.parentFile, "starter-tools.version").readText())
+                assertEquals("5\n", File(lease.lease.installation.rootfs.parentFile, "starter-tools.version").readText())
             }
         }
     }

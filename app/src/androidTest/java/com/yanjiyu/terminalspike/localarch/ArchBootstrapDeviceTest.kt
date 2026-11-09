@@ -27,7 +27,7 @@ class ArchBootstrapDeviceTest {
             InstrumentationRegistry.getArguments().getString("localArchReinstall") == "true")
         assertTrue(environment.state.value.installed)
         assertEquals(ArchRootfsManifest.VERSION, environment.state.value.version)
-        environment.withShell { firstLease ->
+        environment.withShell(listOf("/bin/bash", "--login")) { firstLease ->
             firstLease.command.start(80, 24).use { first ->
                 first.write(("test -t 0 && test -t 1 && test \"\$(id -u)\" = 0 && " +
                     "test \"\$(uname -m)\" = aarch64 && pacman --version && " +
@@ -43,7 +43,7 @@ class ArchBootstrapDeviceTest {
                 first.write(byteArrayOf(3))
                 first.write("printf '\nARCH_INTERRUPT_STATUS_%s\n' \$?\n".toByteArray())
                 awaitOutput(first, "ARCH_INTERRUPT_STATUS_130")
-                environment.withShell { secondLease ->
+                environment.withShell(listOf("/bin/bash", "--login")) { secondLease ->
                     assertEquals(installation.rootfs, secondLease.lease.installation.rootfs)
                     secondLease.command.start(80, 24).use { second ->
                         second.write(("PS1='ARCH_''PROMPT> '; test \"\$(cat /root/projects/device-gate.txt)\" = persistent-arch-project && " +
@@ -63,17 +63,109 @@ class ArchBootstrapDeviceTest {
                 }
             }
         }
+        val bootstrap = ArchBootstrap(File(context.applicationInfo.nativeLibraryDir))
+        val aurProbe = bootstrap.runGuest(installation.rootfs, temporary,
+            listOf("/bin/bash", "-c", AUR_PROBE), timeoutMillis = 120_000L)
+        assertTrue(aurProbe, aurProbe.contains("ARCH_AUR_BUILD_AND_INSTALL_OK"))
+        val codexStartup = bootstrap.runGuest(installation.rootfs, temporary,
+            listOf("/bin/bash", "-c", CODEX_STARTUP_PROBE), timeoutMillis = 45_000L)
+        assertTrue(codexStartup, codexStartup.contains("CODEX_LOCAL_STARTUP_OK"))
+        assertFalse(codexStartup, codexStartup.contains("could not find bubblewrap", ignoreCase = true))
+        assertTrue(environment.state.value.toolsVersions.orEmpty().contains("fish, version"))
+        assertTrue(environment.state.value.toolsVersions.orEmpty().contains("herdr"))
         // A fresh owner reads the persisted completion marker and launches another real guest.
         val reopened = ArchEnvironment(context, directory, temporary)
         reopened.refresh()
         assertTrue(reopened.state.value.installed)
         reopened.withShell { lease ->
+            assertEquals(listOf("/usr/bin/fish", "--login"), lease.command.arguments.takeLast(2))
             lease.command.start(80, 24).use { pty ->
-                pty.write("cat /root/projects/device-gate.txt\n".toByteArray())
+                pty.write("fish --version; cat /root/projects/device-gate.txt\n".toByteArray())
                 awaitOutput(pty, "persistent-arch-project")
             }
         }
     }
+
+    // Initialize the real local server and create a thread, without sending a
+    // turn or model request. Capture startup warnings instead of hiding them.
+    private val CODEX_STARTUP_PROBE = """
+        set -eu
+        command -v bwrap
+        bwrap --version
+        node <<'NODE'
+        const {spawn} = require('node:child_process');
+        const {createInterface} = require('node:readline');
+        const child = spawn('codex', ['app-server'], {stdio: ['pipe', 'pipe', 'pipe']});
+        let ready = false;
+        let badWarning = false;
+        const deadline = setTimeout(() => { process.exitCode = 1; child.kill(); }, 30000);
+        const send = value => child.stdin.write(JSON.stringify(value) + '\n');
+        child.stderr.on('data', data => {
+            const text = data.toString();
+            if (/could not find.*(?:bubblewrap|bwrap)/i.test(text)) badWarning = true;
+            process.stderr.write(text);
+        });
+        createInterface({input: child.stdout}).on('line', line => {
+            let message;
+            try { message = JSON.parse(line); } catch { return; }
+            if (message.method === 'warning' || message.method === 'configWarning') {
+                const warning = JSON.stringify(message.params);
+                console.log(warning);
+                if (/bubblewrap|bwrap/i.test(warning)) badWarning = true;
+            }
+            if (message.error) { console.error(JSON.stringify(message.error)); process.exitCode = 1; child.stdin.end(); return; }
+            if (message.id === 1 && message.result) {
+                send({method: 'initialized', params: {}});
+                send({id: 2, method: 'thread/start', params: {ephemeral: true}});
+            }
+            if (message.id === 2 && message.result) {
+                ready = true;
+                setTimeout(() => child.stdin.end(), 1000);
+            }
+        });
+        child.on('error', error => { console.error(error.message); process.exitCode = 1; });
+        child.on('exit', code => {
+            clearTimeout(deadline);
+            if (!ready || badWarning || code !== 0) process.exitCode = 1;
+            else console.log('CODEX_LOCAL_STARTUP_OK');
+        });
+        send({id: 1, method: 'initialize', params: {
+            clientInfo: {name: 'terminal_spike_fixture', version: '1.0.0'}
+        }});
+        NODE
+    """.trimIndent()
+
+    private val AUR_PROBE = """
+        set -eu
+        test "${'$'}(runuser -u aur -- id -u)" != 0
+        test "${'$'}(runuser -u aur -- sudo -n id -u)" = 0
+        bwrap --version
+        test -f /usr/local/bin/claude && test ! -L /usr/local/bin/claude
+        test -f /usr/local/bin/opencode && test ! -L /usr/local/bin/opencode
+        claude --version
+        opencode --version
+        yay --version
+        yay --aur -Si yay-bin
+        herdr --version
+        runuser -u aur -- bash -c '
+            set -eu
+            mkdir -p "${'$'}HOME/terminal-spike-aur-smoke"
+            cd "${'$'}HOME/terminal-spike-aur-smoke"
+            cat > PKGBUILD <<"PKG"
+        pkgname=terminal-spike-aur-smoke
+        pkgver=1
+        pkgrel=1
+        arch=(any)
+        package() {
+            install -d "${'$'}pkgdir/usr/share/terminal-spike"
+            printf aur-smoke > "${'$'}pkgdir/usr/share/terminal-spike/aur-smoke"
+        }
+        PKG
+            makepkg --force --noconfirm --install
+        '
+        test "${'$'}(cat /usr/share/terminal-spike/aur-smoke)" = aur-smoke
+        printf '\nARCH_AUR_BUILD_AND_INSTALL_OK\n'
+    """.trimIndent()
 
     private fun awaitOutput(pty: NativePty, marker: String): String {
         val output = StringBuilder()

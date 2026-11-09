@@ -14,6 +14,10 @@ internal data class ProotCommand(
     )
 
     companion object {
+        fun interactiveShell(rootfs: File): List<String> =
+            if (File(rootfs, "usr/bin/fish").isFile) listOf("/usr/bin/fish", "--login")
+            else listOf("/bin/bash", "--login")
+
         fun archShell(
             nativeLibraryDirectory: File,
             rootfs: File,
@@ -44,6 +48,7 @@ internal data class ProotCommand(
                         "--cwd=/root", "-k", "5.4.0", "/usr/bin/env", "-i",
                         "HOME=/root", "USER=root", "LOGNAME=root", "TERM=xterm-256color",
                         "BROWSER=/usr/local/bin/spike-open",
+                        "SHELL=${guestCommand.first()}",
                         "LANG=C.UTF-8", "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                     ) + guestCommand,
                 environment = mapOf(

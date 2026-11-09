@@ -1357,3 +1357,31 @@ No account login or model request is started by installation; validation runs `-
 
 Package-provided licences and component notices remain inside the guest. These tools
 use their own provider credentials and terms when the user launches and configures them.
+
+## Arch installer version 4: fish, yay, herdr and stable updates
+
+On explicit install/update, the app downloads current stable tools into the user's
+Arch guest; their executables are not bundled with the Android APK. This supersedes
+the historical fixed/missing-only starter CLI versions above. Package-provided
+licences remain installed. The following additions are standalone guest programs:
+
+- fish: GPL-2.0-only with BSD-3-Clause, ISC, MIT and PSF-2.0 components;
+  https://fishshell.com/ and the signed Arch Linux ARM package.
+- yay: GPL-3.0; https://github.com/Jguer/yay. The exact stable tag and ARM64
+  asset SHA-256 are verified; upstream LICENSE is saved in the guest.
+- herdr: Apache-2.0; https://github.com/herdrdev/herdr. The exact stable tag
+  and ARM64 asset SHA-256 are verified; upstream LICENSE is saved in the guest.
+- sudo: custom sudo licence, https://www.sudo.ws/; shadow:
+  0BSD/BSD-3-Clause, https://github.com/shadow-maint/shadow;
+  util-linux: GPL/LGPL/BSD/component licences, https://github.com/util-linux/util-linux.
+
+Codex, Claude Code, OpenCode and Pi retain the licences and upstream terms already
+listed above; their latest stable versions are resolved at the user's install/update.
+Preserve installed notices and fulfil source obligations before redistributing a
+populated guest filesystem. This app distributes only its original installer.
+
+The version-5 updater also installs the standalone guest `bubblewrap` package
+(LGPL-2.1-or-later, https://github.com/containers/bubblewrap); installed notices
+remain in the Arch guest. Claude/OpenCode native launch repair uses their exact
+matching official npm ARM64 platform packages, retaining their existing upstream
+terms/licences in `/usr/local/share/licenses/`. The APK contains no such payloads.

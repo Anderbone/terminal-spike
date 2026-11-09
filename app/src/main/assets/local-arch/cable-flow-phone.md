@@ -1,11 +1,11 @@
 # Cable Flow on Terminal Spike's Local Arch Linux
 
-Updated: 2026-09-09. This is the phone-local handoff for the user and Codex.
+Installation defaults updated: 2026-11-08. This is the phone-local handoff for the user and Codex. Historical Cable Flow acceptance evidence is dated below.
 
 ## 1. Finish installing the tools
 
 In Terminal Spike, close Local Arch tabs, then choose Settings → Local Arch Linux
-→ Install starter tools. For a new environment choose Install Arch Linux instead.
+→ Install / update tools. For a new environment choose Install Arch Linux instead.
 Wait for Arch is ready, then Open local shell. Do not reset/reinstall an existing
 environment to add tools: that deletes projects and credentials.
 
@@ -15,13 +15,28 @@ Verify:
 git --version
 gh --version
 codex --version
+claude --version
+opencode --version
+pi --version
+fish --version
+yay --version
+herdr --version
 node --version
 npm --version
 ```
 
-Starter version 2 includes GitHub CLI from signed Arch ARM packages and installs
-stable Codex 0.153.4 from the official npm registry if Codex is absent. Existing
-Node and Codex choices are preserved. pnpm and PostgreSQL are project setup below.
+Starter version 5 updates signed Arch ARM packages and resolves the latest stable
+Codex, Claude Code, OpenCode, Pi, yay and herdr at each explicit installation/update.
+The updater also installs bubblewrap for Codex and repairs Claude/OpenCode native
+launchers as regular files when needed. Projects, login files and existing shell
+configuration are preserved. Actual tool
+versions are shown in Settings after setup. pnpm and PostgreSQL are project setup below.
+
+New terminal tabs default to fish, with highlighting, suggestions and completion.
+Use `bash` before pasting the Bash-specific recipe below, or save/run it as a Bash
+script; `exit` returns to fish. Yay uses a dedicated non-root guest build account
+when invoked from the root shell. Herdr is available with `herdr` and is not started
+automatically.
 
 ## 2. User: sign into GitHub
 

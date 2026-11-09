@@ -24,6 +24,8 @@ internal enum class GuideLesson(
         GuideVisual(R.drawable.guide_start_snippets, 720f / 900, R.raw.guide_start_snippets), showOnFirstRun = true),
     PROJECTS(R.string.guide_projects_title, R.string.guide_projects_caption,
         GuideVisual(R.drawable.guide_start_projects, 720f / 650, R.raw.guide_start_projects), showOnFirstRun = true),
+    HERDR_LAYOUT(R.string.guide_herdr_layout_title, R.string.guide_herdr_layout_caption,
+        GuideVisual(R.drawable.guide_start_projects, 720f / 650), showOnFirstRun = true),
     MOVE_SNIPPET(R.string.guide_tip_move_title, R.string.guide_tip_move_caption,
         GuideVisual(R.drawable.guide_tip_move, 720f / 410, R.raw.guide_tip_move)),
     EDIT_SNIPPET(R.string.guide_tip_edit_title, R.string.guide_tip_edit_caption,

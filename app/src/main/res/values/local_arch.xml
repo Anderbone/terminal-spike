@@ -12,7 +12,7 @@
     <string name="local_arch_retry">Retry installation</string>
     <string name="local_arch_open">Open local shell</string>
     <string name="local_arch_checking">Checking installation…</string>
-    <string name="local_arch_downloading">Downloading and verifying Arch Linux…</string>
+    <string name="local_arch_downloading">Downloading and verifying the Arch root filesystem…</string>
     <string name="local_arch_extracting">Extracting Arch Linux…</string>
     <string name="local_arch_validating">Validating Arch Linux and initializing package signatures…</string>
     <string name="local_arch_removing">Removing Arch environment…</string>
@@ -23,8 +23,8 @@
     <string name="local_arch_refresh">Refresh storage usage</string>
     <string name="local_arch_new_session">New session</string>
     <string name="local_arch_disconnect_detail">This stops the local shell and its running programs. Your Arch files and installed packages remain available when you open a new Local Arch tab.</string>
-    <string name="local_arch_install_tools">Install starter tools</string>
-    <string name="local_arch_tools_detail">Includes Git, GitHub CLI, Codex, Claude Code, OpenCode, Pi, zoxide, ripgrep, fd, fzf, bat, eza, jq, Nano, SSH, archive and build tools, Node 24 LTS and npm. Existing Node and coding CLI installations are kept. Package installation includes a full system update. Sign into GitHub and Codex below after setup.</string>
+    <string name="local_arch_install_tools">Install / update tools</string>
+    <string name="local_arch_tools_detail">Installs or updates the latest stable Codex (with bubblewrap), Claude Code, OpenCode, Pi, yay and herdr when you start setup. Fish is the default shell, with highlighting, suggestions and completion. Also includes Git, GitHub CLI, zoxide, search, editor, archive and build tools, Node 24 LTS and npm. System packages are fully updated; your projects and login credentials are preserved.</string>
     <string name="local_arch_installing_tools">Installing starter tools and system updates…</string>
     <string name="local_arch_background">Arch setup is running in the background…</string>
     <string name="local_arch_ready">Arch is ready</string>
@@ -49,4 +49,5 @@
     <string name="local_arch_download_speed">%1$s/s</string>
     <string name="local_arch_measuring_speed">Measuring download speed…</string>
     <string name="local_arch_stage_elapsed">Current step open for %1$d s</string>
+    <string name="local_arch_installed_versions">Installed tool versions</string>
 </resources>

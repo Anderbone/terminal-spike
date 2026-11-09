@@ -82,11 +82,13 @@ internal class ArchBootstrap(
         guestCommand: List<String>,
         timeoutMillis: Long,
         checkCancelled: () -> Unit = {},
+        onOutput: (String) -> Unit = {},
     ): String {
         command(rootfs, temporaryDirectory, guestCommand).start(100, 30).use { pty ->
             val deadline = System.nanoTime() + timeoutMillis * 1_000_000
             val output = StringBuilder()
             val buffer = ByteArray(32 * 1024)
+            var nextOutputAt = 0L
             while (true) {
                 checkCancelled()
                 if (System.nanoTime() >= deadline) throw IOException("Arch command timed out.\n" + archDiagnosticOutput(output.toString()).takeLast(8 * 1024))
@@ -94,6 +96,10 @@ internal class ArchBootstrap(
                 if (count < 0) break
                 if (count > 0) output.append(String(buffer, 0, count, Charsets.UTF_8))
                 if (output.length > 64 * 1024) output.delete(0, output.length - 64 * 1024)
+                if (count > 0 && System.nanoTime() >= nextOutputAt) {
+                    onOutput(output.toString().takeLast(4096))
+                    nextOutputAt = System.nanoTime() + 500_000_000L
+                }
             }
             var exitCode = pty.exitCode()
             while (exitCode == null && System.nanoTime() < deadline) {

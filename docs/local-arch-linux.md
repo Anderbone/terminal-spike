@@ -214,3 +214,68 @@ Initial device failures exposed UI-thread process startup and Codex's longer
 code format; the final implementation dispatches startup to IO and waits for
 a complete, whitespace-terminated code. Unit coverage includes one-byte
 transport chunks and rejects truncated Codex codes.
+
+## Starter tools version 4: install-time latest stable releases
+
+The Android APK carries the installation policy, not downloaded coding CLI or AUR
+binaries. Each **Install Arch Linux** / **Install / update tools** action resolves
+current stable Codex, Claude Code, OpenCode, Pi, yay and herdr releases. A future
+stable release can therefore be installed by the same APK. Prerelease npm tags and
+GitHub draft/prerelease releases are rejected; official GitHub ARM64 asset hashes
+are checked before execution. An unavailable version or checksum mismatch leaves
+setup incomplete with a visible error rather than silently installing an old copy.
+System packages are updated through signed Arch Linux ARM repositories with a full
+`pacman -Syu`; Node follows the existing chosen package/LTS track.
+
+This replaces version 3's fixed, missing-only installs. Explicit updates preserve
+projects and login files. Updating or opening the APK alone does not run upgrades.
+Existing environments expose the tools upgrade through the version-4 marker;
+new environments receive the same defaults automatically. The checksum-pinned
+bootstrap rootfs remains unchanged and is upgraded through pacman during setup.
+
+New interactive app tabs use fish after it is installed, with bash retained as a
+fallback for older guests. Fish's built-in highlighting, suggestions and completion
+need no plugin. A separate fish profile adds zoxide without replacing user config.
+Explicit bash commands used by bootstrap, login and compatibility fixtures stay bash.
+
+Yay runs through a wrapper that delegates root-invoked AUR operations to a dedicated
+`aur` guest account. Its passwordless sudo is guest-only under PRoot and never grants
+Android root. Users still initiate AUR builds themselves. Herdr is installed but
+not launched automatically. Upstream yay/herdr release licences are retained under
+`/usr/local/share/licenses/`; see DEPENDENCIES.md for the architecture/licensing decision.
+
+The download percentage/speed describes the rootfs archive. During later package
+and CLI installation, the app now shows bounded live command output. On successful
+setup it saves and displays actual installed tool versions, so installed state can
+be checked independently of the Android app version. Existing data requires an
+explicit tools update to obtain these new defaults; resetting Arch is unnecessary.
+
+Existing-install repair: npm's postinstall hardlinks can point at a missing PRoot
+`.l2s` file after upgrades, even when npm reports success. After all npm installs,
+the updater verifies Claude/OpenCode executables and their versions. Only an already verified app-managed regular executable is reused; temporary
+hardlink chains can work during setup and fail after PRoot exits. Native
+commands are restored as regular files from the exact matching official npm ARM64
+package archive, preserving user credentials and shell config. A regression fixture
+models successful npm installs that leave both native commands as dangling links.
+
+Codex's bubblewrap prerequisite is installed from signed Arch repositories. This
+addresses the missing-program startup warning without suppressing diagnostics or
+changing permissions. Android/PRoot kernel sandbox restrictions remain separate.
+Restart an existing Codex/background server after updating; old sessions can retain
+warnings from their original startup. The old-phone gate initializes the real local
+Codex app-server and starts an ephemeral thread without a model turn, checking that
+its startup does not report a bubblewrap warning.
+
+Starter tools version 5 adds the native-launch repair and bubblewrap prerequisite;
+existing version-4 installations therefore offer an explicit upgrade as well.
+
+Version-5 verification (2026-11-08, debug 0.0.19 / code 31): an existing guest on
+SM-G9708 reproduced missing native launcher state. The full production upgrade
+then passed in 488.660 seconds, including regular Claude/OpenCode files executing
+from a later PRoot process, the existing AUR query/build/sudo-install assertions,
+and real Codex app-server initialization plus ephemeral thread creation with no
+bubblewrap startup warning and no model turn. Host fixtures cover both legacy
+array and npm-12 package-keyed `pack --json` output. Unit tests, lint and builds
+passed; the final APK was installed normally on SM-F976B and MainActivity was
+confirmed foregrounded, with no tests on that phone. Exact APK hashes and logs
+are in ignored `build/verification/native-repair-evidence.json`.

@@ -31,6 +31,8 @@ internal data class ArchEnvironmentState(
     val storageBytes: Long? = null,
     val phase: ArchInstallPhase = ArchInstallPhase.IDLE,
     val downloadedBytes: Long = 0,
+    val installDetail: String? = null,
+    val toolsVersions: String? = null,
     val error: String? = null,
 ) {
     val busy: Boolean get() = phase != ArchInstallPhase.IDLE
@@ -128,13 +130,21 @@ internal class ArchEnvironment(
     }
 
     private fun installStarterTools(rootfs: File, checkCancelled: () -> Unit) {
-        mutableState.update { it.copy(phase = ArchInstallPhase.INSTALLING_TOOLS) }
+        mutableState.update { it.copy(phase = ArchInstallPhase.INSTALLING_TOOLS, installDetail = null) }
         val script = appContext.assets.open("local-arch/starter-tools.sh").bufferedReader().use { it.readText() }
         val guide = appContext.assets.open("local-arch/cable-flow-phone.md").bufferedReader().use { it.readText() }
         val output = bootstrap.runGuest(rootfs, temporaryDirectory,
             listOf("/bin/bash", "--noprofile", "--norc", "-c", script, "starter-tools", guide), 30 * 60_000L,
-            checkCancelled = checkCancelled)
+            checkCancelled = checkCancelled, onOutput = { recent ->
+                val detail = archDiagnosticOutput(recent.replace('\r', '\n')).lineSequence()
+                    .lastOrNull(String::isNotBlank)?.takeLast(120).orEmpty()
+                mutableState.update { it.copy(installDetail = detail) }
+            })
         check(output.contains("LOCAL_ARCH_STARTER_TOOLS_OK")) { "Starter tool validation did not finish" }
+        val versions = archDiagnosticOutput(output).substringAfter("LOCAL_ARCH_TOOL_VERSIONS_BEGIN", "")
+            .substringBefore("LOCAL_ARCH_TOOL_VERSIONS_END").trim()
+        check(versions.isNotEmpty() && versions.length <= 8192) { "Installed tool versions were not reported" }
+        File(rootfs.parentFile, "starter-tools.versions").writeText(versions)
         // Outside the guest: package/profile paths may legitimately be guest symlinks.
         java.io.FileOutputStream(File(rootfs.parentFile, "starter-tools.version")).use {
             it.write(STARTER_TOOLS_VERSION.toByteArray())
@@ -162,7 +172,7 @@ internal class ArchEnvironment(
     }
 
     suspend fun <T> withShell(
-        guestCommand: List<String> = listOf("/bin/bash", "--login"),
+        guestCommand: List<String>? = null,
         block: suspend (ShellLease) -> T,
     ): T = withContext(Dispatchers.IO) {
         check(state.value.supported) { "Local Arch Linux requires an ARM64 Android device" }
@@ -172,7 +182,8 @@ internal class ArchEnvironment(
             // Offline launch remains supported. User-modified DNS is left intact.
             runCatching { bootstrap.refreshDns(lease.installation.rootfs, networkDns()) }
             prepareShellTools(lease.installation.rootfs)
-            block(ShellLease(lease, bootstrap.command(lease.installation.rootfs, temporaryDirectory, guestCommand)))
+            block(ShellLease(lease, bootstrap.command(lease.installation.rootfs, temporaryDirectory,
+                guestCommand ?: ProotCommand.interactiveShell(lease.installation.rootfs))))
         } finally {
             lease.close()
         }
@@ -208,6 +219,10 @@ internal class ArchEnvironment(
         }.getOrNull()
         mutableState.update { it.copy(checked = true, installed = installed != null,
             version = installed?.version, storageBytes = bytes,
+            toolsVersions = installed?.let {
+                val report = File(it.rootfs.parentFile, "starter-tools.versions")
+                report.takeIf { it.isFile && it.length() <= 8192 }?.readText()
+            },
             starterToolsInstalled = installed?.let {
                 val marker = File(it.rootfs.parentFile, "starter-tools.version")
                 marker.isFile && marker.length() == STARTER_TOOLS_VERSION.length.toLong() &&
@@ -216,6 +231,6 @@ internal class ArchEnvironment(
     }
 
     private companion object {
-        const val STARTER_TOOLS_VERSION = "3\n"
+        const val STARTER_TOOLS_VERSION = "5\n"
     }
 }

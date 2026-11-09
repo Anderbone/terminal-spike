@@ -66,7 +66,7 @@ class QuickStartGuideTest {
         composeRule.setContent { MaterialTheme { UserGuideIndex() } }
         composeRule.onNodeWithText("Quick tips").assertDoesNotExist()
         openLesson(GuideLesson.PROJECTS)
-        composeRule.onNodeWithText("3 / 11").assertIsDisplayed()
+        composeRule.onNodeWithText("3 / 12").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-next").performClick()
         composeRule.onNodeWithTag("guide-title-3").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-pager").performTouchInput { swipeLeft() }
@@ -75,8 +75,8 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-3").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-back").performClick()
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
-        repeat(8) { composeRule.onNodeWithTag("guide-next").performClick() }
-        composeRule.onNodeWithText("11 / 11").assertIsDisplayed()
+        repeat(9) { composeRule.onNodeWithTag("guide-next").performClick() }
+        composeRule.onNodeWithText("12 / 12").assertIsDisplayed()
         composeRule.onNodeWithText("Done").performClick()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
     }
@@ -199,7 +199,7 @@ class QuickStartGuideTest {
     }
 
     @Test
-    fun threeOnboardingPagesSupportNextBackSwipeAndCompletion() {
+    fun fourOnboardingPagesSupportNextBackSwipeAndCompletion() {
         val open = mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
@@ -217,7 +217,11 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-0").assertIsDisplayed()
         repeat(2) { composeRule.onNodeWithTag("guide-next").performClick() }
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
-        composeRule.onNodeWithText("3 / 3").assertIsDisplayed()
+        composeRule.onNodeWithText("3 / 4").assertIsDisplayed()
+        composeRule.onNodeWithTag("guide-next").performClick()
+        composeRule.onNodeWithTag("guide-title-3").assertIsDisplayed()
+        composeRule.onNodeWithText("Make Herdr your own").assertIsDisplayed()
+        composeRule.onNodeWithText("4 / 4").assertIsDisplayed()
         composeRule.onNodeWithText("Get started").performClick()
         composeRule.runOnIdle { assertFalse(open.value) }
     }
@@ -239,11 +243,11 @@ class QuickStartGuideTest {
         openLesson(GuideLesson.RECENT_PROJECTS)
         composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
             .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("6 / 11").assertIsDisplayed()
+        composeRule.onNodeWithText("7 / 12").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-next").performClick()
-        composeRule.onNodeWithTag("guide-title-6").assertIsDisplayed()
+        composeRule.onNodeWithTag("guide-title-7").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-back").performClick()
-        composeRule.onNodeWithTag("guide-title-5").assertIsDisplayed()
+        composeRule.onNodeWithTag("guide-title-6").assertIsDisplayed()
         composeRule.onNodeWithText("Close").performClick()
         openLesson(GuideLesson.SNIPPETS)
         composeRule.onNodeWithTag("guide-title-1").assertIsDisplayed()

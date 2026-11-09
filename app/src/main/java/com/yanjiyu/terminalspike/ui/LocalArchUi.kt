@@ -162,6 +162,10 @@ private fun LocalArchStatus(state: ArchEnvironmentState) {
     state.version?.let { Text(stringResource(R.string.local_arch_version, it)) }
     state.storageBytes?.let { Text(stringResource(R.string.local_arch_storage, Formatter.formatFileSize(context, it))) }
     if (!state.installed) Text(stringResource(R.string.local_arch_download_detail))
+    state.toolsVersions?.let { versions ->
+        Text(stringResource(R.string.local_arch_installed_versions), style = MaterialTheme.typography.titleSmall)
+        SelectionContainer { Text(versions, style = MaterialTheme.typography.bodySmall) }
+    }
     if (state.busy) {
         Text(stringResource(when (state.phase) {
             ArchInstallPhase.DOWNLOADING -> R.string.local_arch_downloading
@@ -215,6 +219,9 @@ private fun LocalArchProgressIndicator(state: ArchEnvironmentState) {
         LinearProgressIndicator(progress = { fraction.toFloat() }, modifier = Modifier.fillMaxWidth())
     } else {
         Text(stringResource(R.string.local_arch_stage_elapsed, elapsedSeconds), style = MaterialTheme.typography.bodySmall)
+        if (state.phase == ArchInstallPhase.INSTALLING_TOOLS) state.installDetail?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+        }
         LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }

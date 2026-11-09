@@ -118,4 +118,6 @@
     <string name="guide_code_server_install">code-server installation instructions</string>
     <string name="guide_tailscale_serve_docs">Tailscale Serve instructions</string>
     <string name="guide_copy_command">Copy command</string>
+    <string name="guide_herdr_layout_title">Make Herdr your own</string>
+    <string name="guide_herdr_layout_caption">Using Herdr? If your panel looks different from our promotional screenshots, ask your agent to adjust your Herdr settings and layout. For example: “Move the Switch button to the bottom-left corner.” You can customize the rest of the panel too. Your phone displays the Herdr layout you configure.</string>
 </resources>

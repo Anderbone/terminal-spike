@@ -318,3 +318,59 @@ No account login or model request is started by installation; validation runs `-
 
 Package-provided licences and component notices remain inside the guest. These tools
 use their own provider credentials and terms when the user launches and configures them.
+
+## 2026-11-08: install-time stable tools and fish (starter tools version 4)
+
+Architecture/licensing decision: the user explicitly requested yay or paru, fish,
+herdr and current stable versions as defaults in the Android app's Arch installer.
+Choose yay's official ARM64 release to avoid compiling Go or Rust on the phone.
+GPL tools below run as separate guest programs. No new library, populated rootfs,
+or downloaded executable is linked into or bundled with the APK. The APK contains
+our installer; the user downloads upstream packages when explicitly installing or
+updating tools. Preserve installed licences; redistributing a populated guest would
+require the applicable notices and Corresponding Source obligations.
+
+This policy supersedes the fixed/missing-only CLI versions in the historical
+version-2/3 sections above. Each explicit setup resolves npm `dist-tags.latest` and
+GitHub's stable `releases/latest`, rejects prerelease versions/draft releases, and
+installs the resolved version. GitHub ARM64 assets must have the expected official
+URL and a matching upstream SHA-256 digest. Missing metadata or a mismatch fails
+setup visibly. System packages use the signed Arch Linux ARM repositories and a
+full `pacman -Syu`. Existing projects, provider login files and user shell config
+are retained. No updates run just because the app or a terminal opens.
+
+| Direct guest dependency | Purpose and source | Licence / notices |
+| --- | --- | --- |
+| fish (signed Arch ARM `extra`; currently 4.9.3) | Default interactive shell, built-in highlighting, suggestions and completion; https://fishshell.com/ / https://archlinuxarm.org/packages/aarch64/fish | GPL-2.0-only plus BSD-3-Clause, ISC, MIT and PSF-2.0 components; retain package licences and source obligations on redistribution |
+| yay (latest stable ARM64; currently 13.1.0) | AUR helper; https://github.com/Jguer/yay | GPL-3.0; save upstream LICENSE in `/usr/local/share/licenses/yay/`; source at the exact upstream release tag |
+| herdr (latest stable ARM64; currently 0.9.5) | User-requested local terminal workspace manager; https://github.com/herdrdev/herdr | Apache-2.0; save upstream LICENSE in `/usr/local/share/licenses/herdr/`; retain applicable notices on redistribution |
+| sudo | Guest-only elevation for the dedicated non-root AUR build user; https://www.sudo.ws/ | Custom sudo licence; retain all installed licences and component notices |
+| shadow | Create the guest-only AUR build account and select fish as root's login shell; https://github.com/shadow-maint/shadow | 0BSD and BSD-3-Clause; retain installed licences and notices |
+| util-linux | `runuser` delegates root-invoked yay to the guest build account; https://github.com/util-linux/util-linux | GPL-2.0-only/or-later, GPL-3.0-or-later, LGPL-2.1-or-later, BSD-2/3/4-Clause-UC, ISC and public-domain components; retain installed notices/source obligations |
+| @openai/codex (latest stable; currently 0.167.0) | https://registry.npmjs.org/@openai/codex / https://github.com/openai/codex | Apache-2.0; retain licence, applicable NOTICE and component notices |
+| @anthropic-ai/claude-code (latest stable; currently 2.1.319) | https://registry.npmjs.org/@anthropic-ai/claude-code | Proprietary, SEE LICENSE IN README.md; preserve upstream terms; binaries are not redistributed in the APK |
+| @opencode/cli (latest stable; currently 2.2.6) | https://registry.npmjs.org/@opencode/cli / https://github.com/anomalyco/opencode | MIT; retain copyright/licence and component notices |
+| @earendil-works/pi-coding-agent (latest stable; currently 1.5.0) | https://registry.npmjs.org/@earendil-works/pi-coding-agent / https://github.com/earendil-works/pi | MIT; retain copyright/licence and component notices |
+
+The AUR account and passwordless sudo operate inside PRoot's emulated guest
+identity only; they grant no Android privileges. AUR builds remain user-initiated.
+The installer records actual tool versions for the app's installation details.
+
+### Version-5 upgrade repair and Codex prerequisites
+
+- `bubblewrap` (signed Arch ARM extra; currently 0.13.1) supplies the genuine
+  `/usr/bin/bwrap` required by Codex's Linux startup checks. Source:
+  https://github.com/containers/bubblewrap ; LGPL-2.1-or-later, retain installed
+  notices and source obligations on redistribution. It is a standalone guest
+  program, not an APK library. Installation does not change Codex permissions or
+  enable kernel namespace support that Android/PRoot may not provide.
+- `@anthropic-ai/claude-code-linux-arm64` and `@opencode/cli-linux-arm64` are the
+  official platform packages already selected as optional dependencies by their
+  parent CLIs. Unless an app-managed regular executable already reports the resolved version,
+  fetch that exact resolved stable version using official-registry `npm pack`
+  (npm integrity verification; install scripts disabled), and copy its executable
+  into `/usr/local/bin` as a regular file. This avoids dangling PRoot `.l2s` hardlink
+  emulation on existing installations. Preserve packaged licences under
+  `/usr/local/share/licenses/{claude,opencode}`. Claude's native package retains
+  its proprietary upstream terms; OpenCode's native package is MIT. No native
+  payload is added to the APK, and no provider login/config file is replaced.

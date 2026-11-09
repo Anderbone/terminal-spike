@@ -24,6 +24,22 @@ class ProotCommandTest {
         assertFalse(command.arguments.any { it.contains("/storage/") || it.contains("/sdcard") })
     }
 
+    @Test
+    fun interactiveShellMigratesToFishAfterInstallationAndKeepsBashForOlderGuests() {
+        val root = java.nio.file.Files.createTempDirectory("arch-shell").toFile()
+        try {
+            assertEquals(listOf("/bin/bash", "--login"), ProotCommand.interactiveShell(root))
+            File(root, "usr/bin").mkdirs()
+            File(root, "usr/bin/fish").writeText("fish binary fixture")
+            val selected = ProotCommand.interactiveShell(root)
+            assertEquals(listOf("/usr/bin/fish", "--login"), selected)
+            val command = ProotCommand.archShell(File("/apk/lib"), root, File("/private/tmp"), selected)
+            assertTrue(command.arguments.contains("SHELL=/usr/bin/fish"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun ambiguousBindPathIsRejectedBeforeLaunching() {
         ProotCommand.archShell(File("/apk/lib"), File("/private/root:other"), File("/private/tmp"))
