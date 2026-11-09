@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="notice_codex_snippet_prompt">Open Codex at an empty prompt before using this shortcut.</string>
     <string name="snippet_accessory_add">+ Add snippet</string>
     <string name="snippet_accessory_example">New Codex</string>
     <string name="snippet_management_start">Manage snippets</string>

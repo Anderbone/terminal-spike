@@ -37,6 +37,99 @@ class TerminalSnippetPickerDialogTest {
     }
 
     @Test
+    fun codexEffortMenuShowsConfirmedValueAndChangesThroughDropdown() {
+        val agent = androidx.compose.runtime.mutableStateOf("codex")
+        val effort = androidx.compose.runtime.mutableStateOf<String?>("medium")
+        val ready = androidx.compose.runtime.mutableStateOf(true)
+        val sent = mutableListOf<Long>()
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(
+                    listOf(snippet(31, "Status", false)), true, true,
+                    onSend = { sent += it }, onNewCodex = { error("Effort must not start Codex") },
+                    onSave = { error("Effort must not create a snippet") }, onEditorClosed = {},
+                    agentContextKey = "session-1", detectedAgentId = agent.value,
+                    currentAgentEffort = effort.value, canSendAgentSnippets = ready.value,
+                )
+            }
+        }
+        composeRule.onNodeWithText("Status").assertIsDisplayed()
+        composeRule.onNodeWithText("Low").assertDoesNotExist()
+        composeRule.onNodeWithText("Medium ▾").performClick()
+        composeRule.onNodeWithTag("agent_snippet_-104").assertExists()
+        composeRule.onNodeWithTag("agent_snippet_-105").assertExists()
+        composeRule.onNodeWithTag("agent_snippet_-106").assertExists()
+        composeRule.onNodeWithTag("agent_snippet_-101").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(-101L), sent) }
+        composeRule.onNodeWithText("Medium ▾").assertIsDisplayed()
+        composeRule.runOnIdle { effort.value = "low" }
+        composeRule.onNodeWithText("Low ▾").performClick()
+        composeRule.onNodeWithTag("agent_snippet_-103").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(-101L, -103L), sent); ready.value = false }
+        composeRule.onNodeWithTag("codex_effort_menu").assertIsNotEnabled()
+        composeRule.onNodeWithText("Status").performClick()
+        composeRule.runOnIdle { assertEquals(31L, sent.last()); ready.value = true; agent.value = "claude" }
+        composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
+        composeRule.runOnIdle { agent.value = "codex" }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        composeRule.onNodeWithTag("codex_effort_menu").assertIsNotEnabled()
+    }
+
+    @Test
+    fun effortControlStaysHiddenWithoutCodexAndNeverGuessesUnknownEffort() {
+        val agent = androidx.compose.runtime.mutableStateOf("")
+        val sent = mutableListOf<Long>()
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(emptyList(), true, true,
+                    onSend = { sent += it }, onNewCodex = {}, onSave = { Result.success(Unit) },
+                    onEditorClosed = {}, agentContextKey = "plain-ssh", detectedAgentId = agent.value)
+            }
+        }
+        composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("snippet_group_menu").assertDoesNotExist()
+        composeRule.runOnIdle { agent.value = "codex" }
+        composeRule.onNodeWithText("Effort ▾").performClick()
+        composeRule.onNodeWithTag("agent_snippet_-103").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(-103L), sent) }
+        composeRule.onNodeWithText("Effort ▾").assertIsDisplayed()
+        composeRule.runOnIdle { agent.value = "" }
+        composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
+    }
+
+    @Test
+    fun builtInTextSnippetsCanBeEditedAndReplaced() {
+        val saved = mutableListOf<Snippet>()
+        composeRule.setContent {
+            TerminalSpikeTheme {
+                TerminalSnippetsPage(
+                    com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.text, true, true,
+                    onSend = { error("Editing must not send") }, onNewCodex = {},
+                    onSave = { saved += it; Result.success(Unit) }, onEditorClosed = {},
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.text.forEach { original ->
+            composeRule.onNodeWithText(original.label).performClick()
+            composeRule.onNodeWithTag("snippet-editor-command")
+                .assertTextContains(original.command)
+                .performTextReplacement("edited ${original.command}")
+            composeRule.onNodeWithTag("snippet-editor-save").performClick()
+            composeRule.onNodeWithText(original.label).assertDoesNotExist()
+            composeRule.runOnIdle {
+                assertEquals(original.label, saved.last().name)
+                assertEquals("edited ${original.command}", saved.last().command)
+            }
+        }
+        composeRule.runOnIdle {
+            val preferences = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .targetContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+            assertEquals(setOf("-1", "-2"), preferences.getStringSet("replaced-defaults", emptySet()))
+        }
+    }
+
+    @Test
     fun defaultCodexCanBeEditedAndReplaced() {
         var saved: Snippet? = null
         composeRule.setContent {

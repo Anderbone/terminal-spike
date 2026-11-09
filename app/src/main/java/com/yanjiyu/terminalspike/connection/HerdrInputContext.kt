@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 
 /** Bounded metadata only. Explicit ids avoid inheriting HERDR_PANE_ID from a login shell. */
 internal fun captureHerdrInputContext(
@@ -56,6 +57,22 @@ internal fun captureHerdrInputContext(
             x + columns <= 500 && y + rows <= 500
         ) HerdrPiScrollPane(x, y, columns, rows) else null
     } else null
+    val agentId = names.firstOrNull { it in setOf("codex", "claude", "pi", "opencode") }.orEmpty()
+    val scrollOffset = ((pane["scroll"] as? JsonObject)?.get("offset_from_bottom") as? JsonPrimitive)?.intOrNull
+    val effort = if (agentId == "codex" && (scrollOffset == null || scrollOffset == 0)) runCatching {
+        val command = (listOf(choice.executable, "--session", choice.sessionName, "pane", "read", paneId,
+            "--source", "visible", "--lines", "12", "--format", "text"))
+            .joinToString(" ", transform = ::quotePosixShellArgument)
+        val output = runner.run(command)
+        if (output.exitStatus == 0 && output.stdout.size <= 8192) {
+            com.yanjiyu.terminalspike.terminal.codexEffortFromLiveFooter(output.stdout.toString(Charsets.UTF_8))
+        } else null
+    }.getOrNull() else null
     require(layout() == initialLayout)
-    TerminalInputContext("herdr/${choice.sessionName}/$paneId/${pane.string("terminal_id")}", agentForeground, piScrollPane)
+    TerminalInputContext(
+        "herdr/${choice.sessionName}/$paneId/${pane.string("terminal_id")}", agentForeground, piScrollPane,
+        agentId = agentId, reasoningEffort = effort,
+        agentProcessId = (process.getValue("foreground_processes") as JsonArray).mapNotNull { it as? JsonObject }
+            .firstOrNull { it.string("name") == agentId }?.get("pid")?.let { (it as? JsonPrimitive)?.longOrNull },
+    )
 }.getOrDefault(TerminalInputContext())

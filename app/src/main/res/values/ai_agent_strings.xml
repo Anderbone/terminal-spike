@@ -1,8 +1,9 @@
 <resources>
     <string name="ai_agents_key_label">AI</string>
     <string name="ai_agents_title">AI Agents</string>
+    <string name="ai_agents_choose">Choose AI agent, model and effort</string>
     <string name="ai_agents_edit">Edit AI Agents</string>
-    <string name="ai_agents_hint">Tap to run in the current terminal. Long-press AI to edit.</string>
+    <string name="ai_agents_hint">Tap to run the default. Long-press AI to choose a model and effort.</string>
     <string name="ai_agents_no_default">No default (show list)</string>
     <string name="ai_agents_default">Default</string>
     <string name="ai_agents_name">Name</string>
@@ -15,4 +16,9 @@
     <string name="ai_agents_close">Close</string>
     <string name="ai_agents_invalid">Enter a name and a single-line command for each agent.</string>
     <string name="ai_agents_save_failed">Could not save. Try again.</string>
+    <string name="ai_agents_model">Model</string>
+    <string name="ai_agents_effort">Effort</string>
+    <string name="ai_agents_cli_default">Default</string>
+    <string name="ai_agents_use_default">Use as default for the AI key</string>
+    <string name="ai_agents_custom_options">Use Edit AI Agents to configure this command.</string>
 </resources>

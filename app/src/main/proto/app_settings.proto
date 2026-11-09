@@ -94,4 +94,7 @@ message AiAgentCommand {
   string id = 1;
   string name = 2;
   string command = 3;
+  // Empty values inherit the CLI's own settings.
+  string model = 4;
+  string effort = 5;
 }

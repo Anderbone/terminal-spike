@@ -54,6 +54,49 @@ class BufferedInputPagerTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 
+    @Test
+    fun effortDropdownKeepsImeFocusAndTerminalBoundsAcrossRepeatedChanges() {
+        val effort = mutableStateOf<String?>("medium")
+        var changes = 0
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize().imePadding()) {
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxSize().testTag("effort_terminal"))
+                    com.yanjiyu.terminalspike.ui.terminal.CodexEffortMenu(
+                        "pane-1", "codex", effort.value, true,
+                    ) { id ->
+                        changes++
+                        effort.value = com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all
+                            .first { it.id == id }.command.substringAfter("--reasoning=")
+                    }
+                    androidx.compose.material3.OutlinedTextField(
+                        value = "", onValueChange = {}, modifier = Modifier.testTag("effort_input"),
+                    )
+                }
+            }
+        }
+        composeRule.runOnIdle {
+            composeRule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        composeRule.onNodeWithTag("effort_input").performClick()
+        fun imeVisible() = androidx.core.view.ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView)
+            ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+        composeRule.waitUntil(5_000) { imeVisible() }
+        val terminal = composeRule.onNodeWithTag("effort_terminal").fetchSemanticsNode().boundsInRoot
+        val button = composeRule.onNodeWithTag("codex_effort_menu").fetchSemanticsNode().boundsInRoot
+        for (id in listOf(-101L, -104L, -102L, -105L, -103L, -106L)) {
+            composeRule.onNodeWithTag("codex_effort_menu").performClick()
+            composeRule.onNodeWithTag("effort_input").assertIsFocused()
+            composeRule.runOnIdle { assertTrue("Opening effort menu must keep IME visible", imeVisible()) }
+            composeRule.onNodeWithTag("agent_snippet_$id").performClick()
+            composeRule.onNodeWithTag("effort_input").assertIsFocused()
+            composeRule.runOnIdle { assertTrue("Selecting effort must keep IME visible", imeVisible()) }
+            assertEquals(terminal, composeRule.onNodeWithTag("effort_terminal").fetchSemanticsNode().boundsInRoot)
+            assertEquals(button, composeRule.onNodeWithTag("codex_effort_menu").fetchSemanticsNode().boundsInRoot)
+        }
+        composeRule.runOnIdle { assertEquals(6, changes) }
+    }
+
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test
     fun typingModeImagePastePreservesDraftAndUsesLatestReceiver() {

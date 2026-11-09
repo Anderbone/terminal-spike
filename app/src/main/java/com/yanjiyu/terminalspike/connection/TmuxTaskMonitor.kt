@@ -69,7 +69,9 @@ internal class TmuxTaskMonitor(private val clockNanos: () -> Long = System::nano
     @Synchronized
     fun inputContext(paneId: String?): TerminalInputContext = panes.entries
         .firstOrNull { it.value.paneId == paneId }
-        ?.let { TerminalInputContext("tmux/${it.key}", it.value.agent) } ?: TerminalInputContext()
+        ?.let {
+            TerminalInputContext("tmux/${it.key}", it.value.agent, agentId = if (it.value.agent) "codex" else "")
+        } ?: TerminalInputContext()
 
     @Synchronized
     fun paneStatus(paneId: String?): TerminalTaskStatus = panes.values

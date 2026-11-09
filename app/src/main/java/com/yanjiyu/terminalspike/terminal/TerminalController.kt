@@ -75,8 +75,10 @@ class TerminalController(
     private val mutableInputContext = MutableStateFlow(TerminalInputContext())
     val inputContext = mutableInputContext.asStateFlow()
 
+    private val codexEffortObservation = CodexEffortObservation()
+
     internal fun publishInputContext(context: TerminalInputContext) {
-        mutableInputContext.value = context
+        mutableInputContext.value = codexEffortObservation.observe(context)
         if (context.identity.isNotEmpty() && herdrHistory?.let { context.identity != "herdr/${it.identity}" } == true) {
             invalidateHerdrHistory()
         }

@@ -8,9 +8,11 @@ class TmuxTaskMonitorTest {
     @Test fun inputContextTracksForegroundRatherThanSpinnerAndClearsOnFailure() {
         refresh("$1|%1|80|1|0|Ready")
         assertTrue(monitor.inputContext("%1").agent)
+        assertEquals("codex", monitor.inputContext("%1").agentId)
         assertFalse(monitor.inputContext("%2").agent)
         refresh("$1|%1|80|0|0|⠋ stale agent title")
         assertFalse(monitor.inputContext("%1").agent)
+        assertEquals("", monitor.inputContext("%1").agentId)
         refresh("$1|%1|80|1|0|Ready")
         now += 1_000_000_001L
         monitor.refresh({ TmuxExecOutput(byteArrayOf(), 1) }, "/usr/bin/tmux")

@@ -8,6 +8,7 @@ class HerdrInputContextTest {
     private val choice = HerdrStartupChoice("/usr/bin/herdr", "work ' quoted")
 
     private fun response(command: String, name: String = "codex", paneId: String = "w1:p2"): TmuxExecOutput {
+        if ("'read'" in command) return TmuxExecOutput("›\n\n  GPT-6.1-Sol medium · Context 49% left".toByteArray(), 0)
         val body = when {
             "'layout'" in command -> """{"layout":{"focused_pane_id":"$paneId","tab_id":"w1:t1"}}"""
             "'get'" in command -> """{"pane":{"pane_id":"$paneId","tab_id":"w1:t1","terminal_id":"term1","agent":"codex"}}"""
@@ -43,15 +44,35 @@ class HerdrInputContextTest {
     @Test fun focusedCodexUsesMetadataWithoutReadingHistoryOrSendingInput() {
         val commands = mutableListOf<String>()
         val result = captureHerdrInputContext({ commands += it; response(it) }, choice)
-        assertEquals(TerminalInputContext("herdr/work ' quoted/w1:p2/term1", true), result)
-        assertEquals(4, commands.size)
+        assertEquals(TerminalInputContext("herdr/work ' quoted/w1:p2/term1", true, agentId = "codex", reasoningEffort = "medium"), result)
+        assertEquals(5, commands.size)
         assertTrue(commands.all { it.startsWith("'/usr/bin/herdr' '--session' 'work '\\'' quoted'") })
         assertTrue(commands.any { "'process-info' '--pane' 'w1:p2'" in it })
     }
 
     @Test fun letterPaneNumberPreservesAgentInputContext() {
         val result = captureHerdrInputContext({ response(it, paneId = "w6:pC") }, choice)
-        assertEquals(TerminalInputContext("herdr/work ' quoted/w6:pC/term1", true), result)
+        assertEquals(TerminalInputContext("herdr/work ' quoted/w6:pC/term1", true, agentId = "codex", reasoningEffort = "medium"), result)
+    }
+
+    @Test fun unavailableFooterLeavesEffortUnknownWithoutLosingAgentIdentity() {
+        val context = captureHerdrInputContext({ command ->
+            if ("'read'" in command) TmuxExecOutput(byteArrayOf(), 1) else response(command)
+        }, choice)
+        assertEquals("codex", context.agentId)
+        assertNull(context.reasoningEffort)
+    }
+
+    @Test fun scrolledPaneCannotReportAnOldFootersEffortAsCurrent() {
+        val context = captureHerdrInputContext({ command ->
+            assertFalse("History must not be read for current effort", "'read'" in command)
+            val output = response(command)
+            if ("'get'" in command) output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                .replace("\"agent\":\"codex\"", "\"agent\":\"codex\",\"scroll\":{\"offset_from_bottom\":50}")
+                .toByteArray()) else output
+        }, choice)
+        assertEquals("codex", context.agentId)
+        assertNull(context.reasoningEffort)
     }
 
     @Test fun returningToShellOrAnotherProgramDoesNotInheritAnAgentLabel() {

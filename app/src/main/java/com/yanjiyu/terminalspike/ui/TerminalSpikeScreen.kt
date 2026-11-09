@@ -1630,8 +1630,16 @@ fun TerminalSpikeScreen(
                                             snippetForEditing = viewModel::terminalSnippetForEditing,
                                             canSave = state.settingsReady,
                                             canSend = state.canSendTerminalInput,
+                                            agentContextKey = "${state.activeSessionId}/${inputContext.identity}",
+                                            detectedAgentId = inputContext.agentId,
+                                            currentAgentEffort = inputContext.reasoningEffort,
+                                            canSendAgentSnippets = state.canSendTerminalInput &&
+                                                viewModel.bufferedInputDraftState.value.text.isEmpty() &&
+                                                (inputContext.identity.isEmpty() || inputContext.agentId == "codex"),
                                             onSend = { id ->
-                                                terminalInputFocusRequester.resetComposingInput()
+                                                if (com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all.none { it.id == id }) {
+                                                    terminalInputFocusRequester.resetComposingInput()
+                                                }
                                                 viewModel.sendSnippet(id, state.activeSessionId)
                                             },
                                             onNewCodex = {
@@ -1708,7 +1716,7 @@ fun TerminalSpikeScreen(
                                             viewModel.activateTerminalAccessoryAction(action)
                                         }
                                     },
-                                    onEditAiAgents = { showAiAgentEditor = true },
+                                    onEditAiAgents = { aiAgentPickerTargetId = state.activeSessionId },
                                     onCustomize = { showTools(ToolSection.KEYS) },
                                     onSelectFiles = {
                                         imagePickerTargetSessionId = state.activeSessionId
@@ -1952,13 +1960,7 @@ fun TerminalSpikeScreen(
                 LaunchedEffect(targetId) { aiAgentPickerTargetId = null }
             } else com.yanjiyu.terminalspike.ui.terminal.AiAgentPickerDialog(
                 agents = state.aiAgents,
-                onSelect = { id ->
-                    terminalInputFocusRequester.resetComposingInput()
-                    if (viewModel.runAiAgent(id, targetId)) {
-                        aiAgentPickerTargetId = null
-                        terminalInputFocusRequester.requestFocus(showKeyboard = false)
-                    }
-                },
+                onSave = viewModel::saveAiAgents,
                 onEdit = { aiAgentPickerTargetId = null; showAiAgentEditor = true },
                 onDismiss = { aiAgentPickerTargetId = null },
             )

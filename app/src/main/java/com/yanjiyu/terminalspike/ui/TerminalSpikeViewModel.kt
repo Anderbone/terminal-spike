@@ -3572,7 +3572,7 @@ class TerminalSpikeViewModel(
 
     internal fun runAiAgent(id: String, targetSessionId: Long): Boolean {
         val agent = _uiState.value.aiAgents.entries.firstOrNull { it.id == id } ?: return false
-        return sendBufferedInput(targetSessionId, agent.command, appendEnter = true)
+        return sendBufferedInput(targetSessionId, agent.launchCommand, appendEnter = true)
     }
 
     fun setInputButtonsOnRight(value: Boolean) {
@@ -4145,12 +4145,22 @@ class TerminalSpikeViewModel(
         sendsImmediatelyOverride: Boolean?,
     ): Boolean {
         val state = _uiState.value
-        val snippet = (state.snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all)
+        val snippet = (state.snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all +
+            com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all)
             .firstOrNull { it.id == id }
             ?.let { saved ->
                 sendsImmediatelyOverride?.let { saved.copy(sendsImmediately = it) } ?: saved
             }
             ?: return false
+        if (com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all.any { it.id == id }) {
+            val context = controllerForExistingSession(targetSessionId)?.inputContext?.value
+            if (bufferedInputDraftState.value.text.isNotEmpty() ||
+                context != null && context.identity.isNotEmpty() && context.agentId != "codex"
+            ) {
+                _uiState.update { it.copy(notice = uiText(R.string.notice_codex_snippet_prompt)) }
+                return false
+            }
+        }
         val target = state.sessions.firstOrNull { it.id == targetSessionId }
         if (target == null ||
             (!target.isLocalTerminal && target.connectionState !is ConnectionState.Connected)
@@ -4290,7 +4300,7 @@ class TerminalSpikeViewModel(
                         pendingSnippetSendId = null,
                         pendingSnippetTargetSessionId = null,
                         pendingSnippetSendsImmediately = null,
-                        notice = uiText(
+                        notice = if (com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all.any { action -> action.id == snippet.id }) null else uiText(
                             R.string.notice_snippet_sent,
                             UiText.Dynamic(snippet.label),
                         ),

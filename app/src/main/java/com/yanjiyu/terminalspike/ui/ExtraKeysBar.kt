@@ -1183,7 +1183,7 @@ private fun ExtraKeyRow(
                     },
                     onLongClickLabel = stringResource(
                         if ((cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.AI_AGENTS)
-                            R.string.ai_agents_edit else R.string.terminal_select_files,
+                            R.string.ai_agents_choose else R.string.terminal_select_files,
                     ),
                 )
             }

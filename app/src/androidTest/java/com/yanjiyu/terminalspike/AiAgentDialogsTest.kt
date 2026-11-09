@@ -34,18 +34,62 @@ class AiAgentDialogsTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
-    fun pickerDisplaysNamesAndCommandsAndDispatchesOnlySelectedId() {
-        var selected: String? = null
+    fun pickerSavesModelEffortAndDefaultWithoutLaunching() {
+        var saved: AiAgents? = null
         var edits = 0
+        var saves = 0
+        val agents = mutableStateOf(AiAgents())
+        val show = mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
-                AiAgentPickerDialog(AiAgents(), onSelect = { selected = it }, onEdit = { edits++ }, onDismiss = {})
+                if (show.value) AiAgentPickerDialog(agents.value, onSave = { draft ->
+                    ++saves
+                    if (saves == 1) false else {
+                        saved = draft
+                        agents.value = draft
+                        true
+                    }
+                }, onEdit = { edits++ }, onDismiss = { show.value = false })
             }
         }
         composeRule.onNodeWithText("Codex").assertIsDisplayed()
         composeRule.onNodeWithText("codex --yolo").assertIsDisplayed()
-        composeRule.onNodeWithTag("ai_agent_run_pi").performClick()
-        composeRule.runOnIdle { assertEquals("pi", selected); assertEquals(0, edits) }
+        composeRule.onNodeWithTag("ai_agent_model_menu").performClick()
+        composeRule.onNodeWithTag("ai_agent_model_option_gpt-6.1-sol").performClick()
+        composeRule.onNodeWithTag("ai_agent_effort_menu").performClick()
+        composeRule.onNodeWithTag("ai_agent_effort_option_high").performClick()
+        composeRule.onNodeWithTag("ai_agent_picker_default").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ai_agent_run_claude").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ai_agent_model_menu").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ai_agent_model_option_haiku").performClick()
+        composeRule.onNodeWithTag("ai_agent_effort_menu").performClick()
+        composeRule.onNodeWithTag("ai_agent_effort_option_low").performClick()
+        composeRule.onNodeWithTag("ai_agent_run_pi").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(0, saves); assertEquals(0, edits) }
+        composeRule.onNodeWithTag("ai_agent_model_menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("ai_agent_run_codex").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ai_agent_command_preview").performScrollTo()
+        composeRule.onNodeWithText("codex --yolo --model 'gpt-6.1-sol' -c 'model_reasoning_effort=\"high\"'")
+            .assertIsDisplayed()
+        val screenshot = composeRule.onNodeWithTag("ai_agent_picker").captureToImage().asAndroidBitmap()
+        File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ai-agent-launcher.png")
+            .outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        composeRule.onNodeWithTag("ai_agent_picker_save").performClick()
+        composeRule.onNodeWithText("Could not save. Try again.")
+            .performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_agent_picker_save").performClick()
+        composeRule.runOnIdle {
+            assertEquals(2, saves)
+            assertFalse(show.value)
+            assertEquals("gpt-6.1-sol", saved?.defaultAgent?.model)
+            assertEquals("high", saved?.defaultAgent?.effort)
+            assertEquals("haiku", saved?.entries?.first { it.id == "claude" }?.model)
+            assertEquals("low", saved?.entries?.first { it.id == "claude" }?.effort)
+            show.value = true
+        }
+        composeRule.onNodeWithText("Launch").assertDoesNotExist()
+        composeRule.onNodeWithText("codex --yolo --model 'gpt-6.1-sol' -c 'model_reasoning_effort=\"high\"'")
+            .assertIsDisplayed()
         composeRule.onNodeWithText("Edit AI Agents").performClick()
         composeRule.runOnIdle { assertEquals(1, edits) }
     }

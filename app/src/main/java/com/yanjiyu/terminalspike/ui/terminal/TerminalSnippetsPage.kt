@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.zIndex
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.model.Snippet
+import com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets
 import com.yanjiyu.terminalspike.settings.SnippetSequence
 import com.yanjiyu.terminalspike.settings.CommandSnippet
 import com.yanjiyu.terminalspike.ui.connections.SnippetEditorDialog
@@ -76,6 +77,10 @@ internal fun TerminalSnippetsPage(
     onEditorClosed: () -> Unit,
     snippetForEditing: (Long) -> Snippet? = { null },
     onDelete: ((String) -> Unit)? = null,
+    agentContextKey: String = "",
+    detectedAgentId: String = "",
+    currentAgentEffort: String? = null,
+    canSendAgentSnippets: Boolean = canSend,
 ) {
     val context = LocalContext.current
     val preferences = remember(context) {
@@ -87,10 +92,32 @@ internal fun TerminalSnippetsPage(
     var codexReplaced by remember {
         mutableStateOf(preferences.getBoolean("codex-replaced", false))
     }
-    fun removeDefaultCodex() {
-        preferences.edit().putBoolean("codex-replaced", true).apply()
-        codexReplaced = true
+    var replacedDefaults by remember {
+        mutableStateOf(preferences.getStringSet("replaced-defaults", emptySet()).orEmpty().toSet())
     }
+    fun removeDefault(id: Long) {
+        if (id == 0L) {
+            preferences.edit().putBoolean("codex-replaced", true).apply()
+            codexReplaced = true
+        } else {
+            replacedDefaults = replacedDefaults + id.toString()
+            preferences.edit().putStringSet("replaced-defaults", replacedDefaults).apply()
+        }
+    }
+    val defaultTextSnippets = remember {
+        val now = System.currentTimeMillis()
+        DefaultTerminalSnippets.text.associate { command ->
+            command.id to Snippet(
+                id = java.util.UUID.randomUUID().toString(),
+                name = command.label,
+                command = command.command,
+                createdAtEpochMillis = now,
+                updatedAtEpochMillis = now,
+            )
+        }
+    }
+    fun editableSnippet(id: Long): Snippet? =
+        snippetForEditing(id) ?: defaultTextSnippets[id]
     val codexName = stringResource(R.string.snippet_accessory_example)
     val defaultCodex = remember(codexName) {
         val now = System.currentTimeMillis()
@@ -102,7 +129,11 @@ internal fun TerminalSnippetsPage(
             updatedAtEpochMillis = now,
         )
     }
-    val order = snippetToolbarOrder(savedOrder, snippets.map { it.id } + if (codexReplaced) emptyList() else listOf(0L))
+    val order = snippetToolbarOrder(
+        savedOrder,
+        snippets.map { it.id }.filter { it.toString() !in replacedDefaults } +
+            if (codexReplaced) emptyList() else listOf(0L),
+    )
     val currentOrder by rememberUpdatedState(order)
     val bounds = remember { mutableMapOf<Long, Rect>() }
     val scroll = rememberScrollState()
@@ -190,6 +221,10 @@ internal fun TerminalSnippetsPage(
                     },
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CodexEffortMenu(
+                        contextKey = agentContextKey, agentId = detectedAgentId, effort = currentAgentEffort,
+                        canSend = canSendAgentSnippets && !managing, onSend = onSend,
+                    )
                     val manageDescription = stringResource(
                         if (managing) R.string.snippet_management_done else R.string.snippet_management_start,
                     )
@@ -232,7 +267,7 @@ internal fun TerminalSnippetsPage(
                                     enabled = managing || canSend,
                                     onClick = {
                                         if (managing) {
-                                            if (id == 0L || snippetForEditing(id) != null) {
+                                            if (id == 0L || editableSnippet(id) != null) {
                                                 editingSnippetId = id
                                                 editorVisible = true
                                             }
@@ -277,14 +312,18 @@ internal fun TerminalSnippetsPage(
     if (editorVisible) {
         SnippetEditorDialog(
             initial = if (editingSnippetId == 0L) defaultCodex.toEditorDraft()
-            else editingSnippetId?.let(snippetForEditing)?.toEditorDraft() ?: SnippetEditorDraft(),
+            else editingSnippetId?.let(::editableSnippet)?.toEditorDraft() ?: SnippetEditorDraft(),
             onDismiss = { editorVisible = false; onEditorClosed() },
             onSave = { snippet ->
                 onSave(snippet).also { result ->
-                    if (result.isSuccess && editingSnippetId == 0L) removeDefaultCodex()
+                    if (result.isSuccess) {
+                        editingSnippetId?.takeIf { it == 0L || it in defaultTextSnippets }?.let(::removeDefault)
+                    }
                 }
             },
-            onDelete = if (editingSnippetId == 0L) ({ removeDefaultCodex() }) else onDelete,
+            onDelete = if (editingSnippetId == 0L || editingSnippetId in defaultTextSnippets) {
+                { editingSnippetId?.let(::removeDefault); Unit }
+            } else onDelete,
         )
     }
 }

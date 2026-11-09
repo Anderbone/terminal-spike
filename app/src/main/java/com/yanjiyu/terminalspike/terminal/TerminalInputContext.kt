@@ -5,6 +5,10 @@ data class TerminalInputContext(
     val identity: String = "",
     val agent: Boolean = false,
     val herdrPiScrollPane: HerdrPiScrollPane? = null,
+    val agentId: String = "",
+    /** Confirmed from the focused pane's live UI, never from launch defaults or a requested change. */
+    val reasoningEffort: String? = null,
+    val agentProcessId: Long? = null,
 )
 
 /** Confirmed fullscreen Pi pane bounds; navigation chrome must retain mouse routing. */
