@@ -5,7 +5,7 @@
 An open-source Android terminal with SSH, built-in Mosh and tabs for your remote sessions.
 No ads, analytics or subscriptions. Android 8.0+.
 
-**[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/download/v0.0.4/terminal-spike-0.0.4.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases) · [Website](https://yanjiyu.com/terminal-spike/) · [Discord](https://discord.gg/yMPzeCeWMT)
+**[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/latest/download/terminal-spike-latest.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases/latest) · [Website](https://yanjiyu.com/terminal-spike/) · [Discord](https://discord.gg/yMPzeCeWMT)
 
 <p>
   <img src="store-assets/google-play/screenshots/phone/01-mosh-workspaces.png" width="240" alt="User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.">

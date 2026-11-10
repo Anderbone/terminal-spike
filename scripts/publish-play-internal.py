@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Prepare once, then publish the reviewed main-app bundle to the selected Play track.
+"""Prepare once, publish the reviewed main-app bundle, then promote to every Play track.
 
-Credentials stay outside the repository. No Mosh-extension uploads. Production requires an explicit --track production.
+Credentials stay outside the repository. No Mosh-extension uploads.
+Production requires --track production for a new upload, or promote --track all.
 """
 from __future__ import annotations
 
@@ -96,6 +97,78 @@ def inspect_play(token, selected_track="internal"):
         )
     finally:
         request("DELETE", f"{API}/edits/{edit}", token=token)
+
+
+def promote(args):
+    """Promote the already verified/uploaded bundle without rebuilding or uploading it."""
+    if args.track != "all":
+        raise RuntimeError("promote requires --track all")
+    state = json.loads(STATE.read_text())
+    uploaded = json.loads((STATE.parent / "publish-receipt.json").read_text())
+    bundle = STATE.parent / "app-release.aab"
+    if (state.get("schema") != 1 or state.get("package") != PACKAGE
+            or uploaded.get("state") != "completed"
+            or uploaded.get("versionCode") != state["versionCode"]
+            or hashlib.sha256(bundle.read_bytes()).hexdigest() != state["sha256"]):
+        raise RuntimeError("promotion requires the verified bundle and its completed upload receipt")
+    if command(["git", "status", "--porcelain"]).strip():
+        raise RuntimeError("review and commit intended source before promotion")
+    head = command(["git", "rev-parse", "HEAD"], text=True).strip()
+    remote = command(["git", "ls-remote", "origin", "refs/heads/main"], text=True).split()
+    if not remote or remote[0] != head:
+        raise RuntimeError("push the reviewed commit to origin/main before promotion")
+    changes = command(["git", "diff", "--name-only", uploaded["commit"], head], text=True).splitlines()
+    allowed = {"AGENTS.md", "README.md", "scripts/publish-play-internal.py", "scripts/tests/test_play_publishing.py",
+               "scripts/verify-publication.py", "scripts/tests/test_publication_verification.py",
+               "store-assets/google-play/release-notes/main-en-US.txt"}
+    if any(path not in allowed and not path.startswith("docs/") for path in changes):
+        raise RuntimeError("application inputs changed since upload; prepare and publish the latest source first")
+    notes = (ROOT / "store-assets/google-play/release-notes/main-en-US.txt").read_text().rstrip("\n")
+    if not notes or len(notes) > 500:
+        raise RuntimeError("release notes must contain 1 to 500 characters")
+    receipt = STATE.parent / "promotion-receipt.json"
+    if receipt.exists() and json.loads(receipt.read_text()).get("state") == "started":
+        raise RuntimeError("a promotion already started; inspect its saved edit and tracks before retrying")
+    token = access_token(args.credential)
+    edit = request("POST", f"{API}/edits", {}, token)["id"]
+    started = False
+    try:
+        bundles = request("GET", f"{API}/edits/{edit}/bundles", token=token)
+        if not any(int(item["versionCode"]) == state["versionCode"]
+                   and item.get("sha256", "").lower() == state["sha256"]
+                   for item in bundles.get("bundles", [])):
+            raise RuntimeError("Play bundle code/hash differs from the verified uploaded artifact")
+        tracks = request("GET", f"{API}/edits/{edit}/tracks", token=token).get("tracks", [])
+        targets = {"production", "internal", "alpha", "beta"}
+        if {track["track"] for track in tracks} != targets:
+            raise RuntimeError("visible Play tracks changed; review all targets before promotion")
+        release = {"name": state["versionName"], "versionCodes": [str(state["versionCode"])],
+                   "status": "completed", "releaseNotes": [{"language": "en-US", "text": notes}]}
+        record = {"state": "started", "edit": edit, "versionCode": state["versionCode"],
+                  "versionName": state["versionName"], "artifactCommit": uploaded["commit"],
+                  "commit": head, "sha256": state["sha256"], "previousTracks": tracks}
+        receipt.write_text(json.dumps(record, indent=2) + "\n")
+        started = True
+        for track in sorted(targets):
+            request("PUT", f"{API}/edits/{edit}/tracks/{track}",
+                    {"track": track, "releases": [release]}, token)
+        request("POST", f"{API}/edits/{edit}:validate", {}, token)
+        request("POST", f"{API}/edits/{edit}:commit", {}, token)
+        readback = request("POST", f"{API}/edits", {}, token)["id"]
+        try:
+            confirmed = request("GET", f"{API}/edits/{readback}/tracks", token=token).get("tracks", [])
+            if ({track["track"] for track in confirmed} != targets
+                    or any(track.get("releases") != [release] for track in confirmed)):
+                raise RuntimeError("all-track promotion readback differs; inspect before retrying")
+        finally:
+            request("DELETE", f"{API}/edits/{readback}", token=token)
+        record.update(state="completed", confirmedTracks=confirmed)
+        receipt.write_text(json.dumps(record, indent=2) + "\n")
+        print(f"All four Play tracks confirmed {state['versionName']} ({state['versionCode']}). "
+              "Google review, managed publishing and store propagation may still delay availability.")
+    finally:
+        if not started:
+            request("DELETE", f"{API}/edits/{edit}", token=token)
 
 
 def verify_bundle(bundle: Path, signing_dir: Path, environment):
@@ -255,12 +328,12 @@ def publish(args, used):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("inspect", "prepare", "publish"))
+    parser.add_argument("action", choices=("inspect", "prepare", "publish", "promote"))
     parser.add_argument("--signing-dir", type=Path, default=ROOT.parent / "app_sign")
     parser.add_argument("--credential", type=Path, help="External Play service-account JSON")
     parser.add_argument("--version-name")
-    parser.add_argument("--track", choices=("internal", "production"), default="internal",
-                        help="Defaults to internal testing; production must be explicitly selected for prepare and publish")
+    parser.add_argument("--track", choices=("internal", "production", "all"), default="internal",
+                        help="Use promote --track all after publishing the verified bundle to internal testing")
     parser.add_argument("--require-green-ci", action="store_true")
     parser.add_argument("--with-store-assets", action="store_true",
                         help="Publish prepared en-US copy, phone screenshots and feature graphic in the same edit")
@@ -276,6 +349,11 @@ def main():
         args.credential = candidates[0]
     if args.credential.resolve().is_relative_to(ROOT):
         parser.error("credentials must remain outside the repository")
+    if args.action == "promote":
+        promote(args)
+        return
+    if args.track == "all":
+        parser.error("--track all is supported only with promote")
     token = access_token(args.credential)
     used, track = inspect_play(token, args.track)
     if args.action == "inspect":

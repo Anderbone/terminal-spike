@@ -1,4 +1,5 @@
-• Refreshed interface typography with a bundled font that works offline.
-• Settings → Keyboard now previews the terminal shortcut-key layout; tap a preview key to replace it.
-• More compact connection, settings and project screens, with clearer code-server naming.
-• Tap a numbered Herdr tab directly while the mobile switcher is open.
+• Chinese interface with an in-app language selector.
+• Task notifications with reply actions.
+• Local Linux tools and improved Herdr onboarding.
+• AI launch preferences and in-session reasoning effort controls.
+• Improved terminal controls, shortcut key combinations and Herdr navigation.

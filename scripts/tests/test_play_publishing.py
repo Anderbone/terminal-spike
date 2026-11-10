@@ -212,6 +212,97 @@ class PlayPublishingTest(unittest.TestCase):
         self.assertEqual(1, build.call_count)
         self.assertEqual(13, json.loads(self.state.read_text())["versionCode"])
 
+    def promotion_upload_receipt(self):
+        (self.state.parent / "publish-receipt.json").write_text(json.dumps({
+            "state": "completed", "versionCode": 10, "commit": "a" * 40,
+        }))
+        self.args.track = "all"
+
+    def promotion_api(self, method, url, data=None, token=None, content_type=None):
+        self.calls.append((method, url, data))
+        if url.endswith("/edits"):
+            return {"id": "promotion-edit"}
+        if method == "GET" and url.endswith("/bundles"):
+            return {"bundles": [{"versionCode": 10, "sha256": self.manifest["sha256"]}]}
+        if method == "GET" and url.endswith("/tracks"):
+            updates = [payload for verb, _, payload in self.calls if verb == "PUT"]
+            return {"tracks": updates or [{"track": name} for name in ("production", "internal", "beta", "alpha")]}
+        return {}
+
+    def promotion_git(self, args, **kwargs):
+        if args[1] == "diff":
+            return "AGENTS.md\ndocs/CI-AND-RELEASING.md\n"
+        return self.git(args, **kwargs)
+
+    def test_promotion_updates_all_tracks_in_one_commit_without_upload(self):
+        self.promotion_upload_receipt()
+        with patch.object(PLAY, "command", side_effect=self.promotion_git), \
+                patch.object(PLAY, "request", side_effect=self.promotion_api), patch("builtins.print"):
+            PLAY.promote(self.args)
+        updates = [data for method, _, data in self.calls if method == "PUT"]
+        self.assertEqual({"production", "internal", "beta", "alpha"}, {item["track"] for item in updates})
+        self.assertTrue(all(item["releases"][0]["versionCodes"] == ["10"] for item in updates))
+        self.assertEqual(1, sum(url.endswith(":commit") for _, url, _ in self.calls))
+        self.assertFalse(any("uploadType" in url for _, url, _ in self.calls))
+        receipt = json.loads((self.state.parent / "promotion-receipt.json").read_text())
+        self.assertEqual("completed", receipt["state"])
+        self.assertEqual(4, len(receipt["confirmedTracks"]))
+
+    def test_promotion_rejects_application_changes_before_api_access(self):
+        self.promotion_upload_receipt()
+        def changed_git(args, **kwargs):
+            return "app/src/main/AndroidManifest.xml\n" if args[1] == "diff" else self.git(args, **kwargs)
+        with patch.object(PLAY, "command", side_effect=changed_git), patch.object(PLAY, "request") as api:
+            with self.assertRaisesRegex(RuntimeError, "application inputs changed"):
+                PLAY.promote(self.args)
+            api.assert_not_called()
+
+    def test_promotion_rejects_wrong_remote_artifact_and_new_track(self):
+        self.promotion_upload_receipt()
+        for case in ("hash", "track"):
+            def api(method, url, *args, **kwargs):
+                result = self.promotion_api(method, url, *args, **kwargs)
+                if case == "hash" and url.endswith("/bundles"):
+                    result["bundles"][0]["sha256"] = "wrong"
+                if case == "track" and url.endswith("/tracks"):
+                    result["tracks"].append({"track": "unexpected"})
+                return result
+            self.calls.clear()
+            with self.subTest(case=case), patch.object(PLAY, "command", side_effect=self.promotion_git), \
+                    patch.object(PLAY, "request", side_effect=api):
+                with self.assertRaises(RuntimeError):
+                    PLAY.promote(self.args)
+            self.assertFalse(any(method == "PUT" for method, _, _ in self.calls))
+            self.assertTrue(any(method == "DELETE" for method, _, _ in self.calls))
+
+    def test_ambiguous_promotion_commit_blocks_retry(self):
+        self.promotion_upload_receipt()
+        def api(method, url, *args, **kwargs):
+            if url.endswith(":commit"):
+                raise RuntimeError("timeout")
+            return self.promotion_api(method, url, *args, **kwargs)
+        with patch.object(PLAY, "command", side_effect=self.promotion_git), \
+                patch.object(PLAY, "request", side_effect=api):
+            with self.assertRaisesRegex(RuntimeError, "timeout"):
+                PLAY.promote(self.args)
+        with patch.object(PLAY, "command", side_effect=self.promotion_git), patch.object(PLAY, "request") as retry:
+            with self.assertRaisesRegex(RuntimeError, "already started"):
+                PLAY.promote(self.args)
+            retry.assert_not_called()
+
+    def test_promotion_does_not_claim_success_on_stale_track_readback(self):
+        self.promotion_upload_receipt()
+        def api(method, url, *args, **kwargs):
+            result = self.promotion_api(method, url, *args, **kwargs)
+            if method == "GET" and url.endswith("/tracks") and any(verb == "PUT" for verb, _, _ in self.calls):
+                result["tracks"] = [{"track": "internal"}]
+            return result
+        with patch.object(PLAY, "command", side_effect=self.promotion_git), \
+                patch.object(PLAY, "request", side_effect=api):
+            with self.assertRaisesRegex(RuntimeError, "readback differs"):
+                PLAY.promote(self.args)
+        self.assertEqual("started", json.loads((self.state.parent / "promotion-receipt.json").read_text())["state"])
+
 
 if __name__ == "__main__":
     unittest.main()
