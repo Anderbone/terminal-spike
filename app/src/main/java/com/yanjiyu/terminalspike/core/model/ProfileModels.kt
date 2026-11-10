@@ -115,6 +115,7 @@ data class KeyboardProfile(
     val tmuxPrefix: String = DEFAULT_TMUX_PREFIX,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
+    val defaultLayoutState: String? = null,
 ) {
     init {
         requireCanonicalUuid(id, "keyboard profile ID")

@@ -393,6 +393,7 @@ internal fun KeyboardProfileWithKeys.toDomainModel(): KeyboardProfile = decodeSt
         tmuxPrefix = profile.tmuxPrefix,
         createdAtEpochMillis = profile.createdAtEpochMillis,
         updatedAtEpochMillis = profile.updatedAtEpochMillis,
+        defaultLayoutState = profile.defaultLayoutState,
     )
 }
 
@@ -405,6 +406,7 @@ internal fun KeyboardProfile.toRows(): KeyboardProfileRows = encodeDomain(
     RepositoryRecordType.KEYBOARD_PROFILE,
     id,
 ) {
+    com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.validate(defaultLayoutState, orderedActions.size)
     val valid = copy(orderedActions = orderedActions.toList())
     KeyboardProfileRows(
         profile = KeyboardProfileEntity(
@@ -418,6 +420,7 @@ internal fun KeyboardProfile.toRows(): KeyboardProfileRows = encodeDomain(
             tmuxPrefix = valid.tmuxPrefix,
             createdAtEpochMillis = valid.createdAtEpochMillis,
             updatedAtEpochMillis = valid.updatedAtEpochMillis,
+            defaultLayoutState = valid.defaultLayoutState,
         ),
         keys = valid.orderedActions.mapIndexed { position, action ->
             KeyboardProfileKeyEntity(

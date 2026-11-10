@@ -1,5 +1,4 @@
-• Chinese interface with an in-app language selector.
-• Task notifications with reply actions.
-• Local Linux tools and improved Herdr onboarding.
-• AI launch preferences and in-session reasoning effort controls.
-• Improved terminal controls, shortcut key combinations and Herdr navigation.
+• Keyboard defaults now track individual button positions while preserving custom changes, including across backup restore.
+• Local Linux helper updates preserve user-edited files; backup screens clarify that Linux data needs a separate backup.
+• Improved SSH key import with support for extensionless files and clearer errors.
+• Refined settings, key management, and onboarding navigation.

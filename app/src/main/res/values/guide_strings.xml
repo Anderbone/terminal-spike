@@ -7,7 +7,7 @@
     <string name="guide_more_help">Setup &amp; reference</string>
     <string name="guide_input_caption">Tap the pencil to write; tap the keyboard for shortcut keys.</string>
     <string name="guide_snippets_caption">Tap a saved Snippet to use it.</string>
-    <string name="guide_projects_caption">In Herdr, tap Switch to choose a Space or task.</string>
+    <string name="guide_projects_caption">In Herdr, tap Switch to choose a Space or task. On small screens, swipe right across the terminal to open this panel; swipe left across the open panel to close it.</string>
     <string name="guide_tip_move_title">Reorder Snippets</string>
     <string name="guide_tip_move_caption">Tap ✎, then long-press a Snippet and drag it into place.</string>
     <string name="guide_tip_edit_title">Edit a Snippet</string>

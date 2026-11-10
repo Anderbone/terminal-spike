@@ -114,6 +114,18 @@ abstract class KeyboardProfileDao {
     @Query("SELECT * FROM keyboard_profiles WHERE id = :id")
     abstract suspend fun findWithKeys(id: String): KeyboardProfileWithKeys?
 
+    /** Establish provenance without overwriting a concurrent user edit or changing its timestamp. */
+    @Transaction
+    open suspend fun initializeDefaultLayoutState(
+        profileId: String,
+        expectedActions: List<String>,
+        state: String,
+    ) {
+        val profile = findById(profileId) ?: return
+        if (profile.defaultLayoutState != null || findKeys(profileId).map { it.actionCode } != expectedActions) return
+        update(profile.copy(defaultLayoutState = state))
+    }
+
     @Transaction
     open suspend fun insertWithKeys(
         profile: KeyboardProfileEntity,

@@ -123,7 +123,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag("user-guide-index").performScrollToNode(hasText("Start guide"))
         composeRule.onNodeWithText("Start guide").performClick()
         composeRule.onNodeWithTag("guide-title-0").assertIsDisplayed()
-        composeRule.onNodeWithText("Close").performClick()
+        androidx.test.espresso.Espresso.pressBack()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
     }
 
@@ -422,6 +422,9 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Edit accessory keys").performClick()
 
         composeRule.onNodeWithTag(KeyboardEditorDeckTestTag).assertIsDisplayed()
+        KeyboardPresets.general.actions.indices.forEach { index ->
+            composeRule.onNodeWithTag("$KeyboardEditorKeyTestTagPrefix$index").assertIsDisplayed()
+        }
         composeRule.onNodeWithTag("$KeyboardEditorRowTestTagPrefix${0}").assertIsDisplayed()
         composeRule.onNodeWithTag("$KeyboardEditorRowTestTagPrefix${1}").assertIsDisplayed()
         composeRule.onNodeWithTag("$KeyboardEditorKeyTestTagPrefix${0}")
@@ -726,7 +729,7 @@ class SettingsScreenTest {
         var snippetsOpened = false
         composeRule.setContent {
             MaterialTheme {
-                Box(Modifier.requiredSize(412.dp, 900.dp)) {
+                Box(Modifier.requiredSize(360.dp, 600.dp)) {
                     SettingsScreen(
                         state = completeState(),
                         initialCategory = null,
@@ -741,6 +744,7 @@ class SettingsScreenTest {
                         onOpenTerminal = {},
                         onOpenSettings = {},
                         onOpenSshKeys = { sshKeysOpened = true },
+                        keysContent = { query -> androidx.compose.material3.Text("Key list: $query") },
                         onOpenSnippets = { snippetsOpened = true },
                         onDismissMessage = {},
                     )
@@ -750,8 +754,12 @@ class SettingsScreenTest {
 
         composeRule.onNodeWithText("Security & privacy").assertDoesNotExist()
         composeRule.onNodeWithText("SSH keys").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("Manage SSH keys").assertIsDisplayed().performClick()
-        composeRule.runOnIdle { assertTrue(sshKeysOpened) }
+        composeRule.onNodeWithText("Manage SSH keys").assertDoesNotExist()
+        composeRule.runOnIdle { assertFalse(sshKeysOpened) }
+        composeRule.onNodeWithContentDescription("Search keys").performTextInput("Deploy")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        composeRule.onNodeWithText("Key list: Deploy").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Clear settings search").performClick()
 
         composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithText("Snippets").performScrollTo().assertIsDisplayed().performClick()

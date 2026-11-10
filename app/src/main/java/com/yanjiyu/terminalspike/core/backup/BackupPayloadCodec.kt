@@ -352,6 +352,7 @@ private object BackupPayloadEncoder {
         string(17, profile.tmuxPrefix)
         u64(18, profile.createdAtEpochMillis)
         u64(19, profile.updatedAtEpochMillis)
+        optionalString(20, profile.defaultLayoutState)
     }
 
     private fun globalSettingsPlan(settings: BackupGlobalSettings): PayloadRecordPlan =

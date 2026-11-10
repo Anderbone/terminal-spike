@@ -497,6 +497,7 @@ class ConnectionsScreenTest {
             TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 ConnectionsScreen(
                     state = renderedState.value,
+                    primaryDestination = com.yanjiyu.terminalspike.ui.AppDestination.SETTINGS,
                     callbacks = callbacks(
                         onSearch = { value ->
                             query = value

@@ -153,18 +153,31 @@ class CustomTerminalThemeRepository(private val dao: CustomTerminalThemeDao) {
 }
 
 class KeyboardProfileRepository(private val dao: KeyboardProfileDao) {
-    fun observeAll(): Flow<List<KeyboardProfile>> =
-        dao.observeAllWithKeys().mapDomainRows { it.toDomainModel() }
+    private fun KeyboardProfile.inherited() = com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.upgrade(this)
+    private suspend fun KeyboardProfile.persistInitialOwnership(): KeyboardProfile {
+        val inherited = inherited()
+        if (defaultLayoutState == null && inherited.defaultLayoutState != null) {
+            dao.initializeDefaultLayoutState(id, orderedActions.map { it.wireCode }, inherited.defaultLayoutState)
+        }
+        return inherited
+    }
 
-    suspend fun get(id: String): KeyboardProfile? = dao.findWithKeys(id)?.toDomainModel()
+    fun observeAll(): Flow<List<KeyboardProfile>> =
+        dao.observeAllWithKeys().map { rows -> rows.map { it.toDomainModel().persistInitialOwnership() } }
+
+    suspend fun get(id: String): KeyboardProfile? = dao.findWithKeys(id)?.toDomainModel()?.persistInitialOwnership()
 
     suspend fun insert(profile: KeyboardProfile) {
-        val rows = profile.toRows()
+        val rows = profile.inherited().toRows()
         dao.insertWithKeys(rows.profile, rows.keys)
     }
 
     suspend fun update(profile: KeyboardProfile): Boolean {
-        val rows = profile.toRows()
+        val existing = get(profile.id) ?: return false
+        val tracked = if (profile.defaultLayoutState == existing.defaultLayoutState) {
+            com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.edited(existing, profile)
+        } else profile
+        val rows = tracked.inherited().toRows()
         return dao.updateWithKeys(rows.profile, rows.keys) == 1
     }
 }

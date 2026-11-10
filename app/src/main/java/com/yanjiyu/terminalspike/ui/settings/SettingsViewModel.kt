@@ -436,6 +436,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
                 keyRepeatEnabled = preset.keyRepeatEnabled,
                 inputMode = preset.inputMode,
                 tmuxPrefix = preset.tmuxPrefix,
+                defaultLayoutState = if (preset.id == KeyboardPresets.general.id)
+                    com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.reset(current).defaultLayoutState
+                    else null,
             )
         }
     }

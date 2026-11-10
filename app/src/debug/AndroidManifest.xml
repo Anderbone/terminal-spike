@@ -18,5 +18,16 @@
             android:permission="android.permission.MANAGE_DOCUMENTS" />
         <!-- Tests address this provider by URI. Advertising it to DocumentsUI makes
              root discovery race Orchestrator's process teardown and data clearing. -->
+        <provider
+            android:name=".backup.PrivateKeyPickerDocumentsProvider"
+            android:authorities="com.yanjiyu.terminalspike.test.keypicker.documents"
+            android:enabled="false"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 </manifest>

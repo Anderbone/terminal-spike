@@ -28,6 +28,26 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
+    fun versionFourRetainsCustomKeyboardAndAddsNullableInheritanceState() = runBlocking {
+        migration.createDatabase(DATABASE_NAME, 4).use { old ->
+            old.execSQL("INSERT INTO keyboard_profiles (id, name, row_count, modifier_policy_code, haptic_enabled, key_repeat_enabled, input_mode_code, tmux_prefix, created_at_epoch_millis, updated_at_epoch_millis) VALUES (?, 'Custom keys', 2, 'one_shot', 0, 1, 'raw', 'C-b', 1, 2)", arrayOf(PROFILE_ID))
+            old.execSQL("INSERT INTO keyboard_profile_keys (profile_id, position, action_code) VALUES (?, 0, 'f1')", arrayOf(PROFILE_ID))
+        }
+        val db = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME).build()
+        try {
+            val stored = requireNotNull(db.keyboardProfileDao().findWithKeys(PROFILE_ID))
+            assertEquals("Custom keys", stored.profile.name)
+            assertNull(stored.profile.defaultLayoutState)
+            assertEquals(listOf("f1"), stored.keys.map { it.actionCode })
+            val repository = com.yanjiyu.terminalspike.core.data.repository.KeyboardProfileRepository(db.keyboardProfileDao())
+            val profile = requireNotNull(repository.get(PROFILE_ID))
+            assertEquals(listOf(com.yanjiyu.terminalspike.core.model.KeyboardAction.F1), profile.orderedActions)
+            assertTrue(repository.update(profile.copy(name = "Still mine")))
+            assertNull(db.keyboardProfileDao().findById(PROFILE_ID)?.defaultLayoutState)
+        } finally { db.close() }
+    }
+
+    @Test
     fun versionOneToLatestPreservesPreReleaseNoOpRevisionRowsAndAppliesVersionThree() = runBlocking {
         migration.createDatabase(DATABASE_NAME, 1).use { versionOne ->
             assertEquals(

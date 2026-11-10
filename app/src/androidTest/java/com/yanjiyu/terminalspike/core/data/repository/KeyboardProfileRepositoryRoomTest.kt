@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Before
@@ -36,6 +37,20 @@ class KeyboardProfileRepositoryRoomTest {
     @After
     fun closeDatabase() {
         database.close()
+    }
+
+    @Test
+    fun readingUntouchedDefaultPersistsInheritanceWithoutAUserEdit() = runBlocking {
+        val dao = database.keyboardProfileDao()
+        val original = keyboardProfile()
+        dao.insertWithKeys(original, KeyboardAction.DEFAULT_ORDER.mapIndexed { index, action ->
+            KeyboardProfileKeyEntity(PROFILE_ID, index, action.wireCode)
+        })
+        val observed = KeyboardProfileRepository(dao).observeAll().first().single()
+        assertNotNull(observed.defaultLayoutState)
+        assertEquals(observed.defaultLayoutState, dao.findById(PROFILE_ID)?.defaultLayoutState)
+        assertEquals(original.updatedAtEpochMillis, dao.findById(PROFILE_ID)?.updatedAtEpochMillis)
+        assertEquals(observed, KeyboardProfileRepository(dao).get(PROFILE_ID))
     }
 
     @Test

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,6 +68,46 @@ class RepositoriesTest {
         assertEquals(reordered, repository.get(KEYBOARD_ID))
         assertEquals(listOf(0, 1), dao.findKeys(KEYBOARD_ID).map { it.position })
         assertEquals(listOf("arrow_left", "escape"), dao.findKeys(KEYBOARD_ID).map { it.actionCode })
+    }
+
+    @Test
+    fun readingAnOldUntouchedDefaultPersistsOwnershipWithoutAUserSave() = runTest {
+        val dao = FakeKeyboardProfileDao()
+        val original = validKeyboard(KeyboardAction.DEFAULT_ORDER)
+        val rows = original.toRows()
+        dao.insertWithKeys(rows.profile, rows.keys)
+        assertNull(dao.findById(KEYBOARD_ID)?.defaultLayoutState)
+        val repository = KeyboardProfileRepository(dao)
+        val inherited = repository.observeAll().first().single()
+        assertNotNull(inherited.defaultLayoutState)
+        assertEquals(inherited.defaultLayoutState, dao.findById(KEYBOARD_ID)?.defaultLayoutState)
+        assertEquals(original.updatedAtEpochMillis, dao.findById(KEYBOARD_ID)?.updatedAtEpochMillis)
+        val changed = rows.keys.map { if (it.position == 1) it.copy(actionCode = "f1") else it }
+        dao.updateWithKeys(rows.profile, changed)
+        dao.initializeDefaultLayoutState(KEYBOARD_ID, original.orderedActions.map { it.wireCode }, requireNotNull(inherited.defaultLayoutState))
+        assertNull(dao.findById(KEYBOARD_ID)?.defaultLayoutState)
+        assertEquals("f1", dao.findKeys(KEYBOARD_ID)[1].actionCode)
+    }
+
+    @Test
+    fun keyboardEditsPersistSlotOwnershipThroughRepositoryReload() = runTest {
+        val defaults = com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance
+        val dao = FakeKeyboardProfileDao()
+        val repository = KeyboardProfileRepository(dao)
+        repository.insert(validKeyboard(KeyboardAction.DEFAULT_ORDER))
+        val original = requireNotNull(repository.get(KEYBOARD_ID))
+        assertNotNull(original.defaultLayoutState)
+        assertTrue(repository.update(original.copy(orderedActions = original.orderedActions.map {
+            if (it == KeyboardAction.SLASH) KeyboardAction.F1 else it
+        })))
+        val restored = requireNotNull(repository.get(KEYBOARD_ID))
+        assertEquals(restored.defaultLayoutState, dao.findById(KEYBOARD_ID)?.defaultLayoutState)
+        val next = defaults.current.map {
+            if (it.id == "s12") it.copy(action = KeyboardAction.TMUX_SESSIONS) else it
+        }
+        val upgraded = defaults.upgrade(restored, next)
+        assertEquals(KeyboardAction.F1, upgraded.orderedActions[1])
+        assertEquals(KeyboardAction.TMUX_SESSIONS, upgraded.orderedActions[12])
     }
 
     @Test

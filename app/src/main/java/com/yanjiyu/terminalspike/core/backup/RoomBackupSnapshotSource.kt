@@ -155,7 +155,7 @@ class RoomBackupSnapshotSource private constructor(
                     KeyboardProfileWithKeys(
                         profile = profile,
                         keys = keysByProfile[profile.id].orEmpty(),
-                    ).toDomainModel()
+                    ).toDomainModel().let(com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance::upgrade)
                 },
                 customFonts = exportedFonts,
                 globalSettings = settings.toBackupGlobalSettings(),

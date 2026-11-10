@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="settings_category_advanced">高级选项</string>
-    <string name="settings_category_advanced_summary">剪贴板、通知、隧道和扩展</string>
+    <string name="settings_category_advanced_summary">会话、安全、剪贴板、通知、隧道和扩展</string>
 </resources>

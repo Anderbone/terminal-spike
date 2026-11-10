@@ -180,3 +180,32 @@ Merge preserves existing records unless UUID/content match permits a safe update
 - Repository/credential/DataStore injected failures at every transaction stage and recovery-snapshot restore.
 - SAF fake-contract UI tests plus manual local provider and Google Drive provider checks when installed.
 - Cross-install restore: export from one clean installation, clear/install clean app, restore, verify settings/data/credentials, and prove Android Keystore masters were not copied.
+
+## Upgrade ownership and Linux scope
+
+Keyboard records optionally carry `defaultLayoutState` (field 20). It records the
+shipped baseline and stable slot ownership, so a later default can update untouched
+slots while preserving replacements, moved buttons, deletions and custom additions.
+Explicit custom buttons win duplicate-action conflicts. New default slots append;
+removed default slots disappear only when untouched. Restore preserves this metadata.
+Older backups remain readable; unidentifiable custom layouts remain custom rather
+than guessing their original baseline. Resetting to General starts current ownership.
+Reading an untouched existing default persists its initial ownership transactionally,
+without requiring a user save or overwriting a concurrent edit.
+Slot IDs in `KeyboardDefaultInheritance.current` must never be reassigned when the
+shipped layout changes; replacements reuse the slot ID, new slots receive new IDs.
+
+Portable backups do **not** contain the Local Arch root filesystem, guest packages,
+projects, home files or agent authentication inside Linux. Back those up separately.
+An APK update retains the existing rootfs even if the bundled manifest changes. It
+never implicitly resets/reinstalls the guest or invokes its package update command.
+The explicit starter-tools install/update action can run `pacman -Syu` and update
+tools; it is separate from ordinary APK updates and shell startup.
+
+Shell startup refreshes App helper files only when absent, identical to the new
+version, or identical to the recorded last installed SHA-256. User modifications
+and unknown older helper versions are retained. The proposed replacement is saved
+beside the original as `.terminal-spike-<SHA-256>.new`; accepting it requires the
+user to review/copy it. Hash records live outside the guest rootfs. Ephemeral
+`etc/terminal-spike/control.json` and `browser.json` are App-owned runtime connection
+metadata and refresh on launch. Guest symlinks are never followed by this writer.

@@ -801,11 +801,7 @@ fun TerminalSpikeScreen(
     fun launchIdentityImport(recoveryToken: String? = null) {
         reimportIdentityToken = recoveryToken
         identityImportLauncher.launch(
-            arrayOf(
-                "application/x-pem-file",
-                "application/octet-stream",
-                "text/plain",
-            ),
+            sshIdentityImportMimeTypes(),
         )
     }
 
@@ -1309,6 +1305,111 @@ fun TerminalSpikeScreen(
                 !it.isLocalTerminal && it.connectionState is ConnectionState.Connected
             },
         ) {
+        fun catalogCallbacks(target: AppRoute): ConnectionsCallbacks = ConnectionsCallbacks(
+            onOpenLocalArch = {
+                if (viewModel.openExistingLocalArch()) {
+                    hideBrowsers()
+                    filesSelected = false
+                    projectSelected = false
+                    destination = AppRoute.TERMINAL_DETAIL
+                } else openLocalArch()
+            },
+            onConnectLocalArch = openLocalArch,
+            onOpenBrowser = {
+                browserSessionId = null
+                viewModel.webBrowser.hide()
+                viewModel.browser.open("standalone", rootView.context.getString(R.string.browser_code_server))
+            },
+            onOpenWebBrowser = ::openWebBrowser,
+            onTabSelected = viewModel::selectConnectionsTab,
+            onSearchQueryChanged = viewModel::setConnectionsSearchQuery,
+            onHostSortSelected = viewModel::setConnectionsHostSort,
+            onFavouritesOnlyChanged = viewModel::setConnectionsFavouritesOnly,
+            onHostGroupSelected = viewModel::setConnectionsHostGroup,
+            onClearHostFilters = viewModel::clearConnectionsHostFilters,
+            onRetry = viewModel::retryConnectionsCatalog,
+            onImportKey = { launchIdentityImport() },
+            onCopyPublicKey = { id ->
+                copyCatalogText(
+                    sshPublicKeyClipboardLabel,
+                    viewModel.connectionsPublicKey(id),
+                )
+            },
+            onDeleteHost = viewModel::deleteConnectionsHost,
+            onOpenSftp = { hostId ->
+                viewModel.connectionsHostName(hostId)?.let { host ->
+                    runWithLocalNetworkAccess(host) {
+                        viewModel.openSftp(hostId)
+                        filesSelected = true; projectSelected = false
+                        focusSessionId = null
+                        destination = AppRoute.TERMINAL_DETAIL
+                        LocalNetworkActionEffect()
+                    }
+                }
+            },
+            onDeleteKey = viewModel::deleteConnectionsKey,
+            onInsertSnippet = catalogTargetSessionId?.let { targetId ->
+                { id ->
+                    if (viewModel.insertConnectionsSnippet(id, targetId)) {
+                        showTerminal(target)
+                    }
+                }
+            },
+            onRunSnippet = catalogTargetSessionId?.let { targetId ->
+                { id ->
+                    if (viewModel.runConnectionsSnippet(id, targetId)) {
+                        showTerminal(target)
+                    }
+                }
+            },
+            onCopySnippet = { id ->
+                copyCatalogText(
+                    commandSnippetClipboardLabel,
+                    viewModel.connectionsSnippetCommand(id),
+                )
+            },
+            onDeleteSnippet = viewModel::deleteConnectionsSnippet,
+            onSaveHost = viewModel::saveConnectionsHost,
+            onResolveHostEditorDraft = viewModel::resolveConnectionsHostEditorDraft,
+            onRetainHostEditorDraft = viewModel::retainConnectionsHostEditorDraft,
+            onClearHostEditorDraft = viewModel::clearConnectionsHostEditorDraft,
+            onTestHost = viewModel::startConnectionsHostTest,
+            onAnswerTestHostIdentity = viewModel::answerConnectionsHostIdentity,
+            onAnswerTestKeyboardInteractive =
+                viewModel::answerConnectionsKeyboardInteractive,
+            onCancelTestKeyboardInteractive =
+                viewModel::cancelConnectionsKeyboardInteractive,
+            onCancelHostTest = viewModel::cancelConnectionsHostTest,
+            onOpenExistingHost = { hostId ->
+                viewModel.openExistingConnectionsHost(hostId).also { opened ->
+                    if (opened) showTerminal(target)
+                }
+            },
+            onConnectCatalogHost = { request ->
+                val host = viewModel.connectionsHostName(request.persistentHostId)
+                if (host == null) {
+                    request.wipe()
+                } else {
+                    runWithLocalNetworkAccess(host, cancel = request::wipe) {
+                        LocalNetworkActionEffect(
+                            terminalSource = target.takeIf {
+                                viewModel.connectConnectionsHost(request)
+                            },
+                        )
+                    }
+                }
+            },
+            onSaveSnippetModel = viewModel::saveConnectionsSnippet,
+            onGenerateKeyRequest = viewModel::generateConnectionsKey,
+            onRenameKeyMetadata = viewModel::renameConnectionsKey,
+            onOpenMoshStatus = {
+                showSettings(
+                    section = ToolSection.MOSH,
+                    returnDestination = target,
+                )
+            },
+        )
+
         AnimatedContent(
             targetState = destination,
             modifier = Modifier
@@ -1339,110 +1440,7 @@ fun TerminalSpikeScreen(
                     initialHostEditorId = catalogEditHostId.takeIf {
                         target == AppRoute.CONNECTIONS
                     },
-                    callbacks = ConnectionsCallbacks(
-                        onOpenLocalArch = {
-                            if (viewModel.openExistingLocalArch()) {
-                                hideBrowsers()
-                                filesSelected = false
-                                projectSelected = false
-                                destination = AppRoute.TERMINAL_DETAIL
-                            } else openLocalArch()
-                        },
-                        onConnectLocalArch = openLocalArch,
-                        onOpenBrowser = {
-                            browserSessionId = null
-                            viewModel.webBrowser.hide()
-                            viewModel.browser.open("standalone", rootView.context.getString(R.string.browser_code_server))
-                        },
-                        onOpenWebBrowser = ::openWebBrowser,
-                        onTabSelected = viewModel::selectConnectionsTab,
-                        onSearchQueryChanged = viewModel::setConnectionsSearchQuery,
-                        onHostSortSelected = viewModel::setConnectionsHostSort,
-                        onFavouritesOnlyChanged = viewModel::setConnectionsFavouritesOnly,
-                        onHostGroupSelected = viewModel::setConnectionsHostGroup,
-                        onClearHostFilters = viewModel::clearConnectionsHostFilters,
-                        onRetry = viewModel::retryConnectionsCatalog,
-                        onImportKey = { launchIdentityImport() },
-                        onCopyPublicKey = { id ->
-                            copyCatalogText(
-                                sshPublicKeyClipboardLabel,
-                                viewModel.connectionsPublicKey(id),
-                            )
-                        },
-                        onDeleteHost = viewModel::deleteConnectionsHost,
-                        onOpenSftp = { hostId ->
-                            viewModel.connectionsHostName(hostId)?.let { host ->
-                                runWithLocalNetworkAccess(host) {
-                                    viewModel.openSftp(hostId)
-                                    filesSelected = true; projectSelected = false
-                                    focusSessionId = null
-                                    destination = AppRoute.TERMINAL_DETAIL
-                                    LocalNetworkActionEffect()
-                                }
-                            }
-                        },
-                        onDeleteKey = viewModel::deleteConnectionsKey,
-                        onInsertSnippet = catalogTargetSessionId?.let { targetId ->
-                            { id ->
-                                if (viewModel.insertConnectionsSnippet(id, targetId)) {
-                                    showTerminal(target)
-                                }
-                            }
-                        },
-                        onRunSnippet = catalogTargetSessionId?.let { targetId ->
-                            { id ->
-                                if (viewModel.runConnectionsSnippet(id, targetId)) {
-                                    showTerminal(target)
-                                }
-                            }
-                        },
-                        onCopySnippet = { id ->
-                            copyCatalogText(
-                                commandSnippetClipboardLabel,
-                                viewModel.connectionsSnippetCommand(id),
-                            )
-                        },
-                        onDeleteSnippet = viewModel::deleteConnectionsSnippet,
-                        onSaveHost = viewModel::saveConnectionsHost,
-                        onResolveHostEditorDraft = viewModel::resolveConnectionsHostEditorDraft,
-                        onRetainHostEditorDraft = viewModel::retainConnectionsHostEditorDraft,
-                        onClearHostEditorDraft = viewModel::clearConnectionsHostEditorDraft,
-                        onTestHost = viewModel::startConnectionsHostTest,
-                        onAnswerTestHostIdentity = viewModel::answerConnectionsHostIdentity,
-                        onAnswerTestKeyboardInteractive =
-                            viewModel::answerConnectionsKeyboardInteractive,
-                        onCancelTestKeyboardInteractive =
-                            viewModel::cancelConnectionsKeyboardInteractive,
-                        onCancelHostTest = viewModel::cancelConnectionsHostTest,
-                        onOpenExistingHost = { hostId ->
-                            viewModel.openExistingConnectionsHost(hostId).also { opened ->
-                                if (opened) showTerminal(target)
-                            }
-                        },
-                        onConnectCatalogHost = { request ->
-                            val host = viewModel.connectionsHostName(request.persistentHostId)
-                            if (host == null) {
-                                request.wipe()
-                            } else {
-                                runWithLocalNetworkAccess(host, cancel = request::wipe) {
-                                    LocalNetworkActionEffect(
-                                        terminalSource = target.takeIf {
-                                            viewModel.connectConnectionsHost(request)
-                                        },
-                                    )
-                                }
-                            }
-                        },
-                        onSaveSnippetModel = viewModel::saveConnectionsSnippet,
-                        onGenerateKeyRequest = viewModel::generateConnectionsKey,
-                        onRenameKeyMetadata = viewModel::renameConnectionsKey,
-                        onOpenMoshStatus = {
-                            showSettings(
-                                section = ToolSection.MOSH,
-                                returnDestination = target,
-                            )
-                        },
-                    ),
+                    callbacks = catalogCallbacks(target),
                     onOpenWorkspace = { destination = AppRoute.WORKSPACE },
                     onOpenTerminal = { showTerminal(target) },
                     onOpenSettings = { showSettingsCategories(target) },
@@ -1767,6 +1765,18 @@ fun TerminalSpikeScreen(
                     onOpenConnections = { showTerminal(target) },
                     onOpenSettings = { destination = AppRoute.SETTINGS },
                     onOpenSshKeys = { showSettingsCatalog(ConnectionsTab.KEYS) },
+                    keysContent = { query ->
+                        ConnectionsScreen(
+                            state = connectionsState.copy(searchQuery = query),
+                            callbacks = catalogCallbacks(AppRoute.SETTINGS),
+                            displayedTab = ConnectionsTab.KEYS,
+                            primaryDestination = AppDestination.SETTINGS,
+                            onOpenWorkspace = {},
+                            onOpenTerminal = {},
+                            onOpenSettings = {},
+                            embedded = true,
+                        )
+                    },
                     onOpenPortForwards = { showSettingsCatalog(ConnectionsTab.HOSTS) },
                     onOpenSnippets = { showSettingsCatalog(ConnectionsTab.SNIPPETS) },
                     onUseProfile = { profile ->

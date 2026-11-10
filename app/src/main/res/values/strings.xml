@@ -348,7 +348,7 @@
     <string name="settings_open_notification_settings">Open notification settings</string>
     <string name="settings_notification_denial_honesty">A denied notification permission does not silently grant background reliability; Android may show active work only in system task management.</string>
 
-    <string name="settings_backup_intro">One portable backup file includes hosts, credentials, SSH keys, snippets, keyboard settings, terminal settings, themes, and imported fonts.</string>
+    <string name="settings_backup_intro">One portable backup file includes hosts, credentials, SSH keys, snippets, keyboard settings, terminal settings, themes, and imported fonts. Arch Linux files, installed software, projects, and agent logins inside Linux are not included. Back them up separately.</string>
     <string name="settings_backup_standard">Standard backup</string>
     <string name="settings_backup_standard_summary">Hosts without secret material, snippets, known hosts and settings</string>
     <string name="settings_backup_no_secrets">No saved secrets</string>

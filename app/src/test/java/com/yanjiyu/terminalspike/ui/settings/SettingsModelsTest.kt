@@ -65,7 +65,10 @@ class SettingsModelsTest {
             listOf(SettingsCategory.DEVELOPER),
             settingsCategoriesForSearch("renderer diagnostics", includeDeveloper = true),
         )
-        assertTrue(SettingsCategory.SECURITY in settingsCategoriesForSearch("", includeDeveloper = true))
+        assertEquals(
+            listOf(SettingsCategory.SECURITY),
+            settingsCategoriesForSearch("security", includeDeveloper = true),
+        )
         assertTrue(SettingsCategory.SSH_KEYS in settingsCategoriesForSearch("", includeDeveloper = true))
         assertTrue(SettingsCategory.SNIPPETS in settingsCategoriesForSearch("", includeDeveloper = true))
     }
@@ -75,6 +78,9 @@ class SettingsModelsTest {
         val main = settingsCategoriesForSearch("", includeDeveloper = true)
         assertEquals(SettingsCategory.ADVANCED, main.last())
         assertTrue(main.none { it in advancedSettingsCategories })
+        assertTrue(SettingsCategory.LOCAL_ARCH in main)
+        assertTrue(SettingsCategory.SESSIONS_BACKGROUND in advancedSettingsCategories)
+        assertTrue(SettingsCategory.SECURITY in advancedSettingsCategories)
         assertEquals(
             listOf(SettingsCategory.TERMINAL),
             settingsCategoriesForSearch("links paste", includeDeveloper = false),

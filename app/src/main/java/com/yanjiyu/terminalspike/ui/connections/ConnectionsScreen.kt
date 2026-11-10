@@ -185,6 +185,7 @@ internal fun ConnectionsScreen(
     displayedTab: ConnectionsTab = state.selectedTab,
     primaryDestination: AppDestination = AppDestination.CONNECTIONS,
     localArchLastUsed: Long = 0L,
+    embedded: Boolean = false,
 ) {
     val context = LocalContext.current
     val screenDescription = stringResource(R.string.connections_screen_description)
@@ -242,14 +243,7 @@ internal fun ConnectionsScreen(
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
-        AdaptivePrimaryNavigation(
-            selected = primaryDestination,
-            onWorkspace = onOpenWorkspace,
-            onConnections = onOpenTerminal,
-            onSettings = onOpenSettings,
-            modifier = Modifier.fillMaxSize(),
-            safeContentInsets = safeContentInsets,
-        ) { contentModifier, navigationExpanded ->
+        val catalogContent: @Composable (Modifier, Boolean) -> Unit = { contentModifier, navigationExpanded ->
             BoxWithConstraints(modifier = contentModifier) {
                 val extraTextScale = (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)
                 val fullHeaderMinimumHeight = CompactConnectionsFullHeaderBaseHeight +
@@ -263,6 +257,18 @@ internal fun ConnectionsScreen(
                         .testTag(ConnectionsScreenTestTag)
                         .semantics { contentDescription = screenDescription },
                 ) {
+                    val settingsKeys = primaryDestination == AppDestination.SETTINGS &&
+                        displayedTab == ConnectionsTab.KEYS
+                    if (settingsKeys && !embedded) {
+                        com.yanjiyu.terminalspike.ui.settings.SettingsSearchHeader(
+                            query = state.searchQuery,
+                            onQueryChange = callbacks.onSearchQueryChanged,
+                            searchDescription = stringResource(R.string.connections_search_keys),
+                            clearDescription = stringResource(R.string.connections_clear_search),
+                            searchTestTag = "ssh-keys-search",
+                            enabled = state.loadState is ConnectionsLoadState.Ready,
+                        )
+                    }
                     ConnectionsHeader(
                         selectedTab = displayedTab,
                         searchQuery = state.searchQuery,
@@ -282,8 +288,8 @@ internal fun ConnectionsScreen(
                                 { pendingEditorToken = PendingConnectionsEditor.Snippet(null).saveToken() }
                             } ?: callbacks.onAddSnippet,
                         ),
-                        showTitle = showFullHeader,
-                        showSearch = showFullHeader,
+                        showTitle = showFullHeader || settingsKeys,
+                        showSearch = showFullHeader && !settingsKeys && !embedded,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -398,6 +404,19 @@ internal fun ConnectionsScreen(
                     }
                 }
             }
+        }
+        if (embedded) {
+            catalogContent(Modifier.fillMaxSize(), false)
+        } else {
+            AdaptivePrimaryNavigation(
+                selected = primaryDestination,
+                onWorkspace = onOpenWorkspace,
+                onConnections = onOpenTerminal,
+                onSettings = onOpenSettings,
+                modifier = Modifier.fillMaxSize(),
+                safeContentInsets = safeContentInsets,
+                content = catalogContent,
+            )
         }
     }
 

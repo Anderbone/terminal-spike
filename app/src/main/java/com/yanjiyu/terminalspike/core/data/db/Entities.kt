@@ -158,6 +158,8 @@ data class KeyboardProfileEntity(
     val createdAtEpochMillis: Long,
     @ColumnInfo(name = "updated_at_epoch_millis")
     val updatedAtEpochMillis: Long,
+    @ColumnInfo(name = "default_layout_state", defaultValue = "NULL")
+    val defaultLayoutState: String? = null,
 )
 
 @Entity(

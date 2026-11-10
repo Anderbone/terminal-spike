@@ -212,4 +212,7 @@
     <string name="settings_keyboard_action_hide">键盘</string>
     <string name="settings_keyboard_action_keys">按键</string>
     <string name="settings_keyboard_action_space">空格</string>
+    <string name="notice_key_import_invalid_format">无法导入：文件不是受支持的 SSH 私钥，或内容已损坏。请选择私钥文件，而非公钥。</string>
+    <string name="notice_key_import_too_large">无法导入：文件超过私钥大小上限（256 KiB）。</string>
+    <string name="notice_key_import_read_failed">无法导入：无法读取所选文件。请确认文件可用后重新选择。</string>
 </resources>

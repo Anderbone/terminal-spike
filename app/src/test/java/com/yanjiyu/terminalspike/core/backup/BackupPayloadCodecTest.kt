@@ -41,6 +41,25 @@ class BackupPayloadCodecTest {
     private val codec = BackupPayloadCodec()
 
     @Test
+    fun keyboardInheritanceSurvivesBackupAndCanMergeTheNextDefault() {
+        val defaults = com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance
+        val original = defaults.reset(keyboardProfile())
+        val custom = defaults.edited(original, original.copy(orderedActions = original.orderedActions.map {
+            if (it == KeyboardAction.SLASH) KeyboardAction.F1 else it
+        }))
+        val snapshot = BackupPayloadSnapshot(mode = BackupMode.STANDARD, keyboardProfiles = listOf(custom))
+        val decoded = codec.read(ByteArrayInputStream(encode(snapshot)), BackupMode.STANDARD)
+        val restored = decoded.snapshot.keyboardProfiles.single()
+        assertEquals(custom, restored)
+        val target = defaults.current.map {
+            if (it.id == "s12") it.copy(action = KeyboardAction.TMUX_SESSIONS) else it
+        }
+        val updated = defaults.upgrade(restored, target)
+        assertEquals(KeyboardAction.F1, updated.orderedActions[1])
+        assertEquals(KeyboardAction.TMUX_SESSIONS, updated.orderedActions[12])
+    }
+
+    @Test
     fun standardRoundTripIsCanonicalDeterministicAndStreaming() {
         val ordered = standardSnapshot(reverse = false)
         val reversed = standardSnapshot(reverse = true)

@@ -110,6 +110,7 @@ internal fun LocalToolsScreen(
     onOpenConnections: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit = {},
+    keysContent: (@Composable (String) -> Unit)? = null,
     onOpenSnippets: () -> Unit = {},
     onOpenPortForwards: () -> Unit = {},
     onUseProfile: (SavedSshProfile) -> Unit,
@@ -170,6 +171,7 @@ internal fun LocalToolsScreen(
             onOpenTerminal = onOpenConnections,
             onOpenSettings = onOpenSettings,
             onOpenSshKeys = onOpenSshKeys,
+            keysContent = keysContent,
             onOpenSnippets = onOpenSnippets,
             snippetsContent = {
                 SnippetsSection(

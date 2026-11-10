@@ -342,7 +342,7 @@
     <string name="settings_session_channel_summary">低重要性，无声音、振动或角标</string>
     <string name="settings_open_notification_settings">打开通知设置</string>
     <string name="settings_notification_denial_honesty">拒绝通知权限不会自动提高后台可靠性；Android 可能仅在系统任务管理中显示活动任务。</string>
-    <string name="settings_backup_intro">一个便携备份文件包含主机、凭据、SSH 密钥、命令片段、键盘设置、终端设置、主题和导入字体。</string>
+    <string name="settings_backup_intro">备份包含连接、凭据、SSH 密钥、命令片段、键盘和终端设置、主题及导入字体。不包含 Arch Linux 内的文件、已安装软件、项目及 AI 工具登录信息，请单独备份。</string>
     <string name="settings_backup_standard">标准备份</string>
     <string name="settings_backup_standard_summary">不含机密的主机、命令片段、已知主机和设置</string>
     <string name="settings_backup_no_secrets">不含已保存的机密</string>

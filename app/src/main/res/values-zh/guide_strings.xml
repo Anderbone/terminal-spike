@@ -7,7 +7,7 @@
     <string name="guide_more_help">设置与参考</string>
     <string name="guide_input_caption">点按铅笔输入文字，点按键盘使用快捷键。</string>
     <string name="guide_snippets_caption">点按保存的命令片段即可使用。</string>
-    <string name="guide_projects_caption">在 Herdr 中点按“切换”选择空间或任务。</string>
+    <string name="guide_projects_caption">在 Herdr 中点按“切换”选择空间或任务。小屏手机上，在终端区域向右滑可展开此面板，在展开的面板上向左滑可收起。</string>
     <string name="guide_tip_move_title">调整命令片段顺序</string>
     <string name="guide_tip_move_caption">点按 ✎，然后长按片段并拖动到目标位置。</string>
     <string name="guide_tip_edit_title">编辑命令片段</string>

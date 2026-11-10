@@ -57,7 +57,7 @@ class QuickStartGuideTest {
             }
             if (page < GuideLesson.entries.lastIndex) composeRule.onNodeWithTag("guide-next").performClick()
         }
-        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onNodeWithTag("guide-next").performClick()
         composeRule.runOnIdle { assertFalse(open.value) }
     }
 
@@ -77,7 +77,7 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
         repeat(9) { composeRule.onNodeWithTag("guide-next").performClick() }
         composeRule.onNodeWithText("12 / 12").assertIsDisplayed()
-        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onNodeWithTag("guide-next").performClick()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
     }
 
@@ -195,7 +195,8 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-next").assertIsDisplayed()
         composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
             .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Close").assertIsDisplayed()
+        composeRule.onNodeWithText("Close").assertDoesNotExist()
+        composeRule.onNodeWithTag("guide-back").assertIsDisplayed()
     }
 
     @Test
@@ -222,12 +223,12 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-3").assertIsDisplayed()
         composeRule.onNodeWithText("Make Herdr your own").assertIsDisplayed()
         composeRule.onNodeWithText("4 / 4").assertIsDisplayed()
-        composeRule.onNodeWithText("Get started").performClick()
+        composeRule.onNodeWithTag("guide-next").performClick()
         composeRule.runOnIdle { assertFalse(open.value) }
     }
 
     @Test
-    fun skipAndSettingsChapterReentryRemainAvailable() {
+    fun systemBackExitsAnyPageAndSettingsChapterReentryRemainsAvailable() {
         val open = mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
@@ -235,11 +236,11 @@ class QuickStartGuideTest {
                 if (open.value) QuickStartGuide(firstRun = true, onDismiss = { open.value = false })
             }
         }
-        composeRule.onNodeWithText("Skip").performClick()
+        androidx.test.espresso.Espresso.pressBack()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
         openLesson(GuideLesson.PROJECTS)
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
-        composeRule.onNodeWithText("Close").performClick()
+        androidx.test.espresso.Espresso.pressBack()
         openLesson(GuideLesson.RECENT_PROJECTS)
         composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
             .performScrollTo().assertIsDisplayed()
@@ -248,8 +249,13 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-7").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-back").performClick()
         composeRule.onNodeWithTag("guide-title-6").assertIsDisplayed()
-        composeRule.onNodeWithText("Close").performClick()
+        androidx.test.espresso.Espresso.pressBack()
         openLesson(GuideLesson.SNIPPETS)
         composeRule.onNodeWithTag("guide-title-1").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
+        openLesson(GuideLesson.entries.last())
+        androidx.test.espresso.Espresso.pressBack()
+        composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
     }
 }

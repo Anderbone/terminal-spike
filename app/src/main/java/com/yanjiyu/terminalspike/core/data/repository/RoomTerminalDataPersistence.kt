@@ -238,7 +238,13 @@ internal class RoomTerminalDataPersistence(
 
 /** Stateless JSch parser. It never retains the caller's private-key bytes. */
 internal object JschPrivateKeyMetadataInspector : PrivateKeyMetadataInspector {
-    override fun inspect(privateKey: ByteArray): ImportedPrivateKeyMetadata {
+    override fun inspect(privateKey: ByteArray): ImportedPrivateKeyMetadata = try {
+        parse(privateKey)
+    } catch (error: Exception) {
+        throw InvalidSshPrivateKeyException(error)
+    }
+
+    private fun parse(privateKey: ByteArray): ImportedPrivateKeyMetadata {
         require(privateKey.isNotEmpty()) { "The private-key document is empty." }
         val workingCopy = privateKey.copyOf()
         val keyPair = try {
@@ -267,3 +273,6 @@ internal object JschPrivateKeyMetadataInspector : PrivateKeyMetadataInspector {
         }
     }
 }
+
+internal class InvalidSshPrivateKeyException(cause: Throwable) :
+    IllegalArgumentException("Unsupported or damaged SSH private key.", cause)

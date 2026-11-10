@@ -1,7 +1,6 @@
 package com.yanjiyu.terminalspike.ui.guide
 
 import android.animation.ValueAnimator
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -127,13 +126,9 @@ internal fun QuickStartGuide(onDismiss: () -> Unit, initialPage: Int = 0, firstR
     val currentPage = pager.currentPage.coerceIn(lessons.indices)
     val scope = rememberCoroutineScope()
     var playing by rememberSaveable { mutableStateOf(ValueAnimator.areAnimatorsEnabled()) }
-    GuideDialog(onDismiss, onBack = {
-        if (currentPage > 0) scope.launch { pager.animateScrollToPage(currentPage - 1) }
-        else onDismiss()
-    }) {
+    GuideDialog(onDismiss) {
         Column(Modifier.fillMaxSize().testTag("quick-start-guide").windowInsetsPadding(WindowInsets.safeDrawing)) {
-            GuideHeader(if (firstRun) R.string.guide_getting_started else R.string.guide_title,
-                if (firstRun) R.string.guide_skip else R.string.guide_close, onDismiss)
+            GuideHeader(if (firstRun) R.string.guide_getting_started else R.string.guide_title)
             BoxWithConstraints(Modifier.weight(1f)) {
                 val availableHeight = maxHeight
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("guide-pager"),
@@ -164,8 +159,7 @@ internal fun QuickStartGuide(onDismiss: () -> Unit, initialPage: Int = 0, firstR
                         else scope.launch { pager.animateScrollToPage(currentPage + 1) }
                     }, modifier = Modifier.weight(1f).heightIn(min = 52.dp).testTag("guide-next"),
                         colors = ButtonDefaults.buttonColors(containerColor = GuideMint, contentColor = GuideInk)) {
-                        Text(stringResource(if (currentPage < lessons.lastIndex) R.string.guide_next
-                            else if (firstRun) R.string.guide_done else R.string.guide_finish))
+                        Text(stringResource(R.string.guide_next))
                     }
                 }
             }
@@ -192,19 +186,15 @@ private fun GuideVisualPage(
 }
 
 @Composable
-private fun GuideHeader(title: Int, action: Int, onAction: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(title), color = GuideMint, style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.weight(1f))
-        TextButton(onClick = onAction) { Text(stringResource(action)) }
-    }
+private fun GuideHeader(title: Int) {
+    Text(stringResource(title), color = GuideMint, style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp))
 }
 
 @Composable
-private fun GuideDialog(onDismiss: () -> Unit, onBack: () -> Unit, content: @Composable () -> Unit) {
+private fun GuideDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false,
-        decorFitsSystemWindows = false, dismissOnBackPress = false)) {
+        decorFitsSystemWindows = false)) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         DisposableEffect(window) {
             val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -217,7 +207,6 @@ private fun GuideDialog(onDismiss: () -> Unit, onBack: () -> Unit, content: @Com
                 navigationLight?.let { controller.isAppearanceLightNavigationBars = it }
             }
         }
-        BackHandler(onBack = onBack)
         MaterialTheme(colorScheme = darkColorScheme(primary = GuideMint, onPrimary = GuideInk,
             background = GuideInk, surface = GuideInk, onSurface = Color(0xFFE9F0F1), onSurfaceVariant = GuideMuted)) {
             Surface(color = GuideInk, modifier = Modifier.fillMaxSize(), content = content)

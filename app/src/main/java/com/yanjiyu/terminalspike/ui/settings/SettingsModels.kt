@@ -474,7 +474,9 @@ internal fun planKeyboardDeckMigration(
 }
 
 internal fun KeyboardProfile.upgradeShippedKeyboardDeck(nowEpochMillis: Long): KeyboardProfile? =
-    takeIf(KeyboardProfile::isUntouchedShippedKeyboardDeck)?.copy(
+    takeIf(KeyboardProfile::isUntouchedShippedKeyboardDeck)?.let {
+        com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.reset(it)
+    }?.copy(
         orderedActions = KeyboardPresets.general.actions,
         layout = KeyboardPresets.general.layout,
         updatedAtEpochMillis = maxOf(nowEpochMillis, updatedAtEpochMillis),
@@ -823,9 +825,10 @@ internal val userFacingSettingsCategories: Set<SettingsCategory> = setOf(
 
 internal val advancedSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.TERMINAL,
+    SettingsCategory.SESSIONS_BACKGROUND,
     SettingsCategory.NOTIFICATIONS,
     SettingsCategory.PORT_FORWARDING,
-    SettingsCategory.LOCAL_ARCH,
+    SettingsCategory.SECURITY,
     SettingsCategory.MOSH,
     SettingsCategory.DEVELOPER,
 )

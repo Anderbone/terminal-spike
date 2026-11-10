@@ -3963,9 +3963,7 @@ class TerminalSpikeViewModel(
                     ?.take(UserSettings.MAX_LABEL_LENGTH)
                     ?.takeIf { it.isNotBlank() }
                     ?: getApplication<Application>().getString(R.string.notice_imported_key_default_name)
-                privateKey = resolver.openInputStream(uri)?.use { input ->
-                    input.readSensitiveBounded(MAX_PRIVATE_KEY_BYTES)
-                } ?: error("Could not open selected key.")
+                privateKey = readSshIdentityBytes(MAX_PRIVATE_KEY_BYTES) { resolver.openInputStream(uri) }
                 val committed = terminalDataRepository.importIdentity(
                     presentationId = identityId,
                     label = existing?.label ?: displayName,
@@ -3980,7 +3978,7 @@ class TerminalSpikeViewModel(
                     },
                 )
             } catch (error: Exception) {
-                reportCatalogWriteFailure(error, uiText(R.string.notice_key_import_failed))
+                reportCatalogWriteFailure(error, uiText(sshIdentityImportFailureMessage(error)))
             } finally {
                 privateKey?.fill(0)
                 releaseIdentityImportPermission(uri)
@@ -4974,7 +4972,7 @@ internal fun InputStream.readSensitiveBounded(
             val count = read(scratch)
             if (count < 0) break
             if (count == 0) continue
-            require(output.size <= maximumBytes - count) { "Selected file is too large." }
+            if (output.size > maximumBytes - count) throw SensitiveInputTooLargeException()
             output.append(scratch, count)
         }
         return output.copyValue()

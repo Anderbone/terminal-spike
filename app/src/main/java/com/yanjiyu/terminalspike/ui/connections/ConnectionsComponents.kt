@@ -217,7 +217,13 @@ internal fun ConnectionsHeader(
                         ),
                 ) {
                     Text(
-                        text = stringResource(R.string.connections_title),
+                        text = stringResource(
+                            when (selectedTab) {
+                                ConnectionsTab.KEYS -> R.string.settings_category_ssh_keys
+                                ConnectionsTab.SNIPPETS -> R.string.settings_category_snippets
+                                ConnectionsTab.HOSTS -> R.string.connections_title
+                            },
+                        ),
                         modifier = Modifier.semantics {
                             heading()
                         },
@@ -229,37 +235,12 @@ internal fun ConnectionsHeader(
             }
         }
 
-        if (showTitle && (callbacks.onOpenBrowser != null || callbacks.onOpenWebBrowser != null)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-                callbacks.onOpenBrowser?.let { open ->
-                    TextButton(onClick = open, modifier = Modifier.testTag("standalone-browser")) {
-                        Text(stringResource(R.string.browser_code_server))
-                    }
-                }
-                callbacks.onOpenWebBrowser?.let { open ->
-                    TextButton(onClick = open, modifier = Modifier.testTag("standalone-web-browser")) {
-                        Text(stringResource(R.string.browser_title))
-                    }
-                }
-            }
-        }
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (!showTitle) {
-                callbacks.onOpenBrowser?.let { open ->
-                    TextButton(onClick = open, modifier = Modifier.testTag("standalone-browser")) {
-                        Text(stringResource(R.string.browser_code_server))
-                    }
-                }
-                callbacks.onOpenWebBrowser?.let { open ->
-                    TextButton(onClick = open, modifier = Modifier.testTag("standalone-web-browser")) {
-                        Text(stringResource(R.string.browser_title))
-                    }
-                }
                 ConnectionsAddButton(actions = addActions)
             }
             if (showSearch) {

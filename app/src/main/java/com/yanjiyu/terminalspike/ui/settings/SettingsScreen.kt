@@ -159,6 +159,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardContentKind
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardRequest
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
+import com.yanjiyu.terminalspike.ui.ExtraKeyButton
 import com.yanjiyu.terminalspike.ui.TerminalShortcutPreview
 import com.yanjiyu.terminalspike.ui.AboutSection
 import com.yanjiyu.terminalspike.ui.guide.UserGuideIndex
@@ -252,6 +253,7 @@ internal fun SettingsDestination(
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
     snippetsContent: (@Composable () -> Unit)? = null,
+    keysContent: (@Composable (String) -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     terminalProfileId: String? = null,
     keyboardProfileId: String? = null,
@@ -392,6 +394,7 @@ internal fun SettingsDestination(
         onOpenSshKeys = onOpenSshKeys,
         onOpenSnippets = onOpenSnippets,
         snippetsContent = snippetsContent,
+        keysContent = keysContent,
         onOpenPortForwards = onOpenPortForwards,
         onDismissMessage = settingsViewModel::consumeMessage,
         backupState = backupState,
@@ -417,6 +420,7 @@ internal fun SettingsScreen(
     onOpenSshKeys: () -> Unit = {},
     onOpenSnippets: () -> Unit = {},
     snippetsContent: (@Composable () -> Unit)? = null,
+    keysContent: (@Composable (String) -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     onDismissMessage: () -> Unit,
     backupState: BackupWorkflowUiState = BackupWorkflowUiState(),
@@ -431,7 +435,7 @@ internal fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var pendingKnownHost by remember { mutableStateOf<KnownHostSummary?>(null) }
     val screenDescription = stringResource(R.string.settings_screen_description)
-    val categories = settingsCategoriesForSearch(query, includeDeveloper = BuildConfig.DEBUG)
+    val categories = settingsCategoriesForSearch(if (selectedCategory == SettingsCategory.SSH_KEYS && keysContent != null) "" else query, includeDeveloper = BuildConfig.DEBUG)
     LaunchedEffect(categories) {
         if (selectedCategory != null && selectedCategory !in categories && query.isNotBlank() && categories.isNotEmpty()) {
             selectedCategory = categories.first()
@@ -450,7 +454,14 @@ internal fun SettingsScreen(
     val selectCategory: (SettingsCategory) -> Unit = { category ->
         focusManager.clearFocus()
         keyboardController?.hide()
-        selectedCategory = category
+        if (category == SettingsCategory.SSH_KEYS && keysContent == null) {
+            onOpenSshKeys()
+        } else {
+            if (category == SettingsCategory.SSH_KEYS || selectedCategory == SettingsCategory.SSH_KEYS) {
+                query = ""
+            }
+            selectedCategory = category
+        }
     }
 
     Surface(
@@ -471,7 +482,14 @@ internal fun SettingsScreen(
             safeContentInsets = safeContentInsets,
         ) { contentModifier, expanded ->
             Column(modifier = contentModifier.fillMaxSize()) {
-                SettingsSearchHeader(query = query, onQueryChange = { query = it })
+                SettingsSearchHeader(
+                    query = query,
+                    onQueryChange = { query = it },
+                    searchDescription = stringResource(
+                        if (selectedCategory == SettingsCategory.SSH_KEYS && keysContent != null)
+                            R.string.connections_search_keys else R.string.settings_search_label,
+                    ),
+                )
                 if (expanded) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         SettingsCategoryList(
@@ -508,6 +526,7 @@ internal fun SettingsScreen(
                             onOpenSshKeys = onOpenSshKeys,
                             onOpenSnippets = onOpenSnippets,
                             snippetsContent = snippetsContent,
+                            keysContent = keysContent?.let { content -> { content(query) } },
                             onOpenPortForwards = onOpenPortForwards,
                             backupState = backupState,
                             backupActions = backupActions,
@@ -553,6 +572,7 @@ internal fun SettingsScreen(
                                     onOpenSshKeys = onOpenSshKeys,
                                     onOpenSnippets = onOpenSnippets,
                                     snippetsContent = snippetsContent,
+                                    keysContent = keysContent?.let { content -> { content(query) } },
                                     onOpenPortForwards = onOpenPortForwards,
                                     backupState = backupState,
                                     backupActions = backupActions,
@@ -771,6 +791,7 @@ private fun SettingsDetail(
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
     snippetsContent: (@Composable () -> Unit)? = null,
+    keysContent: (@Composable () -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     backupState: BackupWorkflowUiState,
     backupActions: BackupSettingsActions,
@@ -798,12 +819,14 @@ private fun SettingsDetail(
             SettingsCategory.APPEARANCE -> AppearanceSettings(state, actions)
             SettingsCategory.TERMINAL -> TerminalSettings(state, actions)
             SettingsCategory.KEYBOARD -> KeyboardSettings(state, actions)
-            SettingsCategory.SSH_KEYS -> DataManagementSettings(
-                category = SettingsCategory.SSH_KEYS,
-                detail = R.string.settings_ssh_keys_management_detail,
-                action = R.string.settings_ssh_keys_management_action,
-                onOpen = onOpenSshKeys,
-            )
+            SettingsCategory.SSH_KEYS -> {
+                if (keysContent != null) keysContent() else DataManagementSettings(
+                    category = SettingsCategory.SSH_KEYS,
+                    detail = R.string.settings_ssh_keys_management_detail,
+                    action = R.string.settings_ssh_keys_management_action,
+                    onOpen = onOpenSshKeys,
+                )
+            }
             SettingsCategory.SNIPPETS -> Column(modifier = Modifier.fillMaxSize()) {
                 if (snippetsContent != null) {
                     Box(modifier = Modifier.weight(1f)) { snippetsContent() }
@@ -1830,30 +1853,28 @@ private fun KeyboardActionEditorDeck(
 ) {
     val visibleRowCount = rowCount.coerceAtLeast(1)
     val columns = ((actions.size + visibleRowCount - 1) / visibleRowCount).coerceAtLeast(1)
-    val scrollState = rememberScrollState()
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(KeyboardEditorDeckTestTag),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
-            modifier = Modifier.padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             actions.chunked(columns).forEachIndexed { rowIndex, rowActions ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(scrollState)
                         .testTag("$KeyboardEditorRowTestTagPrefix$rowIndex"),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     rowActions.forEachIndexed { columnIndex, action ->
                         val index = rowIndex * columns + columnIndex
                         KeyboardActionEditorKey(
+                            modifier = Modifier.weight(1f),
                             action = action,
                             index = index,
                             actionCount = actions.size,
@@ -1869,6 +1890,7 @@ private fun KeyboardActionEditorDeck(
 
 @Composable
 private fun KeyboardActionEditorKey(
+    modifier: Modifier = Modifier,
     action: KeyboardAction,
     index: Int,
     actionCount: Int,
@@ -1883,12 +1905,13 @@ private fun KeyboardActionEditorKey(
         label,
         index + 1,
     )
-    Surface(
-        modifier = Modifier
-            .width(64.dp)
-            .heightIn(min = 52.dp)
+    ExtraKeyButton(
+        label = label,
+        description = replaceDescription,
+        onClick = onReplace,
+        modifier = modifier
+            .height(48.dp)
             .testTag("$KeyboardEditorKeyTestTagPrefix$index")
-            .clickable(role = Role.Button, onClick = onReplace)
             .pointerInput(action.wireCode, index, actionCount) {
                 var accumulatedDrag = 0f
                 detectDragGesturesAfterLongPress(
@@ -1929,24 +1952,7 @@ private fun KeyboardActionEditorKey(
                     }
                 }
             },
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
+    )
 }
 
 @Composable
@@ -2802,9 +2808,14 @@ private fun ResetDialog(
 }
 
 @Composable
-private fun SettingsSearchHeader(query: String, onQueryChange: (String) -> Unit) {
-    val clearDescription = stringResource(R.string.settings_clear_search)
-    val searchDescription = stringResource(R.string.settings_search_label)
+internal fun SettingsSearchHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searchDescription: String = stringResource(R.string.settings_search_label),
+    clearDescription: String = stringResource(R.string.settings_clear_search),
+    searchTestTag: String = SettingsSearchTestTag,
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2818,9 +2829,10 @@ private fun SettingsSearchHeader(query: String, onQueryChange: (String) -> Unit)
         ) {
             BasicTextField(
                 value = query,
+                enabled = enabled,
                 onValueChange = { onQueryChange(it.take(80)) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .testTag(SettingsSearchTestTag).semantics { contentDescription = searchDescription },
+                    .testTag(searchTestTag).semantics { contentDescription = searchDescription },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp,
                 ),
@@ -2840,7 +2852,7 @@ private fun SettingsSearchHeader(query: String, onQueryChange: (String) -> Unit)
                         Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
                             if (query.isEmpty()) {
                                 Text(
-                                    stringResource(R.string.settings_search_label),
+                                    searchDescription,
                                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,

@@ -218,4 +218,7 @@
     <string name="settings_keyboard_action_hide">Keyboard</string>
     <string name="settings_keyboard_action_keys">Keys</string>
     <string name="settings_keyboard_action_space">Space</string>
+    <string name="notice_key_import_invalid_format">Could not import: the file is not a supported SSH private key, or it is damaged. Select the private key, not the public key.</string>
+    <string name="notice_key_import_too_large">Could not import: the file exceeds the 256 KiB private-key limit.</string>
+    <string name="notice_key_import_read_failed">Could not import: the selected file could not be read. Check that it is available and select it again.</string>
 </resources>

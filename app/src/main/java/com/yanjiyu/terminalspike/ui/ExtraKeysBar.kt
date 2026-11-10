@@ -1210,7 +1210,7 @@ private fun ExtraKeyRow(
 }
 
 @Composable
-private fun ExtraKeyButton(
+internal fun ExtraKeyButton(
     label: String,
     description: String,
     onClick: () -> Unit,

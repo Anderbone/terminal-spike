@@ -548,7 +548,8 @@ private class DecoderState(private val expectedMode: BackupMode) {
         tmuxPrefix = fields.requiredString(17),
         createdAtEpochMillis = fields.requiredU64(18),
         updatedAtEpochMillis = fields.requiredU64(19),
-    )
+        defaultLayoutState = fields.optionalString(20),
+    ).also { com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance.validate(it.defaultLayoutState, it.orderedActions.size) }
 
     private fun decodeGlobalSettings(fields: PayloadFields, id: String): BackupGlobalSettings {
         if (id != BackupPayloadFormat.GLOBAL_SETTINGS_RECORD_ID) {
@@ -629,7 +630,7 @@ private class DecoderState(private val expectedMode: BackupMode) {
         val SNIPPET_FIELDS = COMMON_FIELDS + (10..18)
         val TERMINAL_FIELDS = COMMON_FIELDS + (10..36)
         val THEME_FIELDS = COMMON_FIELDS + (10..18)
-        val KEYBOARD_FIELDS = COMMON_FIELDS + (10..19)
+        val KEYBOARD_FIELDS = COMMON_FIELDS + (10..20)
         val GLOBAL_FIELDS = COMMON_FIELDS + (10..31)
         val CUSTOM_FONT_FIELDS = COMMON_FIELDS + (10..12)
     }
