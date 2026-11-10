@@ -33,6 +33,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -76,6 +77,49 @@ import org.junit.Test
 import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
+    @Test
+    fun visualInputEditorAddsReplacesRemovesAndSavesTheVisibleLayout() {
+        var saved: String? = null
+        composeRule.setContent {
+            MaterialTheme { InputKeyboardEditor("", false, {}, { saved = it }) }
+        }
+        composeRule.onNodeWithTag("input-keyboard-preview").assertIsDisplayed()
+        composeRule.onNodeWithTag("input-keyboard-add-right").performClick()
+        composeRule.onNodeWithTag("input-keyboard-choice-tab").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-item-0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-choice-escape").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-item-0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-remove").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-item-0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("input-keyboard-remove").assertIsNotEnabled()
+        composeRule.runOnIdle { assertEquals(null, saved) }
+        composeRule.onNodeWithText("Save", useUnmergedTree = false).performClick()
+        composeRule.runOnIdle { assertEquals("toggle,input,tab", saved) }
+    }
+
+    @Test
+    fun visualInputEditorDragsAKeyAcrossTheField() {
+        var tokens by mutableStateOf(listOf("enter", "toggle", "input"))
+        composeRule.setContent {
+            MaterialTheme {
+                InputKeyboardPreview(tokens, null, onSelect = {}, onMove = { from, to ->
+                    tokens = tokens.toMutableList().apply { add(to, removeAt(from)) }
+                })
+            }
+        }
+        val preview = composeRule.onNodeWithTag("input-keyboard-preview").fetchSemanticsNode().boundsInRoot
+        val start = composeRule.onNodeWithTag("input-keyboard-item-0").fetchSemanticsNode().boundsInRoot.center - preview.topLeft
+        val end = composeRule.onNodeWithTag("input-keyboard-item-2").fetchSemanticsNode().boundsInRoot.center - preview.topLeft
+        composeRule.onNodeWithTag("input-keyboard-preview").performTouchInput {
+            down(start); advanceEventTime(700); moveTo(end, delayMillis = 300)
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("input-keyboard-preview").performTouchInput {
+            moveTo(end + androidx.compose.ui.geometry.Offset(2f, 0f), delayMillis = 50); up()
+        }
+        composeRule.runOnIdle { assertEquals(listOf("toggle", "input", "enter"), tokens) }
+    }
+
     @Test
     fun languageMenuSharesTheCompactSearchRowAndUsesRecognizableEndonyms() {
         composeRule.setContent {

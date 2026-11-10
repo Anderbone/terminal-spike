@@ -280,9 +280,17 @@ data class BackupGlobalSettings(
     val osc52Policy: RemoteClipboardMode = RemoteClipboardMode.ASK,
     val multilinePasteConfirmationEnabled: Boolean = true,
     val tmuxSessionSelectorDisabled: Boolean = false,
+    val inputKeyboardLayout: String? = null,
+    val inputButtonsOnRight: Boolean? = null,
     val lastBackupMode: BackupMode? = null,
 ) {
     init {
+        inputKeyboardLayout?.let {
+            require(it.length <= 1024 && (it.isEmpty() ||
+                com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.parse(it) != null)) {
+                "Input keyboard layout is invalid."
+            }
+        }
         accentPreset?.let { requireBoundedIdentifier(it, "accent preset", MAX_SETTING_IDENTIFIER_BYTES) }
         defaultTerminalProfileId?.let { requireCanonicalBackupUuid(it, "default terminal profile ID") }
         defaultKeyboardProfileId?.let { requireCanonicalBackupUuid(it, "default keyboard profile ID") }

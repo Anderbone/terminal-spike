@@ -578,6 +578,8 @@ private class DecoderState(private val expectedMode: BackupMode) {
             multilinePasteConfirmationEnabled = fields.requiredBoolean(29),
             lastBackupMode = fields.optionalU8(30)?.let { BackupMode.fromWireValue(it) ?: invalid(id) },
             tmuxSessionSelectorDisabled = fields.optionalBoolean(31) ?: false,
+            inputKeyboardLayout = fields.optionalString(32),
+            inputButtonsOnRight = fields.optionalBoolean(33),
         )
     }
 
@@ -631,7 +633,7 @@ private class DecoderState(private val expectedMode: BackupMode) {
         val TERMINAL_FIELDS = COMMON_FIELDS + (10..36)
         val THEME_FIELDS = COMMON_FIELDS + (10..18)
         val KEYBOARD_FIELDS = COMMON_FIELDS + (10..20)
-        val GLOBAL_FIELDS = COMMON_FIELDS + (10..31)
+        val GLOBAL_FIELDS = COMMON_FIELDS + (10..33)
         val CUSTOM_FONT_FIELDS = COMMON_FIELDS + (10..12)
     }
 }

@@ -1579,6 +1579,7 @@ fun TerminalSpikeScreen(
                                 if (terminalSurfaceVisible) {
                                     TerminalViewBridge(
                                         controller = activeController,
+                                        onDirectInput = viewModel::sendDirectInput,
                                         onOpenHerdrProject = {
                                             val opened = viewModel.openProject(state.activeSessionId)
                                             if (opened) {
@@ -1674,6 +1675,7 @@ fun TerminalSpikeScreen(
                                     snippetsAboveKeyboard = state.snippetsAboveKeyboard,
                                     voiceInputEnabled = state.voiceInputEnabled,
                                     inputButtonsOnRight = state.inputButtonsOnRight,
+                                    inputKeyboardLayout = state.inputKeyboardLayout,
                                     buttonColors = state.buttonColors,
                                     onInputButtonsOnRight = viewModel::setInputButtonsOnRight,
                                     customizationEnabled = state.settingsReady,

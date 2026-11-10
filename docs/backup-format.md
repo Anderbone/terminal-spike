@@ -209,3 +209,7 @@ beside the original as `.terminal-spike-<SHA-256>.new`; accepting it requires th
 user to review/copy it. Hash records live outside the guest rootfs. Ephemeral
 `etc/terminal-spike/control.json` and `browser.json` are App-owned runtime connection
 metadata and refresh on launch. Guest symlinks are never followed by this writer.
+
+Custom input-mode layouts and the legacy left/right button preference are exported
+as optional global-setting fields 32 and 33. Restoring a newer backup reinstates
+these settings; older backups without the fields preserve the current choices.

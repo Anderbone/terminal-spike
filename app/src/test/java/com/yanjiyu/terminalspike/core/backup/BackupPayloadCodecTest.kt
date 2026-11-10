@@ -41,6 +41,20 @@ class BackupPayloadCodecTest {
     private val codec = BackupPayloadCodec()
 
     @Test
+    fun customInputLayoutAndLegacySideSurvivePortableBackup() {
+        val settings = BackupGlobalSettings(inputKeyboardLayout = "toggle,tab,input,escape,enter", inputButtonsOnRight = true)
+        val snapshot = BackupPayloadSnapshot(mode = BackupMode.STANDARD, globalSettings = settings)
+        codec.read(ByteArrayInputStream(encode(snapshot)), BackupMode.STANDARD).snapshot.use {
+            assertEquals(settings, it.globalSettings)
+        }
+        val older = BackupPayloadSnapshot(mode = BackupMode.STANDARD, globalSettings = BackupGlobalSettings())
+        codec.read(ByteArrayInputStream(encode(older)), BackupMode.STANDARD).snapshot.use {
+            assertEquals(null, it.globalSettings?.inputKeyboardLayout)
+            assertEquals(null, it.globalSettings?.inputButtonsOnRight)
+        }
+    }
+
+    @Test
     fun keyboardInheritanceSurvivesBackupAndCanMergeTheNextDefault() {
         val defaults = com.yanjiyu.terminalspike.core.model.KeyboardDefaultInheritance
         val original = defaults.reset(keyboardProfile())

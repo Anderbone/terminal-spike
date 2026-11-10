@@ -1,4 +1,4 @@
-• Keyboard defaults now track individual button positions while preserving custom changes, including across backup restore.
-• Local Linux helper updates preserve user-edited files; backup screens clarify that Linux data needs a separate backup.
-• Improved SSH key import with support for extensionless files and clearer errors.
-• Refined settings, key management, and onboarding navigation.
+• Customize the input keyboard visually: add, replace, remove, and drag keys around the input field.
+• Shortcut previews now share the terminal's button icons and colors.
+• System keyboard input respects pending Ctrl, Alt, and Shift modifiers.
+• Custom input layouts and button-side preferences are included in portable backups.

@@ -586,4 +586,12 @@
     <string name="terminal_more_keys_description">打开扩展终端键盘</string>
     <string name="settings_input_buttons_right">输入按钮置于右侧</string>
     <string name="settings_input_buttons_right_summary">将回车和输入切换按钮移到右侧。长按输入切换按钮可交换位置。</string>
+    <string name="settings_input_keyboard_edit">输入框键盘</string>
+    <string name="settings_input_keyboard_summary">点按按键可替换或删除；长按拖动按键或输入框调整位置。预览与终端共用同一套布局。</string>
+    <string name="settings_input_keyboard_field">[输入框]</string>
+    <string name="settings_input_keyboard_toggle">切换模式</string>
+    <string name="settings_input_keyboard_reset">恢复默认布局</string>
+    <string name="settings_input_keyboard_add_left">左侧加键</string>
+    <string name="settings_input_keyboard_add_right">右侧加键</string>
+    <string name="settings_input_keyboard_remove">删除按键</string>
 </resources>

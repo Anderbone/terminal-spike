@@ -598,4 +598,12 @@
     <string name="terminal_more_keys_description">Open expanded terminal keyboard</string>
     <string name="settings_input_buttons_right">Input buttons on the right</string>
     <string name="settings_input_buttons_right_summary">Move Enter and the input toggle to the right. Long-press the input toggle to swap sides.</string>
+    <string name="settings_input_keyboard_edit">Input mode keyboard</string>
+    <string name="settings_input_keyboard_summary">Tap a key to replace or remove it. Long-press and drag keys or the input field to rearrange. The preview uses the same layout as the terminal.</string>
+    <string name="settings_input_keyboard_field">[Input field]</string>
+    <string name="settings_input_keyboard_toggle">Switch mode</string>
+    <string name="settings_input_keyboard_reset">Restore default layout</string>
+    <string name="settings_input_keyboard_add_left">Add left</string>
+    <string name="settings_input_keyboard_add_right">Add right</string>
+    <string name="settings_input_keyboard_remove">Remove key</string>
 </resources>

@@ -185,6 +185,7 @@ internal data class AppPreferences(
     val snippetsAboveKeyboard: Boolean = false,
     val voiceInputEnabled: Boolean = false,
     val inputButtonsOnRight: Boolean = false,
+    val inputKeyboardLayout: String = "",
     val voiceInputLanguage: VoiceInputLanguage = VoiceInputLanguage.DEVICE_DEFAULT,
 )
 
@@ -205,6 +206,7 @@ internal enum class SensitiveClipboardClearPreset(
 }
 
 internal data class SettingsUiState(
+    val buttonColors: Map<String, String> = emptyMap(),
     val preferences: AppPreferences = AppPreferences(),
     val terminalProfile: TerminalProfile? = null,
     val keyboardProfile: KeyboardProfile? = null,
@@ -668,6 +670,9 @@ internal fun KeyboardProfile.toRuntimeAccessoryActionsOrNull(): List<TerminalAcc
     return runtime
 }
 
+internal fun toInputAccessoryAction(action: KeyboardAction): TerminalAccessoryAction? =
+    action.toRuntimeAccessoryActionOrNull(KeyboardProfile.DEFAULT_TMUX_PREFIX)
+
 private fun KeyboardAction.toRuntimeAccessoryActionOrNull(
     tmuxPrefix: String,
 ): TerminalAccessoryAction? = when (this) {
@@ -863,6 +868,7 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
     snippetsAboveKeyboard = snippetsAboveKeyboard,
     voiceInputEnabled = hasVoiceInputDisabled() && !voiceInputDisabled,
     inputButtonsOnRight = inputButtonsOnRight,
+    inputKeyboardLayout = inputKeyboardLayout,
     voiceInputLanguage = VoiceInputLanguage.fromLanguageTag(voiceInputLanguageTag),
 )
 

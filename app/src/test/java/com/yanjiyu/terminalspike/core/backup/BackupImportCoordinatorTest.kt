@@ -300,6 +300,8 @@ class BackupImportCoordinatorTest {
                         defaultKeyboardProfileId = null,
                         lastBackupMode = BackupMode.FULL,
                         tmuxSessionSelectorDisabled = true,
+                        inputKeyboardLayout = "toggle,input,tab",
+                        inputButtonsOnRight = true,
                     ),
                 ),
                 BackupImportStrategy.REPLACE_CORRESPONDING,
@@ -314,6 +316,8 @@ class BackupImportCoordinatorTest {
             lastBackupMode = "full",
         )
         assertTrue(requireNotNull(mixedPersistence.appliedSettings).tmuxSessionSelectorDisabled)
+        assertEquals("toggle,input,tab", requireNotNull(mixedPersistence.appliedSettings).inputKeyboardLayout)
+        assertTrue(requireNotNull(mixedPersistence.appliedSettings).inputButtonsOnRight)
     }
 
     @Test

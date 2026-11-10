@@ -90,6 +90,7 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
                 ) { settings, terminalProfiles, keyboardProfiles, customThemes, targets ->
                     SettingsUiState(
                         preferences = settings.toPreferences(),
+                        buttonColors = settings.buttonColorsMap,
                         terminalProfile = resolveSettingsProfile(
                             profiles = terminalProfiles,
                             requestedId = targets.terminalProfileId,
@@ -274,6 +275,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
 
     fun setSnippetsAboveKeyboard(enabled: Boolean) =
         updateGlobal { it.setSnippetsAboveKeyboard(enabled) }
+
+    fun setInputKeyboardLayout(value: String) =
+        updateGlobal { it.setInputKeyboardLayout(value) }
 
     fun setInputButtonsOnRight(value: Boolean) =
         updateGlobal { it.setInputButtonsOnRight(value) }

@@ -246,6 +246,8 @@ internal fun AppSettings.toBackupGlobalSettings(): BackupGlobalSettings = Backup
     },
     multilinePasteConfirmationEnabled = multilinePasteConfirmationEnabled,
     tmuxSessionSelectorDisabled = tmuxSessionSelectorDisabled,
+    inputKeyboardLayout = inputKeyboardLayout,
+    inputButtonsOnRight = inputButtonsOnRight,
     lastBackupMode = when (lastBackupMode) {
         "" -> null
         "standard" -> BackupMode.STANDARD

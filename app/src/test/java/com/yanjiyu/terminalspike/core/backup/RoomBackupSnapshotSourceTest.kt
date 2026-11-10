@@ -186,6 +186,8 @@ class RoomBackupSnapshotSourceTest {
             .setOsc52Policy(AppSettings.Osc52Policy.OSC52_POLICY_ASK)
             .setLastBackupMode("full")
             .setTmuxSessionSelectorDisabled(true)
+            .setInputKeyboardLayout("toggle,input,tab")
+            .setInputButtonsOnRight(true)
             .build()
             .toBackupGlobalSettings()
 
@@ -203,6 +205,8 @@ class RoomBackupSnapshotSourceTest {
         assertEquals(60, mapped.sensitiveClipboardClearSeconds)
         assertEquals(BackupMode.FULL, mapped.lastBackupMode)
         assertTrue(mapped.tmuxSessionSelectorDisabled)
+        assertEquals("toggle,input,tab", mapped.inputKeyboardLayout)
+        assertEquals(true, mapped.inputButtonsOnRight)
     }
 
     @Test

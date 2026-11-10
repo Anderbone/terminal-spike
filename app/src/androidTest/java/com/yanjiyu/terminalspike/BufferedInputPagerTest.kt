@@ -51,6 +51,42 @@ import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
 
 class BufferedInputPagerTest {
+    @Test
+    fun customInputLayoutKeepsFieldBetweenKeysAndDispatchesWithoutLosingDraft() {
+        val draft = BufferedInputDraftState(initialText = "keep draft")
+        val pressed = mutableListOf<TerminalExtraKey>()
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f))
+                    ExtraKeysBar(
+                        keys = TerminalExtraKey.DEFAULT_ORDER, ctrlArmed = false, altArmed = false,
+                        inputKeyboardLayout = "toggle,tab,input,escape,enter",
+                        customizationEnabled = false, inputTargetId = 1L,
+                        bufferedInputSendEnabled = true, bufferedInputDraftState = draft,
+                        onKey = { pressed += it }, onCustomize = {},
+                        onSendBufferedInput = { _, _ -> true }, onBufferedInputModeChanged = {},
+                        onDirectInputMode = {},
+                    )
+                }
+            }
+        }
+        val field = composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val tab = composeRule.onNodeWithContentDescription("Terminal key TAB").assertIsDisplayed()
+        val escape = composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
+        assertTrue(tab.fetchSemanticsNode().boundsInRoot.right <= field.left)
+        assertTrue(escape.fetchSemanticsNode().boundsInRoot.left >= field.right)
+        assertTrue(field.width >= 100 * composeRule.activity.resources.displayMetrics.density)
+        tab.performClick()
+        escape.performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf(TerminalExtraKey.TAB, TerminalExtraKey.ESC), pressed)
+            assertEquals("keep draft", draft.value.text)
+        }
+        composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+    }
+
     @get:Rule
     val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
 

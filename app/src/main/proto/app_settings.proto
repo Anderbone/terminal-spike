@@ -52,6 +52,10 @@ message AppSettings {
 
   bool input_buttons_on_right = 30;
 
+  // Empty preserves the legacy two-button input bar. Otherwise ordered wire codes
+  // include exactly one input field and at least one mode switch.
+  string input_keyboard_layout = 33;
+
   // Device-local accessory button backgrounds, keyed by runtime stable ID.
   map<string, string> button_colors = 32;
 

@@ -60,6 +60,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -159,7 +160,7 @@ import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardContentKind
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardRequest
 import com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriter
 import com.yanjiyu.terminalspike.terminal.view.TerminalTypefaceRegistry
-import com.yanjiyu.terminalspike.ui.ExtraKeyButton
+import com.yanjiyu.terminalspike.ui.TerminalShortcutEditorKey
 import com.yanjiyu.terminalspike.ui.TerminalShortcutPreview
 import com.yanjiyu.terminalspike.ui.AboutSection
 import com.yanjiyu.terminalspike.ui.guide.UserGuideIndex
@@ -207,6 +208,7 @@ internal data class SettingsActions(
     val onMultilinePasteConfirmation: (Boolean) -> Unit,
     val onVoiceInputLanguage: (VoiceInputLanguage) -> Unit = {},
     val onSnippetsAboveKeyboard: (Boolean) -> Unit = {},
+    val onInputKeyboardLayout: (String) -> Unit = {},
     val onInputButtonsOnRight: (Boolean) -> Unit = {},
     val onVoiceInputEnabled: (Boolean) -> Unit = {},
     val onResetTerminal: () -> Unit,
@@ -346,6 +348,7 @@ internal fun SettingsDestination(
             onMultilinePasteConfirmation = settingsViewModel::setMultilinePasteConfirmation,
             onVoiceInputLanguage = settingsViewModel::setVoiceInputLanguage,
             onSnippetsAboveKeyboard = settingsViewModel::setSnippetsAboveKeyboard,
+            onInputKeyboardLayout = settingsViewModel::setInputKeyboardLayout,
             onInputButtonsOnRight = settingsViewModel::setInputButtonsOnRight,
             onVoiceInputEnabled = settingsViewModel::setVoiceInputEnabled,
             onResetTerminal = settingsViewModel::resetTerminalBehavior,
@@ -1427,9 +1430,18 @@ internal const val TerminalSettingsTestTag = "terminal-settings"
 @Composable
 private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
     val profile = state.keyboardProfile
+    var editInputKeys by remember { mutableStateOf(false) }
     var editKeys by remember { mutableStateOf(false) }
     var replacementIndex by remember(profile?.id) { mutableStateOf<Int?>(null) }
     var resetRequested by remember { mutableStateOf(false) }
+    if (editInputKeys) {
+        InputKeyboardEditor(
+        state.preferences.inputKeyboardLayout, state.preferences.inputButtonsOnRight,
+        onDismiss = { editInputKeys = false },
+        onSave = { actions.onInputKeyboardLayout(it); editInputKeys = false },
+        )
+        return
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag(KeyboardSettingsTestTag),
@@ -1475,6 +1487,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 )
                 KeyboardDeckPreview(
                     profile = profile,
+                    buttonColors = state.buttonColors,
                     onKeyClick = { index -> replacementIndex = index },
                     onEditKeys = { editKeys = true },
                 )
@@ -1516,13 +1529,25 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 )
             }
             item { SectionDivider() }
-            item {
+            if (state.preferences.inputKeyboardLayout.isEmpty()) item {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_input_buttons_right),
                     summary = stringResource(R.string.settings_input_buttons_right_summary),
                     checked = state.preferences.inputButtonsOnRight,
                     onCheckedChange = actions.onInputButtonsOnRight,
                 )
+            }
+            item {
+                val inputTokens = com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.parse(state.preferences.inputKeyboardLayout)
+                    ?: com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.defaultTokens(state.preferences.inputButtonsOnRight)
+                InputKeyboardPreview(inputTokens, selected = null, legacyLayout = state.preferences.inputKeyboardLayout.isEmpty(),
+                    onSelect = { editInputKeys = true }, onMove = { from, to ->
+                        actions.onInputKeyboardLayout(inputTokens.toMutableList().apply { add(to, removeAt(from)) }.joinToString(","))
+                    })
+                Button(onClick = { editInputKeys = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.settings_input_keyboard_edit))
+                }
+                Text(stringResource(R.string.settings_input_keyboard_summary), style = MaterialTheme.typography.bodySmall)
             }
             item { SectionLabel(R.string.settings_voice_input_heading) }
             item {
@@ -1568,6 +1593,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
     if (editKeys && profile != null) {
         KeyboardActionsDialog(
             initialActions = profile.orderedActions,
+            buttonColors = state.buttonColors,
             rowCount = profile.layout.rowCount,
             onDismiss = { editKeys = false },
             onSave = {
@@ -1608,6 +1634,7 @@ internal const val KeyboardPreviewKeyTestTagPrefix = "keyboard-preview-key-"
 @Composable
 private fun KeyboardDeckPreview(
     profile: KeyboardProfile,
+    buttonColors: Map<String, String>,
     onKeyClick: (Int) -> Unit,
     onEditKeys: () -> Unit,
 ) {
@@ -1615,6 +1642,7 @@ private fun KeyboardDeckPreview(
     Box(Modifier.fillMaxWidth().testTag(KeyboardPreviewTestTag)) {
         TerminalShortcutPreview(
             actions = runtimeActions,
+            buttonColors = buttonColors,
             layout = profile.layout,
             keyTagPrefix = KeyboardPreviewKeyTestTagPrefix,
             onKeyClick = onKeyClick,
@@ -1757,6 +1785,7 @@ internal fun replaceKeyboardActionAt(
 @Composable
 private fun KeyboardActionsDialog(
     initialActions: List<KeyboardAction>,
+    buttonColors: Map<String, String>,
     rowCount: Int,
     onDismiss: () -> Unit,
     onSave: (List<KeyboardAction>) -> Unit,
@@ -1783,6 +1812,7 @@ private fun KeyboardActionsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 KeyboardActionEditorDeck(
+                    buttonColors = buttonColors,
                     actions = actions,
                     rowCount = rowCount,
                     onReplace = { replacementIndex = it },
@@ -1846,6 +1876,7 @@ private fun KeyboardActionsDialog(
 
 @Composable
 private fun KeyboardActionEditorDeck(
+    buttonColors: Map<String, String>,
     actions: List<KeyboardAction>,
     rowCount: Int,
     onReplace: (Int) -> Unit,
@@ -1874,6 +1905,7 @@ private fun KeyboardActionEditorDeck(
                     rowActions.forEachIndexed { columnIndex, action ->
                         val index = rowIndex * columns + columnIndex
                         KeyboardActionEditorKey(
+                            buttonColors = buttonColors,
                             modifier = Modifier.weight(1f),
                             action = action,
                             index = index,
@@ -1890,6 +1922,7 @@ private fun KeyboardActionEditorDeck(
 
 @Composable
 private fun KeyboardActionEditorKey(
+    buttonColors: Map<String, String>,
     modifier: Modifier = Modifier,
     action: KeyboardAction,
     index: Int,
@@ -1905,9 +1938,9 @@ private fun KeyboardActionEditorKey(
         label,
         index + 1,
     )
-    ExtraKeyButton(
-        label = label,
-        description = replaceDescription,
+    TerminalShortcutEditorKey(
+        action = requireNotNull(toInputAccessoryAction(action)),
+        buttonColors = buttonColors,
         onClick = onReplace,
         modifier = modifier
             .height(48.dp)
@@ -1956,11 +1989,11 @@ private fun KeyboardActionEditorKey(
 }
 
 @Composable
-private fun keyboardActionSearchText(action: KeyboardAction): String =
+internal fun keyboardActionSearchText(action: KeyboardAction): String =
     "${action.wireCode} ${keyboardActionLabel(action)}".replace('_', ' ')
 
 @Composable
-private fun keyboardActionLabel(action: KeyboardAction): String = when (action) {
+internal fun keyboardActionLabel(action: KeyboardAction): String = when (action) {
     KeyboardAction.ESCAPE -> stringResource(R.string.settings_keyboard_action_escape)
     KeyboardAction.CONTROL -> stringResource(R.string.settings_keyboard_action_control)
     KeyboardAction.ALT -> stringResource(R.string.settings_keyboard_action_alt)

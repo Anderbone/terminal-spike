@@ -528,6 +528,7 @@ data class TerminalSpikeUiState(
     val snippetsAboveKeyboard: Boolean = false,
     val voiceInputEnabled: Boolean = false,
     val inputButtonsOnRight: Boolean = false,
+    val inputKeyboardLayout: String = "",
     val buttonColors: Map<String, String> = emptyMap(),
     internal val aiAgents: com.yanjiyu.terminalspike.settings.AiAgents = com.yanjiyu.terminalspike.settings.AiAgents(),
     val voiceInputLanguageTag: String = "",
@@ -1799,6 +1800,7 @@ class TerminalSpikeViewModel(
                                 snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
                                 voiceInputEnabled = snapshot.appSettings.hasVoiceInputDisabled() && !snapshot.appSettings.voiceInputDisabled,
                                 inputButtonsOnRight = snapshot.appSettings.inputButtonsOnRight,
+                                inputKeyboardLayout = snapshot.appSettings.inputKeyboardLayout,
                                 buttonColors = snapshot.appSettings.buttonColorsMap,
                                 aiAgents = com.yanjiyu.terminalspike.settings.AiAgents.from(snapshot.appSettings),
                             )
@@ -4591,6 +4593,24 @@ class TerminalSpikeViewModel(
 
     fun selectTerminalInputMode(mode: TerminalInputMode) {
         _uiState.update { it.copy(terminalInputMode = mode) }
+    }
+
+    /** System keyboard input shares the deck's pending one-shot modifiers, even when closed. */
+    fun sendDirectInput(bytes: ByteArray): Boolean {
+        val state = _uiState.value
+        val modified = applyPendingInputModifiers(bytes, state.ctrlArmed, state.altArmed, state.shiftArmed)
+        val accepted = try {
+            controllerFor(state.activeSessionId).sendWithAcceptance(modified)
+        } finally {
+            modified.fill(0)
+        }
+        if (accepted && bytes.isNotEmpty()) {
+            if (!state.ctrlLocked) lastCtrlTapNanos = 0L
+            if (!state.altLocked) lastAltTapNanos = 0L
+            if (!state.shiftLocked) lastShiftTapNanos = 0L
+            _uiState.update { it.afterAccessoryByteDispatch() }
+        }
+        return accepted
     }
 
     /** Resolves and dispatches a non-local typed deck action against one current state snapshot. */

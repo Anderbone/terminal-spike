@@ -167,13 +167,14 @@ class FastTerminalView @JvmOverloads constructor(
     private var linkActionCallback = TerminalLinkActionCallback {
         // Opening is intentionally inert until a surrounding policy callback is installed.
     }
+    var sendAccessoryModifiedInput: ((ByteArray) -> Boolean)? = null
     var openHerdrProject: (() -> Boolean)? = null
     private var preImeBackCallback: (() -> Unit)? = null
     private val directInputSink = object : TerminalInputSink {
         override fun send(bytes: ByteArray) {
             if (directInputEnabled) {
                 finishResizePresentation()
-                terminalController?.send(bytes)
+                sendAccessoryModifiedInput?.invoke(bytes) ?: terminalController?.send(bytes)
             }
         }
     }

@@ -379,6 +379,8 @@ private object BackupPayloadEncoder {
             bool(29, settings.multilinePasteConfirmationEnabled)
             settings.lastBackupMode?.let { u8(30, it.wireValue) }
             if (settings.tmuxSessionSelectorDisabled) bool(31, true)
+            optionalString(32, settings.inputKeyboardLayout)
+            settings.inputButtonsOnRight?.let { bool(33, it) }
         }
 
     private fun recordPlan(id: String, fields: PayloadRecordPlanBuilder.() -> Unit): PayloadRecordPlan =

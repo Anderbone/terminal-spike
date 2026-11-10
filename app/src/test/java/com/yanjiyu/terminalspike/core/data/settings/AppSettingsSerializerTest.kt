@@ -14,6 +14,17 @@ import org.junit.Test
 
 class AppSettingsSerializerTest {
     @Test
+    fun customInputKeyboardSurvivesSerialization() = runTest {
+        val settings = AppSettingsSerializer.defaultValue.toBuilder()
+            .setInputKeyboardLayout("toggle,tab,input,escape,enter").build()
+        val bytes = ByteArrayOutputStream()
+        AppSettingsSerializer.writeTo(settings, bytes)
+        val restored = AppSettingsSerializer.readFrom(ByteArrayInputStream(bytes.toByteArray()))
+        assertEquals(settings.inputKeyboardLayout, restored.inputKeyboardLayout)
+        assertEquals("", AppSettingsSerializer.defaultValue.inputKeyboardLayout)
+    }
+
+    @Test
     fun defaultsAreSafeAndVersioned() {
         val defaults = AppSettingsSerializer.defaultValue
 
