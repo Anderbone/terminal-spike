@@ -86,6 +86,12 @@ internal class MoshBootstrapResult(
         }, choice)
     }
 
+    fun focusHerdrTask(paneId: String, terminalId: String, agentSession: String?): Boolean {
+        val choice = herdrChoice ?: return false
+        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return false
+        return focusHerdrTask(runner, choice, paneId, terminalId, agentSession)
+    }
+
     fun captureHerdrAgentStates(): List<HerdrAgentState>? {
         val choice = herdrChoice ?: return null
         val sideChannel = sshSideChannel ?: return null

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="herdr_sidebar_label">空间与智能体</string>
+    <string name="herdr_show_sidebar">显示 Herdr 空间与智能体</string>
+    <string name="herdr_hide_sidebar">隐藏 Herdr 空间与智能体</string>
+</resources>

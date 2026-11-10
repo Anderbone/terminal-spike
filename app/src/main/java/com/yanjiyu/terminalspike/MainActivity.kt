@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import android.app.Activity
 import android.content.Intent
+import android.widget.Toast
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
@@ -39,6 +40,7 @@ import com.yanjiyu.terminalspike.core.security.applock.AppLockMode
 import com.yanjiyu.terminalspike.core.security.applock.AppLockPolicy
 import com.yanjiyu.terminalspike.core.security.applock.AppLockUiState
 import com.yanjiyu.terminalspike.core.security.applock.AppLockViewModel
+import com.yanjiyu.terminalspike.connection.HerdrAgentState
 import com.yanjiyu.terminalspike.connection.requiresForegroundService
 import com.yanjiyu.terminalspike.ui.AppLockGate
 import com.yanjiyu.terminalspike.ui.StartupRecoveryGate
@@ -60,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private val currentSettings = MutableStateFlow<AppSettings?>(null)
     private val disconnectAllConfirmationRequested = MutableStateFlow(false)
     private val openTerminalSessionRequested = MutableStateFlow<Long?>(null)
+    private var notificationTask: HerdrAgentState? = null
     private val quickStartAllowed = MutableStateFlow(true)
     private var settingsJob: Job? = null
     private lateinit var appContainer: AppContainer
@@ -73,12 +76,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.yanjiyu.terminalspike.settings.AppLanguage.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         disconnectAllConfirmationRequested.value =
             savedInstanceState?.getBoolean(STATE_DISCONNECT_ALL_CONFIRMATION) == true
         quickStartAllowed.value = savedInstanceState?.getBoolean(STATE_QUICK_START_ALLOWED, true) ?: true
-        captureNotificationAction(intent)
+        val restoredSession = savedInstanceState?.getLong(EXTRA_TERMINAL_SESSION_ID, Long.MIN_VALUE)
+        if (restoredSession != null && restoredSession != Long.MIN_VALUE && intent.action == null) {
+            captureNotificationAction(Intent(this, MainActivity::class.java)
+                .setAction(ACTION_OPEN_TERMINAL_SESSION)
+                .putExtra(EXTRA_TERMINAL_SESSION_ID, restoredSession)
+                .putExtra(EXTRA_TASK_PANE, savedInstanceState?.getString(EXTRA_TASK_PANE))
+                .putExtra(EXTRA_TASK_TERMINAL, savedInstanceState?.getString(EXTRA_TASK_TERMINAL))
+                .putExtra(EXTRA_TASK_SESSION, savedInstanceState?.getString(EXTRA_TASK_SESSION)))
+        } else captureNotificationAction(intent)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         appContainer = (application as TerminalSpikeApplication).container
@@ -183,7 +198,16 @@ class MainActivity : ComponentActivity() {
                             !(quickStartPending && allowQuickStart),
                         openTerminalSessionId = openTerminalSessionId,
                         onOpenTerminalSessionConsumed = {
+                            val sessionId = openTerminalSessionRequested.value
+                            val task = notificationTask
+                            notificationTask = null
                             openTerminalSessionRequested.value = null
+                            if (sessionId != null && task != null) lifecycleScope.launch {
+                                if (!appContainer.sshSessionRepository.focusNotificationTask(sessionId, task)) {
+                                    Toast.makeText(this@MainActivity,
+                                        R.string.terminal_task_target_unavailable, Toast.LENGTH_LONG).show()
+                                }
+                            }
                         },
                     )
                 }
@@ -227,6 +251,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        openTerminalSessionRequested.value?.let { outState.putLong(EXTRA_TERMINAL_SESSION_ID, it) }
+        notificationTask?.let {
+            outState.putString(EXTRA_TASK_PANE, it.paneId)
+            outState.putString(EXTRA_TASK_TERMINAL, it.terminalId)
+            outState.putString(EXTRA_TASK_SESSION, it.agentSession)
+        }
         outState.putBoolean(STATE_QUICK_START_ALLOWED, quickStartAllowed.value)
         outState.putBoolean(
             STATE_DISCONNECT_ALL_CONFIRMATION,
@@ -341,13 +371,24 @@ class MainActivity : ComponentActivity() {
             ACTION_OPEN_TERMINAL_SESSION -> source
                 .getLongExtra(EXTRA_TERMINAL_SESSION_ID, Long.MIN_VALUE)
                 .takeIf { it != Long.MIN_VALUE }
-                ?.let(::openTerminalSession)
+                ?.let { sessionId ->
+                    val pane = source.getStringExtra(EXTRA_TASK_PANE)
+                    val terminal = source.getStringExtra(EXTRA_TASK_TERMINAL)
+                    notificationTask = if (pane != null && terminal != null) {
+                        HerdrAgentState(pane, terminal,
+                            source.getStringExtra(EXTRA_TASK_SESSION), "unknown", 0)
+                    } else null
+                    openTerminalSession(sessionId)
+                }
             else -> return
         }
         setIntent(
             Intent(source).apply {
                 action = null
                 removeExtra(EXTRA_TERMINAL_SESSION_ID)
+                removeExtra(EXTRA_TASK_PANE)
+                removeExtra(EXTRA_TASK_TERMINAL)
+                removeExtra(EXTRA_TASK_SESSION)
             },
         )
     }
@@ -382,6 +423,9 @@ class MainActivity : ComponentActivity() {
             "com.yanjiyu.terminalspike.action.CONFIRM_DISCONNECT_ALL_REMOTE_TERMINALS"
         internal const val ACTION_OPEN_TERMINAL_SESSION =
             "com.yanjiyu.terminalspike.action.OPEN_TERMINAL_SESSION"
+        internal const val EXTRA_TASK_PANE = "task_pane"
+        internal const val EXTRA_TASK_TERMINAL = "task_terminal"
+        internal const val EXTRA_TASK_SESSION = "task_session"
         internal const val EXTRA_TERMINAL_SESSION_ID = "terminal_session_id"
         private const val STATE_DISCONNECT_ALL_CONFIRMATION = "disconnect_all_confirmation"
     }

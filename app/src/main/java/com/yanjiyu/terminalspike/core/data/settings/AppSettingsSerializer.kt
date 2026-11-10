@@ -18,7 +18,7 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         .setDefaultKeyboardProfileId("f23f85fd-3122-5f8b-b28a-d0320f402866")
         .setKeepaliveIntervalSeconds(30)
         .setReconnectMaxAttempts(5)
-        .setNotificationPrivacyEnabled(true)
+        .setNotificationPrivacyEnabled(false)
         .setAppLockMode(AppSettings.AppLockMode.APP_LOCK_MODE_OFF)
         .setOsc52Policy(AppSettings.Osc52Policy.OSC52_POLICY_DISABLED)
         .setMultilinePasteConfirmationEnabled(false)

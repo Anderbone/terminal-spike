@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -84,7 +85,14 @@ internal data class TerminalProgramNotificationEvent(
     val sessionId: Long,
     val sessionTitle: String,
     val message: String,
-)
+    val task: HerdrAgentState? = null,
+) {
+    val notificationKey: String get() = task?.let {
+        val identity = "$sessionId/${it.paneId}/${it.terminalId}/${it.agentSession}/${it.replyId ?: it.sequence}"
+        java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+    } ?: sessionId.toString()
+}
 
 /** The non-secret endpoint/options needed to ask for authentication and start a fresh transport. */
 internal data class RemoteSessionConnectionSeed(
@@ -1144,10 +1152,12 @@ internal class SshSessionRepository(
                     emitRemoteClipboardRequest(runtime, connection, request)
                 },
                 onTerminalNotification = { message ->
-                    emitTerminalProgramNotification(runtime, connection, message)
+                    val richNotifications = synchronized(lock) { runtime.herdrRichNotificationsAvailable }
+                    if (!richNotifications) emitTerminalProgramNotification(runtime, connection, message)
                 },
                 onTerminalBell = {
-                    emitTerminalProgramNotification(runtime, connection, message = "")
+                    val richNotifications = synchronized(lock) { runtime.herdrRichNotificationsAvailable }
+                    if (!richNotifications) emitTerminalProgramNotification(runtime, connection, message = "")
                 },
             )
             val terminalTitle = sanitizeTerminalTitle(
@@ -1177,6 +1187,7 @@ internal class SshSessionRepository(
         runtime: SshSessionRuntime,
         connection: Connection,
         message: String,
+        task: HerdrAgentState? = null,
     ) {
         val event = synchronized(lock) {
             if (
@@ -1189,10 +1200,20 @@ internal class SshSessionRepository(
                 sessionId = runtime.id,
                 sessionTitle = runtime.workspaceName,
                 message = message,
+                task = task,
             )
         }
         _terminalProgramNotifications.tryEmit(event)
     }
+
+    /** Called only after notification navigation has passed the app-lock/startup gates. */
+    internal suspend fun focusNotificationTask(sessionId: Long, task: HerdrAgentState) =
+        withContext(herdrNotificationDispatcher) {
+            val connection = synchronized(lock) {
+                runtimes[sessionId]?.takeIf { !it.terminated }?.connection
+            } ?: return@withContext false
+            connection.focusHerdrTask(task.paneId, task.terminalId, task.agentSession)
+        }
 
     private fun monitorHerdrTaskCompletion(runtime: SshSessionRuntime, connection: Connection) {
         if (!connection.isHerdrSession) return
@@ -1205,8 +1226,12 @@ internal class SshSessionRepository(
                 }
                 if (!live) break
                 val states = runCatching { connection.captureHerdrAgentStates() }.getOrNull()
-                if (isActive && tracker.observe(states)) {
-                    emitTerminalProgramNotification(runtime, connection, message = "")
+                synchronized(lock) {
+                    runtime.herdrRichNotificationsAvailable = states?.any { it.replySupported } == true
+                }
+                val events = tracker.observeEvents(states)
+                if (isActive) events.forEach { task ->
+                    emitTerminalProgramNotification(runtime, connection, task.reply.orEmpty(), task)
                 }
                 delay(2_000L)
             }
@@ -2712,6 +2737,7 @@ private class SshSessionRuntime(
 
     @Volatile
     var herdrNotificationJob: Job? = null
+    var herdrRichNotificationsAvailable: Boolean = false
 
     @Volatile
     var reconnectAttemptsStarted: Int = 0

@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="release_notes_title">更新内容</string>
+    <string name="release_notes_history_title">更新历史</string>
+    <string name="release_notes_version">版本 %1$s</string>
+    <string name="release_notes_added">新增</string>
+    <string name="release_notes_improved">改进</string>
+    <string name="release_notes_fixed">修复</string>
+    <string name="release_notes_got_it">知道了</string>
+    <string name="release_notes_history">查看更新历史</string>
+    <string name="release_notes_close">关闭</string>
+    <string name="release_notes_save_failed">无法保存已读状态，请重试。</string>
+    <string name="release_notes_empty">此构建未包含更新说明。</string>
+    <string name="release_notes_1_updates">更新后可查看改动，也可随时从“设置 → 关于”重新打开更新历史。</string>
+    <string name="release_notes_1_snippets">可将命令片段放在键盘上方或使用滑动布局。在“设置 → 命令片段”中更改；点按 ✎ 管理，再点按片段编辑。</string>
+    <string name="release_notes_1_tabs">紧凑的会话标签页为终端内容留出更多空间。</string>
+    <string name="release_notes_1_navigation">调整大小及使用缓冲输入时，Herdr 导航菜单更加可靠。</string>
+    <string name="release_notes_2_browser">在工作区内打开网页和 code-server 编辑器。浏览器会记住地址与桌面布局，code-server 密码可保存在此设备。</string>
+    <string name="release_notes_2_guide">提供快速入门指南和简短演示，可从“设置 → 使用指南”重新打开。</string>
+    <string name="release_notes_2_local">本地 Arch Linux 支持共享 Unix 套接字和大量终端输入，可在“设置 → 本地 Arch Linux”允许本地智能体管理部分设置。</string>
+    <string name="release_notes_2_projects">项目阅读器可比较全部、已暂存、未暂存或分支更改。</string>
+    <string name="release_notes_2_attachments">可向远程和本地终端附加文件。长按附件键选择任意文件，多文件传输保留选择顺序。</string>
+    <string name="release_notes_2_snippets">可从片段选择器编辑或删除片段，在键盘工具栏显示或隐藏固定片段。</string>
+    <string name="release_notes_2_history">Herdr 历史更可靠地处理延迟快照、重绘和窄屏。</string>
+    <string name="release_notes_2_input">键盘发送更可靠地处理新输入或语音输入的缓冲文本。</string>
+    <string name="release_notes_3_typography">内置 Inter 字体让应用界面保持一致，离线也可用。</string>
+    <string name="release_notes_3_keyboard">“设置 → 键盘”预览使用与终端相同的快捷键布局，点按预览按键即可替换。</string>
+    <string name="release_notes_3_screens">更紧凑的连接、设置和项目页面为工作留出更多空间，代码服务器命名更清晰。</string>
+    <string name="release_notes_3_herdr">移动切换器打开时，可直接点按编号 Herdr 标签页。</string>
+</resources>

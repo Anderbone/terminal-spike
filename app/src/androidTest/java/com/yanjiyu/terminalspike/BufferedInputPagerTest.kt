@@ -707,6 +707,10 @@ class BufferedInputPagerTest {
             composeRule.runOnIdle { assertEquals(0, sendCount) }
         }
         assertButtonSide(false)
+        val editorBounds = composeRule.onNodeWithTag("buffered_terminal_input").fetchSemanticsNode().boundsInRoot
+        val textViewport = composeRule.onNodeWithTag("buffered_text_viewport", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Voice tools must leave the full editor height available for multiple text rows",
+            textViewport.height >= editorBounds.height - 5 * resources.displayMetrics.density)
         composeRule.onNodeWithTag("terminal_typing_toggle").performTouchInput { longClick() }
         assertButtonSide(true)
         composeRule.onNodeWithTag("terminal_typing_toggle").performTouchInput { longClick() }
@@ -745,10 +749,10 @@ class BufferedInputPagerTest {
         val inputBounds = composeRule.onNodeWithTag("buffered_terminal_input").fetchSemanticsNode().boundsInRoot
         val voiceBounds = voiceButton.fetchSemanticsNode().boundsInRoot
         val restoreBounds = restoreButton.fetchSemanticsNode().boundsInRoot
-        assertTrue("input=$inputBounds voice=$voiceBounds restore=$restoreBounds", voiceBounds.top >= inputBounds.center.y)
+        assertTrue("input=$inputBounds voice=$voiceBounds restore=$restoreBounds", voiceBounds.top >= inputBounds.top)
         assertTrue(voiceBounds.bottom <= inputBounds.bottom)
         assertTrue(voiceBounds.left >= inputBounds.left)
-        assertTrue(restoreBounds.top >= inputBounds.center.y)
+        assertTrue("Side tools must stack without consuming a text row", restoreBounds.top >= voiceBounds.bottom)
         assertTrue(restoreBounds.bottom <= inputBounds.bottom)
         assertTrue(restoreBounds.right <= inputBounds.right)
         restoreButton.performClick()

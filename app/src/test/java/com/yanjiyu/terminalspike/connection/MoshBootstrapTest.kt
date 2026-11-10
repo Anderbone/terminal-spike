@@ -186,7 +186,7 @@ class MoshBootstrapTest {
                     TMUX_LIST_COMMAND -> ""
                     HERDR_LIST_COMMAND -> "__TERMINAL_SPIKE_HERDR__\n/usr/bin/herdr\n" +
                         """{"sessions":[{"name":"default","default":true,"running":true}]}"""
-                    "'/usr/bin/herdr' '--session' 'default' 'agent' 'list'" ->
+                    herdrTaskAgentCommand(HerdrStartupChoice("/usr/bin/herdr", "default")) ->
                         """{"result":{"type":"agent_list","agents":[{"pane_id":"w6:pC","terminal_id":"term1","agent_status":"working","state_change_seq":10,"terminal_title":"${"x".repeat(4_000)}"}]}}"""
                     else -> "MOSH CONNECT 60004 $VALID_KEY\n"
                 }

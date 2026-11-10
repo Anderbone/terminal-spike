@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.yanjiyu.terminalspike.ui.UiText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -50,7 +51,7 @@ class SftpSessionControllerTest {
         val state = controller.state.value as SftpUiState.Browsing
         assertFalse(state.busy)
         assertEquals(listOf(file), state.files)
-        assertEquals("The document provider denied access.", state.message)
+        assertEquals(UiText.Dynamic("The document provider denied access."), state.message)
     }
 
     @Test
@@ -363,7 +364,7 @@ class SftpSessionControllerTest {
             assertTrue(controller.downloadForViewing(file, root).isFailure)
             val state = controller.state.value as SftpUiState.Browsing
             assertFalse(state.busy)
-            assertEquals("Connection lost", state.message)
+            assertEquals(UiText.Dynamic("Connection lost"), state.message)
             assertTrue(root.listFiles().orEmpty().isEmpty())
         } finally { root.deleteRecursively() }
     }
@@ -433,7 +434,7 @@ class SftpSessionControllerTest {
         assertTrue(client.downloads.isEmpty())
         val state = controller.state.value as SftpUiState.Browsing
         assertFalse(state.busy)
-        assertEquals("SSH unavailable", state.message)
+        assertEquals(UiText.Dynamic("SSH unavailable"), state.message)
     }
 
     @Test

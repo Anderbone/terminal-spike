@@ -190,6 +190,22 @@ class TerminalController(
         return trySendUserInput(menu + close.toByteArray(Charsets.US_ASCII), applyDirectSendPolicy = true)
     }
 
+    internal fun herdrMobileNavigationTarget(open: Boolean): Pair<Int, Int>? {
+        val screen = terminalScreen ?: return null
+        if (!herdrSessionActive || !terminalModes.mouseTracking || !viewport.autoFollow) return null
+        return if (open) HerdrNavigationChrome.switcherOpen(screen, terminalColumns, terminalRows)
+        else HerdrNavigationChrome.switcherClose(screen, terminalColumns, terminalRows)
+    }
+
+    internal fun swipeHerdrMobileNavigation(open: Boolean): Boolean {
+        val target = herdrMobileNavigationTarget(open) ?: return false
+        if (!sendMouseClick(target.first, target.second)) return false
+        // Navigation chrome stays live while the pane reader is pinned. Leave that
+        // reader only after an accepted navigation click, before the next history poll.
+        invalidateHerdrHistory()
+        return true
+    }
+
     internal fun isHerdrNativeHistoryVisible(): Boolean =
         herdrSidebarLayout.value?.allowsNativeHistory(
             terminalColumns,

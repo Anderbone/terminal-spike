@@ -7,6 +7,13 @@ class TerminalSpikeApplication : Application() {
     lateinit var container: AppContainer
         private set
 
+    override fun getResources(): android.content.res.Resources =
+        if (android.os.Build.VERSION.SDK_INT < 33 && baseContext != null) {
+            com.yanjiyu.terminalspike.settings.AppLanguage.wrap(baseContext).resources
+        } else {
+            super.getResources()
+        }
+
     override fun onCreate() {
         super.onCreate()
         // Native transport services run in private processes. They must not initialize the

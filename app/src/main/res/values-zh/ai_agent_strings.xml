@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="ai_agents_key_label">AI</string>
+    <string name="ai_agents_title">AI 智能体</string>
+    <string name="ai_agents_choose">选择 AI 智能体、模型和推理强度</string>
+    <string name="ai_agents_edit">编辑 AI 智能体</string>
+    <string name="ai_agents_hint">点按运行默认项，长按 AI 选择模型和推理强度。</string>
+    <string name="ai_agents_no_default">无默认项（显示列表）</string>
+    <string name="ai_agents_default">默认</string>
+    <string name="ai_agents_name">名称</string>
+    <string name="ai_agents_command">命令</string>
+    <string name="ai_agents_add">添加智能体</string>
+    <string name="ai_agents_delete">删除 %1$s</string>
+    <string name="ai_agents_empty">尚无智能体，请在编辑中添加。</string>
+    <string name="ai_agents_save">保存</string>
+    <string name="ai_agents_cancel">取消</string>
+    <string name="ai_agents_close">关闭</string>
+    <string name="ai_agents_invalid">请为每个智能体输入名称和单行命令。</string>
+    <string name="ai_agents_save_failed">无法保存，请重试。</string>
+    <string name="ai_agents_model">模型</string>
+    <string name="ai_agents_effort">推理强度</string>
+    <string name="ai_agents_cli_default">默认</string>
+    <string name="ai_agents_use_default">设为 AI 按键的默认项</string>
+    <string name="ai_agents_custom_options">在“编辑 AI 智能体”中配置此命令。</string>
+</resources>

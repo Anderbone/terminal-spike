@@ -19,8 +19,7 @@ class HerdrTaskNotificationsTest {
     }
 
     @Test fun failuresRestartsMissingPanesAndUncertainStatesCannotCreateCompletion() {
-        for (interruption in listOf(null, emptyList(), listOf(working.copy(state = "unknown")),
-            listOf(working.copy(state = "blocked")))) {
+        for (interruption in listOf(null, emptyList(), listOf(working.copy(state = "unknown")))) {
             val tracker = HerdrTaskNotificationTracker()
             assertFalse(tracker.observe(listOf(working)))
             assertFalse(tracker.observe(interruption))
@@ -48,15 +47,53 @@ class HerdrTaskNotificationsTest {
         assertFalse(tracker.observe(emptyList()))
     }
 
+    @Test fun threeRepliesAreIndependentAndLateFinalIsDeliveredOnce() {
+        val tracker = HerdrTaskNotificationTracker()
+        val tasks = (1..3).map { working.copy(paneId = "w6:p$it", terminalId = "term$it", replySupported = true) }
+        assertTrue(tracker.observeEvents(tasks).isEmpty())
+        val idle = tasks.map { it.copy(state = "idle", sequence = 11) }
+        assertTrue(tracker.observeEvents(idle).isEmpty())
+        val replies = idle.mapIndexed { index, task -> task.copy(replyId = "turn$index", reply = "Result $index") }
+        assertEquals(replies, tracker.observeEvents(replies))
+        assertTrue(tracker.observeEvents(replies).isEmpty())
+        // Entire working turn between samples still emits the next actual reply.
+        assertEquals(3, tracker.observeEvents(replies.map { it.copy(replyId = "next-${it.paneId.last()}") }).size)
+        assertTrue(tracker.observeEvents(null).isEmpty())
+        assertTrue(tracker.observeEvents(replies).isEmpty())
+    }
+
+    @Test fun blockedIsAttentionAndNeverACompletionOrRepeatedAlert() {
+        val tracker = HerdrTaskNotificationTracker()
+        tracker.observeEvents(listOf(working))
+        val blocked = working.copy(state = "blocked", sequence = 11)
+        assertEquals(listOf(blocked), tracker.observeEvents(listOf(blocked)))
+        assertTrue(tracker.observeEvents(listOf(blocked)).isEmpty())
+    }
+
+    @Test fun focusRejectsRecycledPaneAndQuotesExactOrigin() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "work")
+        val commands = mutableListOf<String>()
+        val runner = TmuxCommandRunner { command ->
+            commands += command
+            TmuxExecOutput(if (commands.size == 1) payload.toByteArray() else byteArrayOf(), 0)
+        }
+        assertFalse(focusHerdrTask(runner, choice, working.paneId, "other", working.agentSession))
+        assertEquals(1, commands.size)
+        commands.clear()
+        assertTrue(focusHerdrTask(runner, choice, working.paneId, working.terminalId, working.agentSession))
+        assertEquals("'/usr/bin/herdr' '--session' 'work' 'agent' 'focus' 'w6:pC'", commands.last())
+    }
+
     private val payload = """{"result":{"type":"agent_list","agents":[{"pane_id":"w6:pC","terminal_id":"term1","agent_session":{"value":"session1"},"agent_status":"working","state_change_seq":10,"terminal_title":"private task text"}]}}"""
 
     @Test fun boundedExplicitSessionQueryRetainsOnlyLifecycleMetadata() {
         var command = ""
         val states = captureHerdrAgentStates({ command = it; TmuxExecOutput(payload.toByteArray(), 0) },
             HerdrStartupChoice("/usr/bin/herdr", "work ' quoted"))
-        assertEquals(listOf(working), states)
-        assertEquals("'/usr/bin/herdr' '--session' 'work '\\'' quoted' 'agent' 'list'", command)
-        assertFalse(states.toString().contains("private task text"))
+        assertEquals(listOf(working.copy(taskTitle = "private task text")), states)
+        assertTrue(command.contains("terminal-task-notify"))
+        assertTrue(command.contains("--agents"))
+        assertTrue(command.contains("/usr/bin/herdr"))
     }
 
     @Test fun malformedOversizedFailedAndDuplicateMetadataFailClosed() {

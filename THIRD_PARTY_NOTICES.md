@@ -1385,3 +1385,13 @@ The version-5 updater also installs the standalone guest `bubblewrap` package
 remain in the Arch guest. Claude/OpenCode native launch repair uses their exact
 matching official npm ARM64 platform packages, retaining their existing upstream
 terms/licences in `/usr/local/share/licenses/`. The APK contains no such payloads.
+
+## Settings link logos — Simple Icons
+
+Discord and Buy Me a Coffee logo paths are from Simple Icons 16.0.0,
+https://github.com/simple-icons/simple-icons/tree/16.0.0/icons (discord.svg and
+buymeacoffee.svg), converted from SVG to Android VectorDrawable.
+Simple Icons makes these assets available under CC0 1.0 Universal:
+https://github.com/simple-icons/simple-icons/blob/16.0.0/LICENSE.md.
+Attribution is not required by CC0. Trademark rights remain with the respective
+brand owners; these links do not imply endorsement.

@@ -528,6 +528,7 @@ data class TerminalSpikeUiState(
     val snippetsAboveKeyboard: Boolean = false,
     val voiceInputEnabled: Boolean = false,
     val inputButtonsOnRight: Boolean = false,
+    val buttonColors: Map<String, String> = emptyMap(),
     internal val aiAgents: com.yanjiyu.terminalspike.settings.AiAgents = com.yanjiyu.terminalspike.settings.AiAgents(),
     val voiceInputLanguageTag: String = "",
     val settingsReady: Boolean = false,
@@ -1798,6 +1799,7 @@ class TerminalSpikeViewModel(
                                 snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
                                 voiceInputEnabled = snapshot.appSettings.hasVoiceInputDisabled() && !snapshot.appSettings.voiceInputDisabled,
                                 inputButtonsOnRight = snapshot.appSettings.inputButtonsOnRight,
+                                buttonColors = snapshot.appSettings.buttonColorsMap,
                                 aiAgents = com.yanjiyu.terminalspike.settings.AiAgents.from(snapshot.appSettings),
                             )
                         }
@@ -4081,15 +4083,20 @@ class TerminalSpikeViewModel(
             return
         }
         val state = _uiState.value
-        if (existingId == null && state.snippets.size >= UserSettings.MAX_SNIPPETS) {
+        if ((existingId == null || existingId <= 0) && state.snippets.size >= UserSettings.MAX_SNIPPETS) {
             _uiState.update { it.copy(notice = uiText(R.string.notice_delete_snippet_before_add)) }
             return
         }
+        val existingSnippet = (state.snippets +
+            com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all)
+            .firstOrNull { it.id == existingId }
         val snippet = CommandSnippet(
-            id = existingId ?: terminalDataRepository.reserveSnippetPresentationId(),
+            id = existingId?.takeIf { it > 0 } ?: terminalDataRepository.reserveSnippetPresentationId(),
             label = normalizedLabel,
             command = command,
             appendEnter = appendEnter,
+            confirmMultilineExecution = existingSnippet?.confirmMultilineExecution ?: true,
+            sendsImmediately = existingSnippet?.sendsImmediately ?: true,
         )
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { terminalDataRepository.saveSnippet(snippet) }

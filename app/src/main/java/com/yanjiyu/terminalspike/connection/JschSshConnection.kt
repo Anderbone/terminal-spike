@@ -67,6 +67,15 @@ class JschSshConnection(
 
     override val isHerdrSession: Boolean get() = synchronized(lock) { running && herdrChoice != null }
 
+    override fun focusHerdrTask(paneId: String, terminalId: String, agentSession: String?): Boolean {
+        val (session, choice) = synchronized(lock) {
+            val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return false
+            session to (herdrChoice ?: return false)
+        }
+        return focusHerdrTask(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS),
+            choice, paneId, terminalId, agentSession)
+    }
+
     override fun captureHerdrAgentStates(): List<HerdrAgentState>? {
         val (session, choice) = synchronized(lock) {
             val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null

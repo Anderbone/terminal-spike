@@ -268,7 +268,7 @@ data class BackupGlobalSettings(
     val reconnectEnabled: Boolean = false,
     val reconnectMaxAttempts: Int = 0,
     val backgroundSessionsEnabled: Boolean = false,
-    val notificationPrivacyEnabled: Boolean = true,
+    val notificationPrivacyEnabled: Boolean = false,
     val disconnectNotificationsEnabled: Boolean = false,
     val reconnectNotificationsEnabled: Boolean = false,
     val keepCpuAwake: Boolean = false,

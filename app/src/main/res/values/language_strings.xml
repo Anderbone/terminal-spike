@@ -1,0 +1,10 @@
+<resources>
+    <string name="settings_app_language">App language</string>
+    <string name="settings_app_language_summary">Changes the app interface language. Terminal output and voice input keep their own languages.</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_chinese">简体中文</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_accessible" translatable="false">Language / 语言</string>
+    <string name="settings_language_short" translatable="false">中文 / EN</string>
+    <string name="settings_language_system_bilingual" translatable="false">System / 跟随系统</string>
+</resources>

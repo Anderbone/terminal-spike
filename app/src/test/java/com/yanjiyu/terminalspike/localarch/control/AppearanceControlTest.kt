@@ -79,6 +79,29 @@ class AppearanceControlTest {
         }
     }
 
+    @Test fun buttonColorsPersistValidateResetAndInvalidateStaleEdits() {
+        val current = AppSettings.newBuilder().setAccentPreset("mint").build()
+        fun patch(settings: AppSettings, colors: String) = buildJsonObject {
+            put("revision", appearanceRevision(settings))
+            put("buttonColors", Json.parseToJsonElement(colors))
+        }
+        val request = patch(current, """{"ai_agents":"#6750a4","escape":"#FFCC00"}""")
+        val edited = patchControlAppAppearance(current, request)
+        assertEquals(mapOf("ai_agents" to "#6750A4", "escape" to "#FFCC00"),
+            AppSettings.parseFrom(edited.toByteArray()).buttonColorsMap)
+        assertEquals("mint", edited.accentPreset)
+        assertEquals("CONFLICT", assertThrows(ControlFailure::class.java) {
+            patchControlAppAppearance(edited, request)
+        }.code)
+        listOf("""{"ai_agents":"transparent"}""", """{"ai_agents":"#806750A4"}""",
+            """{"ai_agents":123}""", "[]").forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                patchControlAppAppearance(current, patch(current, invalid))
+            }
+        }
+        assertTrue(patchControlAppAppearance(edited, patch(edited, "{}")).buttonColorsMap.isEmpty())
+    }
+
     private fun json(text: String) = Json.parseToJsonElement(text).jsonObject
     private fun profile() = TerminalProfile(
         id = ID, name = "Fixture", themeId = "current", fontId = "jetbrains_mono", fontSizeSp = 14f,

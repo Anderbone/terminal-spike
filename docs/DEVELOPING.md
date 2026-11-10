@@ -243,16 +243,58 @@ notification_condition = "always"
 
 Codex reads this configuration at process startup. Android notification permission and the **Terminal task completion** notification channel must remain enabled on the phone.
 
-App-selected Herdr sessions additionally monitor bounded `herdr --session <name> agent list`
-metadata over the existing authenticated SSH connection (including Mosh's retained side channel).
+App-selected Herdr sessions monitor bounded agent metadata over the existing authenticated SSH
+connection (including Mosh's retained side channel). Each task produces its own notification;
+simultaneous replies are not coalesced and later turns do not replace earlier turns. Tapping opens
+the app tab, then focuses the originating Herdr pane after the startup/app-lock gates. The live
+terminal and Codex session identity are checked again; a closed/replaced target displays a message
+and leaves the user in the original app tab rather than starting a new agent.
+
+For reply excerpts, install the optional local helper on the SSH host:
+
+```sh
+install -Dm755 tools/terminal-task-notify.py "$HOME/.local/bin/terminal-task-notify"
+```
+
+Add this **top-level** entry to the host's `~/.codex/config.toml` before any `[section]`:
+
+```toml
+notify = ["/absolute/home/path/.local/bin/terminal-task-notify", "--notify"]
+```
+
+Preserve any existing notify integration by explicitly composing it rather than overwriting it.
+New Codex clients load this hook at startup. The helper also supports existing Codex clients by
+opening the local `state_*.sqlite` index read-only for the exact Herdr-reported thread ID and
+reading at most the final 256 KiB of that thread's rollout. It accepts only actual `task_complete`
+events, stops at a newer `task_started`, and never forwards tool output, reasoning, or user prompts.
+This compatibility path depends on Codex's local schema; unknown schemas fall back to the hook
+cache or lifecycle-only notifications. It does not scan other transcripts or trust inherited
+`HERDR_PANE_ID`, which can be stale with shared Codex daemons.
+
+The supported notify hook stores only the latest turn ID and up to 400 characters of the final
+assistant reply per thread under `$XDG_STATE_HOME/terminal-spike/replies` (default
+`~/.local/state/terminal-spike/replies`), with private files and a 256-thread retention bound.
+The summary removes Markdown/control formatting and truncates the author's wording. It makes no
+additional model request and does not infer that a finished answer means the task succeeded.
+The notification title says **Reply ready**; failures, questions and next steps remain in its body.
+A confirmed `working` → `blocked` transition displays **Needs input** with an attention prompt;
+the exact approval question is not available through this metadata path. Questions returned as
+final answers appear in the reply excerpt.
+
+**Notification privacy** defaults to off, so new settings show task names and excerpts. Existing
+saved choices are preserved; the switch can still hide these details. With privacy enabled, notification title/body remain generic and secret on the lock screen. Android permission,
+channel settings and Do Not Disturb still apply. No helper or no usable Codex identity means
+lifecycle-only notifications. Other SSH hosts need their own helper installation; ordinary direct
+SSH/tmux sessions retain the existing OSC 9/BEL behavior.
+
 A sample is taken off the UI thread every two seconds after the preceding read, with a five-second
-command deadline, 256 KiB response limit and 256-agent limit. An observed `working` → `idle`/`done`
-transition with an advancing sequence and unchanged pane/terminal/agent identity emits one generic
-completion notification for the originating app tab. Multiple completions in one sample coalesce.
-Active and background Herdr panes are included. No terminal transcript is read and no task title is
-retained for these notifications. First samples, failed reads, disappeared panes, unknown states,
-identity changes and disconnects do not replay old completions. Very short tasks entirely between
-samples can be missed; a failed auxiliary SSH channel disables this path even if Mosh remains live.
+command deadline, 256 KiB response limit and 256-agent limit. Active and background panes are
+included. Repeated final replies are deduplicated by turn; an observed working transition can wait
+for a final reply persisted just after the idle sample. Generic BEL alerts are suppressed while the
+rich Herdr route is available. First samples, failed reads, disappeared panes, unknown states,
+identity changes and disconnects do not replay old replies. Whole turns between polls are detected
+when a known thread's reply ID advances; intermediate turns may be missed if several complete
+between polls. A failed auxiliary SSH channel disables this path even if Mosh remains live.
 Manually launched Herdr sessions that the app did not select do not acquire this monitor.
 
 This avoids relying on Herdr 0.8.2's outer-terminal detection or on OSC notifications crossing Mosh.

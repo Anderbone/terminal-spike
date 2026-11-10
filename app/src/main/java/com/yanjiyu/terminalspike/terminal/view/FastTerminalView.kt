@@ -833,6 +833,21 @@ class FastTerminalView @JvmOverloads constructor(
         terminalController?.let { updateTextPaintSize(it.fontSizeSp) }
     }
 
+    internal fun mobileNavigationSwipeDirection(): Int = when {
+        selection.hasSelection -> 0
+        terminalController?.herdrMobileNavigationTarget(open = true) != null -> 1
+        terminalController?.herdrMobileNavigationTarget(open = false) != null -> -1
+        else -> 0
+    }
+
+    internal fun swipeMobileNavigation(direction: Int): Boolean {
+        val controller = terminalController ?: return false
+        if (!controller.swipeHerdrMobileNavigation(open = direction > 0)) return false
+        herdrScroll.reset()
+        postInvalidateOnAnimation()
+        return true
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             finishResizePresentation()

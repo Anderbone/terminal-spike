@@ -100,7 +100,7 @@ class SshSessionRepositoryTest {
             sample = listOf(sample.single().copy(state = "idle", sequence = 2))
             advanceTimeBy(2_000)
             runCurrent()
-            assertEquals(listOf(TerminalProgramNotificationEvent(started.sessionId, "Herdr", "")), events)
+            assertEquals(listOf(TerminalProgramNotificationEvent(started.sessionId, "Herdr", "", sample.single())), events)
             advanceTimeBy(4_000)
             runCurrent()
             assertEquals(1, events.size)

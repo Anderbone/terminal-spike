@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="browser_title">浏览器</string>
+    <string name="browser_code_server">代码服务器</string>
+    <string name="browser_close_tab">关闭代码服务器标签页</string>
+    <string name="browser_actions">代码服务器操作</string>
+    <string name="browser_open">代码服务器</string>
+    <string name="browser_terminal">终端</string>
+    <string name="browser_native">原生差异</string>
+    <string name="browser_address">地址</string>
+    <string name="browser_back">返回</string>
+    <string name="browser_forward">前进</string>
+    <string name="browser_reload">重新加载</string>
+    <string name="browser_home">项目首页</string>
+    <string name="browser_desktop">桌面布局</string>
+    <string name="browser_mobile">手机布局</string>
+    <string name="browser_setup_title">您的 code-server</string>
+    <string name="browser_setup_detail">在此打开已有的 code-server。输入 Tailscale 或其他可访问地址。应用为此主机记住地址和布局，请在服务器页面登录。</string>
+    <string name="browser_server_url">服务器地址</string>
+    <string name="browser_invalid_url">请输入不含用户名或密码的 HTTP 或 HTTPS 地址。</string>
+    <string name="browser_load_failed">无法加载此页面。</string>
+    <string name="browser_connection_hint">请确认 Tailscale 已连接、code-server 正在运行，且地址和端口正确。</string>
+    <string name="browser_tls_failed">无法验证服务器证书，请使用有效的 HTTPS 地址。</string>
+    <string name="browser_renderer_failed">浏览器已停止，请重新加载以恢复页面。</string>
+    <string name="browser_navigation_blocked">无法在此打开该地址。请使用 HTTPS，或明确输入 HTTP 服务器地址。</string>
+    <string name="browser_upload_failed">无法打开文件选择器。</string>
+    <string name="browser_network_permission">此服务器需要本地网络访问权限。请在 Android 应用权限中允许后重新打开浏览器。</string>
+    <string name="browser_address_save_failed">页面可打开，但无法记住地址。</string>
+    <string name="browser_password">密码</string>
+    <string name="browser_sign_in">登录 code-server</string>
+    <string name="browser_save_password">保存密码</string>
+    <string name="browser_remember_password">在此设备记住</string>
+    <string name="browser_password_storage">已保存密码由此设备的 Android Keystore 加密，仅用于此服务器的 code-server 登录。</string>
+    <string name="browser_forget_password">移除已保存密码</string>
+    <string name="browser_password_rejected">登录失败，请检查密码后重试。</string>
+    <string name="browser_password_unavailable">无法读取已保存密码，请重新输入或移除已保存密码。</string>
+    <string name="browser_password_save_failed">无法保存或移除密码，浏览器会话仍可使用。</string>
+    <string name="browser_password_form_unavailable">code-server 登录页面已更改，请重新加载后重试。</string>
+    <string name="web_browser_close_tab">关闭浏览器标签页</string>
+    <string name="web_browser_actions">浏览器操作</string>
+    <string name="web_browser_address">网站地址</string>
+    <string name="web_browser_go">前往</string>
+    <string name="web_browser_intro">在上方输入网站地址以开始浏览。</string>
+    <string name="web_browser_connection_hint">请检查网络连接和网站地址。</string>
+    <string name="web_browser_home">起始页</string>
+</resources>

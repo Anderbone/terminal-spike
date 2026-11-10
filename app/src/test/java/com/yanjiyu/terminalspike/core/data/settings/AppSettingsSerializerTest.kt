@@ -24,7 +24,7 @@ class AppSettingsSerializerTest {
         assertEquals("df558cdb-05fb-50f3-baf9-e7dd6e911ce5", defaults.defaultTerminalProfileId)
         assertEquals("f23f85fd-3122-5f8b-b28a-d0320f402866", defaults.defaultKeyboardProfileId)
         assertEquals(CURRENT_KEYBOARD_DECK_REVISION, defaults.keyboardDeckRevision)
-        assertTrue(defaults.notificationPrivacyEnabled)
+        assertFalse(defaults.notificationPrivacyEnabled)
         assertFalse(defaults.notificationPermissionEducationConsumed)
         assertFalse(defaults.multilinePasteConfirmationEnabled)
         assertFalse(defaults.reconnectEnabled)
@@ -60,6 +60,7 @@ class AppSettingsSerializerTest {
     @Test
     fun roundTripPreservesTypedValues() = runTest {
         val expected = AppSettingsSerializer.defaultValue.toBuilder()
+            .setNotificationPrivacyEnabled(true)
             .setThemeMode(AppSettings.ThemeMode.THEME_MODE_DARK)
             .setDynamicColorEnabled(true)
             .setSnippetsAboveKeyboard(true)
@@ -220,7 +221,7 @@ class AppSettingsSerializerTest {
         assertEquals("blue", migrated.accentPreset)
         assertTrue(migrated.reconnectEnabled)
         assertEquals(AppSettings.ThemeMode.THEME_MODE_SYSTEM, migrated.themeMode)
-        assertTrue(migrated.notificationPrivacyEnabled)
+        assertFalse(migrated.notificationPrivacyEnabled)
         assertEquals(0, migrated.keyboardDeckRevision)
         assertFalse(AppSettingsV1Migration.shouldMigrate(migrated))
         assertEquals(migrated, AppSettingsV1Migration.migrate(migrated))

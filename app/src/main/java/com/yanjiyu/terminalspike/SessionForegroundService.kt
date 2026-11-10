@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -22,6 +23,7 @@ import com.yanjiyu.terminalspike.connection.SessionForegroundStartResult
 import com.yanjiyu.terminalspike.connection.SessionForegroundStarter
 import com.yanjiyu.terminalspike.connection.SessionNotificationVisibility
 import com.yanjiyu.terminalspike.connection.SshSessionSnapshot
+import com.yanjiyu.terminalspike.connection.HerdrAgentState
 import com.yanjiyu.terminalspike.connection.TerminalProgramNotificationEvent
 import com.yanjiyu.terminalspike.connection.requiresForegroundService
 import com.yanjiyu.terminalspike.core.data.settings.AppSettingsSerializer
@@ -36,6 +38,13 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class SessionForegroundService : Service() {
+    override fun getResources(): android.content.res.Resources =
+        if (android.os.Build.VERSION.SDK_INT < 33 && baseContext != null) {
+            com.yanjiyu.terminalspike.settings.AppLanguage.wrap(baseContext).resources
+        } else {
+            super.getResources()
+        }
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var notificationFactory: SessionNotificationFactory
     private lateinit var cpuAwakePolicy: SessionCpuAwakePolicy
@@ -524,11 +533,21 @@ internal class SessionNotificationFactory(
             .ifEmpty { applicationContext.getString(R.string.terminal_program_notification_text) }
         val openSession = PendingIntent.getActivity(
             applicationContext,
-            PROGRAM_NOTIFICATION_REQUEST_CODE_BASE + (event.sessionId.hashCode() and 0x0fff),
-            terminalProgramNotificationIntent(applicationContext, event.sessionId),
+            PROGRAM_NOTIFICATION_REQUEST_CODE_BASE,
+            terminalProgramNotificationIntent(applicationContext, event.sessionId, event.task)
+                .setData(Uri.Builder().scheme("terminal-spike").authority("task")
+                    .appendPath(event.notificationKey).build()),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = if (!privacyEnabled && safeSessionTitle != null) {
+        val taskTitle = event.task?.taskTitle?.let { sanitizeUntrustedDisplayText(it, 120) }
+            ?.takeIf { it.isNotBlank() } ?: safeSessionTitle
+        val title = if (!privacyEnabled && event.task != null) {
+            applicationContext.getString(
+                if (event.task.state == "blocked") R.string.terminal_task_waiting_title
+                else R.string.terminal_task_reply_title,
+                taskTitle.orEmpty(),
+            )
+        } else if (!privacyEnabled && safeSessionTitle != null) {
             applicationContext.getString(
                 R.string.terminal_program_notification_named_title,
                 safeSessionTitle,
@@ -538,6 +557,8 @@ internal class SessionNotificationFactory(
         }
         val text = if (privacyEnabled) {
             applicationContext.getString(R.string.terminal_program_notification_text)
+        } else if (event.task?.state == "blocked" && event.message.isBlank()) {
+            applicationContext.getString(R.string.terminal_task_waiting_text)
         } else {
             safeMessage
         }
@@ -568,7 +589,7 @@ internal class SessionNotificationFactory(
     ) {
         runCatching {
             notificationManager.notify(
-                "terminal-program-${event.sessionId}",
+                "terminal-program-${event.notificationKey}",
                 PROGRAM_NOTIFICATION_ID,
                 buildTerminalProgramNotification(event, privacyEnabled),
             )
@@ -596,10 +617,21 @@ internal class SessionNotificationFactory(
     }
 }
 
-internal fun terminalProgramNotificationIntent(context: Context, sessionId: Long): Intent =
+internal fun terminalProgramNotificationIntent(
+    context: Context,
+    sessionId: Long,
+    task: HerdrAgentState? = null,
+): Intent =
     Intent(context, MainActivity::class.java)
         .setAction(MainActivity.ACTION_OPEN_TERMINAL_SESSION)
         .putExtra(MainActivity.EXTRA_TERMINAL_SESSION_ID, sessionId)
+        .apply {
+            task?.let {
+                putExtra(MainActivity.EXTRA_TASK_PANE, it.paneId)
+                putExtra(MainActivity.EXTRA_TASK_TERMINAL, it.terminalId)
+                putExtra(MainActivity.EXTRA_TASK_SESSION, it.agentSession)
+            }
+        }
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
 internal fun SessionNotificationState.withLocalRuntime(local: LocalRuntimeState): SessionNotificationState {

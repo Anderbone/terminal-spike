@@ -36,6 +36,28 @@ internal object HerdrNavigationChrome {
         return null
     }
 
+    /** Resolve only a visible mobile navigation button, never text inside the pane. */
+    fun switcherOpen(screen: List<TerminalLine>, columns: Int, rows: Int): Pair<Int, Int>? {
+        val area = outputArea(screen, columns, rows) ?: return null
+        if (area.x != 0 || area.rows >= rows - 1) return null
+        val hasTopTabs = tabRows(screen, 0, rows).singleOrNull() == 0
+        for (top in mobileBarTops(rows, hasTopTabs)) {
+            val header = screen[top + 1]
+            val divider = header.text.indexOf('│')
+            if (divider < 0) continue
+            val lastDivider = header.text.lastIndexOf('│')
+            val right = TerminalLineGeometry.columnAtOffset(header, lastDivider)
+            if (right in maxOf(0, columns - 11) until columns &&
+                header.text.substring(lastDivider + 1).trim() == "switch"
+            ) return (right + 1).coerceAtMost(columns - 1) to (top + 1)
+            val left = TerminalLineGeometry.columnAtOffset(header, divider)
+            if (left in 1..10 && header.text.substring(0, divider).trim() == "switch") {
+                return 1 to (top + 1)
+            }
+        }
+        return null
+    }
+
     /** Visible switcher body, excluding its navigation bar and horizontal rule. */
     private fun mobileSwitcherBody(screen: List<TerminalLine>, columns: Int, rows: Int): IntRange? {
         if (screen.size != rows || rows < 4) return null

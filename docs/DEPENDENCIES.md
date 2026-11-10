@@ -374,3 +374,20 @@ The installer records actual tool versions for the app's installation details.
   `/usr/local/share/licenses/{claude,opencode}`. Claude's native package retains
   its proprietary upstream terms; OpenCode's native package is MIT. No native
   payload is added to the APK, and no provider login/config file is replaced.
+
+## Optional SSH-host task notification helper
+
+`tools/terminal-task-notify.py` runs on the user's existing SSH host with Python 3.10+
+(stable releases only) and its standard library, including SQLite. Purpose: extract bounded,
+thread-specific Codex reply excerpts and enrich Herdr metadata; no pip packages or Android
+runtime dependencies are added. Source: [CPython](https://www.python.org/),
+[licence](https://docs.python.org/3/license.html) (PSF License Agreement and bundled component
+terms). Python/SQLite are system-provided and are not redistributed in the APK or helper;
+invocation adds no bundled notice obligations. Redistributing an interpreter would require
+retaining its applicable licence and copyright notices.
+
+## Settings community and support logos
+
+| Asset source | Version | Purpose | Licence | Source / obligations |
+| --- | --- | --- | --- | --- |
+| Simple Icons: Discord and Buy Me a Coffee | 16.0.0 | Local vector logos for the existing settings links | CC0-1.0 | [Pinned source](https://github.com/simple-icons/simple-icons/tree/16.0.0/icons); SVG paths converted to Android VectorDrawable. No library or network dependency. CC0 requires no attribution; source attribution is retained in the vectors and notices. Trademark rights remain with their respective owners. |

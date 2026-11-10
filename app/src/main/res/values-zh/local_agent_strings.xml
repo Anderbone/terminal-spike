@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="local_agent_access_title">允许本地智能体管理应用设置</string>
+    <string name="local_agent_access_detail">本地 Arch 程序可管理应用外观、终端配色与字体、命令片段、键盘配置和保存的端口转发规则。权限持续到应用进程退出，应用锁会阻止访问。打开新的本地 Arch 标签页以刷新工具。命令片段仅保存而不执行，转发更改在下次连接生效。本地 Arch 程序与应用共用系统身份，因此此开关不能隔离不可信程序。</string>
+</resources>

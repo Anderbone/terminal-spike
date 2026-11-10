@@ -33,63 +33,63 @@ internal enum class SettingsCategory(
     APPEARANCE(
         R.string.settings_category_appearance,
         R.string.settings_category_appearance_summary,
-        "appearance app theme light dark terminal theme font size line height spacing preview",
+        "appearance language app theme light dark terminal theme font size line height spacing preview 外观 语言 中文 英文 主题 颜色 字体 字号 行高 间距 预览",
     ),
     TERMINAL(
         R.string.settings_category_terminal,
         R.string.settings_category_terminal_summary,
-        "terminal links clipboard paste url multiline",
+        "terminal links clipboard paste url multiline 终端 链接 剪贴板 粘贴 多行 滚动 光标 回滚",
     ),
     KEYBOARD(
         R.string.settings_category_keyboard,
         R.string.settings_category_keyboard_summary,
-        "keyboard keys accessory rows layout vim preset voice microphone speech language dictation",
+        "keyboard keys accessory rows layout vim preset voice microphone speech language dictation 键盘 按键 快捷键 语音 输入 麦克风 布局",
     ),
     SSH_KEYS(
         R.string.settings_category_ssh_keys,
         R.string.settings_category_ssh_keys_summary,
-        "ssh keys identities private public import generate fingerprint authentication",
+        "ssh keys identities private public import generate fingerprint authentication 密钥 私钥 公钥 导入 生成 指纹 认证",
     ),
     SNIPPETS(
         R.string.settings_category_snippets,
         R.string.settings_category_snippets_summary,
-        "snippets commands saved insert run terminal shortcuts",
+        "snippets commands saved insert run terminal shortcuts 命令片段 命令 片段 显示",
     ),
     PORT_FORWARDING(
         R.string.port_forward_title,
         R.string.port_forward_settings_summary,
-        "port forwarding local remote tunnel ssh mosh tcp",
+        "port forwarding local remote tunnel ssh mosh tcp 端口 转发 隧道 本地 远程",
     ),
     SESSIONS_BACKGROUND(
         R.string.settings_category_sessions_background,
         R.string.settings_category_sessions_background_summary,
         "sessions background battery optimisation optimization data saver keep screen awake cpu " +
-            "foreground ssh keepalive reconnect network retry tmux selector attach session",
+            "foreground ssh keepalive reconnect network retry tmux selector attach session 会话 后台 电池 屏幕 常亮 保活 重连",
     ),
     NOTIFICATIONS(
         R.string.settings_category_notifications,
         R.string.settings_category_notifications_summary,
-        "notifications permission foreground service disconnect reconnect privacy",
+        "notifications permission foreground service disconnect reconnect privacy 通知 权限 隐私 断开",
     ),
     BACKUP_RESTORE(
         R.string.settings_category_backup_restore,
         R.string.settings_category_backup_restore_summary,
-        "backup restore export import drive device file complete",
+        "backup restore export import drive device file complete 备份 恢复 导出 导入 文件",
     ),
     SECURITY(
         R.string.settings_category_security,
         R.string.settings_category_security_summary,
-        "security known hosts fingerprints screenshot clipboard osc credentials privacy",
+        "security known hosts fingerprints screenshot clipboard osc credentials privacy 安全 应用锁 凭据 隐私 截图 剪贴板 已知主机",
     ),
     LOCAL_ARCH(
         R.string.local_arch_title,
         R.string.local_arch_summary,
-        "local arch linux shell install storage rootfs reset reinstall pacman",
+        "local arch linux shell install storage rootfs reset reinstall pacman 本地 安装 存储 重置 工具 登录",
     ),
     MOSH(
         R.string.settings_category_mosh,
         R.string.settings_category_mosh_summary,
-        "mosh extension plugin version api licence source signature",
+        "mosh extension plugin version api licence source signature 扩展 插件 传输 签名",
     ),
     GUIDE(
         R.string.guide_title,
@@ -99,7 +99,7 @@ internal enum class SettingsCategory(
     ABOUT(
         R.string.settings_category_about,
         R.string.settings_category_about_summary,
-        "about version privacy notices licences licenses open source",
+        "about version privacy notices licences licenses open source 关于 版本 隐私 声明 许可证 开源",
     ),
     ADVANCED(
         R.string.settings_category_advanced,
@@ -109,7 +109,7 @@ internal enum class SettingsCategory(
     DEVELOPER(
         R.string.settings_category_developer,
         R.string.settings_category_developer_summary,
-        "developer debug renderer diagnostics performance",
+        "developer debug renderer diagnostics performance 开发者 调试 渲染 诊断 性能",
     ),
 }
 
@@ -173,7 +173,7 @@ internal data class AppPreferences(
     val reconnectMaxAttempts: Int = 5,
     val tmuxSessionSelectorEnabled: Boolean = true,
     val keepCpuAwake: Boolean = false,
-    val notificationPrivacyEnabled: Boolean = true,
+    val notificationPrivacyEnabled: Boolean = false,
     val disconnectNotificationsEnabled: Boolean = false,
     val reconnectNotificationsEnabled: Boolean = false,
     val keepScreenOnWhileTerminalVisible: Boolean = false,

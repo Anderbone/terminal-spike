@@ -64,6 +64,7 @@ internal class AppearanceControl(private val container: AppContainer) {
                 .setAccentPreset(patched.accentPreset)
                 .setInputButtonsOnRight(patched.inputButtonsOnRight)
                 .setVoiceInputDisabled(patched.voiceInputDisabled)
+                .clearButtonColors().putAllButtonColors(patched.buttonColorsMap)
         }
         return saved.appearanceJson()
     }
@@ -118,17 +119,27 @@ internal class AppearanceControl(private val container: AppContainer) {
 
 /** A safe-integer token of just the editable appearance fields; unrelated settings do not conflict. */
 internal fun appearanceRevision(settings: AppSettings): Long {
-    val bytes = "${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}\u0000${settings.inputButtonsOnRight}\u0000${settings.hasVoiceInputDisabled() && !settings.voiceInputDisabled}".toByteArray()
+    val bytes = "${settings.buttonColorsMap.toSortedMap()}\u0000${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}\u0000${settings.inputButtonsOnRight}\u0000${settings.hasVoiceInputDisabled() && !settings.voiceInputDisabled}".toByteArray()
     return MessageDigest.getInstance("SHA-256").digest(bytes).take(6).fold(0L) { value, byte ->
         (value shl 8) or (byte.toLong() and 0xff)
     }
 }
 
 internal fun patchControlAppAppearance(current: AppSettings, p: JsonObject): AppSettings {
-    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset", "inputButtonsOnRight", "voiceInputEnabled")
+    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset", "inputButtonsOnRight", "voiceInputEnabled", "buttonColors")
     p.requireRevision(appearanceRevision(current))
     require(p.keys.any { it != "revision" })
     return current.toBuilder().also { builder ->
+        p["buttonColors"]?.let { value ->
+            require(value is JsonObject && value.size <= 256)
+            val colors = value.mapValues { (id, color) ->
+                require(id.length in 1..100 && id.matches(Regex("[a-zA-Z0-9_:.-]+")))
+                require(color is JsonPrimitive && color.isString)
+                controlColour(color.content)
+                color.content.uppercase()
+            }
+            builder.clearButtonColors().putAllButtonColors(colors)
+        }
         p["themeMode"]?.let { builder.setThemeMode(when (p.string("themeMode")) {
             "system" -> AppSettings.ThemeMode.THEME_MODE_SYSTEM
             "light" -> AppSettings.ThemeMode.THEME_MODE_LIGHT
@@ -217,6 +228,7 @@ private fun AppSettings.appearanceJson(): JsonObject = buildJsonObject {
         AppSettings.ThemeMode.THEME_MODE_DARK -> "dark"
         else -> "system"
     })
+    put("buttonColors", buildJsonObject { buttonColorsMap.forEach { (id, color) -> put(id, color) } })
     put("inputButtonsOnRight", inputButtonsOnRight)
     put("voiceInputEnabled", hasVoiceInputDisabled() && !voiceInputDisabled)
     put("dynamicColorEnabled", dynamicColorEnabled); put("accentPreset", accentPreset.ifEmpty { "mint" })

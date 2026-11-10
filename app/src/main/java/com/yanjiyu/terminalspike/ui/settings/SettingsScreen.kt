@@ -36,6 +36,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -61,10 +62,14 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -92,11 +97,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -140,6 +149,7 @@ import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.core.model.TouchScrollMode
 import com.yanjiyu.terminalspike.core.security.applock.AndroidAppLockAuthenticator
 import com.yanjiyu.terminalspike.core.security.applock.AppLockAvailability
+import com.yanjiyu.terminalspike.settings.AppLanguage
 import com.yanjiyu.terminalspike.settings.ImportedTerminalFont
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalTheme
@@ -166,7 +176,6 @@ import com.yanjiyu.terminalspike.ui.resolve
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
 import com.yanjiyu.terminalspike.ui.theme.iconMetrics
-import com.yanjiyu.terminalspike.ui.theme.appSearchFieldColors
 import com.yanjiyu.terminalspike.ui.theme.spacing
 import kotlin.math.roundToInt
 
@@ -242,6 +251,7 @@ internal fun SettingsDestination(
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
+    snippetsContent: (@Composable () -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     terminalProfileId: String? = null,
     keyboardProfileId: String? = null,
@@ -381,6 +391,7 @@ internal fun SettingsDestination(
         onOpenSettings = onOpenSettings,
         onOpenSshKeys = onOpenSshKeys,
         onOpenSnippets = onOpenSnippets,
+        snippetsContent = snippetsContent,
         onOpenPortForwards = onOpenPortForwards,
         onDismissMessage = settingsViewModel::consumeMessage,
         backupState = backupState,
@@ -405,6 +416,7 @@ internal fun SettingsScreen(
     onOpenSettings: () -> Unit,
     onOpenSshKeys: () -> Unit = {},
     onOpenSnippets: () -> Unit = {},
+    snippetsContent: (@Composable () -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     onDismissMessage: () -> Unit,
     backupState: BackupWorkflowUiState = BackupWorkflowUiState(),
@@ -433,7 +445,13 @@ internal fun SettingsScreen(
         }
     }
 
-    val selectCategory: (SettingsCategory) -> Unit = { category -> selectedCategory = category }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val selectCategory: (SettingsCategory) -> Unit = { category ->
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        selectedCategory = category
+    }
 
     Surface(
         modifier = Modifier
@@ -453,6 +471,7 @@ internal fun SettingsScreen(
             safeContentInsets = safeContentInsets,
         ) { contentModifier, expanded ->
             Column(modifier = contentModifier.fillMaxSize()) {
+                SettingsSearchHeader(query = query, onQueryChange = { query = it })
                 if (expanded) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         SettingsCategoryList(
@@ -464,7 +483,6 @@ internal fun SettingsScreen(
                                 selectedCategory ?: SettingsCategory.APPEARANCE
                             },
                             query = query,
-                            onQueryChange = { query = it },
                             onSelected = selectCategory,
                             modifier = Modifier
                                 .width(276.dp)
@@ -489,6 +507,7 @@ internal fun SettingsScreen(
                             onOpenRendererLab = onOpenRendererLab,
                             onOpenSshKeys = onOpenSshKeys,
                             onOpenSnippets = onOpenSnippets,
+                            snippetsContent = snippetsContent,
                             onOpenPortForwards = onOpenPortForwards,
                             backupState = backupState,
                             backupActions = backupActions,
@@ -517,7 +536,6 @@ internal fun SettingsScreen(
                                     state = state,
                                     selected = null,
                                     query = query,
-                                    onQueryChange = { query = it },
                                     onSelected = selectCategory,
                                     modifier = Modifier.fillMaxSize(),
                                 )
@@ -534,6 +552,7 @@ internal fun SettingsScreen(
                                     onOpenRendererLab = onOpenRendererLab,
                                     onOpenSshKeys = onOpenSshKeys,
                                     onOpenSnippets = onOpenSnippets,
+                                    snippetsContent = snippetsContent,
                                     onOpenPortForwards = onOpenPortForwards,
                                     backupState = backupState,
                                     backupActions = backupActions,
@@ -582,12 +601,10 @@ private fun SettingsCategoryList(
     state: SettingsUiState,
     selected: SettingsCategory?,
     query: String,
-    onQueryChange: (String) -> Unit,
     onSelected: (SettingsCategory) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
-    val clearDescription = stringResource(R.string.settings_clear_search)
     val listDescription = stringResource(R.string.settings_category_list_description)
     LazyColumn(
         modifier = modifier.semantics {
@@ -598,54 +615,6 @@ private fun SettingsCategoryList(
             vertical = MaterialTheme.spacing.medium,
         ),
     ) {
-        item {
-            Text(
-                text = stringResource(R.string.navigation_settings),
-                modifier = Modifier
-                    .padding(
-                        start = MaterialTheme.spacing.extraSmall,
-                        bottom = MaterialTheme.spacing.medium,
-                    )
-                    .testTag(SettingsCategoryTitleTestTag)
-                    .semantics { heading() },
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            OutlinedTextField(
-                value = query,
-                onValueChange = { onQueryChange(it.take(80)) },
-                modifier = Modifier.fillMaxWidth().testTag(SettingsSearchTestTag),
-                shape = MaterialTheme.shapes.medium,
-                colors = appSearchFieldColors(),
-                textStyle = MaterialTheme.typography.bodyMedium,
-                placeholder = { Text(stringResource(R.string.settings_search_hint), style = MaterialTheme.typography.bodyMedium) },
-                leadingIcon = {
-                    ConnectionsGlyphIcon(
-                        glyph = ConnectionsGlyph.SEARCH,
-                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                    )
-                },
-                trailingIcon = if (query.isNotEmpty()) {
-                    {
-                        IconButton(
-                            onClick = { onQueryChange("") },
-                            modifier = Modifier.semantics {
-                                contentDescription = clearDescription
-                            },
-                        ) {
-                            ConnectionsGlyphIcon(
-                                glyph = ConnectionsGlyph.CLOSE,
-                                modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                            )
-                        }
-                    }
-                } else {
-                    null
-                },
-                singleLine = true,
-            )
-            Spacer(Modifier.height(MaterialTheme.spacing.small))
-        }
         if (categories.isEmpty()) {
             item {
                 Column(
@@ -672,20 +641,30 @@ private fun SettingsCategoryList(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
         if (query.isBlank()) {
-            item(key = "discord_community") {
-                TextButton(
-                    onClick = { uriHandler.openUri("https://discord.gg/yMPzeCeWMT") },
-                    modifier = Modifier.fillMaxWidth().padding(top = MaterialTheme.spacing.medium),
+            item(key = "community_and_support") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+                        .padding(top = MaterialTheme.spacing.medium).testTag("settings-community-support"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(stringResource(R.string.settings_join_discord))
-                }
-            }
-            item(key = "support_development") {
-                TextButton(
-                    onClick = { uriHandler.openUri("https://buymeacoffee.com/jiyuyan") },
-                    modifier = Modifier.fillMaxWidth().padding(top = MaterialTheme.spacing.medium),
-                ) {
-                    Text(stringResource(R.string.settings_buy_me_a_coffee))
+                    SettingsExternalLink(
+                        label = stringResource(R.string.settings_discord_short),
+                        description = stringResource(R.string.settings_join_discord),
+                        logo = R.drawable.ic_brand_discord,
+                        brandColor = Color(0xFF5865F2),
+                        logoColor = Color.White,
+                        onClick = { uriHandler.openUri("https://discord.gg/yMPzeCeWMT") },
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("settings-discord"),
+                    )
+                    SettingsExternalLink(
+                        label = stringResource(R.string.settings_buy_me_a_coffee),
+                        description = stringResource(R.string.settings_buy_me_a_coffee),
+                        logo = R.drawable.ic_brand_buymeacoffee,
+                        brandColor = Color(0xFFFFDD00),
+                        logoColor = Color(0xFF181818),
+                        onClick = { uriHandler.openUri("https://buymeacoffee.com/jiyuyan") },
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("settings-coffee"),
+                    )
                 }
             }
         }
@@ -775,7 +754,6 @@ private val SettingsCategory.glyph: AppGlyph
     }
 
 internal const val SettingsSearchTestTag = "settings-search"
-internal const val SettingsCategoryTitleTestTag = "settings-category-title"
 internal const val SettingsCategoryListContentDescription = "Settings categories"
 internal const val AdvancedSettingsListTestTag = "advanced-settings-list"
 
@@ -792,6 +770,7 @@ private fun SettingsDetail(
     onOpenRendererLab: () -> Unit,
     onOpenSshKeys: () -> Unit,
     onOpenSnippets: () -> Unit,
+    snippetsContent: (@Composable () -> Unit)? = null,
     onOpenPortForwards: () -> Unit = {},
     backupState: BackupWorkflowUiState,
     backupActions: BackupSettingsActions,
@@ -825,25 +804,35 @@ private fun SettingsDetail(
                 action = R.string.settings_ssh_keys_management_action,
                 onOpen = onOpenSshKeys,
             )
-            SettingsCategory.SNIPPETS -> DataManagementSettings(
-                category = SettingsCategory.SNIPPETS,
-                detail = R.string.settings_snippets_management_detail,
-                action = R.string.settings_snippets_management_action,
-                onOpen = onOpenSnippets,
-                extraSettings = {
-                    Text(stringResource(R.string.settings_snippets_display), style = MaterialTheme.typography.titleSmall)
+            SettingsCategory.SNIPPETS -> Column(modifier = Modifier.fillMaxSize()) {
+                if (snippetsContent != null) {
+                    Box(modifier = Modifier.weight(1f)) { snippetsContent() }
+                } else {
+                    TextButton(onClick = onOpenSnippets) {
+                        Text(stringResource(R.string.settings_snippets_management_action))
+                    }
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(stringResource(R.string.settings_snippets_display), style = MaterialTheme.typography.labelMedium)
                     HorizontalChoices {
                         listOf(false, true).forEach { above ->
                             FilterChip(
                                 selected = state.preferences.snippetsAboveKeyboard == above,
                                 onClick = { actions.onSnippetsAboveKeyboard(above) },
-                                label = { Text(stringResource(if (above) R.string.settings_snippets_display_above else R.string.settings_snippets_display_swipe)) },
+                                label = {
+                                    Text(
+                                        stringResource(if (above) R.string.settings_snippets_display_above else R.string.settings_snippets_display_swipe),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                },
                             )
                         }
                     }
-                    Text(stringResource(R.string.settings_snippets_display_summary), style = MaterialTheme.typography.bodySmall)
-                },
-            )
+                }
+            }
             SettingsCategory.PORT_FORWARDING -> DataManagementSettings(
                 category = SettingsCategory.PORT_FORWARDING,
                 detail = R.string.port_forward_settings_detail,
@@ -2810,4 +2799,141 @@ private fun ResetDialog(
         confirmButton = { Button(onClick = onConfirm) { Text(stringResource(R.string.reset)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
+}
+
+@Composable
+private fun SettingsSearchHeader(query: String, onQueryChange: (String) -> Unit) {
+    val clearDescription = stringResource(R.string.settings_clear_search)
+    val searchDescription = stringResource(R.string.settings_search_label)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            BasicTextField(
+                value = query,
+                onValueChange = { onQueryChange(it.take(80)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .testTag(SettingsSearchTestTag).semantics { contentDescription = searchDescription },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                decorationBox = { input ->
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp, end = if (query.isEmpty()) 12.dp else 0.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ConnectionsGlyphIcon(
+                            glyph = ConnectionsGlyph.SEARCH,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.settings_search_label),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            input()
+                        }
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onQueryChange("") },
+                                modifier = Modifier.size(48.dp).semantics { contentDescription = clearDescription },
+                            ) {
+                                ConnectionsGlyphIcon(ConnectionsGlyph.CLOSE, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        AppLanguageMenu()
+    }
+}
+
+@Composable
+private fun AppLanguageMenu() {
+    val context = LocalContext.current
+    val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+        .filterIsInstance<android.app.Activity>().firstOrNull()
+    val selected = AppLanguage.selected(context)
+    var expanded by remember { mutableStateOf(false) }
+    val description = stringResource(R.string.settings_language_accessible)
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(48.dp).testTag("settings-language-menu")
+                .semantics { contentDescription = description },
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(10.dp),
+        ) {
+            Icon(painterResource(R.drawable.ic_language_globe), contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            listOf(
+                "" to R.string.settings_language_system_bilingual,
+                "zh" to R.string.settings_language_chinese,
+                "en" to R.string.settings_language_english,
+            ).forEach { (tag, label) ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    trailingIcon = { if (selected == tag) Text("✓") },
+                    enabled = activity != null,
+                    onClick = {
+                        expanded = false
+                        activity?.let { AppLanguage.select(it, tag) }
+                    },
+                    modifier = Modifier.testTag("app-language-" + tag.ifEmpty { "system" })
+                        .semantics { this.selected = selected == tag },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsExternalLink(
+    label: String,
+    description: String,
+    @androidx.annotation.DrawableRes logo: Int,
+    brandColor: Color,
+    logoColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp).semantics { contentDescription = description },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(shape = RoundedCornerShape(8.dp), color = brandColor) {
+                Icon(
+                    painterResource(logo), contentDescription = null, tint = logoColor,
+                    modifier = Modifier.padding(4.dp).size(22.dp),
+                )
+            }
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        }
+    }
 }

@@ -112,3 +112,15 @@ Skill discovery follows [OpenAI's agent skill documentation](https://learn.chatg
 Input bar preferences use `appearance.get` / `appearance.update` with revision checking:
 `spikectl appearance update --revision NUMBER --input-buttons-on-right true --voice-input-enabled false`.
 Both fields are boolean and share the app Settings preferences. Long-press the buffered input toggle to swap the Enter/toggle column and text field. Voice input defaults to disabled; enable it explicitly in Settings.
+
+Accessory button colours can be changed through the same authorized AI chat control route.
+Read `appearance.get`, then send `appearance.update` with its `revision` and a
+`buttonColors` object, for example `{"ai_agents":"#6750A4","escape":"#E9B949"}`.
+Keys use the codes from `capabilities.keyboardActions`; `default:toggle_pinned_snippets`
+addresses the extra pinned-snippet toggle. Values must be opaque `#RRGGBB`.
+The object replaces the saved colour overrides: preserve existing entries when editing
+one button; remove an entry to restore its default, or use `{}` to reset all colours.
+Overrides are device-local and take effect immediately; text automatically uses black
+or white for contrast. Active modifier colours still indicate armed/locked state.
+Use `spikectl appearance update --json '{"revision":NUMBER,"buttonColors":{"ai_agents":"#6750A4"}}'`.
+This requires the existing user-granted local agent control permission.

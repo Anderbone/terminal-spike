@@ -52,6 +52,9 @@ message AppSettings {
 
   bool input_buttons_on_right = 30;
 
+  // Device-local accessory button backgrounds, keyed by runtime stable ID.
+  map<string, string> button_colors = 32;
+
   // Message presence distinguishes an untouched install from an intentionally empty agent list.
   AiAgentConfiguration ai_agents = 31;
 

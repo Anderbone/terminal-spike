@@ -25,6 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
+import com.yanjiyu.terminalspike.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -93,6 +95,8 @@ private fun TerminalControls(
     onPerformanceVisible: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val preloadLabels = PreloadSize.entries.associateWith { stringResource(R.string.debug_lines, it.label) }
+    val overlayDescription = stringResource(R.string.debug_performance_overlay)
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -116,7 +120,7 @@ private fun TerminalControls(
                     options = StreamingRate.entries,
                     optionLabel = StreamingRate::label,
                     onSelected = onStreamingRateSelected,
-                    accessibilityLabel = "Streaming output rate",
+                    accessibilityLabel = stringResource(R.string.debug_stream_rate),
                 )
             } else {
                 SelectorButton(
@@ -124,18 +128,18 @@ private fun TerminalControls(
                     options = FullScreenRate.entries,
                     optionLabel = FullScreenRate::label,
                     onSelected = onFullScreenRateSelected,
-                    accessibilityLabel = "Full screen update rate",
+                    accessibilityLabel = stringResource(R.string.debug_fullscreen_rate),
                 )
             }
             if (state.isRunning) {
-                Button(onClick = onStop, modifier = Modifier.heightIn(min = 36.dp)) { Text("Stop") }
+                Button(onClick = onStop, modifier = Modifier.heightIn(min = 36.dp)) { Text(stringResource(R.string.debug_stop)) }
             } else {
                 Button(onClick = onStart, enabled = !state.isPreloading, modifier = Modifier.heightIn(min = 36.dp)) {
-                    Text("Start")
+                    Text(stringResource(R.string.debug_start))
                 }
             }
             Text(
-                text = if (autoFollow) "● Following" else "● Scroll held",
+                text = if (autoFollow) stringResource(R.string.debug_following) else stringResource(R.string.debug_scroll_held),
                 color = if (autoFollow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                 style = MaterialTheme.typography.labelMedium,
             )
@@ -147,22 +151,22 @@ private fun TerminalControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SelectorButton(
-                label = "Preload ${state.preloadSize.label}",
+                label = stringResource(R.string.debug_preload_label, state.preloadSize.label),
                 options = PreloadSize.entries,
-                optionLabel = { "${it.label} lines" },
+                optionLabel = { preloadLabels.getValue(it) },
                 onSelected = onPreloadSelected,
-                accessibilityLabel = "Preload line count",
+                accessibilityLabel = stringResource(R.string.debug_preload_count),
             )
             OutlinedButton(onClick = onPreload, enabled = !state.isPreloading) {
-                Text(if (state.isPreloading) "Loading…" else "Preload")
+                Text(if (state.isPreloading) stringResource(R.string.debug_loading) else stringResource(R.string.debug_preload))
             }
-            TextButton(onClick = onClear) { Text("Clear") }
-            TextButton(onClick = onJumpToBottom) { Text("Jump to bottom") }
-            Text("Stats", style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = onClear) { Text(stringResource(R.string.debug_clear)) }
+            TextButton(onClick = onJumpToBottom) { Text(stringResource(R.string.debug_jump_bottom)) }
+            Text(stringResource(R.string.debug_stats), style = MaterialTheme.typography.labelMedium)
             Switch(
                 checked = state.showPerformance,
                 onCheckedChange = onPerformanceVisible,
-                modifier = Modifier.semantics { contentDescription = "Performance overlay" },
+                modifier = Modifier.semantics { contentDescription = overlayDescription },
             )
         }
     }

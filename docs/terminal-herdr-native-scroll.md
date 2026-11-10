@@ -867,3 +867,28 @@ flowchart TD
 Debug APK的 `HerdrScrollRoute` 每gesture最多记录一次route/reason、mode、grid/source geometry、cache rows/offset、projection/reader与pane hash，不含正文或连接secret，无新增network/analytics/permissions。用于用户实际操作的passive evidence；Fold不运行自动gesture/tests。
 
 Current：已证实的一条long-history rejection已修；用户实际multi-tab/return-to-live工作流仍未验收，不能称整体solved。新版normal APK259dd83ebe4c0c9e2ec342afe4ae3d0a30d727d1bebe3dd50b9258a325d4175e已在model/hardware验证的Fold完整非incremental安装，installed hash一致、MainActivity launch Status ok；secure keyguard/Bouncer挡住foreground确认。没有Fold tests。证据 `build/scroll-user-red-20261107/`。之前GREEN按其日期和scope保留，不能替代本轮用户RED。
+
+## Mobile Switch navigation swipes
+
+On a confirmed live Herdr mobile surface, a one-finger right swipe opens the
+visible Switch control; a left swipe closes a verified mobile switcher. The
+native container recognizes horizontal movement past 48dp (at least three touch
+slops) with a 2:1 horizontal bias, cancels the terminal child, and sends one
+ordinary mouse click to the visible navigation button. Remaining events are
+consumed so release cannot become a pane tap or fling. Vertical-first gestures,
+multiple pointers, text selection, unknown chrome, and desktop layouts keep
+their existing routing. A pinned native pane reader still permits navigation
+through the live chrome. Only an accepted navigation click clears that reader
+and invalidates its pending history generation; a short/cancelled swipe or
+rejected click preserves it. The pane history and fling algorithms are unchanged. Herdr owns the panel rendering; this is native gesture recognition,
+not a finger-tracked animation of the remote panel.
+
+The container must retain `requestDisallowInterceptTouchEvent(true)` after
+cancelling the terminal child. The child's CANCEL handler releases that lock;
+without reclaiming it, Compose cancels the AndroidView stream on the first
+horizontal MOVE, before the navigation threshold. Release the lock on UP/CANCEL.
+The mobile regression mounts the real container through Compose `AndroidView`
+and injects touchscreen events through `Instrumentation.sendPointerSync`;
+direct `container.dispatchTouchEvent` alone misses this failure. Debug builds log
+at most a start/end `HerdrNavigationSwipe` pair per gesture, with axis distances,
+classification and click acceptance; no terminal text or connection details.

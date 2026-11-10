@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yanjiyu.terminalspike.ui.resolve
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.connection.HostIdentityDecision
 import com.yanjiyu.terminalspike.connection.HostIdentityPrompt
@@ -138,7 +139,7 @@ internal fun SftpScreen(
                 onClose = onClose,
             )
             is SftpUiState.Connecting -> {
-                CenterMessage("Connecting to ${current.hostName}…", progress = true)
+                CenterMessage(stringResource(R.string.ui_connecting_to_1_s, current.hostName), progress = true)
                 current.hostIdentityPrompt?.let { prompt ->
                     HostIdentityDialog(prompt, controller::answerHostIdentity)
                 }
@@ -151,8 +152,8 @@ internal fun SftpScreen(
                 }
             }
             is SftpUiState.Failed -> CenterMessage(
-                message = current.message,
-                action = "Close" to onClose,
+                message = current.message.resolve(),
+                action = stringResource(R.string.guide_close) to onClose,
             )
             is SftpUiState.Browsing -> SftpBrowser(
                 state = current,
@@ -249,7 +250,7 @@ internal fun SftpBrowser(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onClose) { Text("Close") }
+            TextButton(onClick = onClose) { Text(stringResource(R.string.guide_close)) }
             Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                 Text(
                     state.hostName,
@@ -267,7 +268,7 @@ internal fun SftpBrowser(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (state.path != "/") TextButton(onClick = onUp, enabled = !state.busy) { Text("Up") }
+            if (state.path != "/") TextButton(onClick = onUp, enabled = !state.busy) { Text(stringResource(R.string.ui_up)) }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Row(
@@ -281,13 +282,13 @@ internal fun SftpBrowser(
                 onClick = { dialog = SftpEditDialog.NewFolder },
                 enabled = !state.busy,
                 contentPadding = SftpActionPadding,
-            ) { Text("New folder") }
+            ) { Text(stringResource(R.string.ui_new_folder)) }
             TextButton(onClick = { chooseUpload = true }, enabled = !state.busy, contentPadding = SftpActionPadding) {
-                Text("From phone")
+                Text(stringResource(R.string.ui_from_phone))
             }
             if (state.clipboard != null) {
                 TextButton(onClick = onPaste, enabled = !state.busy, contentPadding = SftpActionPadding) {
-                    Text("Paste")
+                    Text(stringResource(R.string.terminal_paste))
                 }
             }
         }
@@ -303,7 +304,7 @@ internal fun SftpBrowser(
                 if (state.files.isEmpty() && !state.busy) {
                     item {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("This folder is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.ui_this_folder_is_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -341,19 +342,19 @@ internal fun SftpBrowser(
                     TextButton(onClick = { onSelect(null) }, contentPadding = SftpActionPadding) {
                         Text(stringResource(R.string.sftp_selection_done))
                     }
-                    TextButton(onClick = onCopy, enabled = !state.busy, contentPadding = SftpActionPadding) { Text("Copy") }
-                    TextButton(onClick = onCut, enabled = !state.busy, contentPadding = SftpActionPadding) { Text("Cut") }
+                    TextButton(onClick = onCopy, enabled = !state.busy, contentPadding = SftpActionPadding) { Text(stringResource(R.string.terminal_action_copy)) }
+                    TextButton(onClick = onCut, enabled = !state.busy, contentPadding = SftpActionPadding) { Text(stringResource(R.string.ui_cut)) }
                     TextButton(
                         onClick = { dialog = SftpEditDialog.Rename },
                         enabled = !state.busy,
                         contentPadding = SftpActionPadding,
-                    ) { Text("Rename") }
+                    ) { Text(stringResource(R.string.connections_action_rename)) }
                     if (selectedItem != null) {
                         TextButton(onClick = onDownload, enabled = !state.busy, contentPadding = SftpActionPadding) {
-                            Text("Download")
+                            Text(stringResource(R.string.ui_download))
                         }
                         TextButton(onClick = onSaveTo, enabled = !state.busy, contentPadding = SftpActionPadding) {
-                            Text("Save to…")
+                            Text(stringResource(R.string.ui_save_to))
                         }
                     }
                     TextButton(
@@ -361,7 +362,7 @@ internal fun SftpBrowser(
                         enabled = !state.busy,
                         contentPadding = SftpActionPadding,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.connections_action_delete)) }
                 }
             }
         }
@@ -374,15 +375,15 @@ internal fun SftpBrowser(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = onDismissMessage) { Text("Dismiss") }
+                    Text(it.resolve(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = onDismissMessage) { Text(stringResource(R.string.dismiss)) }
                 }
             }
         }
     }
     dialog?.let { mode ->
         NameDialog(
-            title = if (mode == SftpEditDialog.NewFolder) "New folder" else "Rename",
+            title = if (mode == SftpEditDialog.NewFolder) stringResource(R.string.ui_new_folder) else stringResource(R.string.connections_action_rename),
             initialName = if (mode == SftpEditDialog.Rename) selectedItem?.name.orEmpty() else "",
             onDismiss = { dialog = null },
             onConfirm = { name ->
@@ -393,28 +394,28 @@ internal fun SftpBrowser(
     }
     if (confirmDelete) AppDialog(
         onDismissRequest = { confirmDelete = false },
-        title = { Text("Delete selected item?") },
-        text = { Text("Folders and all of their contents will be deleted permanently.") },
+        title = { Text(stringResource(R.string.ui_delete_selected_item)) },
+        text = { Text(stringResource(R.string.ui_folders_and_all_of_their_contents_will_be_deleted_permanently)) },
         confirmButton = {
             Button(
                 onClick = { confirmDelete = false; onDelete() },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError),
-            ) { Text("Delete") }
+            ) { Text(stringResource(R.string.connections_action_delete)) }
         },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
     )
     if (chooseUpload) AppDialog(
         onDismissRequest = { chooseUpload = false },
-        title = { Text("Copy from phone") },
-        text = { Text("Choose files or a whole folder to upload into ${state.path}.") },
+        title = { Text(stringResource(R.string.ui_copy_from_phone)) },
+        text = { Text(stringResource(R.string.ui_choose_files_or_a_whole_folder_to_upload_into_1_s, state.path)) },
         confirmButton = {
-            TextButton(onClick = { chooseUpload = false; onUploadFiles() }) { Text("Choose files") }
+            TextButton(onClick = { chooseUpload = false; onUploadFiles() }) { Text(stringResource(R.string.ui_choose_files)) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { chooseUpload = false }) { Text("Cancel") }
-                TextButton(onClick = { chooseUpload = false; onUploadFolder() }) { Text("Choose folder") }
+                TextButton(onClick = { chooseUpload = false }) { Text(stringResource(R.string.cancel)) }
+                TextButton(onClick = { chooseUpload = false; onUploadFolder() }) { Text(stringResource(R.string.ui_choose_folder)) }
             }
         },
     )
@@ -496,9 +497,9 @@ private fun NameDialog(title: String, initialName: String, onDismiss: () -> Unit
     AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(value, { value = it }, singleLine = true, label = { Text("Name") }) },
-        confirmButton = { Button(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        text = { OutlinedTextField(value, { value = it }, singleLine = true, label = { Text(stringResource(R.string.session_detail_name)) }) },
+        confirmButton = { Button(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) { Text(stringResource(R.string.host_editor_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -511,16 +512,16 @@ private fun SftpAuthenticationDialog(
     val secret = remember(state.hostId) { WipeableSecretInputState() }
     AppDialog(
         onDismissRequest = onClose,
-        title = { Text("Open files on ${state.hostName}") },
+        title = { Text(stringResource(R.string.ui_open_files_on_1_s, state.hostName)) },
         text = {
             WipeableSecretInput(
                 state = secret,
-                label = if (state.kind == SftpSecretKind.PASSWORD) "Password" else "Key passphrase",
+                label = if (state.kind == SftpSecretKind.PASSWORD) stringResource(R.string.browser_password) else stringResource(R.string.host_connect_key_passphrase),
                 testTag = "sftp-auth-secret",
             )
         },
-        confirmButton = { Button(onClick = { onSubmit(state.hostId, secret.takeChars()) }, enabled = secret.hasValue) { Text("Connect") } },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
+        confirmButton = { Button(onClick = { onSubmit(state.hostId, secret.takeChars()) }, enabled = secret.hasValue) { Text(stringResource(R.string.workspace_connect)) } },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -529,14 +530,14 @@ private fun HostIdentityDialog(prompt: HostIdentityPrompt, onDecision: (Long, Ho
     val changed = prompt is HostIdentityPrompt.Changed
     AppDialog(
         onDismissRequest = { onDecision(prompt.promptToken, HostIdentityDecision.Reject) },
-        title = { Text(if (changed) "Host key changed" else "Verify host") },
+        title = { Text(if (changed) stringResource(R.string.ui_host_key_changed) else stringResource(R.string.ui_verify_host)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (changed) Text("The saved host key no longer matches. Verify it before replacing the saved key.")
+                if (changed) Text(stringResource(R.string.ui_the_saved_host_key_no_longer_matches_verify_it_before_replacing_the_saved_key))
                 Text(prompt.endpoint)
                 Text(prompt.algorithm, fontFamily = FontFamily.Monospace)
                 (prompt as? HostIdentityPrompt.Changed)?.let {
-                    Text("Previous: ${it.previousFingerprint}", fontFamily = FontFamily.Monospace)
+                    Text(stringResource(R.string.ui_previous_1_s, it.previousFingerprint), fontFamily = FontFamily.Monospace)
                 }
                 Text(prompt.newFingerprint, fontFamily = FontFamily.Monospace)
             }
@@ -544,9 +545,9 @@ private fun HostIdentityDialog(prompt: HostIdentityPrompt, onDecision: (Long, Ho
         confirmButton = {
             Button(onClick = {
                 onDecision(prompt.promptToken, if (changed) HostIdentityDecision.ReplaceSavedKey else HostIdentityDecision.TrustAndSave)
-            }) { Text(if (changed) "Replace saved key" else "Trust and save") }
+            }) { Text(if (changed) stringResource(R.string.host_test_replace_saved_key) else stringResource(R.string.ssh_trust_and_save)) }
         },
-        dismissButton = { TextButton(onClick = { onDecision(prompt.promptToken, HostIdentityDecision.Reject) }) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = { onDecision(prompt.promptToken, HostIdentityDecision.Reject) }) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -559,7 +560,7 @@ private fun KeyboardInteractiveDialog(
     val states = remember(challenge.challengeToken) { challenge.questions.map { WipeableSecretInputState() } }
     AppDialog(
         onDismissRequest = onCancel,
-        title = { Text(challenge.name.ifBlank { "Authentication" }) },
+        title = { Text(challenge.name.ifBlank { stringResource(R.string.host_editor_authentication) }) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (challenge.instruction.isNotBlank()) Text(challenge.instruction)
@@ -568,8 +569,8 @@ private fun KeyboardInteractiveDialog(
                 }
             }
         },
-        confirmButton = { Button(onClick = { onSubmit(states.map { it.takeChars() }) }) { Text("Continue") } },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        confirmButton = { Button(onClick = { onSubmit(states.map { it.takeChars() }) }) { Text(stringResource(R.string.terminal_notification_permission_continue)) } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

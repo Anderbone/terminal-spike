@@ -10,6 +10,9 @@ import com.yanjiyu.terminalspike.connection.SftpUploadSource
 import com.yanjiyu.terminalspike.connection.SshConnectionConfig
 import com.yanjiyu.terminalspike.connection.SshAuthentication
 import com.yanjiyu.terminalspike.connection.parentPath
+import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.ui.UiText
+import com.yanjiyu.terminalspike.ui.uiText
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -45,9 +48,9 @@ internal sealed interface SftpUiState {
         val selectedPath: String? = null,
         val clipboard: SftpClipboard? = null,
         val busy: Boolean = false,
-        val message: String? = null,
+        val message: UiText? = null,
     ) : SftpUiState
-    data class Failed(val hostName: String, val message: String) : SftpUiState
+    data class Failed(val hostName: String, val message: UiText) : SftpUiState
 }
 
 internal data class SftpClipboard(val sourcePath: String, val cut: Boolean)
@@ -185,7 +188,7 @@ internal class SftpSessionController(
         _state.value = current.copy(
             selectedPath = null,
             clipboard = SftpClipboard(selected, cut),
-            message = if (cut) "Ready to move" else "Ready to copy",
+            message = uiText(if (cut) R.string.sftp_ready_move else R.string.sftp_ready_copy),
         )
     }
 
@@ -245,7 +248,7 @@ internal class SftpSessionController(
             owned.generation,
         )
         showMessageIfOwned(
-            "Uploaded ${files.size} ${if (files.size == 1) "file" else "files"}",
+            uiText(R.string.sftp_uploaded_files, files.size),
             owned,
         )
     }
@@ -261,7 +264,7 @@ internal class SftpSessionController(
             owned.state.clipboard,
             owned.generation,
         )
-        showMessageIfOwned("Uploaded ${source.rootName}", owned)
+        showMessageIfOwned(uiText(R.string.sftp_uploaded, source.rootName), owned)
     }
 
     suspend fun download(open: () -> OutputStream): Result<Unit> = transfer { owned ->
@@ -276,7 +279,7 @@ internal class SftpSessionController(
     suspend fun downloadForViewing(file: SftpFile, cacheRoot: File): Result<File> = transfer { owned ->
         require(!file.isDirectory && file in owned.state.files) { "This file is no longer available." }
         publishIfOwned(owned.generation, owned.active) {
-            owned.state.copy(busy = true, message = "Downloading ${file.name} to open…")
+            owned.state.copy(busy = true, message = uiText(R.string.sftp_downloading_open, file.name))
         }
         var downloaded: File? = null
         try {
@@ -312,7 +315,7 @@ internal class SftpSessionController(
         require(!file.isDirectory && file in owned.state.files) { "This file is no longer available." }
         withContext(operationContext) { owned.active.downloadRecursively(file.path, destination) }
         if (!owns(owned.generation, owned.active)) throw CancellationException("File session changed.")
-        showMessageIfOwned("Downloaded ${file.name} to $destinationLabel", owned)
+        showMessageIfOwned(uiText(R.string.sftp_downloaded, file.name, destinationLabel), owned)
     }
 
     suspend fun downloadSelected(
@@ -327,7 +330,7 @@ internal class SftpSessionController(
             current.copy(
                 selectedPath = null,
                 busy = false,
-                message = "Downloaded $selectedName to $destinationLabel",
+                message = uiText(R.string.sftp_downloaded, selectedName, destinationLabel),
             )
         }
     }
@@ -435,7 +438,7 @@ internal class SftpSessionController(
         }
     }
 
-    private fun showMessageIfOwned(message: String, owned: OwnedBrowsing) {
+    private fun showMessageIfOwned(message: UiText, owned: OwnedBrowsing) {
         publishIfOwned(owned.generation, owned.active) {
             val current = _state.value as? SftpUiState.Browsing ?: owned.state
             current.copy(busy = false, message = message)
@@ -524,8 +527,9 @@ internal class SftpSessionController(
     )
 }
 
-private fun Throwable.safeMessage(): String = message
+private fun Throwable.safeMessage(): UiText = message
     ?.replace(Regex("[\\r\\n\\t]+"), " ")
     ?.take(240)
     ?.takeIf(String::isNotBlank)
-    ?: "SFTP operation failed."
+    ?.let(UiText::Dynamic)
+    ?: uiText(R.string.sftp_operation_failed)

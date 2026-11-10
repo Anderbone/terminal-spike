@@ -8,6 +8,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HerdrTabTargetTest {
+    @Test fun mobileSwipeTargetsOnlyVisibleNavigationAtEveryCorner() {
+        for (bottom in listOf(false, true)) for (left in listOf(false, true)) {
+            val top = if (bottom) 8 else 0
+            val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(40, 10)
+            val live = buildString {
+                append("\u001B[Hworkspace\u001B[${top + 2};1H")
+                append(if (left) " switch  │ tab" else "tab                           │ switch")
+            }
+            val screen = engine.accept(live.toByteArray()).screen
+            org.junit.Assert.assertEquals((if (left) 1 else 31) to (top + 1),
+                HerdrNavigationChrome.switcherOpen(screen, 40, 10))
+            org.junit.Assert.assertNull(HerdrNavigationChrome.switcherClose(screen, 40, 10))
+            val overlay = buildString {
+                append("\u001B[2J\u001B[${top + 1};1H")
+                append(if (left) " close   │ switch" else " switch                       │ close")
+                append("\u001B[${top + 2};1H")
+                append(if (left) "    ×    │" else "                              │ ×")
+                append("\u001B[${if (bottom) 8 else 3};1H" + "─".repeat(40))
+            }
+            val covered = engine.accept(overlay.toByteArray()).screen
+            org.junit.Assert.assertNull(HerdrNavigationChrome.switcherOpen(covered, 40, 10))
+            org.junit.Assert.assertEquals((if (left) 1 else 31) to top,
+                HerdrNavigationChrome.switcherClose(covered, 40, 10))
+        }
+        val plain = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(40, 10)
+            .accept("shell output mentions switch and close".toByteArray()).screen
+        org.junit.Assert.assertNull(HerdrNavigationChrome.switcherOpen(plain, 40, 10))
+        org.junit.Assert.assertNull(HerdrNavigationChrome.switcherClose(plain, 40, 10))
+    }
+
     @Test fun switcherTabTapClosesOverlayBeforeClickingAndLeavesListClicksUntouched() {
         for (bottom in listOf(false, true)) for (left in listOf(false, true)) {
             val frames = ArrayDeque<android.view.Choreographer.FrameCallback>()

@@ -1676,6 +1676,7 @@ fun TerminalSpikeScreen(
                                     snippetsAboveKeyboard = state.snippetsAboveKeyboard,
                                     voiceInputEnabled = state.voiceInputEnabled,
                                     inputButtonsOnRight = state.inputButtonsOnRight,
+                                    buttonColors = state.buttonColors,
                                     onInputButtonsOnRight = viewModel::setInputButtonsOnRight,
                                     customizationEnabled = state.settingsReady,
                                     inputTargetId = state.activeSessionId,

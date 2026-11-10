@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="debug_stop">停止</string>
+    <string name="debug_start">启动</string>
+    <string name="debug_following">● 跟随输出</string>
+    <string name="debug_scroll_held">● 已暂停跟随</string>
+    <string name="debug_loading">正在加载…</string>
+    <string name="debug_preload">预加载</string>
+    <string name="debug_clear">清除</string>
+    <string name="debug_jump_bottom">跳至底部</string>
+    <string name="debug_stats">统计</string>
+    <string name="debug_performance_overlay">性能叠加层</string>
+    <string name="debug_stream_rate">流式输出速率</string>
+    <string name="debug_fullscreen_rate">全屏更新速率</string>
+    <string name="debug_preload_count">预加载行数</string>
+    <string name="debug_preload_label">预加载 %1$s</string>
+    <string name="debug_lines">%1$s 行</string>
+</resources>

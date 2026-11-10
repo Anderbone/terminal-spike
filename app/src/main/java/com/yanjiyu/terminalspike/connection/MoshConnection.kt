@@ -68,6 +68,11 @@ internal class MoshConnection(
     override val isHerdrSession: Boolean
         get() = synchronized(lock) { activeAttempt?.running == true && activeAttempt?.sshSideChannel?.herdrChoice != null }
 
+    override fun focusHerdrTask(paneId: String, terminalId: String, agentSession: String?): Boolean {
+        val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return false
+        return attempt.sshSideChannel?.focusHerdrTask(paneId, terminalId, agentSession) == true
+    }
+
     override fun captureHerdrAgentStates(): List<HerdrAgentState>? {
         val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null
         val captured = attempt.sshSideChannel?.captureHerdrAgentStates()

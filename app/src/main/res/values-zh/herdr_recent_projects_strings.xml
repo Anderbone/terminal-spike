@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="herdr_recent_projects">最近项目</string>
+    <string name="herdr_project_search">搜索项目</string>
+    <string name="herdr_projects_loading">正在加载项目…</string>
+    <string name="herdr_projects_unavailable">无法加载项目，请检查 SSH 连接及主机是否安装 zoxide。</string>
+    <string name="herdr_projects_empty">zoxide 历史中没有尚未打开的项目。</string>
+    <string name="herdr_project_opening">正在打开项目…</string>
+    <string name="herdr_project_open_failed">无法打开此项目，可能已打开或目录不可用。请重新打开列表刷新。</string>
+</resources>

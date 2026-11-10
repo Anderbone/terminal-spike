@@ -12,6 +12,8 @@ All responses are JSON. A failed request exits nonzero. No command executes snip
 
   spikectl status
   spikectl capabilities
+  Button colours: appearance update --json '{"revision":NUMBER,"buttonColors":{"ai_agents":"#6750A4"}}'
+  Uses keyboard action codes; preserves active modifier indicators. Map replaces all overrides.
   spikectl appearance get
   spikectl appearance update --revision NUMBER
       [--theme-mode system|light|dark] [--dynamic-color-enabled true|false]

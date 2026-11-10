@@ -55,6 +55,10 @@
     <string name="terminal_program_notification_channel_description">Alerts from terminal applications, including completed Codex turns</string>
     <string name="terminal_program_notification_title">Terminal task complete</string>
     <string name="terminal_program_notification_named_title">%1$s task complete</string>
+    <string name="terminal_task_reply_title">%1$s · Reply ready</string>
+    <string name="terminal_task_waiting_title">%1$s · Needs input</string>
+    <string name="terminal_task_waiting_text">This task is waiting for input or approval. Tap to open it.</string>
+    <string name="terminal_task_target_unavailable">The original task is no longer available. Opened its terminal tab.</string>
     <string name="terminal_program_notification_text">Tap to open the terminal tab.</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Private, local, and tuned for your terminal</string>
@@ -67,7 +71,7 @@
     <string name="settings_no_results_message">Try a broader word or check another category.</string>
 
     <string name="settings_category_appearance">Appearance</string>
-    <string name="settings_category_appearance_summary">Themes, colors and fonts</string>
+    <string name="settings_category_appearance_summary">Language, themes, colors and fonts</string>
     <string name="settings_category_terminal">Terminal</string>
     <string name="settings_category_terminal_summary">Links, clipboard and multiline paste</string>
     <string name="settings_category_keyboard">Keyboard</string>

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
@@ -69,16 +70,16 @@ import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
 import com.yanjiyu.terminalspike.ui.theme.iconMetrics
 
-internal enum class ToolSection(val label: String) {
-    PROFILES("Hosts"),
-    IDENTITIES("Keys"),
-    SNIPPETS("Snippets"),
-    TERMINAL("Terminal"),
-    KEYS("Keyboard"),
-    SECURITY("Security"),
-    MOSH("Mosh"),
-    ABOUT("About"),
-    DEVELOPER("Developer"),
+internal enum class ToolSection(@androidx.annotation.StringRes val labelRes: Int) {
+    PROFILES(R.string.connections_tab_hosts),
+    IDENTITIES(R.string.connections_tab_keys),
+    SNIPPETS(R.string.connections_tab_snippets),
+    TERMINAL(R.string.settings_category_terminal),
+    KEYS(R.string.settings_category_keyboard),
+    SECURITY(R.string.settings_category_security),
+    MOSH(R.string.settings_category_mosh),
+    ABOUT(R.string.settings_category_about),
+    DEVELOPER(R.string.settings_category_developer),
 }
 
 internal const val ExpandedToolSectionListTestTag = "expanded-tool-section-list"
@@ -133,6 +134,30 @@ internal fun LocalToolsScreen(
     keyboardProfileId: String? = null,
 ) {
     if (destination == AppDestination.SETTINGS) {
+        var editingSettingsSnippet by remember { mutableStateOf<CommandSnippet?>(null) }
+        var settingsSnippetEditorVisible by remember { mutableStateOf(false) }
+        var deletingSettingsSnippet by remember { mutableStateOf<CommandSnippet?>(null) }
+        val context = LocalContext.current
+        val toolbarPreferences = remember(context) {
+            context.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
+        }
+        var hiddenDefaults by remember {
+            mutableStateOf(toolbarPreferences.getStringSet("replaced-defaults", emptySet()).orEmpty().toSet())
+        }
+        var codexHidden by remember { mutableStateOf(toolbarPreferences.getBoolean("codex-replaced", false)) }
+        fun hideDefault(id: Long) {
+            if (id == 0L) {
+                codexHidden = true
+                toolbarPreferences.edit().putBoolean("codex-replaced", true).apply()
+            } else {
+                hiddenDefaults = hiddenDefaults + id.toString()
+                toolbarPreferences.edit().putStringSet("replaced-defaults", hiddenDefaults).apply()
+            }
+        }
+        val allSnippets = snippets + com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all.filter {
+            if (it.id == 0L) !codexHidden else it.id.toString() !in hiddenDefaults
+        }
+
         SettingsDestination(
             initialCategory = initialSection.toSettingsCategory(),
             knownHosts = knownHosts,
@@ -146,10 +171,42 @@ internal fun LocalToolsScreen(
             onOpenSettings = onOpenSettings,
             onOpenSshKeys = onOpenSshKeys,
             onOpenSnippets = onOpenSnippets,
+            snippetsContent = {
+                SnippetsSection(
+                    snippets = allSnippets,
+                    onAdd = { editingSettingsSnippet = null; settingsSnippetEditorVisible = true },
+                    onSend = onSendSnippet,
+                    onEdit = { editingSettingsSnippet = it; settingsSnippetEditorVisible = true },
+                    onDelete = { id -> deletingSettingsSnippet = allSnippets.firstOrNull { it.id == id } },
+                    managementOnly = true,
+                )
+            },
             onOpenPortForwards = onOpenPortForwards,
             terminalProfileId = terminalProfileId,
             keyboardProfileId = keyboardProfileId,
         )
+        if (settingsSnippetEditorVisible) {
+            SnippetEditorDialog(
+                snippet = editingSettingsSnippet,
+                onDismiss = { settingsSnippetEditorVisible = false },
+                onSave = { label, command, appendEnter ->
+                    val editedId = editingSettingsSnippet?.id
+                    onSaveSnippet(label, command, appendEnter, editedId)
+                    editedId?.takeIf { it <= 0 }?.let(::hideDefault)
+                    settingsSnippetEditorVisible = false
+                },
+            )
+        }
+        deletingSettingsSnippet?.let { snippet ->
+            ToolDeletionConfirmationDialog(
+                deletion = PendingToolDeletion.Snippet(snippet),
+                onDismiss = { deletingSettingsSnippet = null },
+                onConfirm = {
+                    if (snippet.id <= 0) hideDefault(snippet.id) else onDeleteSnippet(snippet.id)
+                    deletingSettingsSnippet = null
+                },
+            )
+        }
         return
     }
 
@@ -303,10 +360,10 @@ internal fun LocalToolsScreen(
                     )
                     Text(
                         text = when (section) {
-                            ToolSection.ABOUT -> "Version, privacy, and open-source licences"
-                            ToolSection.DEVELOPER -> "Local diagnostics for debug builds"
-                            ToolSection.MOSH -> "Optional transport extension status"
-                            else -> "Private, encrypted, and stored on this device"
+                            ToolSection.ABOUT -> stringResource(R.string.ui_about_summary)
+                            ToolSection.DEVELOPER -> stringResource(R.string.ui_local_diagnostics_for_debug_builds)
+                            ToolSection.MOSH -> stringResource(R.string.ui_optional_transport_extension_status)
+                            else -> stringResource(R.string.ui_local_privacy_summary)
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -353,7 +410,7 @@ internal fun LocalToolsScreen(
                             FilterChip(
                                 selected = section == item,
                                 onClick = { section = item },
-                                label = { Text(item.label) },
+                                label = { Text(stringResource(item.labelRes)) },
                             )
                         }
                     }
@@ -616,7 +673,7 @@ private fun ExpandedToolSectionList(
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Text(
-                    text = item.label,
+                    text = stringResource(item.labelRes),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (selected == item) FontWeight.SemiBold else FontWeight.Medium,
@@ -637,28 +694,28 @@ private fun ToolDeletionConfirmationDialog(
     val confirmLabel: String
     when (deletion) {
         is PendingToolDeletion.Profile -> {
-            title = "Delete ${deletion.profile.label}?"
+            title = stringResource(R.string.connections_delete_title, deletion.profile.label)
             message = if (deletion.profile.hasSavedPassword) {
-                "This removes the saved host and its device-encrypted password. Active sessions are not disconnected."
+                stringResource(R.string.ui_this_removes_the_saved_host_and_its_device_encrypted_password_active_sessions_are_not_disc)
             } else {
-                "This removes the saved host. Active sessions are not disconnected."
+                stringResource(R.string.ui_this_removes_the_saved_host_active_sessions_are_not_disconnected)
             }
-            confirmLabel = "Delete host"
+            confirmLabel = stringResource(R.string.connections_delete_host)
         }
         is PendingToolDeletion.Identity -> {
-            title = "Delete ${deletion.identity.label}?"
-            message = "This permanently removes the device-encrypted private key. Saved hosts that use it may no longer connect."
-            confirmLabel = "Delete key"
+            title = stringResource(R.string.connections_delete_title, deletion.identity.label)
+            message = stringResource(R.string.ui_this_permanently_removes_the_device_encrypted_private_key_saved_hosts_that_use_it_may_no_l)
+            confirmLabel = stringResource(R.string.connections_delete_key)
         }
         is PendingToolDeletion.KnownHost -> {
-            title = "Forget ${deletion.knownHost.host}?"
-            message = "The next connection must verify this host again. Only accept it if the new fingerprint is expected."
-            confirmLabel = "Forget host key"
+            title = stringResource(R.string.settings_forget_known_host_title, deletion.knownHost.host)
+            message = stringResource(R.string.ui_the_next_connection_must_verify_this_host_again_only_accept_it_if_the_new_fingerprint_is_e)
+            confirmLabel = stringResource(R.string.settings_forget_known_host_action)
         }
         is PendingToolDeletion.Snippet -> {
-            title = "Delete ${deletion.snippet.label}?"
-            message = "This permanently removes the saved command snippet."
-            confirmLabel = "Delete snippet"
+            title = stringResource(R.string.connections_delete_title, deletion.snippet.label)
+            message = stringResource(R.string.connections_delete_snippet_detail)
+            confirmLabel = stringResource(R.string.connections_delete_snippet)
         }
     }
     AppDialog(
@@ -678,7 +735,7 @@ private fun ToolDeletionConfirmationDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )
@@ -693,15 +750,15 @@ private fun IdentitiesSection(
 ) {
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
-            SectionAction(title = "SSH private keys", action = "Import key", onAction = onImport)
+            SectionAction(title = stringResource(R.string.ui_ssh_private_keys), action = stringResource(R.string.connections_import_key), onAction = onImport)
             Text(
-                text = "Imported through Android's document picker, encrypted on this device, and never exported by the app.",
+                text = stringResource(R.string.ui_imported_through_android_s_document_picker_encrypted_on_this_device_and_never_exported_by_),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }
-        if (identities.isEmpty()) item { EmptyLine("No private keys imported.") }
+        if (identities.isEmpty()) item { EmptyLine(stringResource(R.string.ui_no_private_keys_imported)) }
         items(identities, key = { it.id }) { identity ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -712,9 +769,9 @@ private fun IdentitiesSection(
                     Text(
                         "${identity.keyType} · ${identity.fingerprint}" +
                             if (!identity.isAvailable) {
-                                " · key unavailable · re-import required"
+                                stringResource(R.string.ui_key_unavailable_suffix)
                             } else if (identity.passphraseRequired) {
-                                " · passphrase required"
+                                stringResource(R.string.ui_key_passphrase_suffix)
                             } else {
                                 ""
                             },
@@ -730,13 +787,14 @@ private fun IdentitiesSection(
                         onClick = { onReimport(requireNotNull(identity.recoveryToken)) },
                         enabled = identity.recoveryToken != null,
                     ) {
-                        Text("Re-import")
+                        Text(stringResource(R.string.ui_re_import))
                     }
                 }
+                val deleteKeyDescription = stringResource(R.string.ui_delete_1_s_private_key, identity.label)
                 IconButton(
                     onClick = { onDelete(identity.id) },
                     modifier = Modifier.semantics {
-                        contentDescription = "Delete ${identity.label} private key"
+                        contentDescription = deleteKeyDescription
                     },
                 ) {
                     ConnectionsGlyphIcon(
@@ -758,18 +816,18 @@ private fun KnownHostsSection(
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
             Text(
-                "Known hosts",
+                stringResource(R.string.settings_known_hosts_heading),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp),
             )
             Text(
-                "SSH host fingerprints are checked before authentication. Changed keys are blocked until you review them.",
+                stringResource(R.string.ui_host_verification_summary),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }
-        if (knownHosts.isEmpty()) item { EmptyLine("No SSH host keys trusted yet.") }
+        if (knownHosts.isEmpty()) item { EmptyLine(stringResource(R.string.ui_no_ssh_host_keys_trusted_yet)) }
         items(knownHosts, key = { "${it.host}:${it.algorithm}" }) { knownHost ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -787,7 +845,7 @@ private fun KnownHostsSection(
                     )
                 }
                 TextButton(onClick = { onForgetKnownHost(knownHost.host, knownHost.algorithm) }) {
-                    Text("Forget")
+                    Text(stringResource(R.string.ssh_connect_forget))
                 }
             }
             HorizontalDivider(modifier = Modifier.padding(start = 20.dp))
@@ -806,39 +864,39 @@ private fun ProfilesSection(
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
             SectionAction(
-                title = "Saved SSH hosts",
-                action = "Add host",
+                title = stringResource(R.string.ui_saved_ssh_hosts),
+                action = stringResource(R.string.connections_add_host),
                 onAction = onAdd,
             )
         }
         if (profiles.isEmpty()) {
-            item { EmptyLine("No saved hosts yet.") }
+            item { EmptyLine(stringResource(R.string.ui_no_saved_hosts_yet)) }
         }
         items(profiles, key = { it.id }) { profile ->
             ToolRow(
                 title = profile.label,
                 detail = "${profile.username}@${profile.host}:${profile.port}" +
                     when {
-                        profile.hasSavedPassword -> " · password saved"
+                        profile.hasSavedPassword -> stringResource(R.string.ui_password_saved_suffix)
                         profile.connectionCompatibility == SavedHostConnectionCompatibility.MOSH_UNAVAILABLE ->
-                            " · Mosh unavailable in this build"
+                            stringResource(R.string.ui_mosh_unavailable_suffix)
                         profile.connectionCompatibility ==
                             SavedHostConnectionCompatibility.PRIVATE_KEY_REQUIRES_FULL_UI ->
-                            " · bound private-key login unavailable here"
+                            stringResource(R.string.ui_private_key_login_unavailable_suffix)
                         profile.connectionCompatibility ==
                             SavedHostConnectionCompatibility.KEYBOARD_INTERACTIVE_UNAVAILABLE ->
-                            " · keyboard-interactive login unavailable here"
+                            stringResource(R.string.ui_interactive_login_unavailable_suffix)
                         profile.connectionCompatibility ==
                             SavedHostConnectionCompatibility.PROFILE_OPTIONS_REQUIRE_FULL_UI ->
-                            " · saved connection options unavailable here"
+                            stringResource(R.string.ui_connection_options_unavailable_suffix)
                         else -> ""
                     },
-                primaryAction = if (profile.canConnectFromCompatibilityUi) "Use" else "Unavailable",
+                primaryAction = if (profile.canConnectFromCompatibilityUi) stringResource(R.string.ui_use) else stringResource(R.string.ui_unavailable),
                 primaryEnabled = profile.canConnectFromCompatibilityUi,
                 onPrimary = { onUse(profile) },
                 onEdit = { onEdit(profile) },
                 onDelete = { onDelete(profile.id) },
-                deleteDescription = "Delete ${profile.label} profile",
+                deleteDescription = stringResource(R.string.ui_delete_profile_description, profile.label),
             )
         }
     }
@@ -851,30 +909,65 @@ private fun SnippetsSection(
     onSend: (Long) -> Unit,
     onEdit: (CommandSnippet) -> Unit,
     onDelete: (Long) -> Unit,
+    managementOnly: Boolean = false,
 ) {
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         item {
-            SectionAction(title = "Command snippets", action = "Add snippet", onAction = onAdd)
-            Text(
-                text = "Sending is always explicit. Avoid storing passwords or tokens in commands.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-            )
+            SectionAction(title = stringResource(R.string.ui_command_snippets), action = stringResource(R.string.connections_add_snippet), onAction = onAdd)
+            if (!managementOnly) {
+                Text(
+                    text = stringResource(R.string.ui_sending_is_always_explicit_avoid_storing_passwords_or_tokens_in_commands),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
         }
         if (snippets.isEmpty()) {
-            item { EmptyLine("No snippets yet.") }
+            item { EmptyLine(stringResource(R.string.ui_no_snippets_yet)) }
         }
         items(snippets, key = { it.id }) { snippet ->
-            ToolRow(
+            val deleteDescription = stringResource(R.string.ui_delete_snippet_description, snippet.label)
+            if (managementOnly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { onEdit(snippet) }
+                        .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(snippet.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            snippet.command.replace('\n', ' '),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(
+                        onClick = { onDelete(snippet.id) },
+                        modifier = Modifier.semantics {
+                            contentDescription = deleteDescription
+                        },
+                    ) {
+                        ConnectionsGlyphIcon(ConnectionsGlyph.CLOSE, Modifier.size(18.dp))
+                    }
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+            } else ToolRow(
                 title = snippet.label,
                 detail = snippet.command.replace('\n', ' ').take(80) + if (snippet.appendEnter) "  ↵" else "",
-                primaryAction = if (snippet.sendsImmediately) "Send" else "Insert unavailable",
+                primaryAction = if (snippet.sendsImmediately) stringResource(R.string.terminal_send) else stringResource(R.string.ui_insert_unavailable),
                 primaryEnabled = snippet.sendsImmediately,
                 onPrimary = { onSend(snippet.id) },
                 onEdit = { onEdit(snippet) },
                 onDelete = { onDelete(snippet.id) },
-                deleteDescription = "Delete ${snippet.label} snippet",
+                deleteDescription = stringResource(R.string.ui_delete_snippet_description, snippet.label),
                 monospaceDetail = true,
             )
         }
@@ -893,11 +986,11 @@ private fun KeysSection(
     var focusedKey by remember { mutableStateOf<TerminalExtraKey?>(null) }
     val groups = listOf(
         KeyPickerGroup(
-            label = "Modifiers",
+            label = stringResource(R.string.ui_modifiers),
             keys = listOf(TerminalExtraKey.CTRL, TerminalExtraKey.ALT),
         ),
         KeyPickerGroup(
-            label = "Navigation",
+            label = stringResource(R.string.ui_navigation),
             keys = listOf(
                 TerminalExtraKey.ESC,
                 TerminalExtraKey.TAB,
@@ -912,7 +1005,7 @@ private fun KeysSection(
             ),
         ),
         KeyPickerGroup(
-            label = "Arrows",
+            label = stringResource(R.string.ui_arrows),
             keys = listOf(
                 TerminalExtraKey.UP,
                 TerminalExtraKey.DOWN,
@@ -921,7 +1014,7 @@ private fun KeysSection(
             ),
         ),
         KeyPickerGroup(
-            label = "Ctrl shortcuts",
+            label = stringResource(R.string.ui_ctrl_shortcuts),
             keys = listOf(
                 TerminalExtraKey.CTRL_C,
                 TerminalExtraKey.CTRL_D,
@@ -937,7 +1030,7 @@ private fun KeysSection(
             ),
         ),
         KeyPickerGroup(
-            label = "Symbols",
+            label = stringResource(R.string.ui_symbols),
             keys = listOf(
                 TerminalExtraKey.SLASH,
                 TerminalExtraKey.PIPE,
@@ -975,7 +1068,7 @@ private fun KeysSection(
             ),
         ),
         KeyPickerGroup(
-            label = "Function keys",
+            label = stringResource(R.string.ui_function_keys),
             keys = listOf(
                 TerminalExtraKey.F1,
                 TerminalExtraKey.F2,
@@ -992,7 +1085,7 @@ private fun KeysSection(
             ),
         ),
         KeyPickerGroup(
-            label = "Special",
+            label = stringResource(R.string.ui_special),
             keys = listOf(TerminalExtraKey.HIDE_KEYBOARD),
         ),
     )
@@ -1010,12 +1103,12 @@ private fun KeysSection(
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Terminal keys", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = onReset) { Text("Reset") }
-                Button(onClick = onSave) { Text("Save") }
+                Text(stringResource(R.string.ui_terminal_keys), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onReset) { Text(stringResource(R.string.reset)) }
+                Button(onClick = onSave) { Text(stringResource(R.string.host_editor_save)) }
             }
             Text(
-                text = "Tap an option to add it. To change a key, tap it in the live deck, then tap its replacement below. Tap Save when finished.",
+                text = stringResource(R.string.ui_tap_an_option_to_add_it_to_change_a_key_tap_it_in_the_live_deck_then_tap_its_replacement_b),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
@@ -1023,7 +1116,7 @@ private fun KeysSection(
         }
         item {
             Text(
-                text = "LIVE DECK · ${selectedKeys.size} KEYS",
+                text = stringResource(R.string.ui_live_deck_1_d_keys, selectedKeys.size),
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
@@ -1060,14 +1153,14 @@ private fun KeysSection(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = "Selected slot ${selectedIndex + 1} · ${key.label}",
+                        text = stringResource(R.string.ui_selected_slot_1_d_2_s, selectedIndex + 1, key.label),
                         modifier = Modifier.padding(start = 4.dp, top = 2.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = "Tap a new option below to replace this key.",
+                        text = stringResource(R.string.ui_tap_a_new_option_below_to_replace_this_key),
                         modifier = Modifier.padding(start = 4.dp, top = 3.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
@@ -1086,14 +1179,14 @@ private fun KeysSection(
                                 modifier = Modifier.size(MaterialTheme.iconMetrics.compact),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Move left")
+                            Text(stringResource(R.string.ui_move_left))
                         }
-                        TextButton(onClick = { onSetVisible(key, false) }) { Text("Remove") }
+                        TextButton(onClick = { onSetVisible(key, false) }) { Text(stringResource(R.string.project_remove)) }
                         TextButton(
                             enabled = selectedIndex in 0 until selectedKeys.lastIndex,
                             onClick = { onMove(key, 1) },
                         ) {
-                            Text("Move right")
+                            Text(stringResource(R.string.ui_move_right))
                             Spacer(Modifier.width(4.dp))
                             ConnectionsGlyphIcon(
                                 glyph = ConnectionsGlyph.BACK,
@@ -1108,7 +1201,7 @@ private fun KeysSection(
         }
         item {
             Text(
-                text = "AVAILABLE KEYS",
+                text = stringResource(R.string.ui_available_keys),
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 2.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
@@ -1179,12 +1272,13 @@ internal fun KeyDeckPreviewRow(
     ) {
         keys.forEach { key ->
             val focused = key == focusedKey
+            val editKeyDescription = stringResource(R.string.ui_edit_1_s_terminal_key, key.label)
             Surface(
                 onClick = { onFocus(key) },
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Edit ${key.label} terminal key" },
+                    .semantics { contentDescription = editKeyDescription },
                 shape = RoundedCornerShape(8.dp),
                 color = if (focused) {
                     MaterialTheme.colorScheme.primaryContainer
@@ -1222,17 +1316,18 @@ private fun RowScope.KeyPickerButton(
     onClick: () -> Unit,
 ) {
     val selected = selectedIndex >= 0
+    val keyDescription = if (selected) {
+        stringResource(R.string.ui_key_selected_description, key.label, selectedIndex + 1)
+    } else {
+        stringResource(R.string.ui_add_key_description, key.label)
+    }
     Surface(
         onClick = onClick,
         modifier = Modifier
             .weight(1f)
             .heightIn(min = 48.dp)
             .semantics {
-                contentDescription = if (selected) {
-                    "${key.label} terminal key selected at position ${selectedIndex + 1}"
-                } else {
-                    "Add ${key.label} terminal key"
-                }
+                contentDescription = keyDescription
             },
         shape = RoundedCornerShape(11.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -1316,7 +1411,7 @@ private fun ToolRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        TextButton(onClick = onEdit) { Text("Edit") }
+        TextButton(onClick = onEdit) { Text(stringResource(R.string.project_edit)) }
         TextButton(onClick = onPrimary, enabled = primaryEnabled) { Text(primaryAction) }
         IconButton(
             onClick = onDelete,
@@ -1347,26 +1442,26 @@ private fun ProfileEditorDialog(
         port.toIntOrNull()?.let { it in 1..65_535 } == true
     AppDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (profile == null) "Save SSH host" else "Edit SSH host") },
+        title = { Text(if (profile == null) stringResource(R.string.ui_save_ssh_host) else stringResource(R.string.ui_edit_ssh_host)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(host, { host = it.take(UserSettings.MAX_HOST_LENGTH) }, label = { Text("Host") }, singleLine = true)
+                OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text(stringResource(R.string.session_detail_name)) }, singleLine = true)
+                OutlinedTextField(host, { host = it.take(UserSettings.MAX_HOST_LENGTH) }, label = { Text(stringResource(R.string.connections_field_host)) }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(username, { username = it.take(UserSettings.MAX_USERNAME_LENGTH) }, label = { Text("Username") }, modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text("Port") }, modifier = Modifier.weight(0.48f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(username, { username = it.take(UserSettings.MAX_USERNAME_LENGTH) }, label = { Text(stringResource(R.string.host_editor_username)) }, modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.host_editor_port)) }, modifier = Modifier.weight(0.48f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                 }
                 Text(
-                    "Passwords are stored only from the connection dialog when you explicitly opt in.",
+                    stringResource(R.string.ui_passwords_are_stored_only_from_the_connection_dialog_when_you_explicitly_opt_in),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         },
-        confirmButton = { Button(enabled = valid, onClick = { onSave(label, host, port, username) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(enabled = valid, onClick = { onSave(label, host, port, username) }) { Text(stringResource(R.string.host_editor_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1384,17 +1479,17 @@ private fun SnippetEditorDialog(
         command.none { it.isISOControl() && it !in "\r\n\t" }
     AppDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (snippet == null) "New command snippet" else "Edit command snippet") },
+        title = { Text(if (snippet == null) stringResource(R.string.ui_new_command_snippet) else stringResource(R.string.ui_edit_command_snippet)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(label, { label = it.take(UserSettings.MAX_LABEL_LENGTH) }, label = { Text(stringResource(R.string.session_detail_name)) }, singleLine = true)
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it.take(UserSettings.MAX_SNIPPET_LENGTH) },
-                    label = { Text("Command") },
+                    label = { Text(stringResource(R.string.connections_field_command)) },
                     minLines = 3,
                     maxLines = 6,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
@@ -1404,14 +1499,14 @@ private fun SnippetEditorDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = appendEnter, onCheckedChange = { appendEnter = it })
-                    Text("Press Enter after sending")
+                    Text(stringResource(R.string.ui_press_enter_after_sending))
                 }
                 Text(stringResource(R.string.snippet_sequence_help), style = MaterialTheme.typography.bodySmall)
                 if (!sequenceValid) Text(stringResource(R.string.snippet_sequence_invalid))
-                Text("Stored encrypted. Do not save passwords or access tokens in snippets.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.ui_stored_encrypted_do_not_save_passwords_or_access_tokens_in_snippets), style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { Button(enabled = valid, onClick = { onSave(label, command, appendEnter) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(enabled = valid, onClick = { onSave(label, command, appendEnter) }) { Text(stringResource(R.string.host_editor_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

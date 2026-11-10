@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="notice_codex_snippet_prompt">使用此快捷方式前，请先让 Codex 停留在空白输入提示框。</string>
+    <string name="snippet_accessory_add">+ 添加片段</string>
+    <string name="snippet_accessory_example">新建 Codex</string>
+    <string name="snippet_management_start">管理命令片段</string>
+    <string name="snippet_management_done">完成管理</string>
+    <string name="snippet_command_format">命令格式</string>
+    <string name="snippet_hide_command_format">隐藏命令格式</string>
+    <string name="snippet_management_hint">点按编辑 · 长按拖动排序</string>
+    <string name="snippet_codex_example_name">清屏并启动 Codex</string>
+    <string name="snippet_sequence_help">纯文本会原样插入。按键序列以 #!keys 开头，每行一个操作：text …、ctrl+c、shift+enter、ctrl+alt+left、F1–F12、tab、escape 或 wait 500（毫秒）。</string>
+    <string name="snippet_sequence_execution">点按后按键序列会依次执行。</string>
+    <string name="snippet_sequence_invalid">无效按键序列。请使用 text …、按键（enter、tab、escape、方向键、home、end、pageup、pagedown、insert、delete、backspace、F1–F12、space、plus 或字符），可用 + 连接 ctrl/alt/shift/meta/super；或使用 wait 1–10000。总等待不得超过 60000 毫秒。</string>
+    <string name="snippet_move_earlier">向前移动</string>
+    <string name="snippet_move_later">向后移动</string>
+    <string name="terminal_hide_pinned_snippets">隐藏命令片段</string>
+    <string name="terminal_show_pinned_snippets">显示命令片段</string>
+</resources>

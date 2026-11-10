@@ -20,6 +20,8 @@ interface Connection : TerminalInputSink {
     fun recentHerdrProjects(): List<String>? = null
     fun openHerdrProject(path: String): Boolean = false
 
+    fun focusHerdrTask(paneId: String, terminalId: String, agentSession: String?): Boolean = false
+
     /** Bounded lifecycle metadata over the existing authenticated side channel, off the UI thread. */
     fun captureHerdrAgentStates(): List<HerdrAgentState>? = null
 

@@ -61,7 +61,7 @@ class SessionNotificationActionTest {
             intent.getLongExtra(MainActivity.EXTRA_TERMINAL_SESSION_ID, -1L),
         )
         assertEquals(
-            "Terminal Spike dev task complete",
+            context.getString(R.string.terminal_program_notification_named_title, event.sessionTitle),
             notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
         )
         assertEquals(
@@ -71,6 +71,73 @@ class SessionNotificationActionTest {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             assertTrue(notification.contentIntent.isActivity)
         }
+    }
+
+    @Test
+    fun threeTaskRepliesKeepDistinctNotificationsAndExactPaneTargets() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+                context.packageName, Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+        val factory = SessionNotificationFactory(context)
+        factory.ensureChannel()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val events = (1..3).map { index ->
+            val task = com.yanjiyu.terminalspike.connection.HerdrAgentState(
+                "w6:p$index", "terminal$index", "chat$index", "idle", 2,
+                taskTitle = "Task $index", replyId = "turn$index", reply = "Result $index",
+            )
+            TerminalProgramNotificationEvent(-9050, "Project", task.reply.orEmpty(), task)
+        }
+        val tags = events.map { "terminal-program-${it.notificationKey}" }.toSet()
+        try {
+            events.forEach { factory.publishTerminalProgramNotification(it, privacyEnabled = false) }
+            composeRule.waitUntil(5_000) { manager.activeNotifications.count { it.tag in tags } == 3 }
+            val posted = manager.activeNotifications.filter { it.tag in tags }.map { it.notification }
+            assertEquals(3, posted.map { it.contentIntent }.distinct().size)
+            assertEquals(setOf("Result 1", "Result 2", "Result 3"),
+                posted.map { it.extras.getCharSequence(Notification.EXTRA_TEXT).toString() }.toSet())
+            events.forEach { event ->
+                val intent = terminalProgramNotificationIntent(context, event.sessionId, event.task)
+                val task = requireNotNull(event.task)
+                assertEquals(task.paneId, intent.getStringExtra(MainActivity.EXTRA_TASK_PANE))
+                assertEquals(task.terminalId, intent.getStringExtra(MainActivity.EXTRA_TASK_TERMINAL))
+                assertEquals(task.agentSession, intent.getStringExtra(MainActivity.EXTRA_TASK_SESSION))
+            }
+            // A repeated delivery replaces only that event, not its sibling tasks.
+            factory.publishTerminalProgramNotification(events.first(), privacyEnabled = false)
+            assertEquals(3, manager.activeNotifications.count { it.tag in tags })
+        } finally {
+            manager.activeNotifications.filter { it.tag in tags }.forEach { manager.cancel(it.tag, it.id) }
+        }
+    }
+
+    @Test
+    fun taskAttentionAndReplyRespectPrivacyAndDoNotClaimSuccess() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val task = com.yanjiyu.terminalspike.connection.HerdrAgentState(
+            "w6:p1", "terminal1", "chat1", "blocked", 2, taskTitle = "Private task",
+        )
+        val event = TerminalProgramNotificationEvent(42, "Private project", "", task)
+        val factory = SessionNotificationFactory(context)
+        val attention = factory.buildTerminalProgramNotification(event, privacyEnabled = false)
+        assertEquals(context.getString(R.string.terminal_task_waiting_title, task.taskTitle),
+            attention.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals(context.getString(R.string.terminal_task_waiting_text),
+            attention.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        val hidden = factory.buildTerminalProgramNotification(event.copy(message = "Private reply"), privacyEnabled = true)
+        assertEquals(Notification.VISIBILITY_SECRET, hidden.visibility)
+        assertEquals(context.getString(R.string.terminal_program_notification_text),
+            hidden.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertTrue(!hidden.extras.getCharSequence(Notification.EXTRA_TITLE).toString().contains("Private"))
+        val reply = factory.buildTerminalProgramNotification(event.copy(task = task.copy(state = "idle"),
+            message = "Build failed; please choose a signing key."), privacyEnabled = false)
+        assertEquals(context.getString(R.string.terminal_task_reply_title, task.taskTitle),
+            reply.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals("Build failed; please choose a signing key.",
+            reply.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
     }
 
     @Test

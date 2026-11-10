@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="settings_font_source_code_pro">Source Code Pro</string>
+    <string name="settings_font_jetbrains_mono">JetBrains Mono</string>
+    <string name="settings_font_ibm_plex_mono">IBM Plex Mono</string>
+    <string name="settings_font_cascadia_mono">Cascadia Mono</string>
+    <string name="settings_font_nerd_fallback_summary">Powerline 和 Nerd 符号使用内置 Symbols Nerd Font Mono 回退字体。</string>
+    <string name="settings_font_bold_rendering">粗体渲染</string>
+    <string name="settings_font_bold_rendering_summary">终端粗体文本使用所选字体的粗体字形。</string>
+    <string name="settings_font_ligatures">编程连字</string>
+    <string name="settings_font_ligatures_summary">默认关闭，启用后终端单元格位置仍固定。</string>
+    <string name="settings_font_pinch_zoom">双指缩放</string>
+    <string name="settings_font_pinch_zoom_summary">通过双指捏合调整当前会话的终端字号。</string>
+    <string name="settings_terminal_copy_on_selection">选中即复制</string>
+    <string name="settings_terminal_copy_on_selection_summary">本地选字手势结束后复制文本。</string>
+</resources>

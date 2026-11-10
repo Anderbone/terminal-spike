@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="debug_stop">Stop</string>
+    <string name="debug_start">Start</string>
+    <string name="debug_following">● Following</string>
+    <string name="debug_scroll_held">● Scroll held</string>
+    <string name="debug_loading">Loading…</string>
+    <string name="debug_preload">Preload</string>
+    <string name="debug_clear">Clear</string>
+    <string name="debug_jump_bottom">Jump to bottom</string>
+    <string name="debug_stats">Stats</string>
+    <string name="debug_performance_overlay">Performance overlay</string>
+    <string name="debug_stream_rate">Streaming output rate</string>
+    <string name="debug_fullscreen_rate">Full screen update rate</string>
+    <string name="debug_preload_count">Preload line count</string>
+    <string name="debug_preload_label">Preload %1$s</string>
+    <string name="debug_lines">%1$s lines</string>
+</resources>

@@ -25,6 +25,9 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -73,6 +76,42 @@ import org.junit.Test
 import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
+    @Test
+    fun languageMenuSharesTheCompactSearchRowAndUsesRecognizableEndonyms() {
+        composeRule.setContent {
+            MaterialTheme { TestSettingsScreen(Modifier.requiredSize(360.dp, 720.dp)) }
+        }
+        val language = composeRule.onNodeWithTag("settings-language-menu")
+            .assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("settings-category-title").assertDoesNotExist()
+        val menu = language.fetchSemanticsNode().boundsInRoot
+        val search = composeRule.onNodeWithTag(SettingsSearchTestTag).fetchSemanticsNode().boundsInRoot
+        assertTrue(menu.left >= search.right)
+        assertEquals(menu.center.y, search.center.y, 1f)
+        language.performClick()
+        composeRule.onNodeWithTag("app-language-system").assertIsDisplayed()
+        composeRule.onNodeWithText("简体中文").assertIsDisplayed()
+        composeRule.onNodeWithText("English").assertIsDisplayed()
+    }
+
+    @Test
+    fun communityAndSupportLinksShareOneRowWhileLanguageStaysVisible() {
+        composeRule.setContent {
+            MaterialTheme { TestSettingsScreen(Modifier.requiredSize(360.dp, 720.dp)) }
+        }
+        composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+            .performScrollToNode(hasTestTag("settings-coffee"))
+        composeRule.onNodeWithTag("settings-coffee").assertIsDisplayed()
+        val discord = composeRule.onNodeWithTag("settings-discord")
+            .assertIsDisplayed().assertHeightIsAtLeast(48.dp).fetchSemanticsNode().boundsInRoot
+        val coffee = composeRule.onNodeWithTag("settings-coffee")
+            .assertHeightIsAtLeast(48.dp).fetchSemanticsNode().boundsInRoot
+        assertEquals(discord.top, coffee.top, 1f)
+        assertEquals(discord.bottom, coffee.bottom, 1f)
+        assertTrue(discord.right < coffee.left)
+        composeRule.onNodeWithTag("settings-language-menu").assertIsDisplayed()
+    }
+
     @Test
     fun userGuideIsSearchableAndOpensTheTourFromSettings() {
         composeRule.setContent {
@@ -176,7 +215,7 @@ class SettingsScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(SettingsCategoryTitleTestTag).assertTextEquals("Settings")
+        composeRule.onNodeWithTag("settings-category-title").assertDoesNotExist()
         composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("keyboard keys")
         composeRule.onNodeWithText("Appearance").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Clear settings search").performClick()
@@ -250,9 +289,12 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("keyboard keys")
         composeRule.onNodeWithText("Appearance").assertDoesNotExist()
         composeRule.onNodeWithText("Keyboard").assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag(KeyboardPreviewTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(KeyboardPreviewTestTag).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("^C").assertIsDisplayed()
-        composeRule.onNodeWithText("^W").assertIsDisplayed()
+        // The shipped deck maps the Ctrl-W slot to the expanded-keyboard control.
+        composeRule.onNodeWithContentDescription(
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.terminal_more_keys_description),
+        ).assertIsDisplayed()
     }
 
     @Test
@@ -293,10 +335,11 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Keyboard").performScrollTo().performClick()
         composeRule.onNodeWithText("Vim").performScrollTo().performClick()
         assertEquals("vim", selectedPreset)
-        composeRule.onNodeWithText(
-            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_voice_input_enabled),
-        ).performScrollTo().performClick()
-        assertEquals(false, voiceInputEnabled)
+        val voiceLabel = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.settings_voice_input_enabled)
+        composeRule.onNodeWithTag(KeyboardSettingsTestTag).performScrollToNode(hasText(voiceLabel))
+        composeRule.onNodeWithText(voiceLabel).assertIsDisplayed().performClick()
+        assertEquals(!completeState().preferences.voiceInputEnabled, voiceInputEnabled)
     }
 
     @Test

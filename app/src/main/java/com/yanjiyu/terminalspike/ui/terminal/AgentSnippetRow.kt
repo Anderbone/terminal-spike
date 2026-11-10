@@ -35,7 +35,7 @@ internal fun CodexEffortMenu(
     val value = effort?.let { if (it == "xhigh") "Extra High" else it.replaceFirstChar(Char::uppercase) } ?: stringResource(R.string.ai_agents_effort)
     Box {
         FilledTonalButton(
-            enabled = canSend, onClick = { open = true },
+            enabled = canSend, onClick = { open = !open },
             modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp).width(96.dp).testTag("codex_effort_menu"),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
         ) { Text("$value ▾", style = MaterialTheme.typography.labelMedium) }
