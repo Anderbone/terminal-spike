@@ -672,6 +672,14 @@ private fun SettingsCategoryList(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
         if (query.isBlank()) {
+            item(key = "discord_community") {
+                TextButton(
+                    onClick = { uriHandler.openUri("https://discord.gg/yMPzeCeWMT") },
+                    modifier = Modifier.fillMaxWidth().padding(top = MaterialTheme.spacing.medium),
+                ) {
+                    Text(stringResource(R.string.settings_join_discord))
+                }
+            }
             item(key = "support_development") {
                 TextButton(
                     onClick = { uriHandler.openUri("https://buymeacoffee.com/jiyuyan") },
