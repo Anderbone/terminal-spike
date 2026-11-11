@@ -25,8 +25,11 @@ their features; never run tests on the foldable.
 ## GitHub Actions on the local runner
 
 - All jobs use `[self-hosted, Linux, X64]`, matching the registered `epee` runner.
-  Only pushes to `main` and manual runs on `main` execute jobs. Pull requests,
-  including the owner's PRs and fork PRs, do not trigger CI. There is no schedule;
+  Pushes/manual runs on `main` and pushes to same-repository `codex/ci-fix-*`
+  repair branches execute jobs. Checks on those commits appear on their matching PRs.
+  No pull-request event triggers are enabled; forks and ordinary feature PRs do not
+  execute. The local [bounded repair loop](CI-AUTOFIX.md) updates the same PR
+  after each failed run; green PRs still require human review/merge. There is no schedule;
   start the full API 26–37 compatibility sweep manually when needed.
 - The runner needs a writable Android SDK exposed as `ANDROID_HOME` and
   `ANDROID_SDK_ROOT`, command-line tools at `cmdline-tools/latest/bin/sdkmanager`,
@@ -34,8 +37,8 @@ their features; never run tests on the foldable.
   by the workflow. Configure KVM access on the runner once; CI checks access
   without changing host udev rules or requiring passwordless sudo.
 - PRs require the user's manual review and explicit merge approval. Keep repository
-  auto-merge disabled. PR CI is intentionally absent, so do not require these jobs
-  as pre-merge status checks. CI success never authorizes an agent to merge a PR.
+  auto-merge disabled. Only the narrowly authorized CI-repair PRs run automatically.
+  CI success never authorizes an agent to merge a PR.
 - Push runs and manual compatibility runs use separate concurrency
   groups, so starting a compatibility sweep does not cancel normal CI. Newer runs
   within the same branch and group still supersede older ones.
