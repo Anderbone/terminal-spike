@@ -59,6 +59,8 @@ live under `~/.local/state/terminal-spike-ci-autofix/`. The installed controller
 a pinned copy under `~/.local/share/terminal-spike-ci-autofix/`; editing a repair
 branch cannot replace the running controller. Re-run the installer after reviewing
 controller updates. Existing signing material stays outside all repair worktrees.
+The installer resolves local mise auto-update wrappers to the installed Codex/GitHub
+CLI binaries; background checks do not upgrade tools or rewrite mise configuration.
 
 ```bash
 # Read-only remote inspection; no agent, commit, push, PR, or CI run is started.
