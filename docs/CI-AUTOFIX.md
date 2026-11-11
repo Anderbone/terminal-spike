@@ -75,7 +75,10 @@ systemctl --user stop terminal-spike-ci-autofix.service
 ```
 
 Keep the state file for deduplication and attempt accounting. Do not delete receipts
-to hide failures. To retry a stopped chain after inspecting its logs/worktree, make a
+to hide failures. For a diagnosed pre-PR controller/environment blocker with a clean
+worktree, an operator may explicitly run `--retry-stopped`. It records the previous
+failure and retains the attempt budget; the timer never invokes this option. To retry
+other stopped chains after inspecting their logs/worktree, make a
 reviewed manual correction on the PR or close it and fix/push `main`; automatic
 repair is deliberately paused while the stopped PR remains open.
 

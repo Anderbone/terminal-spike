@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import time
+import unicodedata
 
 REPO = "Anderbone/terminal-spike"
 WORKFLOW = "android-ci.yml"
@@ -56,6 +57,11 @@ def latest_run(runs, branch, sha, event):
 
 def eligible(run):
     return run and run["status"] == "completed" and run["conclusion"] == "failure"
+
+
+def clean_log(text):
+    text = re.sub(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|.)", "", text)
+    return "".join(c for c in text if c in "\n\t" or unicodedata.category(c) != "Cc")
 
 
 def trusted_pr(pr, branch):
@@ -137,7 +143,7 @@ class Loop:
         return directory
 
     def evidence(self, run, directory):
-        evidence = directory / "build/ci-autofix-evidence" / run_key(run).replace(":", "-")
+        evidence = directory / "build/ci-autofix-evidence" / f"{run_key(run).replace(':', '-')}-{time.time_ns()}"
         evidence.mkdir(parents=True, exist_ok=True)
         jobs = self.api(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
         save(evidence / "jobs.json", jobs)
@@ -151,8 +157,9 @@ class Loop:
         for job in jobs:
             if job["conclusion"] == "failure":
                 # The job endpoint works even when gh run view refuses run-level logs.
-                log = command(["gh", "api", f"repos/{REPO}/actions/jobs/{job['id']}/logs"], timeout=180)
-                (evidence / f"job-{job['id']}.log").write_text(log)
+                log = command(["gh", "api", "--allow-escape-sequences",
+                               f"repos/{REPO}/actions/jobs/{job['id']}/logs"], timeout=180)
+                (evidence / f"job-{job['id']}.log").write_text(clean_log(log))
         return evidence
 
     def agent(self, directory, evidence, attempt):
@@ -199,7 +206,7 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
 
     def repair(self, run, chain):
         key = run_key(run)
-        if key in self.state["handled"]:
+        if key in self.state["handled"] and self.state["handled"][key] != "retry-authorized":
             self.status("Waiting: this CI attempt has already been handled")
             return
         if chain["attempts"] >= MAX_ATTEMPTS or time.time() - chain["started"] > MAX_AGE_SECONDS:
@@ -241,6 +248,24 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         except Exception as error:
             self.state["handled"][key] = "stopped"
             self.stop(chain, f"Automatic repair stopped: {error}")
+
+    def retry_stopped(self):
+        """Explicit operator retry; retain the failure receipt and attempt budget."""
+        active = self.state["active"]
+        chain = self.state["chains"].get(active, {})
+        if not chain.get("stopped") or chain.get("pr"):
+            raise RuntimeError("Explicit retry is only for a stopped pre-PR chain")
+        self.workspace(chain["branch"], chain["sha"])  # Never discard a partial patch.
+        run = self.api(f"actions/runs/{chain['origin_run']}")
+        if not eligible(run):
+            raise RuntimeError("Original CI run is no longer a completed failure")
+        self.state.setdefault("operator_retries", []).append({
+            "run": run_key(run), "previous_result": chain["result"], "time": time.time()})
+        chain.pop("stopped")
+        chain.pop("result")
+        self.state["handled"][run_key(run)] = "retry-authorized"
+        self.status("Operator authorized retry of stopped chain; attempt budget retained")
+        self.repair(run, chain)
 
     def tick(self, seed=None, dry_run=False):
         runs = self.runs()
@@ -322,6 +347,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--seed-run", type=int, help="One explicit completed ancestor-main failure to try")
+    parser.add_argument("--retry-stopped", action="store_true", help="Explicitly retry a clean pre-PR blocker without resetting its budget")
     args = parser.parse_args()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     args.state_dir.chmod(0o700)
@@ -337,7 +363,12 @@ def main():
             return
         loop = Loop(args.checkout, args.state_dir)
         try:
-            loop.tick(seed=args.seed_run, dry_run=args.dry_run)
+            if args.retry_stopped:
+                if args.dry_run or args.seed_run:
+                    raise RuntimeError("--retry-stopped cannot combine with --dry-run or --seed-run")
+                loop.retry_stopped()
+            else:
+                loop.tick(seed=args.seed_run, dry_run=args.dry_run)
         except Exception as error:
             loop.status(f"Watcher error (will check again next tick): {error}")
             sys.exit(1)

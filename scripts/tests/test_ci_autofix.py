@@ -13,6 +13,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CiAutofixTest(unittest.TestCase):
+    def test_terminal_control_sequences_are_removed_without_losing_log_text(self):
+        raw = '\x1b[31mFAILED\x1b[0m\n\x1b]0;malicious title\x07中文\tline\x00\x9b'
+        self.assertEqual('FAILED\n中文\tline', MODULE.clean_log(raw))
+
+    def test_operator_retry_preserves_failure_receipt_and_attempt_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            loop = MODULE.Loop(Path(temp), Path(temp))
+            branch = MODULE.PREFIX + "10"
+            chain = {"branch": branch, "sha": "a" * 40, "pr": None, "origin_run": 10,
+                     "attempts": 1, "stopped": True, "result": "Log download failed"}
+            loop.state["active"] = branch
+            loop.state["chains"][branch] = chain
+            run = self.run_record()
+            with patch.object(loop, "workspace"), patch.object(loop, "api", return_value=run), \
+                    patch.object(loop, "repair") as repair:
+                loop.retry_stopped()
+                repair.assert_called_once_with(run, chain)
+            self.assertEqual(1, chain["attempts"])
+            self.assertEqual("Log download failed", loop.state["operator_retries"][0]["previous_result"])
+            self.assertEqual("retry-authorized", loop.state["handled"][MODULE.run_key(run)])
+            self.assertNotIn("stopped", chain)
+
     def test_installer_generates_valid_systemd_units_without_starting_real_services(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
