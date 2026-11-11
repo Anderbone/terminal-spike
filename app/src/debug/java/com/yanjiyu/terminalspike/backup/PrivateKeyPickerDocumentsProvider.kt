@@ -28,7 +28,8 @@ class PrivateKeyPickerDocumentsProvider : DocumentsProvider() {
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
         require(parentDocumentId == "root")
         return cursor(projection).apply {
-            directory().listFiles().orEmpty().forEach { include(it.name) }
+            directory().listFiles().orEmpty().filterNot { it.name.endsWith(".mime") }
+                .forEach { include(it.name) }
         }
     }
 
@@ -54,7 +55,9 @@ class PrivateKeyPickerDocumentsProvider : DocumentsProvider() {
     private fun MatrixCursor.include(id: String) {
         newRow().add(Document.COLUMN_DOCUMENT_ID, id)
             .add(Document.COLUMN_DISPLAY_NAME, if (id == "root") "SSH key picker fixture" else id)
-            .add(Document.COLUMN_MIME_TYPE, if (id == "root") Document.MIME_TYPE_DIR else "application/x-ssh-private-key")
+            .add(Document.COLUMN_MIME_TYPE, if (id == "root") Document.MIME_TYPE_DIR else
+                directory().resolve("$id.mime").takeIf { it.isFile }?.readText()
+                    ?: "application/x-ssh-private-key")
             .add(Document.COLUMN_FLAGS, 0)
             .add(Document.COLUMN_SIZE, if (id == "root") 0L else file(id).length())
     }

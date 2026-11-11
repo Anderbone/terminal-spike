@@ -223,7 +223,7 @@ internal fun TerminalSnippetsPage(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     CodexEffortMenu(
                         contextKey = agentContextKey, agentId = detectedAgentId, effort = currentAgentEffort,
-                        canSend = canSendAgentSnippets, onSend = onSend,
+                        canSend = canSendAgentSnippets && !managing, onSend = onSend,
                     )
                     val manageDescription = stringResource(
                         if (managing) R.string.snippet_management_done else R.string.snippet_management_start,

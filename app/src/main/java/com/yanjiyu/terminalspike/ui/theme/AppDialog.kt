@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -60,8 +61,9 @@ internal fun AppDialog(
     title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
     shape: Shape = RoundedCornerShape(22.dp),
+    securePolicy: SecureFlagPolicy = SecureFlagPolicy.Inherit,
 ) {
-    AppDialogFrame(onDismissRequest, confirmButton, modifier, dismissButton, icon, title, text, shape)
+    AppDialogFrame(onDismissRequest, confirmButton, modifier, dismissButton, icon, title, text, shape, securePolicy = securePolicy)
 }
 
 @Composable
@@ -77,10 +79,11 @@ internal fun AppDialogFrame(
     maxWidth: Dp = 400.dp,
     scrollState: ScrollState? = null,
     dense: Boolean = false,
+    securePolicy: SecureFlagPolicy = SecureFlagPolicy.Inherit,
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = securePolicy),
     ) {
         val view = LocalView.current
         val window = (view.parent as? DialogWindowProvider)?.window

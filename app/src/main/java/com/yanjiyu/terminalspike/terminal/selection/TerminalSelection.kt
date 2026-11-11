@@ -35,6 +35,9 @@ data class TerminalSelectableLine(
 interface TerminalSelectionSource {
     val selectionLineCount: Int
 
+    /** Current pane width; zero when the source cannot establish a physical right edge. */
+    val selectionColumnCount: Int get() = 0
+
     fun selectionLineAt(index: Int): TerminalSelectableLine?
 
     fun selectionIndexOf(anchor: TerminalLineAnchor): Int?

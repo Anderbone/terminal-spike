@@ -594,4 +594,13 @@
     <string name="settings_input_keyboard_add_left">左侧加键</string>
     <string name="settings_input_keyboard_add_right">右侧加键</string>
     <string name="settings_input_keyboard_remove">删除按键</string>
+    <string name="key_import_help">部分文件管理器会隐藏无扩展名文件。可尝试系统文件选择器，或粘贴私钥文本。</string>
+    <string name="key_import_file">选择文件</string>
+    <string name="key_import_system_file">使用系统文件选择器</string>
+    <string name="key_import_paste">粘贴私钥</string>
+    <string name="key_import_name">密钥名称（可选）</string>
+    <string name="key_import_text">私钥文本</string>
+    <string name="key_import_clipboard">从剪贴板粘贴</string>
+    <string name="key_import_system_unavailable">系统文件选择器不可用，已尝试默认选择器；也可取消后粘贴私钥。</string>
+    <string name="key_import_picker_unavailable">文件选择器不可用，可改为粘贴私钥。</string>
 </resources>

@@ -305,6 +305,58 @@ class TerminalLinkInteractionTest {
         }
     }
 
+    @Test
+    fun codexPlainAddressKeepsPortFromScreenshotOnEitherRow() {
+        val uri = "https://livesync.tail719241.ts.net:18443"
+        val source = linkSourceWithWidth(39,
+            TerminalLine.plain("  " + uri.dropLast(3)),
+            TerminalLine.plain("443"),
+        )
+        for ((row, column) in listOf(0 to 15, 1 to 1)) {
+            val target = TerminalLinkResolver.find(source, row, column, true, true)
+            assertEquals(uri, target?.uri)
+            assertEquals(2, target?.startColumn)
+            assertEquals(3, target?.endColumn)
+            assertEquals(source.selectionLineAt(1)?.anchor, target?.endLine)
+        }
+    }
+
+    @Test
+    fun paintedPlainUrlResolvesFromEveryCharacterAcrossArbitraryBreaks() {
+        val uri = "https://example.test:18443/long/path(a)/more?q=hello%20world&other=value#section"
+        val width = 24
+        // Move each part of the URL (including its scheme) across the first row boundary.
+        for (firstPartLength in 1..width) {
+            val prefix = if (firstPartLength < width) " ".repeat(width - firstPartLength - 1) + "(" else ""
+            val lines = (prefix + uri + ")，后续文字").chunked(width).map { TerminalLine.plain(it) }
+            val source = linkSourceWithWidth(width, *lines.toTypedArray())
+            for (index in uri.indices) {
+                val offset = prefix.length + index
+                val target = TerminalLinkResolver.find(source, offset / width, offset % width, true, true)
+                assertEquals("firstPart=$firstPartLength index=$index", uri, target?.uri)
+                assertEquals(source.selectionLineAt(0)?.anchor, target?.line)
+                assertEquals(source.selectionLineAt((prefix.length + uri.length - 1) / width)?.anchor, target?.endLine)
+            }
+        }
+    }
+
+    @Test
+    fun plainPaintedUrlsDoNotJoinShortLinesBlankRowsIndentedTextOrSeparateLinks() {
+        val uri = "https://example.test/abc"
+        for (next in listOf("", "  continuation", "https://other.test/")) {
+            val source = linkSourceWithWidth(uri.length, TerminalLine.plain(uri), TerminalLine.plain(next))
+            assertEquals(uri, TerminalLinkResolver.find(source, 0, 10, true, true)?.uri)
+        }
+        val source = linkSourceWithWidth(80, TerminalLine.plain(uri), TerminalLine.plain("more"))
+        assertEquals(uri, TerminalLinkResolver.find(source, 0, 10, true, true)?.uri)
+        assertNull(TerminalLinkResolver.find(source, 1, 1, true, true))
+    }
+
+    private fun linkSourceWithWidth(width: Int, vararg lines: TerminalLine): TerminalSelectionSource =
+        object : TerminalSelectionSource by linkSource(*lines) {
+            override val selectionColumnCount: Int = width
+        }
+
     private fun paintedLink(prefix: String, url: String, suffix: String = ""): TerminalLine =
         TerminalLine.styled(listOf(
             TerminalRun(prefix),

@@ -19,6 +19,8 @@ internal class HerdrHistoryViewport : TerminalSelectionSource {
     private var remoteOffsetFromBottom = 0
     private var generation = 0L
 
+    override val selectionColumnCount: Int get() = snapshot?.columns ?: 0
+
     override val selectionLineCount: Int get() = snapshot?.lines?.size ?: 0
 
     override fun selectionLineAt(index: Int): TerminalSelectableLine? = snapshot?.lines?.getOrNull(index)?.let {

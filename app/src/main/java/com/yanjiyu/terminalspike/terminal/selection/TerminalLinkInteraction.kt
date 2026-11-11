@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.terminal.selection
 
 import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
+import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import com.yanjiyu.terminalspike.terminal.model.TerminalStyle
 import java.net.URI
 import java.util.Locale
@@ -81,6 +82,7 @@ object TerminalLinkResolver {
         if (osc8Enabled) findWrappedOsc8(source, row, column)?.let { return it }
         if (plainTextUrlsEnabled) {
             findPaintedPlainTextUrl(source, row, column)?.let { return it }
+            findPaintedPlainTextUrl(source, row, column, underlinedOnly = false)?.let { return it }
             return findWrappedPlainTextUrl(source, row, column)
         }
         return null
@@ -153,52 +155,63 @@ object TerminalLinkResolver {
     }
 
     /** TUIs repaint wrapped links at explicit coordinates, so VT autowrap is absent.
-     * Only join matching underlined tokens at the right/left edges of the content pane.
+     * Join matching underlined tokens, or plain tokens reaching the known physical right edge.
+     * Plain continuations must start at column zero; ordinary short lines remain separate.
      * This is bounded hit testing, not work performed by the renderer.
      */
     private fun findPaintedPlainTextUrl(
         source: TerminalSelectionSource,
         row: Int,
         column: Int,
+        underlinedOnly: Boolean = true,
     ): TerminalLinkTarget? {
+        if (!underlinedOnly && source.selectionColumnCount <= 0) return null
         val hitLine = source.selectionLineAt(row)?.line ?: return null
         val hit = TerminalLineGeometry.positionAtColumn(hitLine, column).textOffset
         for (startRow in maxOf(0, row - MAX_PAINTED_LINK_ROWS + 1)..row) {
             val first = source.selectionLineAt(startRow) ?: continue
-            for (initial in underlinedTokens(first.line)) {
-                if (!initial.text.hasSupportedSchemeAt(0)) continue
+            for (initial in paintedTokens(first.line, underlinedOnly)) {
+                if (!initial.text.hasSupportedSchemeAt(0) && !initial.text.isSupportedSchemePrefix()) continue
                 val text = StringBuilder(initial.text)
                 var last = first
                 var token = initial
                 var currentRow = startRow
-                var containsHit = currentRow == row && hit in token.start until token.end
+                val slices = arrayListOf(PaintedLineSlice(first, 0, initial.start))
+                var combinedHit = if (currentRow == row && hit in token.start until token.end) hit - token.start else -1
                 while (currentRow + 1 < source.selectionLineCount &&
                     currentRow - startRow + 1 < MAX_PAINTED_LINK_ROWS &&
                     text.length < MAX_PLAIN_URL_SCAN &&
                     last.line.text.substring(token.end).isBlank() &&
-                    token.text.lastOrNull() != ')'
+                    !text.hasUnmatchedClosingParenthesis() &&
+                    (underlinedOnly || TerminalLineGeometry.columnAtOffset(last.line, token.end) ==
+                        source.selectionColumnCount)
                 ) {
                     val next = source.selectionLineAt(currentRow + 1) ?: break
-                    val continuation = underlinedTokens(next.line).firstOrNull { candidate ->
+                    val continuation = paintedTokens(next.line, underlinedOnly).firstOrNull { candidate ->
                         val prefix = next.line.text.substring(0, candidate.start)
                         // A full-screen TUI may have an unrelated sidebar to the left.
                         prefix.substringAfterLast('│').substringAfterLast('┃')
                             .substringAfterLast('║').substringAfterLast('|').isBlank()
                     } ?: break
-                    if (continuation.style != initial.style ||
+                    if ((!underlinedOnly && TerminalLineGeometry.columnAtOffset(next.line, continuation.start) != 0) ||
+                        continuation.style != initial.style ||
                         continuation.text.hasSupportedSchemeAt(0) ||
                         TerminalLineGeometry.columnAtOffset(next.line, continuation.start) >
                         TerminalLineGeometry.columnAtOffset(last.line, token.start)
                     ) break
+                    slices += PaintedLineSlice(next, text.length, continuation.start)
+                    if (currentRow + 1 == row && hit in continuation.start until continuation.end) {
+                        combinedHit = text.length + hit - continuation.start
+                    }
                     text.append(continuation.text)
                     currentRow += 1
                     last = next
                     token = continuation
-                    containsHit = containsHit || (currentRow == row && hit in token.start until token.end)
                 }
-                if (currentRow == startRow || !containsHit || text.length > MAX_PLAIN_URL_SCAN) continue
-                val match = plainTextUrlAt(text, 0) ?: continue
-                if (match.endOffset <= text.length - token.text.length) continue
+                if (currentRow == startRow || combinedHit !in text.indices || text.length > MAX_PLAIN_URL_SCAN) continue
+                val match = plainTextUrlAt(text, combinedHit) ?: continue
+                val endSlice = slices.lastOrNull { it.combinedStart < match.endOffset } ?: continue
+                val end = WrappedLinePosition(endSlice.selectable, endSlice.tokenStart + match.endOffset - endSlice.combinedStart)
                 return TerminalLinkTarget(
                     uri = match.uri,
                     id = null,
@@ -206,31 +219,40 @@ object TerminalLinkResolver {
                     line = first.anchor,
                     startColumn = TerminalLineGeometry.columnAtOffset(first.line, initial.start),
                     endColumn = TerminalLineGeometry.columnAtOffset(
-                        last.line, token.end - (text.length - match.endOffset),
+                        end.selectable.line, end.localOffset,
                     ),
-                    endLine = last.anchor,
+                    endLine = end.selectable.anchor,
                 )
             }
         }
         return null
     }
 
-    private data class UnderlinedToken(
+    private data class PaintedLineSlice(
+        val selectable: TerminalSelectableLine,
+        val combinedStart: Int,
+        val tokenStart: Int,
+    )
+
+    private data class PaintedToken(
         val start: Int,
         val end: Int,
         val text: String,
         val style: TerminalStyle,
     )
 
-    private fun underlinedTokens(line: TerminalLine): List<UnderlinedToken> {
-        val result = ArrayList<UnderlinedToken>()
+    private fun paintedTokens(line: TerminalLine, underlinedOnly: Boolean): List<PaintedToken> {
+        val result = ArrayList<PaintedToken>()
         var offset = 0
-        for (run in line.runs) {
-            if (run.style.underline && run.hyperlink == null) {
+        val runs = if (underlinedOnly) line.runs else listOf(TerminalRun(line.text))
+        for (run in runs) {
+            if ((!underlinedOnly || run.style.underline) && run.hyperlink == null) {
                 var local = 0
                 while (local < run.text.length) {
                     if (isUrlBoundary(run.text[local]) ||
-                        (run.text[local] == '(' && run.text.hasSupportedSchemeAt(local + 1))
+                        (run.text[local] == '(' &&
+                            (run.text.hasSupportedSchemeAt(local + 1) ||
+                                run.text.substring(local + 1).isSupportedSchemePrefix()))
                     ) {
                         local += 1
                         continue
@@ -243,7 +265,7 @@ object TerminalLinkResolver {
                             end = offset + local, text = previous.text + run.text.substring(start, local),
                         )
                     } else {
-                        result += UnderlinedToken(offset + start, offset + local, run.text.substring(start, local), run.style)
+                        result += PaintedToken(offset + start, offset + local, run.text.substring(start, local), run.style)
                     }
                 }
             }
@@ -451,6 +473,20 @@ object TerminalLinkResolver {
         regionMatches(index, "http://", 0, 7, ignoreCase = true) ||
             regionMatches(index, "https://", 0, 8, ignoreCase = true) ||
             regionMatches(index, "obsidian://", 0, 11, ignoreCase = true)
+
+    private fun CharSequence.hasUnmatchedClosingParenthesis(): Boolean {
+        var depth = 0
+        for (character in this) {
+            if (character == '(') depth += 1
+            if (character == ')' && --depth < 0) return true
+        }
+        return false
+    }
+
+    private fun String.isSupportedSchemePrefix(): Boolean =
+        isNotEmpty() && listOf("http://", "https://", "obsidian://").any {
+            it.startsWith(this, ignoreCase = true)
+        }
 
     private const val MAX_PAINTED_LINK_ROWS = 16
     private const val MAX_PLAIN_URL_SCAN = 1_024

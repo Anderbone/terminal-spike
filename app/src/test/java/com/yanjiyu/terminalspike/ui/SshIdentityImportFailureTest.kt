@@ -12,6 +12,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SshIdentityImportFailureTest {
+    @Test fun pastedTextPreservesNewlinesAndEnforcesEncodedByteLimit() {
+        val text = "header\r\nbody\r\nfooter\n"
+        assertArrayEquals(text.toByteArray(), sshIdentityTextBytes(text, text.length))
+        assertThrows(SensitiveInputTooLargeException::class.java) { sshIdentityTextBytes("12345", 4) }
+        assertThrows(SensitiveInputTooLargeException::class.java) { sshIdentityTextBytes("密钥", 4) }
+        assertArrayEquals("密钥".toByteArray(), sshIdentityTextBytes("密钥", 6))
+    }
+
+    @Test fun pastedEncryptedPrivateKeyRetainsItsMetadata() {
+        val key = KeyPair.genKeyPair(JSch(), KeyPair.RSA, 2048)
+        val out = ByteArrayOutputStream()
+        try {
+            key.writeOpenSSHv1PrivateKey(out, "disposable-test-passphrase".toByteArray())
+            val bytes = sshIdentityTextBytes(out.toString("UTF-8"))
+            try { assertTrue(JschPrivateKeyMetadataInspector.inspect(bytes).isPassphraseProtected) }
+            finally { bytes.fill(0) }
+        } finally { key.dispose() }
+    }
+
     @Test fun ordinaryTextEmptyFilesAndPublicKeysExplainTheFormatFailure() {
         for (bytes in listOf("hello-terminal".toByteArray(), byteArrayOf(), "ssh-rsa AAAA example".toByteArray())) {
             val error = assertThrows(InvalidSshPrivateKeyException::class.java) {

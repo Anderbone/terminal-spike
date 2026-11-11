@@ -949,6 +949,8 @@ class TerminalController(
         }
     }
 
+    override val selectionColumnCount: Int get() = terminalColumns
+
     override val selectionLineCount: Int
         get() = lineCount()
 

@@ -745,7 +745,9 @@ fun TerminalSpikeScreen(
     var tmuxSwitcherTargetId by remember { mutableStateOf<Long?>(null) }
     var tmuxSwitcherCatalog by remember { mutableStateOf<TmuxSessionCatalog?>(null) }
     var tmuxDeleteTargetId by remember { mutableStateOf<String?>(null) }
-    val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    var identityImportVisible by remember { mutableStateOf(false) }
+    val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data?.takeIf { result.resultCode == Activity.RESULT_OK }
         val recoveryToken = reimportIdentityToken
         reimportIdentityToken = null
         if (uri != null) viewModel.importSshIdentity(uri, recoveryToken)
@@ -800,8 +802,36 @@ fun TerminalSpikeScreen(
 
     fun launchIdentityImport(recoveryToken: String? = null) {
         reimportIdentityToken = recoveryToken
-        identityImportLauncher.launch(
-            sshIdentityImportMimeTypes(),
+        identityImportVisible = true
+    }
+
+    if (identityImportVisible) {
+        SshIdentityImportDialog(
+            onDismiss = { identityImportVisible = false; reimportIdentityToken = null },
+            onFile = { systemPicker ->
+                val context = rootView.context
+                val explicit = if (systemPicker) sshIdentitySystemDocumentIntent(context) else null
+                fun launch(intent: android.content.Intent): Boolean =
+                    tryLaunchSshIdentityDocument(intent) {
+                        identityImportLauncher.launch(it)
+                        identityImportVisible = false
+                    }
+                val launched = if (explicit != null && launch(explicit)) true else {
+                    if (systemPicker) screenScope.launch {
+                        snackbarHostState.showSnackbar(context.getString(R.string.key_import_system_unavailable))
+                    }
+                    launch(sshIdentityDocumentIntent(context))
+                }
+                if (!launched) screenScope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.key_import_picker_unavailable))
+                }
+            },
+            onText = { label, text ->
+                val token = reimportIdentityToken
+                identityImportVisible = false
+                reimportIdentityToken = null
+                viewModel.importSshIdentityText(label, text, token)
+            },
         )
     }
 

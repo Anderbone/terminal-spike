@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -81,20 +85,35 @@ class TerminalSnippetPickerDialogTest {
         val sent = mutableListOf<Long>()
         composeRule.setContent {
             TerminalSpikeTheme {
-                TerminalSnippetsPage(emptyList(), true, true,
-                    onSend = { sent += it }, onNewCodex = {}, onSave = { Result.success(Unit) },
-                    onEditorClosed = {}, agentContextKey = "plain-ssh", detectedAgentId = agent.value)
+                Box(Modifier.width(360.dp)) {
+                    TerminalSnippetsPage(
+                        listOf(snippet(31, "Git commit & push", false),
+                            snippet(32, "Continue", false), snippet(33, "commit", false)),
+                        true, true,
+                        onSend = { sent += it }, onNewCodex = {}, onSave = { Result.success(Unit) },
+                        onEditorClosed = {}, agentContextKey = "plain-ssh", detectedAgentId = agent.value,
+                    )
+                }
             }
         }
         composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
         composeRule.onNodeWithTag("snippet_group_menu").assertDoesNotExist()
+        val labels = listOf("Git commit & push", "Continue", "commit", "New Codex")
+        fun snippetBounds() = labels.map {
+            composeRule.onNodeWithText(it).fetchSemanticsNode().boundsInRoot
+        }
+        val initialBounds = snippetBounds()
         composeRule.runOnIdle { agent.value = "codex" }
+        assertEquals("Detecting Codex must not move snippets", initialBounds, snippetBounds())
         composeRule.onNodeWithText("Effort ▾").performClick()
         composeRule.onNodeWithTag("agent_snippet_-103").performClick()
         composeRule.runOnIdle { assertEquals(listOf(-103L), sent) }
         composeRule.onNodeWithText("Effort ▾").assertIsDisplayed()
         composeRule.runOnIdle { agent.value = "" }
         composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
+        assertEquals("Restarting Codex must not move snippets", initialBounds, snippetBounds())
+        composeRule.runOnIdle { agent.value = "codex" }
+        assertEquals("Returning to Codex must not move snippets", initialBounds, snippetBounds())
     }
 
     @Test

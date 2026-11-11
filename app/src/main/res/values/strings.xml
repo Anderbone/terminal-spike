@@ -606,4 +606,13 @@
     <string name="settings_input_keyboard_add_left">Add left</string>
     <string name="settings_input_keyboard_add_right">Add right</string>
     <string name="settings_input_keyboard_remove">Remove key</string>
+    <string name="key_import_help">Some file managers hide files without an extension. Try the system picker or paste the private key text.</string>
+    <string name="key_import_file">Choose a file</string>
+    <string name="key_import_system_file">Use system file picker</string>
+    <string name="key_import_paste">Paste private key</string>
+    <string name="key_import_name">Key name (optional)</string>
+    <string name="key_import_text">Private key text</string>
+    <string name="key_import_clipboard">Paste from clipboard</string>
+    <string name="key_import_system_unavailable">System picker unavailable. Using the default picker; you can also cancel and paste the key.</string>
+    <string name="key_import_picker_unavailable">File picker unavailable. You can paste the private key instead.</string>
 </resources>

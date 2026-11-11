@@ -30,10 +30,12 @@ internal fun CodexEffortMenu(
     canSend: Boolean,
     onSend: (Long) -> Unit,
 ) {
-    if (agentId != "codex") return
-    var open by remember(contextKey) { mutableStateOf(false) }
-    val value = effort?.let { if (it == "xhigh") "Extra High" else it.replaceFirstChar(Char::uppercase) } ?: stringResource(R.string.ai_agents_effort)
-    Box {
+    // Agent detection briefly clears while New Codex restarts. Keep the slot so
+    // the surrounding snippets do not reflow when the effort menu disappears.
+    Box(Modifier.width(96.dp)) {
+        if (agentId != "codex") return@Box
+        var open by remember(contextKey) { mutableStateOf(false) }
+        val value = effort?.let { if (it == "xhigh") "Extra High" else it.replaceFirstChar(Char::uppercase) } ?: stringResource(R.string.ai_agents_effort)
         FilledTonalButton(
             enabled = canSend, onClick = { open = !open },
             modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp).width(96.dp).testTag("codex_effort_menu"),

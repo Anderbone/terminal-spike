@@ -420,6 +420,30 @@ class FastTerminalSelectionInteractionTest {
     }
 
     @Test
+    fun tappingPlainRepaintedUrlDispatchesAllRowsIncludingPortAndQuery() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val controller = TerminalController()
+                val requests = mutableListOf<TerminalLinkActionRequest>()
+                val view = attachTerminalView(activity, controller).apply {
+                    setLinkActionCallback { request -> requests += request }
+                }
+                val width = 30
+                controller.reportTerminalSize(width, 10)
+                val uri = "https://example.test:18443/" + "long-path/".repeat(8) + "?q=value#section"
+                val prefix = " ".repeat(width - 10)
+                (prefix + uri).chunked(width).forEach { controller.buffer.append(TerminalLine.plain(it)) }
+                controller.viewport.updateContent(controller.lineCount(), controller.oldestLineId())
+
+                tapCell(view, column = width - 8)
+
+                assertEquals(listOf(uri), requests.map { it.target.uri })
+                assertEquals(listOf(TerminalLinkAction.OPEN), requests.map { it.action })
+            }
+        }
+    }
+
+    @Test
     fun longPressingSafeLinkShowsOpenActionAndDispatchesToBrowserCallback() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

@@ -3934,42 +3934,51 @@ class TerminalSpikeViewModel(
         if (!state.settingsReady) return
         savedStateHandle.remove<String>(PENDING_IDENTITY_IMPORT_URI)
         savedStateHandle.remove<String>(PENDING_IDENTITY_RECOVERY_TOKEN)
+        launchIdentityImport(recoveryToken, load = {
+            val resolver = getApplication<Application>().contentResolver
+            val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                ?: getApplication<Application>().getString(R.string.notice_imported_key_default_name)
+            displayName to readSshIdentityBytes(MAX_SSH_PRIVATE_KEY_BYTES) { resolver.openInputStream(uri) }
+        }, finished = { releaseIdentityImportPermission(uri) })
+    }
+
+    fun importSshIdentityText(label: String, text: String, recoveryToken: String? = null) {
+        launchIdentityImport(recoveryToken, load = { label to sshIdentityTextBytes(text) })
+    }
+
+    private fun launchIdentityImport(
+        recoveryToken: String?,
+        load: () -> Pair<String, ByteArray>,
+        finished: () -> Unit = {},
+    ) {
+        val state = _uiState.value
+        if (!state.settingsReady) { finished(); return }
         val existing = recoveryToken?.let { resolveIdentityRecoveryTarget(state.identities, it) }
-        if (recoveryToken != null && existing == null) {
-            releaseIdentityImportPermission(uri)
-            _uiState.update { it.copy(notice = uiText(R.string.notice_key_reimport_target_missing)) }
-            return
+        val rejection = when {
+            recoveryToken != null && existing == null -> R.string.notice_key_reimport_target_missing
+            existing?.isAvailable == true -> R.string.notice_key_already_available
+            existing == null && state.identities.size >= UserSettings.MAX_IDENTITIES -> R.string.notice_delete_key_before_import
+            else -> null
         }
-        if (existing?.isAvailable == true) {
-            releaseIdentityImportPermission(uri)
-            _uiState.update { it.copy(notice = uiText(R.string.notice_key_already_available)) }
-            return
-        }
-        if (existing == null && state.identities.size >= UserSettings.MAX_IDENTITIES) {
-            releaseIdentityImportPermission(uri)
-            _uiState.update { it.copy(notice = uiText(R.string.notice_delete_key_before_import)) }
+        if (rejection != null) {
+            finished()
+            _uiState.update { it.copy(notice = uiText(rejection)) }
             return
         }
         val identityId = existing?.id ?: terminalDataRepository.reserveIdentityPresentationId()
         viewModelScope.launch(Dispatchers.IO) {
             var privateKey: ByteArray? = null
             try {
-                val resolver = getApplication<Application>().contentResolver
-                val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                    ?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    }
-                    ?.substringAfterLast('/')
-                    ?.filterNot(Char::isISOControl)
-                    ?.trim()
-                    ?.take(UserSettings.MAX_LABEL_LENGTH)
-                    ?.takeIf { it.isNotBlank() }
+                val (name, bytes) = load()
+                privateKey = bytes
+                val displayName = name.substringAfterLast('/').filterNot(Char::isISOControl).trim()
+                    .take(UserSettings.MAX_LABEL_LENGTH).takeIf { it.isNotBlank() }
                     ?: getApplication<Application>().getString(R.string.notice_imported_key_default_name)
-                privateKey = readSshIdentityBytes(MAX_PRIVATE_KEY_BYTES) { resolver.openInputStream(uri) }
                 val committed = terminalDataRepository.importIdentity(
                     presentationId = identityId,
                     label = existing?.label ?: displayName,
-                    privateKey = privateKey,
+                    privateKey = bytes,
                 )
                 publishCommittedSettings(
                     committed,
@@ -3983,7 +3992,7 @@ class TerminalSpikeViewModel(
                 reportCatalogWriteFailure(error, uiText(sshIdentityImportFailureMessage(error)))
             } finally {
                 privateKey?.fill(0)
-                releaseIdentityImportPermission(uri)
+                finished()
             }
         }
     }
@@ -4886,7 +4895,6 @@ class TerminalSpikeViewModel(
         private const val DEFAULT_SSH_PORT = 22
         private const val MAX_SESSION_TITLE_LENGTH = 40
         private const val MAX_SECRET_LENGTH = 1_024
-        private const val MAX_PRIVATE_KEY_BYTES = 256 * 1_024
         private const val WORKSPACE_RECENT_HISTORY_SCAN_LIMIT = 64
         private const val CONNECTIONS_RECENT_HOST_LIMIT = 64
         private const val ACTIVE_TERMINAL_SESSION_ID = "active_terminal_session_id"
