@@ -363,7 +363,7 @@ fun TerminalAccessoryBar(
                     }
                 }
                 val columnCount = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
-                val keyWidth = (maxWidth - 6.dp - 2.dp * columnCount) / (columnCount + 1)
+                val keyWidth = terminalAccessoryKeyWidth(maxWidth)
                 val rowCount = layout.rowCount
                 val displayedActions = displayedAccessoryActions(actions)
                 val shortcutActions = displayedActions.filterNot {
@@ -550,7 +550,7 @@ private fun ShortcutDeckPage(
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
             .padding(start = 3.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            verticalArrangement = Arrangement.spacedBy(TerminalAccessoryRowGap)) {
             ExtraKeyButton(
                 label = stringResource(R.string.terminal_escape_short),
                 description = escapeDescription,
@@ -621,7 +621,7 @@ internal fun TerminalShortcutPreview(
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest) {
         BoxWithConstraints(Modifier.fillMaxWidth().height(106.dp)) {
             val columns = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
-            val keyWidth = (maxWidth - 6.dp - 2.dp * columns) / (columns + 1)
+            val keyWidth = terminalAccessoryKeyWidth(maxWidth)
             val shortcuts = displayedAccessoryActions(actions).filterNot {
                 it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
                     it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
@@ -851,7 +851,7 @@ private fun BufferedInputPage(
     InputKeyboardFrame(
         tokens = tokens,
         modifier = Modifier.fillMaxSize(),
-        legacyKeyWidth = if (customLayout == null) keyWidth else null,
+        legacyKeyWidth = keyWidth,
         key = { _, token, keyModifier ->
             when (token) {
                 "toggle" -> TypingToggle(
@@ -1127,7 +1127,7 @@ private fun ExtraKeyPage(
 
     Column(
         modifier = Modifier.fillMaxSize().padding(start = 2.dp, end = 3.dp, top = 3.dp, bottom = 3.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(TerminalAccessoryRowGap),
     ) {
         repeat(rowCount) { rowIndex ->
             ExtraKeyRow(
@@ -1171,7 +1171,7 @@ private fun ExtraKeyRow(
     val customizeDescription = stringResource(R.string.terminal_customize_keys)
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(TerminalAccessoryColumnGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         cells.forEach { cell ->

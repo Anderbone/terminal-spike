@@ -1540,7 +1540,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
             item {
                 val inputTokens = com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.parse(state.preferences.inputKeyboardLayout)
                     ?: com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.defaultTokens(state.preferences.inputButtonsOnRight)
-                InputKeyboardPreview(inputTokens, selected = null, legacyLayout = state.preferences.inputKeyboardLayout.isEmpty(),
+                InputKeyboardPreview(inputTokens, selected = null,
                     onSelect = { editInputKeys = true }, onMove = { from, to ->
                         actions.onInputKeyboardLayout(inputTokens.toMutableList().apply { add(to, removeAt(from)) }.joinToString(","))
                     })

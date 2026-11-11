@@ -55,13 +55,14 @@ class BufferedInputPagerTest {
     fun customInputLayoutKeepsFieldBetweenKeysAndDispatchesWithoutLosingDraft() {
         val draft = BufferedInputDraftState(initialText = "keep draft")
         val pressed = mutableListOf<TerminalExtraKey>()
+        val inputLayout = mutableStateOf("toggle,tab,input,escape,enter")
         composeRule.setContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f))
                     ExtraKeysBar(
                         keys = TerminalExtraKey.DEFAULT_ORDER, ctrlArmed = false, altArmed = false,
-                        inputKeyboardLayout = "toggle,tab,input,escape,enter",
+                        inputKeyboardLayout = inputLayout.value,
                         customizationEnabled = false, inputTargetId = 1L,
                         bufferedInputSendEnabled = true, bufferedInputDraftState = draft,
                         onKey = { pressed += it }, onCustomize = {},
@@ -75,7 +76,8 @@ class BufferedInputPagerTest {
         val tab = composeRule.onNodeWithContentDescription("Terminal key TAB").assertIsDisplayed()
         val escape = composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
         assertTrue(tab.fetchSemanticsNode().boundsInRoot.right <= field.left)
-        assertTrue(escape.fetchSemanticsNode().boundsInRoot.left >= field.right)
+        val customKeyBounds = escape.fetchSemanticsNode().boundsInRoot
+        assertTrue(customKeyBounds.left >= field.right)
         assertTrue(field.width >= 100 * composeRule.activity.resources.displayMetrics.density)
         tab.performClick()
         escape.performClick()
@@ -83,8 +85,24 @@ class BufferedInputPagerTest {
             assertEquals(listOf(TerminalExtraKey.TAB, TerminalExtraKey.ESC), pressed)
             assertEquals("keep draft", draft.value.text)
         }
+        // Exercise the reported four-key layout: two adjacent columns on the left.
+        composeRule.runOnIdle { inputLayout.value = "toggle,tab,escape,enter,input" }
+        val secondColumn = composeRule.onNodeWithContentDescription("Terminal key ESC").fetchSemanticsNode().boundsInRoot
+        val firstColumnBottom = composeRule.onNodeWithContentDescription("Terminal key TAB").fetchSemanticsNode().boundsInRoot
+        val firstColumnTop = composeRule.onNodeWithTag("terminal_typing_toggle").fetchSemanticsNode().boundsInRoot
+        val inputHorizontalGap = secondColumn.left - firstColumnBottom.right
+        val inputVerticalGap = firstColumnBottom.top - firstColumnTop.bottom
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        val ordinaryKeyBounds = composeRule.onNodeWithContentDescription("Terminal key ESC")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Input-mode key width must match the ordinary keyboard", ordinaryKeyBounds.width, customKeyBounds.width, 0.5f)
+        assertEquals("Input-mode key height must match the ordinary keyboard", ordinaryKeyBounds.height, customKeyBounds.height, 0.5f)
+        val slash = composeRule.onNodeWithContentDescription("Terminal key /").fetchSemanticsNode().boundsInRoot
+        val at = composeRule.onNodeWithContentDescription("Terminal key @").fetchSemanticsNode().boundsInRoot
+        val ordinaryToggle = composeRule.onNodeWithTag("terminal_typing_toggle").fetchSemanticsNode().boundsInRoot
+        assertEquals("Adjacent input keys must use the ordinary column gap", at.left - slash.right, inputHorizontalGap, 1f)
+        assertEquals("Stacked input keys must use the ordinary row gap", ordinaryToggle.top - ordinaryKeyBounds.bottom, inputVerticalGap, 1f)
     }
 
     @get:Rule

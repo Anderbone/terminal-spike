@@ -47,7 +47,7 @@ internal fun InputKeyboardEditor(value: String, onRight: Boolean, onDismiss: () 
             Text(stringResource(R.string.settings_input_keyboard_edit), style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 16.dp))
             Text(stringResource(R.string.settings_input_keyboard_summary), modifier = Modifier.padding(horizontal = 16.dp))
-            InputKeyboardPreview(tokens, selected, legacyLayout = legacy, onSelect = { selected = it; insertion = null }, onMove = { from, to ->
+            InputKeyboardPreview(tokens, selected, onSelect = { selected = it; insertion = null }, onMove = { from, to ->
                 legacy = false
                 tokens = tokens.toMutableList().apply { add(to, removeAt(from)) }
                 selected = to
@@ -111,7 +111,7 @@ internal fun inputKeyboardTokenLabel(token: String): String = when (token) {
 
 /** Uses the same measured frame and button renderer as the terminal, including two-row columns. */
 @Composable
-internal fun InputKeyboardPreview(tokens: List<String>, selected: Int?, legacyLayout: Boolean = false, onSelect: (Int) -> Unit, onMove: (Int, Int) -> Unit) {
+internal fun InputKeyboardPreview(tokens: List<String>, selected: Int?, onSelect: (Int) -> Unit, onMove: (Int, Int) -> Unit) {
     val bounds = remember { mutableMapOf<Int, Rect>() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val currentMove by rememberUpdatedState(onMove)
@@ -158,7 +158,7 @@ internal fun InputKeyboardPreview(tokens: List<String>, selected: Int?, legacyLa
                         }
                     },
                 )
-            }, legacyLayout = legacyLayout, key = { index, token, modifier ->
+            }, key = { index, token, modifier ->
                 ExtraKeyButton(label = inputKeyboardTokenLabel(token), description = inputKeyboardTokenLabel(token),
                     glyph = if (token == "toggle") ConnectionsGlyph.WRITE else null,
                     onClick = { onSelect(index) }, modifier = itemModifier(index, modifier))
