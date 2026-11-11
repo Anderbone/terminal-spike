@@ -17,6 +17,8 @@ from pathlib import Path
 import os
 import sys
 checkout, installed, units, state = map(Path, sys.argv[1:])
+if any('\n' in str(path) or '\r' in str(path) for path in (checkout, installed, units, state)):
+    raise SystemExit('Installation paths cannot contain line breaks')
 def quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
 # Pin the installed controller copy. Agent branch edits cannot replace it.
@@ -27,7 +29,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory={quote(checkout)}
+WorkingDirectory={str(checkout).replace('%', '%%')}
 Environment={quote('PATH=' + os.environ['PATH'])}
 ExecStart=/usr/bin/python3 {quote(installed / 'ci-autofix.py')} --checkout {quote(checkout)} --state-dir {quote(state)}
 TimeoutStartSec=75min

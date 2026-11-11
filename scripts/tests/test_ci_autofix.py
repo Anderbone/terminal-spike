@@ -1,5 +1,8 @@
 import importlib.util
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -10,6 +13,36 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CiAutofixTest(unittest.TestCase):
+    def test_installer_generates_valid_systemd_units_without_starting_real_services(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            checkout = root / "checkout with spaces"
+            scripts = checkout / "scripts"
+            scripts.mkdir(parents=True)
+            source = Path(__file__).resolve().parents[1]
+            for name in ["install-ci-autofix.sh", "ci-autofix.py"]:
+                shutil.copy2(source / name, scripts / name)
+            binaries = root / "bin"
+            binaries.mkdir()
+            for name in ["codex", "gh", "systemctl"]:
+                executable = binaries / name
+                executable.write_text('#!/bin/sh\nexit 0\n')
+                executable.chmod(0o755)
+            environment = dict(os.environ, PATH=str(binaries) + os.pathsep + os.environ["PATH"],
+                               XDG_CONFIG_HOME=str(root / "config"), XDG_DATA_HOME=str(root / "data"),
+                               XDG_STATE_HOME=str(root / "state"))
+            subprocess.run(["bash", str(scripts / "install-ci-autofix.sh")], env=environment,
+                           check=True, capture_output=True)
+            units = root / "config/systemd/user"
+            service = units / "terminal-spike-ci-autofix.service"
+            timer = units / "terminal-spike-ci-autofix.timer"
+            self.assertIn(f"WorkingDirectory={checkout}\n", service.read_text())
+            self.assertIn('--state-dir "' + str(root / "state/terminal-spike-ci-autofix") + '"', service.read_text())
+            self.assertIn("OnUnitInactiveSec=60s", timer.read_text())
+            if shutil.which("systemd-analyze"):
+                subprocess.run(["systemd-analyze", "--user", "verify", str(service), str(timer)],
+                               check=True, capture_output=True)
+
     def test_checkout_cannot_redirect_repairs_to_another_repository(self):
         MODULE.validate_origin(f"https://github.com/{MODULE.REPO}.git")
         MODULE.validate_origin(f"git@github.com:{MODULE.REPO}.git")
