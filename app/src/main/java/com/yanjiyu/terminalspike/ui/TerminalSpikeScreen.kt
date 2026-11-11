@@ -808,16 +808,16 @@ fun TerminalSpikeScreen(
     if (identityImportVisible) {
         SshIdentityImportDialog(
             onDismiss = { identityImportVisible = false; reimportIdentityToken = null },
-            onFile = { systemPicker ->
+            onFile = {
                 val context = rootView.context
-                val explicit = if (systemPicker) sshIdentitySystemDocumentIntent(context) else null
+                val explicit = sshIdentitySystemDocumentIntent(context)
                 fun launch(intent: android.content.Intent): Boolean =
                     tryLaunchSshIdentityDocument(intent) {
                         identityImportLauncher.launch(it)
                         identityImportVisible = false
                     }
                 val launched = if (explicit != null && launch(explicit)) true else {
-                    if (systemPicker) screenScope.launch {
+                    screenScope.launch {
                         snackbarHostState.showSnackbar(context.getString(R.string.key_import_system_unavailable))
                     }
                     launch(sshIdentityDocumentIntent(context))

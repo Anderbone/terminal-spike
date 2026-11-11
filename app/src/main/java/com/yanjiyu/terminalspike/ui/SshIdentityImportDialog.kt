@@ -27,7 +27,7 @@ import com.yanjiyu.terminalspike.ui.theme.AppDialog
 @Composable
 internal fun SshIdentityImportDialog(
     onDismiss: () -> Unit,
-    onFile: (systemPicker: Boolean) -> Unit,
+    onFile: () -> Unit,
     onText: (label: String, privateKey: String) -> Unit,
 ) {
     // Deliberately not saveable: key material must never enter a saved-state Bundle.
@@ -45,8 +45,7 @@ internal fun SshIdentityImportDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.key_import_help))
                 if (!paste) {
-                    TextButton(onClick = { onFile(false) }) { Text(stringResource(R.string.key_import_file)) }
-                    TextButton(onClick = { onFile(true) }) { Text(stringResource(R.string.key_import_system_file)) }
+                    TextButton(onClick = onFile) { Text(stringResource(R.string.key_import_file)) }
                     TextButton(onClick = { paste = true }) { Text(stringResource(R.string.key_import_paste)) }
                 } else {
                     OutlinedTextField(value = label, onValueChange = { label = it.take(UserSettings.MAX_LABEL_LENGTH) },

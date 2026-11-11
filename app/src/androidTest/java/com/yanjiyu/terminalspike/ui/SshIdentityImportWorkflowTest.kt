@@ -153,10 +153,10 @@ class SshIdentityImportWorkflowTest {
                     device.executeShellCommand("stat -c %s /sdcard/Download/$fileName").trim())
             } finally { source.delete() }
         }
-        fun launchPicker(system: Boolean = false) {
+        fun launchPicker() {
             compose.onNodeWithContentDescription(context.getString(R.string.connections_add_item)).performClick()
             compose.onNodeWithText(context.getString(R.string.connections_import_key)).performClick()
-            compose.onNodeWithText(context.getString(if (system) R.string.key_import_system_file else R.string.key_import_file)).performClick()
+            compose.onNodeWithText(context.getString(R.string.key_import_file)).performClick()
             assertTrue("Production import must launch the system picker",
                 device.wait(Until.hasObject(By.res(Pattern.compile(".*:id/toolbar"))), 8000))
         }
@@ -246,7 +246,7 @@ class SshIdentityImportWorkflowTest {
             }
             assertEquals(before, runBlocking { container.sshKeyIdentities.observeAll().first().map { it.id }.toSet() })
 
-            launchPicker(system = true)
+            launchPicker()
             chooseDownload(name)
             compose.waitUntil(10000) {
                 importedId = runBlocking {

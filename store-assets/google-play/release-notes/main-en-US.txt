@@ -1,5 +1,3 @@
-• Import SSH private keys by pasting text when a file manager hides extensionless files.
-• Added an optional system file picker with fallback.
-• Fixed terminal links wrapping across rows, including ports and query strings.
-• Kept snippet positions stable while Codex restarts; disabled effort changes during snippet management.
-• Improved input keyboard key sizing and spacing.
+• Simplified SSH private key import to one Choose a file button.
+• Opens the Android system file picker first and falls back to the default picker if unavailable.
+• Kept Paste private key as an alternative, including for extensionless keys.
