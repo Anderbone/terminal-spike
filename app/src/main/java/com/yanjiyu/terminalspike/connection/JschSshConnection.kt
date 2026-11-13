@@ -89,7 +89,9 @@ class JschSshConnection(
         }
     }
 
-    override fun captureInputContext(): TerminalInputContext {
+    override fun captureInputContext(): TerminalInputContext = captureInputContext(false)
+
+    override fun captureInputContext(includeCodexStatus: Boolean): TerminalInputContext {
         val (session, choice) = synchronized(lock) {
             if (!running) return TerminalInputContext()
             val choice = herdrChoice ?: return tmuxTasks.inputContext(discoveredTmuxClient?.paneId)
@@ -97,7 +99,7 @@ class JschSshConnection(
                 ?: return TerminalInputContext()
             session to choice
         }
-        val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
+        val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice, includeCodexStatus)
         return synchronized(lock) {
             captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
                 ?: TerminalInputContext()
@@ -333,8 +335,8 @@ class JschSshConnection(
 
             if (!isActive(attempt)) return
 
-            val startupChoice = if (config.tmuxSessionSelectorEnabled) {
-                TmuxSessionSelector(newSession) { prompt ->
+            val startupChoice = if (config.tmuxSessionSelectorEnabled || config.autoAttachSingleHerdrSession) {
+                TmuxSessionSelector(newSession, config.autoAttachSingleHerdrSession) { prompt ->
                     attempt.states.publish(ConnectionState.AwaitingApproval(prompt))
                 }.also { selector ->
                     synchronized(lock) { tmuxSelector = selector }

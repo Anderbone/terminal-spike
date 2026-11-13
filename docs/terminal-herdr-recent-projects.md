@@ -1,10 +1,14 @@
 # Herdr recent project picker
 
-Long-press **+ new workspace** in the grouped desktop sidebar or mobile Switch
+Long-press **+ new workspace** or its compact **+** form in the grouped desktop sidebar or mobile Switch
 list, or **new** in the legacy desktop Spaces footer, to open the Android project
 picker. The grouped sidebar requires its collapse control and tab strip; only
 the action's text cells inside the sidebar open the picker, including when the
-action is on the first row. A normal tap keeps Herdr's existing New action.
+action is on the first row. Recognition follows the standalone action within
+verified navigation chrome, without fixed row or indentation coordinates. The
+tab strip's separate New Tab **+** is excluded. A normal tap keeps Herdr's existing New action.
+The left scrollbar's `│` track and `▌` thumb are excluded from the action label;
+both compact and full labels work while either scrollbar segment is visible.
 Existing Space and tab menus, the footer menu button, and terminal text selection
 keep their actions.
 
@@ -32,3 +36,7 @@ Host regression coverage: `HerdrRecentProjectsTest` covers ranking, all-pane
 filtering, failed reads, bounded results, selected-session commands, shell
 quoting, stale selections and create failures. `HerdrTabTargetTest` covers New
 hit testing and opening/dismissing the picker without terminal input.
+`HerdrContextMenuRecoveryTest.recentProjectsLongPressHandlesRealMobileScrollThumbInBothInputModes`
+dispatches real long-press events against the mobile layout with usage rows,
+top tabs, the `▌` thumb and concealed bottom-button dividers. It requires the
+local picker to open without remote input in both direct and buffered modes.

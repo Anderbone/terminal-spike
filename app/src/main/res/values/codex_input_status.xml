@@ -1,0 +1,5 @@
+<resources>
+    <string name="codex_input_status_description">Last reported remaining percentages: context %1$s; weekly allowance %2$s.</string>
+    <string name="settings_codex_input_status">Codex usage in input box</string>
+    <string name="settings_codex_input_status_summary">Show remaining Context and Week percentages at the bottom right of the input box.</string>
+</resources>

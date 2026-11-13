@@ -602,4 +602,7 @@
     <string name="key_import_clipboard">从剪贴板粘贴</string>
     <string name="key_import_system_unavailable">系统文件选择器不可用，已尝试默认选择器；也可取消后粘贴私钥。</string>
     <string name="key_import_picker_unavailable">文件选择器不可用，可改为粘贴私钥。</string>
+    <string name="settings_auto_attach_herdr">自动进入唯一的 herdr 会话</string>
+    <string name="settings_auto_attach_herdr_summary">连接主机时，若只有一个运行中的 herdr 会话，则直接进入；否则显示会话选择器。</string>
+    <string name="settings_search_result_path">设置 › %1$s</string>
 </resources>

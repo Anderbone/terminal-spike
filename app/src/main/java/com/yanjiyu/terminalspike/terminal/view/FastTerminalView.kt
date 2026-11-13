@@ -56,6 +56,12 @@ import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkPolicy
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkResolver
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkTarget
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionEndpoint
+import com.yanjiyu.terminalspike.terminal.selection.terminalTextAsSingleLine
+import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionSnapshot
+import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionSource
+import com.yanjiyu.terminalspike.terminal.model.TerminalViewport
+import com.yanjiyu.terminalspike.connection.HerdrPaneHistory
+import com.yanjiyu.terminalspike.terminal.selection.TerminalTextExtraction
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionModel
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -185,12 +191,18 @@ class FastTerminalView @JvmOverloads constructor(
             stopActiveFling()
         },
         requestFocus = { if (directInputEnabled) requestFocus() },
-        scrollBy = ::handleGestureScroll,
-        fling = ::startFling,
+        scrollBy = { distance, x, y, pointers ->
+            if (selectionSnapshot != null) {
+                selectionViewport.scrollBy(distance)
+                selectionActionMode?.invalidateContentRect()
+                invalidate()
+            } else handleGestureScroll(distance, x, y, pointers)
+        },
+        fling = { velocity, x, y -> if (selectionSnapshot == null) startFling(velocity, x, y) },
         showKeyboard = { if (directInputEnabled) showKeyboard() },
         performClick = { performClick() },
         handleTap = ::handleTerminalTap,
-        handleLongPress = { x, y -> showHerdrContextMenuAt(x, y) || showLinkActionsAt(x, y) },
+        handleLongPress = { x, y -> showHerdrContextMenuAt(x, y) || showTextActionsAt(x, y) },
         selectionHandleAt = ::selectionHandleAt,
         startSelection = ::startSelectionAt,
         dragSelection = ::dragSelection,
@@ -211,9 +223,10 @@ class FastTerminalView @JvmOverloads constructor(
                 !selection.hasSelection && linkAt(x, y) == null
         },
     )
+    private val gestureHandler = TerminalGestureHandler(gestureActions, ::shouldDeferHerdrSpaceTap)
     private val gestureDetector = GestureDetector(
         context,
-        TerminalGestureHandler(gestureActions),
+        gestureHandler,
     )
     private val scaleGestureDetector = ScaleGestureDetector(
         context,
@@ -275,6 +288,9 @@ class FastTerminalView @JvmOverloads constructor(
 
     fun attachController(controller: TerminalController) {
         if (terminalController === controller) return
+        gestureHandler.cancelPendingTap()
+        textActionsDialog?.dismiss()
+        textActionsDialog = null
         imeAnimationActive = false
         removeCallbacks(finishMissingImeAnimation)
         finishResizePresentation()
@@ -314,6 +330,9 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
+        gestureHandler.cancelPendingTap()
+        textActionsDialog?.dismiss()
+        textActionsDialog = null
         imeAnimationActive = false
         removeCallbacks(finishMissingImeAnimation)
         finishResizePresentation()
@@ -374,7 +393,7 @@ class FastTerminalView @JvmOverloads constructor(
         }
         applyPendingTmuxScrollIfReady(controller)
         var overlayChanged = false
-        if (selection.hasSelection && !selection.validate(controller)) {
+        if (selection.hasSelection && !selection.validate(selectionSource() ?: controller)) {
             selectionActionMode?.finish()
             selectionActionMode = null
             overlayChanged = true
@@ -383,7 +402,7 @@ class FastTerminalView @JvmOverloads constructor(
             clearFindResultsInternal()
             overlayChanged = true
         }
-        activeLink?.let { link ->
+        activeLink?.takeIf { selectionSnapshot == null }?.let { link ->
             val row = controller.selectionIndexOf(link.line)
             val current = row?.let { linkRow ->
                 TerminalLinkResolver.find(
@@ -458,7 +477,8 @@ class FastTerminalView @JvmOverloads constructor(
         }
         val controller = terminalController ?: return
         if (!controller.herdrHistoryReading && herdrScroll.reader.snapshot != null) herdrScroll.reset()
-        val viewport = controller.viewport
+        val frozen = selectionSnapshot.takeIf { selectionPane == null }
+        val viewport = if (frozen != null) selectionViewport else controller.viewport
         val rows = viewport.visibleRows(OVERSCAN_ROWS)
         canvas.getClipBounds(drawClipBounds)
         val clipFirstRow = floor(
@@ -474,7 +494,7 @@ class FastTerminalView @JvmOverloads constructor(
 
         var rowIndex = firstRow
         while (rowIndex < lastRowExclusive) {
-            val line = controller.lineAt(rowIndex)
+            val line = if (frozen != null) frozen.selectionLineAt(rowIndex)?.line else controller.lineAt(rowIndex)
             if (line != null) {
                 val rowTop = verticalPaddingPx + rowIndex * lineHeightPx - viewport.scrollY
                 drawLine(canvas, line.runs, rowTop + baselineOffsetPx, rowTop)
@@ -483,9 +503,9 @@ class FastTerminalView @JvmOverloads constructor(
         }
 
         drawFindHighlights(canvas, controller)
+        if (selectionSnapshot == null) drawCursor(canvas, controller, viewport.scrollY)
+        if (frozen == null) drawHerdrHistory(canvas)
         drawSelection(canvas, controller)
-        drawCursor(canvas, controller, viewport.scrollY)
-        drawHerdrHistory(canvas)
         if (!viewport.autoFollow) drawNewOutputBadge(canvas)
         drawVisualBell(canvas)
         canvas.restore()
@@ -499,8 +519,9 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun drawHerdrHistory(canvas: Canvas) {
-        val snapshot = herdrScroll.reader.snapshot ?: return
-        val viewport = herdrScroll.reader.viewport
+        val snapshot = selectionPane ?: herdrScroll.reader.snapshot ?: return
+        val frozen = selectionSnapshot.takeIf { selectionPane != null }
+        val viewport = if (frozen != null) selectionViewport else herdrScroll.reader.viewport
         val left = horizontalPaddingPx + snapshot.x * cellWidthPx
         val top = verticalPaddingPx + snapshot.y * lineHeightPx
         canvas.save()
@@ -511,7 +532,7 @@ class FastTerminalView @JvmOverloads constructor(
         val visible = viewport.visibleRows(1)
         for (row in visible.first until visible.lastExclusive) {
             val rowTop = verticalPaddingPx + row * lineHeightPx - viewport.scrollY
-            drawLine(canvas, snapshot.lines[row].runs, rowTop + baselineOffsetPx, rowTop)
+            drawLine(canvas, (frozen?.selectionLineAt(row)?.line ?: snapshot.lines[row]).runs, rowTop + baselineOffsetPx, rowTop)
         }
         canvas.restore()
     }
@@ -645,18 +666,24 @@ class FastTerminalView @JvmOverloads constructor(
             codePoint == 0x2B58
 
     private fun drawSelection(canvas: Canvas, controller: TerminalController) {
-        val segments = selection.segments(controller)
+        val segments = selection.segments(selectionSource() ?: controller)
         if (segments.isEmpty()) return
-        val scrollY = controller.viewport.scrollY
+        val scrollY = selectionScrollY
         fillPaint.color = terminalTheme.selection
         fillPaint.alpha = SELECTION_ALPHA
+        canvas.save()
+        selectionPane?.let { pane ->
+            canvas.clipRect(selectionOriginX, selectionOriginY,
+                selectionOriginX + pane.columns * cellWidthPx, selectionOriginY + pane.rows * lineHeightPx)
+        }
         segments.forEach { segment ->
-            val top = verticalPaddingPx + segment.row * lineHeightPx - scrollY
+            val top = selectionOriginY + segment.row * lineHeightPx - scrollY
             if (top + lineHeightPx < 0f || top > height) return@forEach
-            val left = horizontalPaddingPx + segment.startColumn * cellWidthPx
-            val right = horizontalPaddingPx + segment.endColumn * cellWidthPx
+            val left = selectionOriginX + segment.startColumn * cellWidthPx
+            val right = selectionOriginX + segment.endColumn * cellWidthPx
             canvas.drawRect(left, top, maxOf(left + MIN_SELECTION_WIDTH_PX, right), top + lineHeightPx, fillPaint)
         }
+        canvas.restore()
         fillPaint.alpha = 255
 
         selectionHandlePosition(controller, TerminalSelectionEndpoint.START)?.let { position ->
@@ -850,7 +877,36 @@ class FastTerminalView @JvmOverloads constructor(
         return true
     }
 
+    private var selectionSnapshot: TerminalSelectionSnapshot? = null
+    private val selectionViewport = TerminalViewport()
+    private var selectionPane: HerdrPaneHistory? = null
+    private fun selectionSource(): TerminalSelectionSource? = selectionSnapshot ?: terminalController
+    private val selectionOriginX get() = horizontalPaddingPx + (selectionPane?.x ?: 0) * cellWidthPx
+    private val selectionOriginY get() = verticalPaddingPx + (selectionPane?.y ?: 0) * lineHeightPx
+    private val selectionScrollY get() = if (selectionSnapshot != null) selectionViewport.scrollY
+        else terminalController?.viewport?.scrollY ?: 0f
+    private var textActionsDialog: android.app.AlertDialog? = null
+    private var historyLongPressTracking = false
+    // A pinned HERDR reader consumes DOWN before the ordinary gesture detector sees it.
+    // Observe this stream locally as well; do not forward clicks, scrolls or wheels.
+    private val historyLongPressDetector = GestureDetector(context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent) = true
+            override fun onLongPress(e: MotionEvent) {
+                if (showTextActionsAt(e.x, e.y)) herdrScroll.cancelTouch()
+            }
+        })
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            historyLongPressTracking = selectionSnapshot == null && herdrScroll.reader.snapshot != null
+        }
+        if (historyLongPressTracking) {
+            historyLongPressDetector.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                historyLongPressTracking = false
+            }
+        }
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             finishResizePresentation()
             herdrGestureRemote = false
@@ -887,7 +943,7 @@ class FastTerminalView @JvmOverloads constructor(
                 herdrController.herdrHistoryForFirstDrag(source)
             else source
         }
-        if (herdrTouchMode != TouchScrollMode.REMOTE_MOUSE && !herdrGestureRemote &&
+        if (selectionSnapshot == null && herdrTouchMode != TouchScrollMode.REMOTE_MOUSE && !herdrGestureRemote &&
             (herdrSource != null || herdrScroll.reader.snapshot != null || herdrScroll.hasActiveTouch ||
                 event.actionMasked == MotionEvent.ACTION_DOWN && herdrController?.herdrSessionActive == true &&
                 herdrHistoryVisible && !herdrGestureStartedOnOverlay && !selection.hasSelection)
@@ -914,7 +970,7 @@ class FastTerminalView @JvmOverloads constructor(
         }
         // Once native scrolling owns a one-finger gesture, a source invalidation
         // must not send the remaining MOVE/UP events into the remote wheel path.
-        if (herdrTouchConsumed && event.pointerCount == 1 && event.actionMasked != MotionEvent.ACTION_DOWN) {
+        if (selectionSnapshot == null && herdrTouchConsumed && event.pointerCount == 1 && event.actionMasked != MotionEvent.ACTION_DOWN) {
             herdrTouchConsumed = event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL
             parent?.requestDisallowInterceptTouchEvent(herdrTouchConsumed)
             return true
@@ -966,7 +1022,7 @@ class FastTerminalView @JvmOverloads constructor(
         val visible = terminalController?.viewport?.visibleRows(0) ?: return false
         val row = visible.first.coerceAtMost((visible.lastExclusive - 1).coerceAtLeast(0))
         val y = terminalRowCenterY(row)
-        return showLinkActionsAt(x, y) || startSelectionAt(x, y)
+        return showTextActionsAt(x, y)
     }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
@@ -976,7 +1032,7 @@ class FastTerminalView @JvmOverloads constructor(
         info.isEditable = directInputEnabled
         info.isMultiLine = true
         info.isScrollable = controller.viewport.maximumScrollY > 0f
-        info.text = selection.selectedText(controller) ?: accessibleVisibleText(controller)
+        info.text = selection.selectedText(selectionSource() ?: controller) ?: accessibleVisibleText(controller)
         info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK)
         info.addAction(
             AccessibilityNodeInfo.AccessibilityAction(
@@ -986,6 +1042,12 @@ class FastTerminalView @JvmOverloads constructor(
         )
         if (selection.hasSelection) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COPY)
+            if (hasMultilineTextSelection()) info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                R.id.terminal_action_copy_single_line, context.getString(R.string.terminal_copy_single_line),
+            ))
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                R.id.terminal_action_text_tools, context.getString(R.string.terminal_text_tools),
+            ))
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLEAR_SELECTION)
         }
         if (controller.viewport.scrollY > 0f) {
@@ -1015,10 +1077,13 @@ class FastTerminalView @JvmOverloads constructor(
     override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
         return when (action) {
             AccessibilityNodeInfo.ACTION_COPY -> copySelectionToClipboard()
+            R.id.terminal_action_copy_single_line -> copySelectionToClipboard(singleLine = true)
             R.id.terminal_action_select_all -> selectAllOutput()
+            R.id.terminal_action_text_tools -> openTextTools()
             AccessibilityNodeInfo.ACTION_CLEAR_SELECTION -> {
-                val cleared = selection.clear()
+                val cleared = selection.hasSelection
                 if (cleared) {
+                    clearSelectionAndLinkActions()
                     activeLink = null
                     selectionActionMode?.finish()
                     selectionActionMode = null
@@ -1238,10 +1303,17 @@ class FastTerminalView @JvmOverloads constructor(
         return true
     }
 
+    internal fun textActionsDialogForTesting() = textActionsDialog
+
     internal fun selectedTextForTesting(): String? =
-        terminalController?.let(selection::selectedText)
+        selectionSource()?.let(selection::selectedText)
 
     private fun handleTerminalTap(x: Float, y: Float): Boolean {
+        if (selectionSnapshot != null) {
+            clearSelectionAndLinkActions()
+            invalidate()
+            return true
+        }
         val link = linkAt(x, y)
         if (link != null) {
             activeLink = link
@@ -1288,6 +1360,17 @@ class FastTerminalView @JvmOverloads constructor(
         }
     }
 
+    private fun shouldDeferHerdrSpaceTap(x: Float, y: Float): Boolean {
+        val controller = terminalController ?: return false
+        if (selection.hasSelection || selectionSnapshot != null || herdrScroll.reader.snapshot != null ||
+            !x.isFinite() || !y.isFinite() || x < horizontalPaddingPx || x >= width - horizontalPaddingPx ||
+            y < verticalPaddingPx || y >= height - verticalPaddingPx
+        ) return false
+        val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
+        val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
+        return controller.isHerdrSpaceCell(terminalColumnAt(x), row)
+    }
+
     private fun showHerdrContextMenuAt(x: Float, y: Float): Boolean {
         val controller = terminalController ?: return false
         // Buffered typing owns the IME, not Herdr's navigation context menus.
@@ -1308,6 +1391,72 @@ class FastTerminalView @JvmOverloads constructor(
         selectionActionMode = null
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         invalidate()
+        return true
+    }
+
+    private fun showTextActionsAt(x: Float, y: Float): Boolean {
+        val controller = terminalController ?: return false
+        if (!x.isFinite() || !y.isFinite()) return false
+        textActionsDialog?.dismiss()
+        selectionActionMode?.finish()
+        clearSelectionAndLinkActions()
+        val reader = herdrScroll.reader
+        val pane = reader.snapshot
+        val source: TerminalSelectionSource = if (pane != null) reader else controller
+        val row: Int
+        val column: Int
+        if (pane != null) {
+            val left = horizontalPaddingPx + pane.x * cellWidthPx
+            val top = verticalPaddingPx + pane.y * lineHeightPx
+            if (x < left || x >= left + pane.columns * cellWidthPx ||
+                y < top || y >= top + pane.rows * lineHeightPx) return false
+            row = floor((y - top + reader.viewport.scrollY) / lineHeightPx).toInt()
+            column = floor((x - left) / cellWidthPx).toInt()
+        } else {
+            row = terminalRowAt(y) ?: return false
+            column = terminalColumnAt(x)
+        }
+        val link = linkAt(x, y)
+        val frozen = TerminalSelectionSnapshot.capture(source, row) ?: return false
+        selectionSnapshot = frozen
+        selectionPane = pane
+        selectionViewport.updateGeometry(
+            if (pane == null) controller.viewport.viewportHeightPx else reader.viewport.viewportHeightPx, lineHeightPx,
+        )
+        selectionViewport.updateContent(frozen.selectionLineCount, null)
+        selectionViewport.scrollTo((if (pane == null) controller.viewport.scrollY else reader.viewport.scrollY) -
+            frozen.firstSourceRow * lineHeightPx)
+        if (link != null) selection.selectLink(frozen, link)
+        else selection.beginWord(frozen, row - frozen.firstSourceRow, column)
+        activeLink = link
+        requestFocus()
+        hideSoftwareKeyboard()
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        showSelectionActionMode()
+        invalidate()
+        return true
+    }
+
+    internal fun openTextTools(): Boolean {
+        val source = selectionSource() ?: return false
+        val contextRows = ceil((if (selectionSnapshot != null) selectionViewport.viewportHeightPx
+            else height).toFloat() / lineHeightPx).toInt().coerceIn(8, 256)
+        val extraction = TerminalTextExtraction.capture(source, selection, surroundingRows = contextRows) ?: return false
+        val link = activeLink
+        textActionsDialog = showTerminalTextActions(context, extraction, link,
+            copy = { text, kind -> clipboardActionCallback.onCopyRequested(TerminalClipboardRequest(
+                context.getString(if (kind == TerminalClipboardContentKind.LINK)
+                    R.string.terminal_clipboard_link_label else R.string.terminal_clipboard_selection_label), text, kind,
+            )) },
+            openLink = { target -> linkActionCallback.onLinkAction(TerminalLinkActionRequest(TerminalLinkAction.OPEN, target)) },
+        ).also { dialog ->
+            dialog.setOnDismissListener {
+                clearSelectionAndLinkActions()
+                if (textActionsDialog === dialog) textActionsDialog = null
+                invalidate()
+            }
+        }
+        selectionActionMode?.finish()
         return true
     }
 
@@ -1351,14 +1500,20 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun dragSelection(endpoint: TerminalSelectionEndpoint, x: Float, y: Float) {
-        val controller = terminalController ?: return
+        val source = selectionSource() ?: return
         val edge = SELECTION_AUTOSCROLL_EDGE_DP * resources.displayMetrics.density
-        when {
-            y < edge -> scrollViewportBy(-lineHeightPx)
-            y > height - edge -> scrollViewportBy(lineHeightPx)
+        val bottom = selectionOriginY + (selectionPane?.rows?.times(lineHeightPx) ?: height.toFloat())
+        if (selectionSnapshot != null) {
+            if (y < selectionOriginY + edge) selectionViewport.scrollBy(-lineHeightPx)
+            else if (y > bottom - edge) selectionViewport.scrollBy(lineHeightPx)
+        } else {
+            if (y < edge) scrollViewportBy(-lineHeightPx)
+            else if (y > height - edge) scrollViewportBy(lineHeightPx)
         }
-        val row = terminalRowAt(y.coerceIn(0f, height.toFloat())) ?: return
-        if (selection.updateEndpoint(controller, endpoint, row, terminalColumnAt(x))) {
+        val row = floor((y - selectionOriginY + selectionScrollY) / lineHeightPx).toInt()
+            .coerceIn(0, (source.selectionLineCount - 1).coerceAtLeast(0))
+        val column = floor((x - selectionOriginX) / cellWidthPx).toInt().coerceAtLeast(0)
+        if (selection.updateEndpoint(source, endpoint, row, column)) {
             activeLink = null
             selectionActionMode?.invalidate()
             invalidate()
@@ -1384,11 +1539,11 @@ class FastTerminalView @JvmOverloads constructor(
         controller: TerminalController,
         endpoint: TerminalSelectionEndpoint,
     ): Pair<Float, Float>? {
-        val range = selection.normalizedRange(controller) ?: return null
+        val range = selection.normalizedRange(selectionSource() ?: controller) ?: return null
         val position = if (endpoint == TerminalSelectionEndpoint.START) range.start else range.end
-        val row = controller.selectionIndexOf(position.line) ?: return null
-        val x = horizontalPaddingPx + position.column * cellWidthPx
-        val y = verticalPaddingPx + (row + 1) * lineHeightPx - controller.viewport.scrollY
+        val row = (selectionSource() ?: controller).selectionIndexOf(position.line) ?: return null
+        val x = selectionOriginX + position.column * cellWidthPx
+        val y = selectionOriginY + (row + 1) * lineHeightPx - selectionScrollY
         val radius = SELECTION_HANDLE_HIT_RADIUS_DP * resources.displayMetrics.density
         if (x < -radius || x > width + radius || y < -radius || y > height + radius) return null
         return x to y
@@ -1445,62 +1600,83 @@ class FastTerminalView @JvmOverloads constructor(
         }
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = when (item.itemId) {
-            android.R.id.copy -> copySelectionToClipboard().also { if (it) mode.finish() }
+            android.R.id.copy -> (if (activeLink != null) requestActiveLinkAction(TerminalLinkAction.COPY)
+                else copySelectionToClipboard()).also { if (it) mode.finish() }
+            R.id.terminal_action_copy_single_line -> copySelectionToClipboard(singleLine = true)
+                .also { if (it) mode.finish() }
             android.R.id.selectAll -> selectAllOutput()
             MENU_OPEN_LINK -> requestActiveLinkAction(TerminalLinkAction.OPEN).also { if (it) mode.finish() }
             MENU_COPY_LINK -> requestActiveLinkAction(TerminalLinkAction.COPY).also { if (it) mode.finish() }
+            R.id.terminal_action_text_tools -> openTextTools()
             else -> false
         }
 
         override fun onDestroyActionMode(mode: ActionMode) {
-            if (selectionActionMode === mode) selectionActionMode = null
+            if (selectionActionMode === mode) {
+                selectionActionMode = null
+                clearSelectionAndLinkActions()
+                invalidate()
+            }
         }
 
         override fun onGetContentRect(mode: ActionMode, view: android.view.View, outRect: Rect) {
             val controller = terminalController
-            val range = controller?.let(selection::normalizedRange)
+            val range = selectionSource()?.let(selection::normalizedRange)
             val startRow = if (controller == null || range == null) {
                 null
             } else {
-                controller.selectionIndexOf(range.start.line)
+                (selectionSource() ?: controller).selectionIndexOf(range.start.line)
             }
             val endRow = if (controller == null || range == null) {
                 null
             } else {
-                controller.selectionIndexOf(range.end.line)
+                (selectionSource() ?: controller).selectionIndexOf(range.end.line)
             }
             if (controller == null || range == null || startRow == null || endRow == null) {
                 outRect.set(0, 0, width, minOf(height, lineHeightPx.toInt().coerceAtLeast(1)))
                 return
             }
-            val top = (verticalPaddingPx + startRow * lineHeightPx - controller.viewport.scrollY)
+            val top = (selectionOriginY + startRow * lineHeightPx - selectionScrollY)
                 .toInt().coerceIn(0, height)
-            val bottom = (verticalPaddingPx + (endRow + 1) * lineHeightPx - controller.viewport.scrollY)
+            val bottom = (selectionOriginY + (endRow + 1) * lineHeightPx - selectionScrollY)
                 .toInt().coerceIn(top, height)
             outRect.set(0, top, width, bottom)
         }
     }
 
     private fun populateSelectionMenu(menu: Menu) {
-        if (selection.hasSelection && activeLink == null) {
+        if (selection.hasSelection) {
             menu.add(Menu.NONE, android.R.id.copy, 0, R.string.terminal_action_copy)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            menu.add(Menu.NONE, android.R.id.selectAll, 1, R.string.terminal_action_select_all)
+            if (hasMultilineTextSelection()) {
+                menu.add(Menu.NONE, R.id.terminal_action_copy_single_line, 1, R.string.terminal_copy_single_line)
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+            menu.add(Menu.NONE, android.R.id.selectAll, 2, R.string.terminal_action_select_all)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         }
+        if (selection.hasSelection) menu.add(Menu.NONE, R.id.terminal_action_text_tools, 4, R.string.terminal_text_tools)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         activeLink?.let { link ->
             if (TerminalLinkPolicy.canOpen(link.uri)) {
                 menu.add(Menu.NONE, MENU_OPEN_LINK, 2, R.string.terminal_action_open_link)
                     .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
             }
-            menu.add(Menu.NONE, MENU_COPY_LINK, 3, R.string.terminal_action_copy_link)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         }
     }
 
-    private fun copySelectionToClipboard(): Boolean {
+    private fun hasMultilineTextSelection(): Boolean {
+        if (activeLink != null) return false // Link Copy already uses its complete resolved URI.
+        val source = selectionSource() ?: return false
+        val range = selection.normalizedRange(source) ?: return false
+        return range.start.line != range.end.line
+    }
+
+    private fun copySelectionToClipboard(singleLine: Boolean = false): Boolean {
+        if (activeLink != null) return requestActiveLinkAction(TerminalLinkAction.COPY)
         val controller = terminalController ?: return false
-        val text = selection.selectedText(controller) ?: return false
+        val original = selection.selectedText(selectionSource() ?: controller) ?: return false
+        val text = if (singleLine) terminalTextAsSingleLine(original) else original
         if (text.isEmpty()) return false
         if (
             !clipboardActionCallback.onCopyRequested(
@@ -1519,7 +1695,7 @@ class FastTerminalView @JvmOverloads constructor(
 
     private fun selectAllOutput(): Boolean {
         val controller = terminalController ?: return false
-        if (!selection.selectAll(controller)) return false
+        if (!selection.selectAll(selectionSource() ?: controller)) return false
         activeLink = null
         selectionActionMode?.invalidate()
         invalidate()
@@ -1559,6 +1735,8 @@ class FastTerminalView @JvmOverloads constructor(
     }
 
     private fun clearSelectionAndLinkActions() {
+        selectionSnapshot = null
+        selectionPane = null
         selection.clear()
         activeLink = null
         selectionActionMode?.finish()

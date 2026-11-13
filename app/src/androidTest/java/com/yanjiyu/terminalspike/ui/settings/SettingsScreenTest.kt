@@ -78,6 +78,31 @@ import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
     @Test
+    fun appearanceOffersAnOffByDefaultCodexInputStatusSwitch() {
+        val preferences = mutableStateOf(completeState().preferences.copy(codexInputStatusEnabled = false))
+        val title = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_codex_input_status)
+        composeRule.setContent {
+            MaterialTheme {
+                SettingsScreen(
+                    state = completeState().copy(preferences = preferences.value),
+                    initialCategory = SettingsCategory.APPEARANCE,
+                    knownHosts = emptyList(), moshExtension = MoshExtensionStatus.Absent.toUiState(),
+                    actions = noOpActions().copy(onCodexInputStatus = { enabled ->
+                        preferences.value = preferences.value.copy(codexInputStatusEnabled = enabled)
+                    }),
+                    onForgetKnownHost = { _, _ -> }, onRefreshMoshExtension = {}, onOpenRendererLab = {},
+                    onNavigateBack = {}, onOpenWorkspace = {}, onOpenTerminal = {}, onOpenSettings = {}, onDismissMessage = {},
+                )
+            }
+        }
+        assertFalse(preferences.value.codexInputStatusEnabled)
+        composeRule.onNodeWithText(title).performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(preferences.value.codexInputStatusEnabled) }
+        composeRule.onNodeWithText(title).performClick()
+        composeRule.runOnIdle { assertFalse(preferences.value.codexInputStatusEnabled) }
+    }
+
+    @Test
     fun visualInputEditorAddsReplacesRemovesAndSavesTheVisibleLayout() {
         var saved: String? = null
         composeRule.setContent {
@@ -233,6 +258,40 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(AppearanceSettingsTestTag).assertIsDisplayed()
+    }
+
+    @Test
+    fun searchOpensConcreteHerdrOptionAndScrollsToOffscreenPowerOption() {
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(412.dp, 700.dp)) {
+                    SettingsScreen(
+                        state = completeState(), initialCategory = null,
+                        knownHosts = emptyList(),
+                        moshExtension = MoshExtensionStatus.Absent.toUiState(),
+                        actions = noOpActions(),
+                        onForgetKnownHost = { _, _ -> }, onRefreshMoshExtension = {},
+                        onOpenRendererLab = {}, onNavigateBack = {}, onOpenWorkspace = {},
+                        onOpenTerminal = {}, onOpenSettings = {}, onDismissMessage = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("herdr")
+        composeRule.onNodeWithTag("settings-search-result-${R.string.settings_auto_attach_herdr}")
+            .assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("settings-search-target").assertIsDisplayed()
+        composeRule.onNodeWithText("Automatically enter a single herdr session").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        composeRule.onNodeWithTag("settings-search-results").assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsSearchTestTag).assertTextEquals("herdr")
+        composeRule.onNodeWithTag(SettingsSearchTestTag).performTextReplacement("keep screen")
+        composeRule.onNodeWithTag("settings-search-result-${R.string.settings_keep_screen_on}")
+            .assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("settings-search-target").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_keep_screen_on),
+        ).assertIsDisplayed()
     }
 
     @Test

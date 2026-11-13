@@ -216,6 +216,7 @@ fun ExtraKeysBar(
     bufferedInputSendEnabled: Boolean,
     bufferedInputDraftState: BufferedInputDraftState,
     inputContext: TerminalInputContext = TerminalInputContext(),
+    showCodexInputStatus: Boolean = false,
     onKey: (TerminalExtraKey) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
@@ -245,6 +246,7 @@ fun ExtraKeysBar(
         bufferedInputSendEnabled = bufferedInputSendEnabled,
         bufferedInputDraftState = bufferedInputDraftState,
         inputContext = inputContext,
+        showCodexInputStatus = showCodexInputStatus,
         onAction = { action ->
             when (action) {
                 is TerminalAccessoryAction.Key -> onKey(action.key)
@@ -290,6 +292,7 @@ fun TerminalAccessoryBar(
     bufferedInputSendEnabled: Boolean,
     bufferedInputDraftState: BufferedInputDraftState,
     inputContext: TerminalInputContext = TerminalInputContext(),
+    showCodexInputStatus: Boolean = false,
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
     onSendBufferedInput: (Long, String) -> Boolean,
@@ -398,6 +401,8 @@ fun TerminalAccessoryBar(
                                 inputTargetId = inputTargetId,
                                 sendEnabled = bufferedInputSendEnabled,
                                 draftState = bufferedInputDraftState,
+                                codexStatus = if (showCodexInputStatus && inputContext.agent && inputContext.agentId == "codex")
+                                    inputContext.codexStatus ?: com.yanjiyu.terminalspike.terminal.CodexInputStatus() else null,
                                 active = keyboardVisible && bufferedInputPageActive,
                                 multilineConfirmationEnabled = multilinePasteConfirmationEnabled,
                                 voiceInputEnabled = voiceInputEnabled,
@@ -739,6 +744,7 @@ private fun BufferedInputPage(
     inputTargetId: Long,
     sendEnabled: Boolean,
     draftState: BufferedInputDraftState,
+    codexStatus: com.yanjiyu.terminalspike.terminal.CodexInputStatus?,
     active: Boolean,
     multilineConfirmationEnabled: Boolean,
     voiceInputEnabled: Boolean,
@@ -1035,6 +1041,17 @@ private fun BufferedInputPage(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                            }
+                            codexStatus?.let { status ->
+                                val description = stringResource(R.string.codex_input_status_description,
+                                    status.contextRemaining?.toString() ?: "—",
+                                    status.weeklyRemaining?.toString() ?: "—")
+                                Text(status.compactText(),
+                                    modifier = Modifier.align(Alignment.End).padding(horizontal = 8.dp, vertical = 2.dp)
+                                        .testTag("codex_input_status").semantics { contentDescription = description },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }

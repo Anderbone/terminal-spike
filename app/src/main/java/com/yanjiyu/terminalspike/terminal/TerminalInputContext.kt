@@ -9,6 +9,7 @@ data class TerminalInputContext(
     /** Confirmed from the focused pane's live UI, never from launch defaults or a requested change. */
     val reasoningEffort: String? = null,
     val agentProcessId: Long? = null,
+    val codexStatus: CodexInputStatus? = null,
 )
 
 /** Confirmed fullscreen Pi pane bounds; navigation chrome must retain mouse routing. */

@@ -5,15 +5,35 @@ import android.view.MotionEvent
 
 internal class TerminalGestureHandler(
     private val actions: TerminalGestureActions,
+    private val shouldDeferSingleTap: (Float, Float) -> Boolean = { _, _ -> false },
 ) : GestureDetector.SimpleOnGestureListener() {
+    private var deferredTap = false
+
+    fun cancelPendingTap() { deferredTap = false }
+
     override fun onDown(event: MotionEvent): Boolean {
+        cancelPendingTap()
         actions.onTouchDown(event.x, event.y)
         return true
     }
 
-    override fun onSingleTapUp(event: MotionEvent): Boolean = actions.onTapConfirmed(event.x, event.y)
+    override fun onSingleTapUp(event: MotionEvent): Boolean {
+        // A Space click can replace the whole list. Keep it local until the
+        // detector decides whether this is a single tap or a close double tap.
+        deferredTap = shouldDeferSingleTap(event.x, event.y)
+        return if (deferredTap) true else actions.onTapConfirmed(event.x, event.y)
+    }
 
-    override fun onDoubleTap(event: MotionEvent): Boolean = actions.onDoubleTap(event.x, event.y)
+    override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
+        if (!deferredTap) return false
+        cancelPendingTap()
+        return actions.onTapConfirmed(event.x, event.y)
+    }
+
+    override fun onDoubleTap(event: MotionEvent): Boolean {
+        cancelPendingTap()
+        return actions.onDoubleTap(event.x, event.y)
+    }
 
     override fun onLongPress(event: MotionEvent) {
         actions.onLongPress(event.x, event.y)

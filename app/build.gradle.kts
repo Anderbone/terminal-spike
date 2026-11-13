@@ -715,6 +715,12 @@ extensions.configure<ApplicationExtension>("android") {
         buildConfig = true
     }
 
+    bundle {
+        abi { enableSplit = false }
+        density { enableSplit = false }
+        language { enableSplit = false }
+    }
+
     packaging.jniLibs.useLegacyPackaging = true
     sourceSets.named("main") {
         assets.srcDir(rootProject.file("local-arch-runtime/licenses"))

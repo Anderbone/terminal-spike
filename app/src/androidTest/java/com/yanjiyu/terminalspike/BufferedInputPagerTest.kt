@@ -52,6 +52,52 @@ import org.junit.Test
 
 class BufferedInputPagerTest {
     @Test
+    fun compactCodexPercentagesStayAtBottomRightWithoutReplacingTheDraft() {
+        val context = mutableStateOf(TerminalInputContext("herdr/thread-A", true, agentId = "codex",
+            codexStatus = com.yanjiyu.terminalspike.terminal.CodexInputStatus(72, 70)))
+        val enabled = mutableStateOf(false)
+        val draft = BufferedInputDraftState()
+        composeRule.setContent {
+            MaterialTheme {
+                ExtraKeysBar(keys = TerminalExtraKey.DEFAULT_ORDER, ctrlArmed = false, altArmed = false,
+                    customizationEnabled = true, inputTargetId = 11L, bufferedInputSendEnabled = true,
+                    bufferedInputDraftState = draft, inputContext = context.value, showCodexInputStatus = enabled.value,
+                    onKey = {}, onCustomize = {}, onSendBufferedInput = { _, _ -> true },
+                    onBufferedInputModeChanged = {}, onDirectInputMode = {})
+            }
+        }
+        composeRule.onNodeWithTag("buffered_terminal_input").performClick().performTextInput("keep this draft")
+        composeRule.onNodeWithTag("codex_input_status", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { enabled.value = true }
+        composeRule.onNodeWithText("Context 72% · Week 70%").assertIsDisplayed()
+        val field = composeRule.onNodeWithTag("buffered_terminal_input").fetchSemanticsNode().boundsInRoot
+        val status = composeRule.onNodeWithTag("codex_input_status", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(status.left > field.left && status.right <= field.right && status.bottom <= field.bottom)
+        assertTrue(status.center.y > field.center.y)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+            val file = java.io.File(instrumentation.targetContext.getExternalFilesDir(null), "codex-input-status.png")
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        composeRule.runOnIdle { enabled.value = false }
+        composeRule.onNodeWithTag("codex_input_status", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsFocused()
+        composeRule.runOnIdle {
+            enabled.value = true
+            context.value = TerminalInputContext("herdr/thread-B", true, agentId = "codex")
+        }
+        composeRule.onNodeWithText("Context — · Week —").assertIsDisplayed()
+        composeRule.onNodeWithTag("buffered_terminal_input").assertIsFocused()
+        composeRule.runOnIdle {
+            assertEquals("keep this draft", draft.value.text)
+            context.value = TerminalInputContext("herdr/shell")
+        }
+        composeRule.onNodeWithTag("codex_input_status", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals("keep this draft", draft.value.text) }
+    }
+
+    @Test
     fun customInputLayoutKeepsFieldBetweenKeysAndDispatchesWithoutLosingDraft() {
         val draft = BufferedInputDraftState(initialText = "keep draft")
         val pressed = mutableListOf<TerminalExtraKey>()

@@ -9,6 +9,13 @@ option optimize_for = LITE_RUNTIME;
 message AppSettings {
   uint32 schema_revision = 1;
 
+  // Device-local startup preference; omitted from portable backups.
+  // Absent on older installs: enter the only running session automatically.
+  optional bool auto_attach_single_herdr_session = 34;
+
+  // Device-local optional display. Existing and fresh installs default to off.
+  bool codex_input_status_enabled = 35;
+
   ThemeMode theme_mode = 2;
   bool dynamic_color_enabled = 3;
   string accent_preset = 4;

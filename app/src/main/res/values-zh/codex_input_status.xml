@@ -1,0 +1,5 @@
+<resources>
+    <string name="codex_input_status_description">最近记录的剩余百分比：上下文 %1$s；每周额度 %2$s。</string>
+    <string name="settings_codex_input_status">输入框显示 Codex 用量</string>
+    <string name="settings_codex_input_status_summary">在输入框右下角显示 Context 和 Week 的剩余百分比。</string>
+</resources>

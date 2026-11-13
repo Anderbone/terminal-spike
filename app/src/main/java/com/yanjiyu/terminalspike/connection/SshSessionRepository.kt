@@ -2065,6 +2065,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
     val reconnectTerminalType = terminalType
     val reconnectStartupCommand = startupCommand
     val reconnectTmuxSelector = tmuxSessionSelectorEnabled
+    val reconnectAutoAttachHerdr = autoAttachSingleHerdrSession
     val reconnectPortForwards = portForwards
     return {
         SshConnectionConfig(
@@ -2076,6 +2077,7 @@ private fun SshConnectionConfig.reconnectConfigFactoryOrNull(): (() -> SshConnec
             terminalType = reconnectTerminalType,
             startupCommand = reconnectStartupCommand,
             tmuxSessionSelectorEnabled = reconnectTmuxSelector,
+            autoAttachSingleHerdrSession = reconnectAutoAttachHerdr,
             portForwards = reconnectPortForwards,
         )
     }
@@ -2433,7 +2435,8 @@ private class DefaultSshSessionTerminal(
 
     private fun refreshInputContext(connection: Connection) {
         val generationAtCapture = controller.herdrHistoryGeneration
-        val context = runCatching { connection.captureInputContext() }.getOrDefault(TerminalInputContext())
+        val context = runCatching { connection.captureInputContext(controller.rendererProfile.codexInputStatusEnabled) }
+            .getOrDefault(TerminalInputContext())
         synchronized(tmuxHistoryLock) {
             if (!stopped && attachedConnection === connection &&
                 controller.herdrHistoryGeneration == generationAtCapture

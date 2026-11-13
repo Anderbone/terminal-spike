@@ -103,10 +103,10 @@ internal class MoshBootstrapResult(
         return captureHerdrAgentStates(runner, choice)
     }
 
-    fun captureInputContext(): TerminalInputContext {
+    fun captureInputContext(includeCodexStatus: Boolean = false): TerminalInputContext {
         val choice = herdrChoice ?: return tmuxTasks.inputContext(synchronized(this) { discoveredTmuxClient?.paneId })
         val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return TerminalInputContext()
-        return captureHerdrInputContext(runner, choice)
+        return captureHerdrInputContext(runner, choice, includeCodexStatus)
     }
 
     fun recentHerdrProjects(): List<String>? {
@@ -386,13 +386,13 @@ internal class MoshBootstrapExecutor(
             execSession = session
             if (!registerResourceIfMissing(operation, session)) throw cancelledFailure()
             ensureActive(operation)
-            val startupChoice = if (request.ssh.tmuxSessionSelectorEnabled) {
+            val startupChoice = if (request.ssh.tmuxSessionSelectorEnabled || request.ssh.autoAttachSingleHerdrSession) {
                 val runner = TmuxCommandRunner { tmuxCommand ->
                     readBoundedExecOutput(session.openExec(tmuxCommand), TMUX_MOSH_EXEC_LIMITS).use {
                         TmuxExecOutput(it.stdout.copyOf(), it.exitStatus)
                     }
                 }
-                TmuxSessionSelector(runner) { prompt ->
+                TmuxSessionSelector(runner, request.ssh.autoAttachSingleHerdrSession) { prompt ->
                     publishIfActive(
                         operation,
                         MoshBootstrapState.AwaitingApproval(prompt),

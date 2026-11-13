@@ -25,6 +25,8 @@ data class TerminalRendererProfile(
     val detectPlainTextUrls: Boolean = true,
     val osc8HyperlinksEnabled: Boolean = true,
     val copyOnSelection: Boolean = false,
+    /** Global input-display preference, also gates background status sampling. */
+    val codexInputStatusEnabled: Boolean = false,
 ) {
     init {
         require(fontId.isNotBlank())

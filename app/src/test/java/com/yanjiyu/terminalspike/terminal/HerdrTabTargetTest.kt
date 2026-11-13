@@ -137,6 +137,76 @@ class HerdrTabTargetTest {
         }
     }
 
+    @Test fun mobileCompactNewWorkspaceFollowsPositionWithinEverySwitcherLayout() {
+        for (bottom in listOf(false, true)) for (left in listOf(false, true)) {
+            val top = if (bottom) 8 else 0
+            val rule = if (bottom) 7 else 2
+            val body = if (bottom) 0..6 else 3..9
+            for (actionRow in body) for (indent in listOf(0, 2, 18, 39)) {
+                val screen = MutableList(10) { TerminalLine.plain("") }
+                screen[top] = TerminalLine.plain(if (left) " close   │ switch" else " switch                       │ close")
+                screen[top + 1] = TerminalLine.plain(if (left) "    ×    │" else "                              │ ×")
+                screen[rule] = TerminalLine.plain("─".repeat(40))
+                screen[actionRow] = TerminalLine.plain(" ".repeat(indent) + "+")
+                for (column in 0 until 40) {
+                    org.junit.Assert.assertEquals("row=$actionRow indent=$indent column=$column",
+                        column == indent, HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, column, actionRow))
+                }
+                screen[top] = TerminalLine.plain("shell output")
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, indent, actionRow))
+            }
+        }
+    }
+
+    @Test fun mobilePickerRecognizesActualScrollThumbWithConcealedButtonDividers() {
+        for (bottom in listOf(false, true)) for (left in listOf(false, true)) {
+            for (action in listOf("+", "+ new workspace")) for (scrollbar in listOf("▌", "│", " ")) {
+                val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(40, 14)
+                val top = if (bottom) 12 else 1
+                val rule = if (bottom) 11 else 3
+                val output = buildString {
+                    append("\u001B[H1  2  3 \u001B[38;5;245m + \u001B[0m")
+                    append("\u001B[${top + 1};1H")
+                    append(if (left) "  close  \u001B[8m│\u001B[0m switch" else " switch                       \u001B[8m│\u001B[0m  close")
+                    append("\u001B[${top + 2};1H")
+                    append(if (left) "     ×   \u001B[8m│\u001B[0m" else "                              \u001B[8m│\u001B[0m     ×")
+                    append("\u001B[${rule + 1};1H" + "─".repeat(40))
+                    append("\u001B[6;1H${scrollbar}spaces\u001B[7;1H$scrollbar$action")
+                }
+                val screen = engine.accept(output.toByteArray()).screen
+                assertTrue("Actual Herdr scrollbar=$scrollbar action=$action bottom=$bottom left=$left",
+                    HerdrNavigationChrome.isNewSpaceCell(screen, 40, 14, 1, 6))
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 14, 0, 6))
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 14, 9, 0))
+            }
+        }
+    }
+
+    @Test fun groupedCompactNewWorkspaceFollowsPositionAndExcludesTabPlusAndPaneOutput() {
+        for (bottomTabs in listOf(false, true)) for (actionRow in 0..7) {
+            for (indent in listOf(0, 2, 12, 24)) for (scrollbar in listOf("", "┃", "│", "▌")) {
+                val screen = MutableList(8) { TerminalLine.plain("pane output") }
+                screen[actionRow] = TerminalLine.plain(scrollbar + " ".repeat(indent) + "+")
+                screen[0] = TerminalLine.styled(screen[0].runs +
+                    TerminalRun("«", startColumn = 26, columnWidth = 1))
+                val tabRow = if (bottomTabs) 7 else 0
+                screen[tabRow] = TerminalLine.styled(screen[tabRow].runs + listOf(
+                    TerminalRun(" tab ", startColumn = 27, columnWidth = 5),
+                    TerminalRun(" + ", startColumn = 33, columnWidth = 3),
+                ))
+                val actionColumn = scrollbar.length + indent
+                assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn, actionRow))
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn + 1, actionRow))
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, 34, tabRow))
+                val paneRow = if (actionRow == 3) 4 else 3
+                screen[paneRow] = TerminalLine.plain(" ".repeat(40) + "+")
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, 40, paneRow))
+                screen[actionRow] = TerminalLine.plain("  + new tab")
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, 2, actionRow))
+            }
+        }
+    }
+
     @Test fun groupedSidebarNewWorkspaceRequiresVerifiedChromeAndExcludesOtherTargets() {
         for (bottomTabs in listOf(false, true)) {
             for (header in listOf("+ new workspace", "workspace", "agents · active")) {
@@ -250,6 +320,60 @@ class HerdrTabTargetTest {
         }
     }
 
+    @Test fun groupedAndMobileSpaceTargetsFollowStyledWorkspaceHeadingsOnly() {
+        for (mobile in listOf(false, true)) for (bottom in listOf(false, true)) {
+            for (scrollbar in listOf(" ", "│", "▌")) {
+                val columns = if (mobile) 40 else 70
+                val sidebarEnd = if (mobile) columns else 30
+                val rows = 20
+                val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(columns, rows)
+                val output = buildString {
+                    append("\u001B[?1000;1006h\u001B[2J\u001B[H")
+                    if (mobile) {
+                        append("1  2 \u001B[38;5;245m + \u001B[0m")
+                        val top = if (bottom) rows - 2 else 1
+                        val rule = if (bottom) rows - 3 else 3
+                        append("\u001B[${top + 1};1H  close  \u001B[8m│\u001B[0m switch")
+                        append("\u001B[${top + 2};1H     ×   \u001B[8m│\u001B[0m")
+                        append("\u001B[${rule + 1};1H" + "─".repeat(columns))
+                    } else {
+                        append("\u001B[1;31H\u001B[38;5;244m«\u001B[0m")
+                        append("\u001B[${if (bottom) rows else 1};32Htab \u001B[38;5;245m + \u001B[0m")
+                    }
+                    fun line(row: Int, text: String) {
+                        append("\u001B[${row + 1};1H$scrollbar$text\u001B[0m")
+                    }
+                    line(4, "\u001B[1;4musage · used")
+                    line(5, "Codex 32%")
+                    line(6, "\u001B[1;4mspaces")
+                    line(7, "\u001B[1m+")
+                    line(8, "\u001B[1mterminal-spike\u001B[0m ↓5 ~45 ?32")
+                    line(9, "○ 1 double tap regression")
+                    line(10, "\u001B[1m + new tab")
+                    line(11, "\u001B[1m└─ worktree/分支")
+                    line(12, "● 1 other tab")
+                    line(13, "\u001B[1;4mmenu")
+                    line(14, "settings")
+                    line(15, "  ○ \u001B[1magent name")
+                    line(16, "\u001B[1;4mother machine")
+                }
+                val screen = engine.accept(output.toByteArray()).screen
+                for (row in listOf(8, 11)) {
+                    for (column in listOf(1, 6, sidebarEnd - 1)) {
+                        assertTrue("mobile=$mobile bottom=$bottom scrollbar=$scrollbar row=$row column=$column",
+                            HerdrNavigationChrome.isSpaceCell(screen, columns, rows, column, row))
+                    }
+                    assertFalse(HerdrNavigationChrome.isSpaceCell(screen, columns, rows, 0, row))
+                    if (!mobile) assertFalse(HerdrNavigationChrome.isSpaceCell(screen, columns, rows, 40, row))
+                }
+                for (row in listOf(0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19)) {
+                    assertFalse("Non-workspace row=$row mobile=$mobile bottom=$bottom",
+                        HerdrNavigationChrome.isSpaceCell(screen, columns, rows, 2, row))
+                }
+            }
+        }
+    }
+
     @Test fun newSpacePickerConsumesLongPressWithoutSendingMouseOrShellInput() {
         val frames = ArrayDeque<android.view.Choreographer.FrameCallback>()
         val scheduler = object : TerminalFrameScheduler {
@@ -306,9 +430,54 @@ class HerdrTabTargetTest {
         assertTrue("Grouped sidebar picker must not send a remote click", sent.isEmpty())
         controller.completeHerdrProjectSelection(connection)
         assertTrue("Desktop sidebar stays expanded", sent.isEmpty())
+        for ((compact, column, row) in listOf(
+            Triple(grouped.replace("+ new workspace", "+"), 2, 0),
+            Triple(mobile.replace("  + new workspace", "                 +"), 17, 4),
+        )) {
+            controller.updateTerminalFrame(engine.accept(compact.toByteArray()))
+            while (frames.isNotEmpty()) frames.removeFirst().doFrame(1L)
+            assertTrue(controller.showHerdrProjectPickerAt(column, row))
+            org.junit.Assert.assertSame(connection, controller.herdrProjectPicker.value)
+            assertTrue("Compact New Workspace must open locally without remote input", sent.isEmpty())
+            controller.dismissHerdrProjectPicker()
+        }
         controller.resetInputSink()
         org.junit.Assert.assertNull(controller.herdrProjectPicker.value)
         assertFalse(controller.showHerdrProjectPickerAt(2, 3))
+    }
+
+    @Test fun closeGroupedSpaceUsesTheClickedWorkspaceMenuAndKeepsTabOnlyActionsSeparate() {
+        for (mobile in listOf(false, true)) {
+            val frames = ArrayDeque<android.view.Choreographer.FrameCallback>()
+            val controller = TerminalController(TerminalBuffer(), object : TerminalFrameScheduler {
+                override fun postFrame(callback: android.view.Choreographer.FrameCallback) { frames.addLast(callback) }
+            })
+            val sent = mutableListOf<String>()
+            controller.setInputSink(object : TerminalInputSink {
+                override fun send(bytes: ByteArray) { sent += bytes.toString(Charsets.US_ASCII) }
+            }, onResize = { _, _ -> })
+            controller.reportTerminalSize(42, 10)
+            controller.herdrSessionActive = true
+            val chrome = if (mobile) {
+                "\u001B[H1 \u001B[38;5;245m + \u001B[0m" +
+                    "\u001B[8;1H" + "─".repeat(42) +
+                    "\u001B[9;1H  close  │ switch\u001B[10;1H     ×   │"
+            } else {
+                "\u001B[1;26H\u001B[38;5;244m«\u001B[0m\u001B[1;27Htab \u001B[38;5;245m + \u001B[0m"
+            }
+            val output = "\u001B[?1000;1006h" + chrome +
+                "\u001B[2;1H▌\u001B[1;4mspaces\u001B[0m\u001B[3;1H▌\u001B[1m+\u001B[0m" +
+                "\u001B[4;1H▌\u001B[1mclicked workspace\u001B[0m\u001B[5;1H▌○ 1 existing tab" +
+                "\u001B[6;1H▌\u001B[1m + new tab\u001B[0m"
+            val engine = com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine(42, 10)
+            controller.updateTerminalFrame(engine.accept(output.toByteArray()))
+            while (frames.isNotEmpty()) frames.removeFirst().doFrame(1L)
+            assertFalse(controller.closeHerdrNavigationAt(5, 3, tabsOnly = true))
+            for (row in listOf(1, 2, 4, 5)) assertFalse(controller.closeHerdrNavigationAt(5, row))
+            assertTrue(sent.isEmpty())
+            assertTrue(controller.closeHerdrNavigationAt(5, 3))
+            org.junit.Assert.assertEquals(listOf("\u001B[<2;6;4M\u001B[<2;6;4m\u001B[B\r"), sent)
+        }
     }
 
     @Test fun closeUsesTheClickedTabsMenuAndRejectsPaneAndSidebar() {

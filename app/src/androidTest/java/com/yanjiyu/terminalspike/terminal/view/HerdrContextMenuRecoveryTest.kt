@@ -319,6 +319,168 @@ class HerdrContextMenuRecoveryTest {
         }
     }
 
+    @Test fun recentProjectsLongPressHandlesRealMobileScrollThumbInBothInputModes() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val connection = FailingSideChannel()
+            lateinit var view: FastTerminalView
+            try {
+                scenario.onActivity { activity ->
+                    terminal.attach(connection)
+                    view = FastTerminalView(activity)
+                    activity.setContentView(view)
+                    view.attachController(controller)
+                }
+                await { connection.resizeReports.get() > 0 && controller.terminalColumns > 30 && controller.terminalRows > 12 }
+                for (direct in listOf(true, false)) for (action in listOf("+", "+ new workspace")) {
+                    scenario.onActivity {
+                        view.setDirectInputEnabled(direct)
+                        val cols = controller.terminalColumns
+                        val rows = controller.terminalRows
+                        // Screenshot layout: top tabs, usage above Spaces, a half-block
+                        // scrollbar thumb and a bottom-left button with hidden dividers.
+                        val output = "\u001B[?1000;1006h\u001B[2J\u001B[H1  2  3 \u001B[38;5;245m + \u001B[0m" +
+                            "\u001B[2;1H▌usage · used\u001B[5;1H▌spaces\u001B[6;1H▌$action" +
+                            "\u001B[${rows - 2};1H" + "─".repeat(cols) +
+                            "\u001B[${rows - 1};1H\u001B[44m  close  \u001B[8m│\u001B[0m switch" +
+                            "\u001B[${rows};1H\u001B[44m     ×   \u001B[8m│\u001B[0m"
+                        terminal.accept(output.toByteArray(), {})
+                    }
+                    await { controller.isMouseTrackingEnabled() && controller.isHerdrContextMenuCell(1, 5) }
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    connection.sent.clear()
+                    val now = SystemClock.uptimeMillis()
+                    fun event(actionType: Int) = scenario.onActivity {
+                        val density = view.resources.displayMetrics.density
+                        val motion = MotionEvent.obtain(now, SystemClock.uptimeMillis(), actionType,
+                            8f * density + 1.5f * view.terminalCellWidthPx,
+                            5f * density + 5.5f * controller.viewport.lineHeightPx, 0)
+                        try { view.onTouchEvent(motion) } finally { motion.recycle() }
+                    }
+                    event(MotionEvent.ACTION_DOWN)
+                    SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 100L)
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    event(MotionEvent.ACTION_UP)
+                    scenario.onActivity {
+                        assertSame("Real long press must open the local picker: direct=$direct action=$action",
+                            connection, controller.herdrProjectPicker.value)
+                        assertTrue("No remote click, wheel or shell input", connection.sent.isEmpty())
+                        assertNull(view.selectedTextForTesting())
+                        controller.dismissHerdrProjectPicker()
+                    }
+                }
+            } finally {
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
+    @Test fun groupedAndMobileSpaceDoubleTapClosesOnlyTheClickedWorkspaceInBothInputModes() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val terminal = DefaultSshSessionTerminalFactory.create()
+            val controller = requireNotNull(terminal.controller)
+            val connection = FailingSideChannel()
+            lateinit var view: FastTerminalView
+            try {
+                scenario.onActivity { activity ->
+                    terminal.attach(connection)
+                    view = FastTerminalView(activity)
+                    activity.setContentView(view)
+                    view.attachController(controller)
+                }
+                await { connection.resizeReports.get() > 0 && controller.terminalColumns > 30 && controller.terminalRows > 12 }
+                for (mobile in listOf(true, false)) for (direct in listOf(true, false)) {
+                    var switcherFrame = ""
+                    scenario.onActivity {
+                        view.setDirectInputEnabled(direct)
+                        val cols = controller.terminalColumns
+                        val rows = controller.terminalRows
+                        val chrome = if (mobile) {
+                            "\u001B[H1 \u001B[38;5;245m + \u001B[0m" +
+                                "\u001B[${rows - 2};1H" + "─".repeat(cols) +
+                                "\u001B[${rows - 1};1H  close  \u001B[8m│\u001B[0m switch" +
+                                "\u001B[${rows};1H     ×   \u001B[8m│\u001B[0m"
+                        } else {
+                            "\u001B[1;${cols / 2 + 1}H\u001B[38;5;244m«\u001B[0m\u001B[1;${cols / 2 + 2}Htab \u001B[38;5;245m + \u001B[0m"
+                        }
+                        switcherFrame = "\u001B[?1000;1006h\u001B[2J" + chrome +
+                            "\u001B[4;1H▌\u001B[1;4mspaces\u001B[0m\u001B[5;1H▌\u001B[1m+\u001B[0m" +
+                            "\u001B[6;1H▌\u001B[1mclicked space\u001B[0m\u001B[7;1H▌○ 1 task"
+                        // A real first left-click opens the Space and removes the list.
+                        // Reproduce that transition rather than freezing a fake screen.
+                        connection.onSend = { bytes ->
+                            if (bytes.startsWith("\u001B[<0;")) {
+                                terminal.accept("\u001B[2J\u001B[Hopened workspace pane".toByteArray(), {})
+                            }
+                        }
+                        terminal.accept(switcherFrame.toByteArray(), {})
+                    }
+                    await { controller.isMouseTrackingEnabled() && controller.isHerdrContextMenuCell(2, 5) }
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    connection.sent.clear()
+                    fun tap(row: Int = 5) {
+                        val now = SystemClock.uptimeMillis()
+                        fun event(action: Int) = scenario.onActivity {
+                            val density = view.resources.displayMetrics.density
+                            val motion = MotionEvent.obtain(now, SystemClock.uptimeMillis(), action,
+                                8f * density + 2.5f * view.terminalCellWidthPx,
+                                5f * density + (row + 0.5f) * controller.viewport.lineHeightPx, 0)
+                            try { view.onTouchEvent(motion) } finally { motion.recycle() }
+                        }
+                        event(MotionEvent.ACTION_DOWN)
+                        SystemClock.sleep(45L)
+                        event(MotionEvent.ACTION_UP)
+                    }
+                    tap()
+                    assertTrue("First Space tap must wait so it cannot open and remove the list", connection.sent.isEmpty())
+                    SystemClock.sleep(60L)
+                    tap()
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 50L)
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    assertEquals("Double tap closes without first opening the Space: mobile=$mobile direct=$direct",
+                        listOf("\u001B[<2;3;6M\u001B[<2;3;6m\u001B[B\r"), connection.sent)
+                    scenario.onActivity { assertNull(view.selectedTextForTesting()) }
+
+                    scenario.onActivity {
+                        terminal.accept(switcherFrame.toByteArray(), {})
+                        connection.sent.clear()
+                    }
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    tap()
+                    assertTrue("A single Space tap also waits for double-tap confirmation", connection.sent.isEmpty())
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 100L)
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    assertEquals("Confirmed single tap opens exactly once",
+                        listOf("\u001B[<0;3;6M\u001B[<0;3;6m"), connection.sent)
+
+                    scenario.onActivity {
+                        terminal.accept(switcherFrame.toByteArray(), {})
+                        connection.sent.clear()
+                    }
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    tap(row = 6)
+                    assertEquals("Task rows retain immediate single taps",
+                        listOf("\u001B[<0;3;7M\u001B[<0;3;7m"), connection.sent)
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 50L)
+
+                    scenario.onActivity {
+                        terminal.accept(switcherFrame.toByteArray(), {})
+                        connection.sent.clear()
+                    }
+                    await { controller.isHerdrContextMenuCell(2, 5) }
+                    tap()
+                    scenario.onActivity { activity -> activity.setContentView(FrameLayout(activity)) }
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 100L)
+                    assertTrue("Leaving the terminal discards a pending Space tap", connection.sent.isEmpty())
+                    scenario.onActivity { activity -> activity.setContentView(view) }
+                }
+            } finally {
+                scenario.onActivity { terminal.stopAndClear() }
+            }
+        }
+    }
+
     private fun assertMenu(
         scenario: ActivityScenario<MainActivity>,
         view: FastTerminalView,
@@ -357,6 +519,7 @@ class HerdrContextMenuRecoveryTest {
         val completedReads = AtomicInteger()
         val resizeReports = AtomicInteger()
         val sent = CopyOnWriteArrayList<String>()
+        var onSend: ((String) -> Unit)? = null
         @Volatile override var isHerdrSession = true
         override fun captureHerdrSidebarLayout(): HerdrSidebarLayout? = when (failure) {
             1 -> null
@@ -367,7 +530,11 @@ class HerdrContextMenuRecoveryTest {
             completedReads.incrementAndGet()
             return null
         }
-        override fun send(bytes: ByteArray) { sent += bytes.toString(Charsets.US_ASCII) }
+        override fun send(bytes: ByteArray) {
+            val text = bytes.toString(Charsets.US_ASCII)
+            sent += text
+            onSend?.invoke(text)
+        }
         override fun trySend(bytes: ByteArray): Boolean { send(bytes); return true }
         override suspend fun connect(columns: Int, rows: Int, onBytes: (ByteArray) -> Unit, onState: (ConnectionState) -> Unit) = Unit
         override fun resize(columns: Int, rows: Int) { resizeReports.incrementAndGet() }

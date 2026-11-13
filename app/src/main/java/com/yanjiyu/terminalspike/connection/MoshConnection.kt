@@ -79,9 +79,11 @@ internal class MoshConnection(
         return synchronized(lock) { captured.takeIf { activeAttempt === attempt && attempt.running } }
     }
 
-    override fun captureInputContext(): TerminalInputContext {
+    override fun captureInputContext(): TerminalInputContext = captureInputContext(false)
+
+    override fun captureInputContext(includeCodexStatus: Boolean): TerminalInputContext {
         val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return TerminalInputContext()
-        val captured = attempt.sshSideChannel?.captureInputContext() ?: TerminalInputContext()
+        val captured = attempt.sshSideChannel?.captureInputContext(includeCodexStatus) ?: TerminalInputContext()
         return synchronized(lock) {
             captured.takeIf { activeAttempt === attempt && attempt.running } ?: TerminalInputContext()
         }

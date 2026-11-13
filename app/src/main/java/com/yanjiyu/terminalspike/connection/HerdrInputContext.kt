@@ -13,6 +13,7 @@ import kotlinx.serialization.json.longOrNull
 internal fun captureHerdrInputContext(
     runner: TmuxCommandRunner,
     choice: HerdrStartupChoice,
+    includeCodexStatus: Boolean = false,
 ): TerminalInputContext = runCatching {
     fun result(vararg arguments: String): JsonObject {
         val command = (listOf(choice.executable, "--session", choice.sessionName, "pane") + arguments)
@@ -68,11 +69,22 @@ internal fun captureHerdrInputContext(
             com.yanjiyu.terminalspike.terminal.codexEffortFromLiveFooter(output.stdout.toString(Charsets.UTF_8))
         } else null
     }.getOrNull() else null
+    val agentSession = pane["agent_session"] as? JsonObject
+    val thread = agentSession?.takeIf {
+        includeCodexStatus && agentId == "codex" && agentForeground && it.string("agent") == "codex" && it.string("kind") == "id"
+    }?.string("value")
+    val codexStatus = thread?.let { CodexInputStatusReader.capture(runner, it) }
+    if (thread != null) {
+        val currentPane = result("get", paneId).getValue("pane") as JsonObject
+        require(currentPane.string("terminal_id") == pane.string("terminal_id") &&
+            currentPane["agent_session"] == agentSession)
+    }
     require(layout() == initialLayout)
     TerminalInputContext(
         "herdr/${choice.sessionName}/$paneId/${pane.string("terminal_id")}", agentForeground, piScrollPane,
         agentId = agentId, reasoningEffort = effort,
         agentProcessId = (process.getValue("foreground_processes") as JsonArray).mapNotNull { it as? JsonObject }
             .firstOrNull { it.string("name") == agentId }?.get("pid")?.let { (it as? JsonPrimitive)?.longOrNull },
+        codexStatus = codexStatus,
     )
 }.getOrDefault(TerminalInputContext())

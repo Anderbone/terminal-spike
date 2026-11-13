@@ -5,11 +5,16 @@
 An open-source Android terminal with SSH, built-in Mosh and tabs for your remote sessions.
 No ads, analytics or subscriptions. Android 8.0+.
 
+Optimized for Galaxy Fold and other foldable phones, with full support for regular phone screen sizes.
+
 **[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/latest/download/terminal-spike-latest.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases/latest) · [Website](https://yanjiyu.com/terminal-spike/) · [Discord](https://discord.gg/yMPzeCeWMT)
 
 <p>
+  <img src="docs/images/fold-herdr-workspace.jpg" width="760" alt="Terminal Spike on a Galaxy Fold, showing Herdr project navigation beside a Codex terminal and touch shortcut keys.">
+</p>
+
+<p>
   <img src="store-assets/google-play/screenshots/phone/01-mosh-workspaces.png" width="240" alt="User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.">
-  <img src="store-assets/google-play/screenshots/phone/02-workspace.png" width="240" alt="A connected Atlas SSH terminal with real project output and compact session tabs.">
   <img src="store-assets/google-play/screenshots/phone/03-code-review.png" width="240" alt="Native project reader showing an actual Git diff of a small JavaScript change.">
   <img src="store-assets/google-play/screenshots/phone/04-code-server.png" width="240" alt="A real code-server editor open inside Terminal Spike with an Atlas project file.">
 </p>

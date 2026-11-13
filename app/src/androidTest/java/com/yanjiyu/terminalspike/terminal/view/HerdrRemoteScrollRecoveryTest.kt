@@ -264,6 +264,33 @@ class HerdrRemoteScrollRecoveryTest {
                     }
                     openedLinks.clear()
                 }
+                if (historyLinks) {
+                    val downTime = SystemClock.uptimeMillis()
+                    val x = 8f * view.resources.displayMetrics.density + view.terminalCellWidthPx
+                    val y = 6f * controller.viewport.lineHeightPx
+                    scenario.onActivity {
+                        val event = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+                        try { view.onTouchEvent(event) } finally { event.recycle() }
+                    }
+                    SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 100)
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    scenario.onActivity {
+                        assertNull("History long press must select without a dialog", view.textActionsDialogForTesting())
+                        assertEquals("note", view.selectedTextForTesting())
+                        assertTrue(view.performAccessibilityAction(com.yanjiyu.terminalspike.R.id.terminal_action_text_tools, null))
+                        val dialog = requireNotNull(view.textActionsDialogForTesting())
+                        assertTrue("History must offer the optional tools", dialog.isShowing)
+                        val editor = dialog.findViewById<android.widget.EditText>(com.yanjiyu.terminalspike.R.id.terminal_extracted_text)
+                        assertTrue(editor.text.toString().contains("note"))
+                        assertTrue("Holding a history link must not open it", openedLinks.isEmpty())
+                        assertTrue("Holding history must not send mouse input", connection.sent.isEmpty())
+                        dialog.dismiss()
+                        val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0)
+                        try { view.onTouchEvent(event) } finally { event.recycle() }
+                        assertTrue(controller.herdrHistoryReading)
+                        assertTrue(controller.herdrHistoryPinned)
+                    }
+                }
                 for (directInput in listOf(true, false)) scenario.onActivity {
                     view.setDirectInputEnabled(directInput)
                     val now = SystemClock.uptimeMillis()

@@ -43,14 +43,12 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.yanjiyu.terminalspike.ui.theme.AppDialog
@@ -59,7 +57,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
+import com.yanjiyu.terminalspike.ui.theme.AppNoticeHost
+import com.yanjiyu.terminalspike.ui.theme.upperNoticePlacement
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -1713,6 +1712,7 @@ fun TerminalSpikeScreen(
                                     bufferedInputSendEnabled = state.canSendTerminalInput,
                                     bufferedInputDraftState = viewModel.bufferedInputDraftState,
                                     inputContext = inputContext,
+                                    showCodexInputStatus = state.codexInputStatusEnabled,
                                     onAction = { action ->
                                         if (action is TerminalAccessoryAction.Local) {
                                             when (action.action) {
@@ -2079,24 +2079,11 @@ fun TerminalSpikeScreen(
             )
         }
 
-        val snackbarBottomPadding = when {
-            destination == AppRoute.TERMINAL_DETAIL && terminalSurfaceVisible -> 112.dp
-            destination == AppRoute.TERMINAL_DETAIL -> 12.dp
-            else -> 80.dp
-        }
         NoticeSnackbarHost(
             notice = state.notice,
             hostState = snackbarHostState,
             onNoticePresented = viewModel::consumeNotice,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.union(WindowInsets.ime).only(
-                        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-                    ),
-                )
-                .padding(horizontal = 12.dp)
-                .padding(bottom = snackbarBottomPadding),
+            modifier = Modifier.align(Alignment.TopCenter).upperNoticePlacement(),
         )
 
     }
@@ -2454,12 +2441,7 @@ internal fun NoticeSnackbarHost(
             currentOnNoticePresented(presentedNotice)
         }
     }
-    // Material's default Snackbar uses the neutral inverse-surface palette. Error, warning,
-    // and success notices are not all misrepresented as terminal connection failures.
-    SnackbarHost(
-        hostState = hostState,
-        modifier = modifier,
-    )
+    AppNoticeHost(hostState = hostState, modifier = modifier)
 }
 
 @Composable

@@ -892,3 +892,55 @@ and injects touchscreen events through `Instrumentation.sendPointerSync`;
 direct `container.dispatchTouchEvent` alone misses this failure. Debug builds log
 at most a start/end `HerdrNavigationSwipe` pair per gesture, with axis distances,
 classification and click acceptance; no terminal text or connection details.
+
+## 2026-11-11: native selection first, optional Text tools
+
+Long-pressing pane output selects a word or complete detected link with the native
+floating Copy/Select all toolbar and Canvas selection handles. The toolbar adds
+Text tools; opening the larger workspace requires that explicit action. Navigation
+chrome retains its remote context menus. A history long-press observer receives
+DOWN even when the native HERDR reader consumes the stream; it dispatches no
+remote clicks or wheels.
+
+While selecting, a bounded immutable reader retains up to 4,096 rows around the
+hit and its own viewport. The selected pane renders these rows until selection is
+closed, so incoming TUI redraws cannot invalidate handles or change copied text.
+Selection drags scroll this local reader; they cannot emit remote mouse input.
+Normal parsing and transport continue. Dismissing selection restores the normal
+live/history presentation. Copy on a detected link uses the complete resolved URI,
+including links painted across explicit TUI line breaks.
+
+Text tools uses a 13sp editor with most screen space reserved for text and only
+Copy/Close visible at the bottom. Edit, whole-line selection, explicit newline
+removal, restore and link actions live in the overflow menu. It captures nearby
+context on demand (65,536-character limit); soft wraps are joined, actual newlines
+stay intact unless the user explicitly removes them. Changing tabs or detaching
+the terminal dismisses the workspace. No terminal rows become Compose state,
+no example command is executed, and no dependency was added.
+
+`FastTerminalSelectionInteractionTest` checks that long press does not open a
+dialog, selection survives redraw, Text tools is explicitly invoked, text occupies
+over half the screen with the smaller font, and edited clipboard text stays exact.
+`HerdrRemoteScrollRecoveryTest` checks the same optional entry from pinned history
+while retaining its zero-wheel, link, drag/fling and reader-anchor assertions.
+These controlled regressions do not establish actual Codex/tmux acceptance.
+Run `bash scripts/demo-text-actions.sh` to print manual fixtures safely.
+
+### Explicit one-line copy for TUI-painted wrapping
+
+A TUI can output a long token as hard-newline rows with a repeated indentation
+prefix. Those rows carry no reliable VT soft-wrap marker. Normal Copy therefore
+continues to preserve real newlines and indentation, including multiline commands.
+For a selection spanning multiple rows, the native toolbar additionally offers
+Copy as one line. This explicit action removes line breaks and ASCII spaces/tabs
+at each row's edges; spaces inside a row and Unicode content remain intact.
+Detected links retain their existing complete-URI Copy behavior without this
+extra toolbar action. Text tools also provides one-line copy in its overflow.
+
+`TerminalSingleLineCopyTest` reproduces the user's nine rows exactly and requires
+all 334 original characters with no whitespace. The production-view regression
+`crossRowCopyOffersExplicitSingleLineAndPreservesNormalText` verifies the extra
+action only appears for a multirow selection, one-line copy restores that token,
+and ordinary Copy preserves multiline shell commands. The operation does not
+infer that arbitrary hard newlines are presentation-only, and does not change
+terminal storage, capture, touch routing, viewport or fling behavior.

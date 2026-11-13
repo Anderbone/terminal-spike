@@ -308,6 +308,33 @@ Manual acceptance on 2026-09-26: after enabling the existing channel's vibration
 confirmed real task-completion vibration on the foldable. A second ten-second task produced one
 vibration and the user accepted the behavior. Automated notification tests ran only on USB SM-S911B.
 
+### Compact Codex status in buffered input
+
+Enable **Settings → Appearance → Codex usage in input box** to show
+`Context 72% · Week 70%` at the bottom right of the buffered input box in app-selected
+Herdr sessions over SSH or Mosh. Both percentages mean **remaining**. The option is off by
+default on fresh and existing installs; disabling it hides the row immediately and skips the
+extra usage-reader command. This device-local choice survives app restarts and is omitted from
+portable backups. It does not change Codex's footer or the terminal width. The row occupies its
+own space so drafts remain editable above it; no model or five-hour allowance is shown.
+
+Herdr's focused pane and terminal identity select the exact Codex `agent_session` thread ID.
+The existing SSH side channel runs a Python 3 standard-library reader against that thread's
+read-only local SQLite index and at most the final 256 KiB of its rollout. It returns only two
+nullable percentages, then checks the pane identity again before publication. No Codex process,
+inference, authentication-file read, or external account-service request is started. Missing
+Python/index/usage events or an unrecognized thread leave `—`; another thread is never substituted.
+
+Context uses `last_token_usage.total_tokens`, not cumulative session token counts, and the
+12,000-token baseline in Codex 0.166's
+[`TokenUsage::percent_of_context_window_remaining`](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/protocol/src/protocol.rs).
+Week comes from the identified thread's most recent eligible `codex` rate-limit snapshot,
+not a fresh account query. The weekly window is identified by its actual 10,080-minute duration
+rather than primary/secondary position; expired snapshots display `—`. Values update when
+Codex records usage and do not promise live account-wide consumption while another session runs.
+Direct SSH/tmux or local terminal sessions without a verified thread mapping do not acquire one
+by scanning unrelated logs.
+
 ## Remote text to the phone clipboard
 
 Choose **Settings → Terminal → OSC 52 clipboard writes → Ask**. When a remote program

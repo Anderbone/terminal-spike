@@ -813,3 +813,27 @@ on model-verified SM-F976B at `adb-RFGL80WYDZW-QnawRi._adb-tls-connect._tcp`;
 MainActivity was verified top-resumed. No foldable tests or injected gestures.
 Evidence: `build/herdr-context-evidence/` (ignored). Real-workflow user feedback
 remains pending.
+
+## Double-tap Space close in grouped navigation
+
+Double-tap a workspace heading in the grouped desktop sidebar or mobile Switch
+list to request its existing Herdr Close menu action. Recognition uses the
+verified navigation area and the renderer's bold workspace heading style,
+excluding the scrollbar gutter. Underlined section titles, task rows, usage
+rows, New actions and pane output are excluded. Worktree headings use the same
+route; Herdr retains ownership of close/group-close semantics and confirmation.
+The legacy Spaces sidebar and separate tab-strip close behavior are preserved.
+
+Only workspace-heading taps wait for the system's double-tap decision. A
+confirmed single tap opens the Space once; a double tap sends only its Close
+menu action, without first opening the Space and removing the list. Other
+terminal/task taps keep their immediate dispatch. Pending workspace taps are
+discarded when the controller changes or the view detaches.
+
+`HerdrTabTargetTest` covers both grouped surfaces, scrollbars, chrome placement,
+worktree labels and the exact workspace-menu input.
+`HerdrContextMenuRecoveryTest.groupedAndMobileSpaceDoubleTapClosesOnlyTheClickedWorkspaceInBothInputModes`
+dispatches actual double-tap events in direct and buffered modes. Its simulated
+server removes the list immediately on an opening click, reproducing the real
+transition. It requires no opening click before Close, one opening click after
+a confirmed single tap, immediate task taps, and no pending click after detach.

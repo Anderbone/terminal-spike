@@ -526,6 +526,7 @@ data class TerminalSpikeUiState(
     val remoteClipboardPrompt: RemoteClipboardPromptUi? = null,
     val multilinePasteConfirmationEnabled: Boolean = false,
     val snippetsAboveKeyboard: Boolean = false,
+    val codexInputStatusEnabled: Boolean = false,
     val voiceInputEnabled: Boolean = false,
     val inputButtonsOnRight: Boolean = false,
     val inputKeyboardLayout: String = "",
@@ -1553,6 +1554,7 @@ class TerminalSpikeViewModel(
     private var notificationPermissionEducationConsumed = false
     @Volatile
     private var tmuxSessionSelectorEnabled = true
+    private var autoAttachSingleHerdrSession = true
     private var terminalProfilesById = emptyMap<String, TerminalProfile>()
     private var customTerminalThemesById = emptyMap<String, CustomTerminalTheme>()
     private var keyboardProfilesById = emptyMap<String, KeyboardProfile>()
@@ -1742,7 +1744,7 @@ class TerminalSpikeViewModel(
                         val rendererProfile = profile.toRendererProfile(
                             customTerminalFonts,
                             snapshot.customTerminalThemes,
-                        )
+                        ).copy(codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled)
                         TerminalTypefaceRegistry.registerProfileFont(
                             context = getApplication(),
                             fontId = rendererProfile.fontId,
@@ -1752,7 +1754,7 @@ class TerminalSpikeViewModel(
                     }
                     val rendererProfile = snapshot.terminalProfile
                         ?.let { profile -> rendererProfiles[profile.id] }
-                        ?: TerminalRendererProfile()
+                        ?: TerminalRendererProfile(codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled)
                     withContext(Dispatchers.Main.immediate) {
                         terminalProfilesById = snapshot.terminalProfiles.associateBy(TerminalProfile::id)
                         customTerminalThemesById = snapshot.customTerminalThemes.associateBy(
@@ -1771,6 +1773,8 @@ class TerminalSpikeViewModel(
                             snapshot.appSettings.notificationPermissionEducationConsumed
                         tmuxSessionSelectorEnabled =
                             !snapshot.appSettings.tmuxSessionSelectorDisabled
+                        autoAttachSingleHerdrSession = !snapshot.appSettings.hasAutoAttachSingleHerdrSession() ||
+                            snapshot.appSettings.autoAttachSingleHerdrSession
                         activeRendererProfile = rendererProfile
                         activeScrollbackLines = resolveRuntimeScrollbackLines(
                             snapshot.terminalProfile?.scrollbackLines
@@ -1798,6 +1802,7 @@ class TerminalSpikeViewModel(
                                     snapshot.appSettings.multilinePasteConfirmationEnabled,
                                 voiceInputLanguageTag = snapshot.appSettings.voiceInputLanguageTag,
                                 snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
+                                codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled,
                                 voiceInputEnabled = snapshot.appSettings.hasVoiceInputDisabled() && !snapshot.appSettings.voiceInputDisabled,
                                 inputButtonsOnRight = snapshot.appSettings.inputButtonsOnRight,
                                 inputKeyboardLayout = snapshot.appSettings.inputKeyboardLayout,
@@ -2984,6 +2989,10 @@ class TerminalSpikeViewModel(
             ?: BellSettings()
     }
 
+    fun showNotice(notice: UiText) {
+        _uiState.update { it.copy(notice = notice) }
+    }
+
     fun consumeNotice(presentedNotice: UiText) {
         _uiState.update { state -> state.afterNoticePresented(presentedNotice) }
     }
@@ -3476,6 +3485,7 @@ class TerminalSpikeViewModel(
             startupCommand = runtimeProfiles.startupCommand,
             portForwards = runtimeProfiles.portForwards,
             tmuxSessionSelectorEnabled = tmuxSessionSelectorEnabled,
+            autoAttachSingleHerdrSession = autoAttachSingleHerdrSession,
         )
             val safeWorkspaceName = privacySafeWorkspaceFriendlyName(
             candidate = workspaceName,

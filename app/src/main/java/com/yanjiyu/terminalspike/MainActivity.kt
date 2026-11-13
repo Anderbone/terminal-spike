@@ -2,7 +2,6 @@ package com.yanjiyu.terminalspike
 
 import android.app.Activity
 import android.content.Intent
-import android.widget.Toast
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
@@ -204,8 +203,9 @@ class MainActivity : ComponentActivity() {
                             openTerminalSessionRequested.value = null
                             if (sessionId != null && task != null) lifecycleScope.launch {
                                 if (!appContainer.sshSessionRepository.focusNotificationTask(sessionId, task)) {
-                                    Toast.makeText(this@MainActivity,
-                                        R.string.terminal_task_target_unavailable, Toast.LENGTH_LONG).show()
+                                    viewModel.showNotice(
+                                        com.yanjiyu.terminalspike.ui.uiText(R.string.terminal_task_target_unavailable),
+                                    )
                                 }
                             }
                         },

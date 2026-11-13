@@ -26,6 +26,7 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         .setKeyboardDeckRevision(CURRENT_KEYBOARD_DECK_REVISION)
         .setVoiceInputDisabled(true)
         .setSnippetsAboveKeyboard(true)
+        .setAutoAttachSingleHerdrSession(true)
         .build()
         .let(AppSettingsValidator::requireValidCurrent)
 
@@ -41,8 +42,10 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         }
         return if (settings.schemaRevision == CURRENT_APP_SETTINGS_SCHEMA) {
             AppSettingsValidator.requireValidCurrent(
-                if (settings.hasVoiceInputDisabled()) settings
-                else settings.toBuilder().setVoiceInputDisabled(true).build(),
+                settings.toBuilder().apply {
+                    if (!settings.hasVoiceInputDisabled()) setVoiceInputDisabled(true)
+                    if (!settings.hasAutoAttachSingleHerdrSession()) setAutoAttachSingleHerdrSession(true)
+                }.build(),
             )
         } else {
             settings

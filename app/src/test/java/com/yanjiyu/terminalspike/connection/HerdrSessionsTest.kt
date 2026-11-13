@@ -1,10 +1,13 @@
 package com.yanjiyu.terminalspike.connection
 
+import com.yanjiyu.terminalspike.core.data.settings.AppSettingsSerializer
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,6 +15,46 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class HerdrSessionsTest {
+    @Test
+    fun existingInstallEntersDefaultHerdrWithoutPrompt() = runTest {
+        val oldSettings = AppSettingsSerializer.defaultValue.toBuilder()
+            .clearAutoAttachSingleHerdrSession().build()
+        val settings = AppSettingsSerializer.readFrom(ByteArrayInputStream(oldSettings.toByteArray()))
+        val selector = TmuxSessionSelector(
+            commandRunner = { command ->
+                if (command == HERDR_LIST_COMMAND) {
+                    output("""{"sessions":[{"name":"default","default":true,"running":true}]}""")
+                } else TmuxExecOutput(byteArrayOf(), 0)
+            },
+            autoAttachSingleHerdrSession = settings.autoAttachSingleHerdrSession,
+            onPrompt = { throw AssertionError("Existing install must enter default without another tap") },
+        )
+        assertEquals(HerdrStartupChoice("/usr/bin/herdr", "default"), selector.awaitChoice())
+    }
+
+    @Test
+    fun enabledAutoAttachSkipsChooserForSingleHerdr() {
+        val selector = TmuxSessionSelector(
+            commandRunner = { command ->
+                if (command == HERDR_LIST_COMMAND) output("""{"sessions":[{"name":"work","running":true}]}""")
+                else TmuxExecOutput(byteArrayOf(), 0)
+            },
+            autoAttachSingleHerdrSession = true,
+            onPrompt = { throw AssertionError("Single herdr must bypass chooser") },
+        )
+        assertEquals("work", (selector.awaitChoice() as HerdrStartupChoice).sessionName)
+    }
+
+    @Test
+    fun autoAttachRequiresExactlyOneRunningSessionAndSuccessfulDiscovery() {
+        val single = parseHerdrSessionCatalog(output("""{"sessions":[{"name":"work","running":true},{"name":"stopped","running":false}]}"""))
+        assertEquals("work", single.singleSessionStartupChoice()?.sessionName)
+        assertEquals(null, single.copy(sessions = emptyList()).singleSessionStartupChoice())
+        assertEquals(null, single.copy(sessions = listOf(HerdrSession("work"), HerdrSession("other"))).singleSessionStartupChoice())
+        assertEquals(null, single.copy(availability = HerdrAvailability.CHECK_FAILED).singleSessionStartupChoice())
+        assertEquals(null, single.copy(executable = null).singleSessionStartupChoice())
+    }
+
     @Test
     fun parsesOnlyRunningSessionsWithDefaultFirstAndOpaqueNames() {
         val result = parseHerdrSessionCatalog(output("""{"sessions":[

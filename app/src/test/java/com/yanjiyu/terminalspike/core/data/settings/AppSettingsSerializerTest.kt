@@ -44,7 +44,19 @@ class AppSettingsSerializerTest {
         assertEquals("", defaults.voiceInputLanguageTag)
         assertTrue(defaults.voiceInputDisabled)
         assertTrue(defaults.snippetsAboveKeyboard)
+        assertTrue(defaults.autoAttachSingleHerdrSession)
         assertSame(defaults, AppSettingsValidator.requireValidCurrent(defaults))
+    }
+
+    @Test
+    fun missingAutoAttachPreferenceDefaultsOnAndExplicitChoiceSurvives() = runTest {
+        for (enabled in listOf(null, false, true)) {
+            val builder = AppSettingsSerializer.defaultValue.toBuilder().clearAutoAttachSingleHerdrSession()
+            if (enabled != null) builder.setAutoAttachSingleHerdrSession(enabled)
+            val restored = AppSettingsSerializer.readFrom(ByteArrayInputStream(builder.build().toByteArray()))
+            assertTrue(restored.hasAutoAttachSingleHerdrSession())
+            assertEquals(enabled ?: true, restored.autoAttachSingleHerdrSession)
+        }
     }
 
     @Test

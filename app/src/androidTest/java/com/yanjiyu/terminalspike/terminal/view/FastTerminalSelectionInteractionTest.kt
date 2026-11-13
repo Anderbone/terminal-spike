@@ -582,6 +582,112 @@ class FastTerminalSelectionInteractionTest {
         }
     }
 
+    @Test
+    fun longPressSelectsWithoutDialogAndTextToolsPreserveExactCopy() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var view: FastTerminalView
+            lateinit var controller: TerminalController
+            val copies = mutableListOf<TerminalClipboardRequest>()
+            scenario.onActivity { activity ->
+                controller = TerminalController().apply {
+                    buffer.append(TerminalLine.plain("printf hello"))
+                    buffer.append(TerminalLine.plain("world"))
+                }
+                view = attachTerminalView(activity, controller)
+                view.setClipboardActionCallback { copies += it; true }
+            }
+            longPressCell(scenario, view, 0, 0)
+            saveSelectionScreenshot("native-selection-toolbar.png")
+            scenario.onActivity {
+                assertNull("Long press must only select; tools are optional", view.textActionsDialogForTesting())
+                assertEquals("printf", view.selectedTextForTesting())
+                controller.buffer.clear()
+                controller.buffer.append(TerminalLine.plain("new screen"))
+                view.onTerminalContentChanged(com.yanjiyu.terminalspike.terminal.TerminalContentChange.FULL)
+                assertEquals("Selection must survive redraw", "printf", view.selectedTextForTesting())
+                val info = AccessibilityNodeInfo.obtain()
+                view.onInitializeAccessibilityNodeInfo(info)
+                assertTrue(info.actionList.any { it.id == R.id.terminal_action_text_tools })
+                info.recycle()
+                assertTrue(view.performAccessibilityAction(R.id.terminal_action_text_tools, null))
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            SystemClock.sleep(350L) // Capture the settled dialog, after its platform enter animation.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            saveSelectionScreenshot("text-tools-panel.png")
+            scenario.onActivity {
+                val dialog = requireNotNull(view.textActionsDialogForTesting())
+                val editor = dialog.findViewById<android.widget.EditText>(R.id.terminal_extracted_text)
+                val copyBounds = android.graphics.Rect()
+                assertTrue("Copy must remain visible", dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                    .getGlobalVisibleRect(copyBounds))
+                assertTrue(copyBounds.bottom <= view.resources.displayMetrics.heightPixels)
+                assertTrue(editor.height > view.resources.displayMetrics.heightPixels * 0.5f)
+                assertEquals(13f * view.resources.displayMetrics.scaledDensity, editor.textSize, 0.1f)
+                assertEquals("printf hello\nworld", editor.text.toString())
+                editor.setText("printf '%s\\n' 'hello world'")
+                editor.selectAll()
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+                assertEquals("printf '%s\\n' 'hello world'", copies.single().text)
+                assertFalse(dialog.isShowing)
+            }
+        }
+    }
+
+    @Test
+    fun crossRowCopyOffersExplicitSingleLineAndPreservesNormalText() {
+        val original = "START_" + "0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz_".repeat(5) + "END"
+        val wrapped = original.chunked(39).mapIndexed { index, row -> if (index == 0) row else "  $row" }
+        val commands = listOf("printf '%s\\n' \\", "  'hello world' \\", "  '中文 🚀'")
+        for (rows in listOf(wrapped, commands)) {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                lateinit var view: FastTerminalView
+                val copies = mutableListOf<TerminalClipboardRequest>()
+                scenario.onActivity { activity ->
+                    val controller = TerminalController().apply { rows.forEach { buffer.append(TerminalLine.plain(it)) } }
+                    view = attachTerminalView(activity, controller)
+                    view.setClipboardActionCallback { copies += it; true }
+                }
+                longPressCell(scenario, view, 0, 0)
+                scenario.onActivity {
+                    val info = AccessibilityNodeInfo.obtain()
+                    view.onInitializeAccessibilityNodeInfo(info)
+                    assertFalse(info.actionList.any { it.id == R.id.terminal_action_copy_single_line })
+                    info.recycle()
+                    assertTrue(view.performAccessibilityAction(R.id.terminal_action_select_all, null))
+                }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                if (rows === wrapped) saveSelectionScreenshot("copy-single-line-toolbar.png")
+                scenario.onActivity {
+                    val info = AccessibilityNodeInfo.obtain()
+                    view.onInitializeAccessibilityNodeInfo(info)
+                    assertTrue(info.actionList.any { it.id == R.id.terminal_action_copy_single_line })
+                    info.recycle()
+                    assertTrue(view.performAccessibilityAction(AccessibilityNodeInfo.ACTION_COPY, null))
+                    assertEquals("Normal Copy must preserve actual newlines and indentation", rows.joinToString("\n"), copies.last().text)
+                    assertTrue(view.performAccessibilityAction(R.id.terminal_action_copy_single_line, null))
+                    if (rows === wrapped) {
+                        assertEquals(original, copies.last().text)
+                        assertEquals(334, copies.last().text.length)
+                        assertFalse(copies.last().text.any { it.isWhitespace() })
+                    }
+                    assertNull(view.textActionsDialogForTesting())
+                }
+            }
+        }
+    }
+
+    private fun saveSelectionScreenshot(name: String) {
+        // Only the controlled fixture is visible; no live session content is captured.
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+            java.io.File(instrumentation.targetContext.filesDir, name).outputStream().use {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+    }
+
     private fun attachTerminalView(
         activity: MainActivity,
         controller: TerminalController,

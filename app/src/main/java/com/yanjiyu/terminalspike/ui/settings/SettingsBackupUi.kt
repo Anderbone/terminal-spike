@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
@@ -75,7 +74,7 @@ internal fun BackupRestoreSettingsContent(
     state: BackupWorkflowUiState,
     actions: BackupSettingsActions,
 ) {
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize().testTag(BackupRestoreSettingsTestTag),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -124,7 +123,7 @@ internal fun BackupRestoreSettingsContent(
                 }
             }
         }
-        item {
+        item(key = R.string.settings_backup_save_action) {
             Button(
                 onClick = actions.onBeginExport,
                 enabled = !state.busy,
@@ -139,7 +138,7 @@ internal fun BackupRestoreSettingsContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        item {
+        item(key = R.string.settings_backup_restore_action) {
             OutlinedButton(
                 onClick = actions.onBeginRestore,
                 enabled = !state.busy && !state.recoveryAvailable,

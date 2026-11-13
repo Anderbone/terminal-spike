@@ -13,6 +13,7 @@ import java.io.InputStream
 interface Connection : TerminalInputSink {
     /** Background-only foreground inspection through the existing authenticated connection. */
     fun captureInputContext(): TerminalInputContext = TerminalInputContext()
+    fun captureInputContext(includeCodexStatus: Boolean): TerminalInputContext = captureInputContext()
 
     val isHerdrSession: Boolean get() = false
 
@@ -186,6 +187,7 @@ class SshConnectionConfig(
     val startupCommand: String? = null,
     /** Shows the authenticated tmux session chooser before opening an SSH shell. */
     val tmuxSessionSelectorEnabled: Boolean = false,
+    val autoAttachSingleHerdrSession: Boolean = false,
     portForwards: List<PortForwardRule> = emptyList(),
 ) {
     val portForwards: List<PortForwardRule> = portForwards.toList()

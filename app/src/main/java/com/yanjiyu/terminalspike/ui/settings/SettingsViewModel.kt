@@ -166,6 +166,7 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun setAppearanceMode(mode: AppearanceMode) = updateGlobal { it.setThemeMode(mode.toProto()) }
 
     fun setDynamicColor(enabled: Boolean) = updateGlobal { it.setDynamicColorEnabled(enabled) }
+    fun setCodexInputStatus(enabled: Boolean) = updateGlobal { it.setCodexInputStatusEnabled(enabled) }
 
     fun setAccentPreset(preset: AccentPreset) = updateGlobal { it.setAccentPreset(preset.wireCode) }
 
@@ -180,6 +181,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
 
     fun setReconnectMaxAttempts(attempts: Int) =
         updateGlobal { it.setReconnectMaxAttempts(attempts) }
+
+    fun setAutoAttachSingleHerdrSession(enabled: Boolean) =
+        updateGlobal { it.setAutoAttachSingleHerdrSession(enabled) }
 
     fun setTmuxSessionSelectorEnabled(enabled: Boolean) =
         updateGlobal { it.setTmuxSessionSelectorDisabled(!enabled) }

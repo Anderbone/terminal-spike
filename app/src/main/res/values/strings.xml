@@ -614,4 +614,7 @@
     <string name="key_import_clipboard">Paste from clipboard</string>
     <string name="key_import_system_unavailable">System picker unavailable. Using the default picker; you can also cancel and paste the key.</string>
     <string name="key_import_picker_unavailable">File picker unavailable. You can paste the private key instead.</string>
+    <string name="settings_auto_attach_herdr">Automatically enter a single herdr session</string>
+    <string name="settings_auto_attach_herdr_summary">When connecting to a host with exactly one running herdr session, enter it directly. Otherwise, show the session chooser.</string>
+    <string name="settings_search_result_path">Settings › %1$s</string>
 </resources>

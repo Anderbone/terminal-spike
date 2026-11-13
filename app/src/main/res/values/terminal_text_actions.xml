@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminal_text_actions">Select and copy</string>
+    <string name="terminal_copy_selected_text">Copy selected text</string>
+    <string name="terminal_edit_extracted_text">Edit text</string>
+    <string name="terminal_join_selected_lines">Remove line breaks in selection</string>
+    <string name="terminal_restore_extracted_text">Restore original text</string>
+    <item name="terminal_extracted_text" type="id" />
+    <string name="terminal_select_logical_line">Select whole line</string>
+    <string name="terminal_text_tools">Text tools</string>
+    <string name="terminal_text_more">More text actions</string>
+    <item name="terminal_action_text_tools" type="id" />
+    <string name="terminal_copy_single_line">Copy as one line</string>
+    <item name="terminal_action_copy_single_line" type="id" />
+</resources>

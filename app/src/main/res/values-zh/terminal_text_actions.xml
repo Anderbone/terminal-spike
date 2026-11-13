@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminal_text_actions">选择与复制</string>
+    <string name="terminal_copy_selected_text">复制选中文字</string>
+    <string name="terminal_edit_extracted_text">编辑文字</string>
+    <string name="terminal_join_selected_lines">移除选中部分的换行</string>
+    <string name="terminal_restore_extracted_text">恢复原文</string>
+    <string name="terminal_select_logical_line">选择整行</string>
+    <string name="terminal_text_tools">文本工具</string>
+    <string name="terminal_text_more">更多文字操作</string>
+    <string name="terminal_copy_single_line">复制为一行</string>
+</resources>

@@ -172,11 +172,17 @@ class TerminalController(
 
     internal fun closeHerdrTabAt(column: Int, row: Int): Boolean = closeHerdrNavigationAt(column, row, tabsOnly = true)
 
+    internal fun isHerdrSpaceCell(column: Int, row: Int): Boolean {
+        val screen = terminalScreen ?: return false
+        return herdrSessionActive && terminalModes.mouseTracking && viewport.autoFollow &&
+            HerdrNavigationChrome.isSpaceCell(screen, terminalColumns, terminalRows, column, row)
+    }
+
     internal fun closeHerdrNavigationAt(column: Int, row: Int, tabsOnly: Boolean = false): Boolean {
         val screen = terminalScreen ?: return false
         if (!herdrSessionActive || !terminalModes.mouseTracking || !viewport.autoFollow) return false
         val tab = HerdrNavigationChrome.isTabCell(screen, terminalColumns, terminalRows, column, row)
-        val space = !tabsOnly && HerdrNavigationChrome.isSpaceCell(screen, terminalColumns, terminalRows, column, row)
+        val space = !tabsOnly && isHerdrSpaceCell(column, row)
         if (!tab && !space) return false
         // Herdr 0.9.x tab context menu: New tab, Rename, Close (initial index zero).
         // Target the clicked tab through its own menu, preserving Herdr's close semantics.

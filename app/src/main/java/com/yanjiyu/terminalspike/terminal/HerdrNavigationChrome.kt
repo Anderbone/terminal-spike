@@ -169,26 +169,48 @@ internal object HerdrNavigationChrome {
     }
 
     private fun isNewWorkspaceActionCell(line: TerminalLine, column: Int, endColumn: Int): Boolean {
-        // Column zero belongs to the list's optional left scrollbar.
+        // Match within verified workspace chrome, independent of row or indentation.
+        // A scrollbar can occupy column zero; it is never part of the action.
         val endOffset = TerminalLineGeometry.positionAtColumn(line, endColumn).textOffset
-        val label = line.text.take(endOffset).drop(1)
-        val action = "+ new workspace"
-        if (label.trim() != action) return false
-        val start = TerminalLineGeometry.columnAtOffset(line, label.indexOf(action) + 1)
+        val visible = line.text.take(endOffset)
+        val label = if (visible.firstOrNull() in listOf('┃', '│', '▌')) visible.drop(1) else visible
+        val action = label.trim()
+        if (action != "+ new workspace" && action != "+") return false
+        val start = TerminalLineGeometry.columnAtOffset(line, visible.indexOf(action))
         return column in start until start + action.length
     }
 
-    /** Expanded Spaces entries only; headers, footer controls and Agents stay untouched. */
+    /** Workspace headings only; task rows, section headings and actions stay untouched. */
     fun isSpaceCell(screen: List<TerminalLine>, columns: Int, rows: Int, column: Int, row: Int): Boolean {
-        if (screen.size != rows || row !in 1 until rows || column < 0) return false
-        val sidebar = sidebarColumns(screen, columns) ?: return false
-        if (column >= sidebar - 1 || screen[0].text.substringBefore('│').trim() != "spaces") return false
+        if (screen.size != rows || row !in 0 until rows || column < 0) return false
+        val sidebar = sidebarColumns(screen, columns)
+        if (sidebar == null) {
+            if (row !in (mobileSwitcherBody(screen, columns, rows) ?: return false)) return false
+            return isGroupedSpaceHeading(screen[row], column, columns)
+        }
+        if (column >= sidebar - 1) return false
+        if (screen[0].runs.any { it.startColumn == sidebar - 1 && it.columnWidth == 1 && it.text == "«" }) {
+            return isGroupedSpaceHeading(screen[row], column, sidebar - 1)
+        }
+        if (row == 0 || screen[0].text.substringBefore('│').trim() != "spaces") return false
         fun label(index: Int) = screen[index].text.substringBefore('│').trim()
         val footer = (1 until rows).firstOrNull {
             val text = label(it)
             text.startsWith("new ") && text.endsWith("menu")
         } ?: return false
         return row < footer && label(row).any { it.isLetterOrDigit() }
+    }
+
+    private fun isGroupedSpaceHeading(line: TerminalLine, column: Int, endColumn: Int): Boolean {
+        if (column !in 1 until endColumn) return false
+        // Herdr's shared mobile/grouped renderer reserves column zero for the
+        // scrollbar. Workspace names (including worktree connectors) start in
+        // bold; sections are also underlined, tasks start with a plain status
+        // marker, and New actions start with '+'. Do not infer targets by name.
+        val content = TerminalLineGeometry.sliceColumns(line, 1, endColumn) ?: return false
+        val first = content.runs.firstOrNull { run -> run.text.any { !it.isWhitespace() } } ?: return false
+        return first.style.bold && !first.style.underline && !first.style.conceal &&
+            !content.text.trimStart().startsWith('+')
     }
 
     private fun sidebarColumns(screen: List<TerminalLine>, columns: Int): Int? {

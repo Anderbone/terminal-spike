@@ -23,6 +23,27 @@ class AppSettingsRepositoryTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun codexInputStatusDefaultsOffAndItsChoiceSurvivesRepositoryRecreation() = runBlocking {
+        val file = settingsFile("codex-input-status.pb", AppSettingsSerializer.defaultValue.toByteArray())
+        val first = dataStoreOwner(file)
+        try {
+            assertEquals(false, first.repository.settings.first().codexInputStatusEnabled)
+            first.repository.update { it.setCodexInputStatusEnabled(true) }
+        } finally { first.close() }
+        val second = dataStoreOwner(file)
+        try {
+            assertEquals(true, second.repository.settings.first().codexInputStatusEnabled)
+            second.repository.update { it.setCodexInputStatusEnabled(false) }
+        } finally { second.close() }
+        val third = dataStoreOwner(file)
+        try {
+            assertEquals(false, third.repository.settings.first().codexInputStatusEnabled)
+        } finally { third.close() }
+        assertEquals(AppSettingsSerializer.defaultValue.toBackupGlobalSettings(),
+            AppSettingsSerializer.defaultValue.toBuilder().setCodexInputStatusEnabled(true).build().toBackupGlobalSettings())
+    }
+
+    @Test
     fun releaseNotesAcknowledgementSurvivesRepositoryRecreation() = runBlocking {
         val file = settingsFile("release-notes.pb", AppSettingsSerializer.defaultValue.toByteArray())
         val first = dataStoreOwner(file)

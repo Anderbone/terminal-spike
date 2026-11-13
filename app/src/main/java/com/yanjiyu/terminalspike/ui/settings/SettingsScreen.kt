@@ -24,6 +24,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -80,7 +82,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHostState
+import com.yanjiyu.terminalspike.ui.NoticeSnackbarHost
+import com.yanjiyu.terminalspike.ui.uiText
+import com.yanjiyu.terminalspike.ui.theme.upperNoticePlacement
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -184,6 +189,7 @@ import kotlin.math.roundToInt
 internal data class SettingsActions(
     val onAppearanceMode: (AppearanceMode) -> Unit,
     val onDynamicColor: (Boolean) -> Unit,
+    val onCodexInputStatus: (Boolean) -> Unit = {},
     val onAccent: (AccentPreset) -> Unit,
     val onTerminalTheme: (String) -> Unit,
     val onSaveCustomTheme: (CustomTerminalThemeDraft) -> Unit = {},
@@ -226,6 +232,7 @@ internal data class SettingsActions(
     val onReconnectEnabled: (Boolean) -> Unit = {},
     val onReconnectMaxAttempts: (Int) -> Unit = {},
     val onTmuxSessionSelectorEnabled: (Boolean) -> Unit = {},
+    val onAutoAttachSingleHerdrSession: (Boolean) -> Unit = {},
     val onKeepCpuAwake: (Boolean) -> Unit = {},
     val onNotificationPrivacy: (Boolean) -> Unit = {},
     val onDisconnectNotifications: (Boolean) -> Unit = {},
@@ -324,6 +331,7 @@ internal fun SettingsDestination(
         actions = SettingsActions(
             onAppearanceMode = settingsViewModel::setAppearanceMode,
             onDynamicColor = settingsViewModel::setDynamicColor,
+            onCodexInputStatus = settingsViewModel::setCodexInputStatus,
             onAccent = settingsViewModel::setAccentPreset,
             onTerminalTheme = settingsViewModel::setTerminalTheme,
             onSaveCustomTheme = settingsViewModel::saveCustomTerminalTheme,
@@ -374,6 +382,7 @@ internal fun SettingsDestination(
             onReconnectEnabled = settingsViewModel::setReconnectEnabled,
             onReconnectMaxAttempts = settingsViewModel::setReconnectMaxAttempts,
             onTmuxSessionSelectorEnabled = settingsViewModel::setTmuxSessionSelectorEnabled,
+            onAutoAttachSingleHerdrSession = settingsViewModel::setAutoAttachSingleHerdrSession,
             onKeepCpuAwake = settingsViewModel::setKeepCpuAwake,
             onNotificationPrivacy = settingsViewModel::setNotificationPrivacy,
             onDisconnectNotifications = settingsViewModel::setDisconnectNotifications,
@@ -438,17 +447,25 @@ internal fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var pendingKnownHost by remember { mutableStateOf<KnownHostSummary?>(null) }
     val screenDescription = stringResource(R.string.settings_screen_description)
-    val categories = settingsCategoriesForSearch(if (selectedCategory == SettingsCategory.SSH_KEYS && keysContent != null) "" else query, includeDeveloper = BuildConfig.DEBUG)
-    LaunchedEffect(categories) {
-        if (selectedCategory != null && selectedCategory !in categories && query.isNotBlank() && categories.isNotEmpty()) {
-            selectedCategory = categories.first()
-        }
-    }
-    BackHandler(enabled = selectedCategory != null) {
-        selectedCategory = if (selectedCategory in advancedSettingsCategories && query.isBlank()) {
-            SettingsCategory.ADVANCED
+    var showSearchResults by rememberSaveable { mutableStateOf(false) }
+    var searchAnchor by rememberSaveable { mutableStateOf<Int?>(null) }
+    val isKeySearch = selectedCategory == SettingsCategory.SSH_KEYS && keysContent != null
+    val categories = settingsCategoriesForSearch("", includeDeveloper = BuildConfig.DEBUG)
+    val searchResults = rememberSettingsSearchResults(query)
+    BackHandler(enabled = selectedCategory != null || showSearchResults) {
+        if (showSearchResults) {
+            query = ""
+            showSearchResults = false
+        } else if (query.isNotBlank() && !isKeySearch) {
+            showSearchResults = true
+            searchAnchor = null
         } else {
-            null
+            searchAnchor = null
+            selectedCategory = if (selectedCategory in advancedSettingsCategories && query.isBlank()) {
+                SettingsCategory.ADVANCED
+            } else {
+                null
+            }
         }
     }
 
@@ -457,6 +474,8 @@ internal fun SettingsScreen(
     val selectCategory: (SettingsCategory) -> Unit = { category ->
         focusManager.clearFocus()
         keyboardController?.hide()
+        showSearchResults = false
+        searchAnchor = null
         if (category == SettingsCategory.SSH_KEYS && keysContent == null) {
             onOpenSshKeys()
         } else {
@@ -479,6 +498,9 @@ internal fun SettingsScreen(
             onConnections = onOpenTerminal,
             onSettings = {
                 selectedCategory = null
+                showSearchResults = false
+                searchAnchor = null
+                query = ""
                 onOpenSettings()
             },
             modifier = Modifier.fillMaxSize(),
@@ -487,13 +509,29 @@ internal fun SettingsScreen(
             Column(modifier = contentModifier.fillMaxSize()) {
                 SettingsSearchHeader(
                     query = query,
-                    onQueryChange = { query = it },
+                    onQueryChange = {
+                        query = it
+                        if (!isKeySearch) {
+                            showSearchResults = it.isNotBlank()
+                            searchAnchor = null
+                            if (it.isBlank()) selectedCategory = null
+                        }
+                    },
                     searchDescription = stringResource(
                         if (selectedCategory == SettingsCategory.SSH_KEYS && keysContent != null)
                             R.string.connections_search_keys else R.string.settings_search_label,
                     ),
                 )
-                if (expanded) {
+                if (showSearchResults && !isKeySearch) {
+                    SettingsSearchResults(
+                        results = searchResults,
+                        onSelected = { entry ->
+                            selectCategory(entry.category)
+                            searchAnchor = entry.anchorRes
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (expanded) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         SettingsCategoryList(
                             categories = categories,
@@ -518,6 +556,7 @@ internal fun SettingsScreen(
                         )
                         SettingsDetail(
                             category = selectedCategory ?: SettingsCategory.APPEARANCE,
+                            searchAnchor = searchAnchor,
                             onSelectCategory = selectCategory,
                             state = state,
                             knownHosts = knownHosts,
@@ -564,6 +603,7 @@ internal fun SettingsScreen(
                             } else {
                                 SettingsDetail(
                                     category = category,
+                                    searchAnchor = searchAnchor,
                                     onSelectCategory = selectCategory,
                                     state = state,
                                     knownHosts = knownHosts,
@@ -590,14 +630,15 @@ internal fun SettingsScreen(
         }
     }
 
-    state.message?.let { messageRes ->
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomCenter) {
-            Snackbar(
-                action = {
-                    TextButton(onClick = onDismissMessage) { Text(stringResource(R.string.dismiss)) }
-                },
-            ) { Text(stringResource(messageRes)) }
-        }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        NoticeSnackbarHost(
+            notice = state.message?.let { uiText(it) },
+            hostState = remember { SnackbarHostState() },
+            onNoticePresented = { presented ->
+                if (state.message?.let { uiText(it) } == presented) onDismissMessage()
+            },
+            modifier = Modifier.upperNoticePlacement(),
+        )
     }
     pendingKnownHost?.let { knownHost ->
         AppDialog(
@@ -800,104 +841,109 @@ private fun SettingsDetail(
     backupActions: BackupSettingsActions,
     savedCredentialClearState: SavedCredentialClearUiState,
     modifier: Modifier,
+    searchAnchor: Int? = null,
 ) {
-    Box(modifier = modifier) {
-        when (category) {
-            SettingsCategory.ADVANCED -> LazyColumn(
-                modifier = Modifier.fillMaxSize().testTag(AdvancedSettingsListTestTag),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-            ) {
-                item {
-                    DetailHeading(R.string.settings_category_advanced, R.string.settings_category_advanced_summary)
-                }
-                items(advancedSettingsCategories.filter { BuildConfig.DEBUG || it != SettingsCategory.DEVELOPER }) { advanced ->
-                    SettingsCategoryRow(
-                        category = advanced,
-                        selected = false,
-                        onClick = { onSelectCategory(advanced) },
-                    )
-                }
-            }
-            SettingsCategory.APPEARANCE -> AppearanceSettings(state, actions)
-            SettingsCategory.TERMINAL -> TerminalSettings(state, actions)
-            SettingsCategory.KEYBOARD -> KeyboardSettings(state, actions)
-            SettingsCategory.SSH_KEYS -> {
-                if (keysContent != null) keysContent() else DataManagementSettings(
-                    category = SettingsCategory.SSH_KEYS,
-                    detail = R.string.settings_ssh_keys_management_detail,
-                    action = R.string.settings_ssh_keys_management_action,
-                    onOpen = onOpenSshKeys,
-                )
-            }
-            SettingsCategory.SNIPPETS -> Column(modifier = Modifier.fillMaxSize()) {
-                if (snippetsContent != null) {
-                    Box(modifier = Modifier.weight(1f)) { snippetsContent() }
-                } else {
-                    TextButton(onClick = onOpenSnippets) {
-                        Text(stringResource(R.string.settings_snippets_management_action))
-                    }
-                }
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(stringResource(R.string.settings_snippets_display), style = MaterialTheme.typography.labelMedium)
-                    HorizontalChoices {
-                        listOf(false, true).forEach { above ->
-                            FilterChip(
-                                selected = state.preferences.snippetsAboveKeyboard == above,
-                                onClick = { actions.onSnippetsAboveKeyboard(above) },
-                                label = {
-                                    Text(
-                                        stringResource(if (above) R.string.settings_snippets_display_above else R.string.settings_snippets_display_swipe),
-                                        style = MaterialTheme.typography.labelMedium,
-                                    )
-                                },
+    CompositionLocalProvider(LocalSettingsSearchAnchor provides searchAnchor) {
+        key(category, searchAnchor) {
+            Box(modifier = modifier) {
+                when (category) {
+                    SettingsCategory.ADVANCED -> LazyColumn(
+                        modifier = Modifier.fillMaxSize().testTag(AdvancedSettingsListTestTag),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        item {
+                            DetailHeading(R.string.settings_category_advanced, R.string.settings_category_advanced_summary)
+                        }
+                        items(advancedSettingsCategories.filter { BuildConfig.DEBUG || it != SettingsCategory.DEVELOPER }) { advanced ->
+                            SettingsCategoryRow(
+                                category = advanced,
+                                selected = false,
+                                onClick = { onSelectCategory(advanced) },
                             )
                         }
                     }
+                    SettingsCategory.APPEARANCE -> AppearanceSettings(state, actions)
+                    SettingsCategory.TERMINAL -> TerminalSettings(state, actions)
+                    SettingsCategory.KEYBOARD -> KeyboardSettings(state, actions)
+                    SettingsCategory.SSH_KEYS -> {
+                        if (keysContent != null) keysContent() else DataManagementSettings(
+                            category = SettingsCategory.SSH_KEYS,
+                            detail = R.string.settings_ssh_keys_management_detail,
+                            action = R.string.settings_ssh_keys_management_action,
+                            onOpen = onOpenSshKeys,
+                        )
+                    }
+                    SettingsCategory.SNIPPETS -> Column(modifier = Modifier.fillMaxSize()) {
+                        if (snippetsContent != null) {
+                            Box(modifier = Modifier.weight(1f)) { snippetsContent() }
+                        } else {
+                            TextButton(onClick = onOpenSnippets) {
+                                Text(stringResource(R.string.settings_snippets_management_action))
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(stringResource(R.string.settings_snippets_display), style = MaterialTheme.typography.labelMedium)
+                            HorizontalChoices {
+                                listOf(false, true).forEach { above ->
+                                    FilterChip(
+                                        selected = state.preferences.snippetsAboveKeyboard == above,
+                                        onClick = { actions.onSnippetsAboveKeyboard(above) },
+                                        label = {
+                                            Text(
+                                                stringResource(if (above) R.string.settings_snippets_display_above else R.string.settings_snippets_display_swipe),
+                                                style = MaterialTheme.typography.labelMedium,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    SettingsCategory.PORT_FORWARDING -> DataManagementSettings(
+                        category = SettingsCategory.PORT_FORWARDING,
+                        detail = R.string.port_forward_settings_detail,
+                        action = R.string.port_forward_manage,
+                        onOpen = onOpenPortForwards,
+                    )
+                    SettingsCategory.SESSIONS_BACKGROUND -> SessionsBackgroundSettings(state, actions)
+                    SettingsCategory.NOTIFICATIONS -> NotificationSettings(state, actions)
+                    SettingsCategory.BACKUP_RESTORE -> BackupRestoreSettingsContent(backupState, backupActions)
+                    SettingsCategory.SECURITY -> SecuritySettings(
+                        state = state,
+                        knownHosts = knownHosts,
+                        onAppLockMode = actions.onAppLockMode,
+                        onAppLockDelay = actions.onAppLockDelay,
+                        onScreenshotBlocking = actions.onScreenshotBlocking,
+                        onSensitiveClipboardClear = actions.onSensitiveClipboardClear,
+                        savedCredentialClearState = savedCredentialClearState,
+                        onBeginClearSavedCredentials = actions.onBeginClearSavedCredentials,
+                        onConfirmClearSavedCredentials = actions.onConfirmClearSavedCredentials,
+                        onDismissClearSavedCredentials = actions.onDismissClearSavedCredentials,
+                        onForgetKnownHost = onForgetKnownHost,
+                    )
+                    SettingsCategory.LOCAL_ARCH -> com.yanjiyu.terminalspike.ui.LocalArchSettings()
+                    SettingsCategory.MOSH -> MoshExtensionSection(
+                        state = moshExtension,
+                        onRefresh = onRefreshMoshExtension,
+                    )
+                    SettingsCategory.GUIDE -> UserGuideIndex()
+                    SettingsCategory.ABOUT -> AboutSection()
+                    SettingsCategory.DEVELOPER -> DeveloperSettingsSection(
+                        onOpenRendererLab = onOpenRendererLab,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                if (state.writeInProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(18.dp).size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
                 }
             }
-            SettingsCategory.PORT_FORWARDING -> DataManagementSettings(
-                category = SettingsCategory.PORT_FORWARDING,
-                detail = R.string.port_forward_settings_detail,
-                action = R.string.port_forward_manage,
-                onOpen = onOpenPortForwards,
-            )
-            SettingsCategory.SESSIONS_BACKGROUND -> SessionsBackgroundSettings(state, actions)
-            SettingsCategory.NOTIFICATIONS -> NotificationSettings(state, actions)
-            SettingsCategory.BACKUP_RESTORE -> BackupRestoreSettingsContent(backupState, backupActions)
-            SettingsCategory.SECURITY -> SecuritySettings(
-                state = state,
-                knownHosts = knownHosts,
-                onAppLockMode = actions.onAppLockMode,
-                onAppLockDelay = actions.onAppLockDelay,
-                onScreenshotBlocking = actions.onScreenshotBlocking,
-                onSensitiveClipboardClear = actions.onSensitiveClipboardClear,
-                savedCredentialClearState = savedCredentialClearState,
-                onBeginClearSavedCredentials = actions.onBeginClearSavedCredentials,
-                onConfirmClearSavedCredentials = actions.onConfirmClearSavedCredentials,
-                onDismissClearSavedCredentials = actions.onDismissClearSavedCredentials,
-                onForgetKnownHost = onForgetKnownHost,
-            )
-            SettingsCategory.LOCAL_ARCH -> com.yanjiyu.terminalspike.ui.LocalArchSettings()
-            SettingsCategory.MOSH -> MoshExtensionSection(
-                state = moshExtension,
-                onRefresh = onRefreshMoshExtension,
-            )
-            SettingsCategory.GUIDE -> UserGuideIndex()
-            SettingsCategory.ABOUT -> AboutSection()
-            SettingsCategory.DEVELOPER -> DeveloperSettingsSection(
-                onOpenRendererLab = onOpenRendererLab,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        if (state.writeInProgress) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.TopEnd).padding(18.dp).size(20.dp),
-                strokeWidth = 2.dp,
-            )
         }
     }
 }
@@ -945,7 +991,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
     var resetRequested by remember { mutableStateOf(false) }
     var themeEditorTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize().testTag(AppearanceSettingsTestTag),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -958,7 +1004,15 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                 importedFont = state.importedFonts.firstOrNull { it.id == profile?.fontId },
             )
         }
-        item { SectionLabel(R.string.settings_app_appearance_heading) }
+        item(key = R.string.settings_app_appearance_heading) { SectionLabel(R.string.settings_app_appearance_heading) }
+        item(key = R.string.settings_codex_input_status) {
+            SettingSwitchRow(
+                title = stringResource(R.string.settings_codex_input_status),
+                summary = stringResource(R.string.settings_codex_input_status_summary),
+                checked = state.preferences.codexInputStatusEnabled,
+                onCheckedChange = actions.onCodexInputStatus,
+            )
+        }
         item {
             HorizontalChoices {
                 AppearanceMode.entries.forEach { mode ->
@@ -971,7 +1025,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
             }
         }
         item { SectionDivider() }
-        item { SectionLabel(R.string.settings_terminal_theme_heading) }
+        item(key = R.string.settings_terminal_theme_heading) { SectionLabel(R.string.settings_terminal_theme_heading) }
         item {
             Text(
                 text = stringResource(R.string.settings_terminal_theme_summary),
@@ -1001,7 +1055,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                 }
             }
         }
-        item { SectionLabel(R.string.settings_font_heading) }
+        item(key = R.string.settings_font_heading) { SectionLabel(R.string.settings_font_heading) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FontChoiceRow(
@@ -1056,7 +1110,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
             }
         }
         if (profile != null) {
-            item {
+            item(key = R.string.settings_font_size) {
                 ProfileSlider(
                     title = stringResource(R.string.settings_font_size),
                     value = profile.fontSizeSp,
@@ -1066,7 +1120,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                     onCommit = actions.onFontSize,
                 )
             }
-            item {
+            item(key = R.string.settings_line_height) {
                 ProfileSlider(
                     title = stringResource(R.string.settings_line_height),
                     value = profile.lineHeightMultiplier,
@@ -1076,7 +1130,7 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                     onCommit = actions.onLineHeight,
                 )
             }
-            item {
+            item(key = R.string.settings_letter_spacing) {
                 ProfileSlider(
                     title = stringResource(R.string.settings_letter_spacing),
                     value = profile.letterSpacingEm,
@@ -1086,19 +1140,23 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
                     onCommit = actions.onLetterSpacing,
                 )
             }
-            item {
+            item(key = R.string.settings_font_bold_rendering) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_font_bold_rendering),
                     summary = stringResource(R.string.settings_font_bold_rendering_summary),
                     checked = profile.boldRenderingEnabled,
                     onCheckedChange = actions.onBoldRendering,
                 )
+            }
+            item(key = R.string.settings_font_ligatures) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_font_ligatures),
                     summary = stringResource(R.string.settings_font_ligatures_summary),
                     checked = profile.ligaturesEnabled,
                     onCheckedChange = actions.onLigatures,
                 )
+            }
+            item(key = R.string.settings_font_pinch_zoom) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_font_pinch_zoom),
                     summary = stringResource(R.string.settings_font_pinch_zoom_summary),
@@ -1351,7 +1409,7 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
     val profile = state.terminalProfile
     var resetRequested by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize().testTag(TerminalSettingsTestTag),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1361,7 +1419,7 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
             item { LoadingOrUnavailable(state.profilesLoading) }
         } else {
             item { SectionLabel(R.string.settings_links_clipboard_heading) }
-            item {
+            item(key = R.string.settings_terminal_copy_on_selection) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_terminal_copy_on_selection),
                     summary = stringResource(R.string.settings_terminal_copy_on_selection_summary),
@@ -1370,6 +1428,8 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
                         actions.onLinks { links -> links.copy(copyOnSelection = enabled) }
                     },
                 )
+            }
+            item(key = R.string.settings_osc52_heading) {
                 Text(
                     text = stringResource(R.string.settings_osc52_heading),
                     style = MaterialTheme.typography.bodyLarge,
@@ -1391,6 +1451,8 @@ private fun TerminalSettings(state: SettingsUiState, actions: SettingsActions) {
                         )
                     }
                 }
+            }
+            item(key = R.string.settings_multiline_paste_confirmation) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_multiline_paste_confirmation),
                     summary = stringResource(R.string.settings_multiline_paste_confirmation_summary),
@@ -1443,7 +1505,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
         return
     }
 
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize().testTag(KeyboardSettingsTestTag),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1452,7 +1514,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
         if (profile == null) {
             item { LoadingOrUnavailable(state.profilesLoading) }
         } else {
-            item { SectionLabel(R.string.settings_keyboard_preset_heading) }
+            item(key = R.string.settings_keyboard_preset_heading) { SectionLabel(R.string.settings_keyboard_preset_heading) }
             item {
                 val selectedPresetId = KeyboardPresets.selectedId(profile)
                 HorizontalChoices {
@@ -1478,7 +1540,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                     }
                 }
             }
-            item {
+            item(key = R.string.settings_edit_keyboard_keys) {
                 Text(
                     text = stringResource(R.string.settings_keyboard_replace_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -1503,7 +1565,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 )
             }
             item { SectionDivider() }
-            item { SectionLabel(R.string.settings_keyboard_layout_heading) }
+            item(key = R.string.settings_keyboard_layout_heading) { SectionLabel(R.string.settings_keyboard_layout_heading) }
             item {
                 HorizontalChoices {
                     KeyboardLayout.entries.forEach { layout ->
@@ -1529,7 +1591,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 )
             }
             item { SectionDivider() }
-            if (state.preferences.inputKeyboardLayout.isEmpty()) item {
+            if (state.preferences.inputKeyboardLayout.isEmpty()) item(key = R.string.settings_input_buttons_right) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_input_buttons_right),
                     summary = stringResource(R.string.settings_input_buttons_right_summary),
@@ -1537,7 +1599,7 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                     onCheckedChange = actions.onInputButtonsOnRight,
                 )
             }
-            item {
+            item(key = R.string.settings_input_keyboard_edit) {
                 val inputTokens = com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.parse(state.preferences.inputKeyboardLayout)
                     ?: com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.defaultTokens(state.preferences.inputButtonsOnRight)
                 InputKeyboardPreview(inputTokens, selected = null,
@@ -1549,8 +1611,8 @@ private fun KeyboardSettings(state: SettingsUiState, actions: SettingsActions) {
                 }
                 Text(stringResource(R.string.settings_input_keyboard_summary), style = MaterialTheme.typography.bodySmall)
             }
-            item { SectionLabel(R.string.settings_voice_input_heading) }
-            item {
+            item(key = R.string.settings_voice_input_heading) { SectionLabel(R.string.settings_voice_input_heading) }
+            item(key = R.string.settings_voice_input_enabled) {
                 SettingSwitchRow(
                     title = stringResource(R.string.settings_voice_input_enabled),
                     summary = stringResource(R.string.settings_voice_input_enabled_summary),
@@ -2089,14 +2151,22 @@ private data class BackgroundHealth(
 private fun SessionsBackgroundSettings(state: SettingsUiState, actions: SettingsActions) {
     val context = LocalContext.current
     val health = rememberBackgroundHealth(context)
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { DetailHeading(R.string.settings_category_sessions_background, R.string.settings_sessions_intro) }
+        item(key = R.string.settings_auto_attach_herdr) {
+            SettingSwitchRow(
+                title = stringResource(R.string.settings_auto_attach_herdr),
+                summary = stringResource(R.string.settings_auto_attach_herdr_summary),
+                checked = state.preferences.autoAttachSingleHerdrSession,
+                onCheckedChange = actions.onAutoAttachSingleHerdrSession,
+            )
+        }
         item { SectionLabel(R.string.settings_connection_reliability_heading) }
-        item {
+        item(key = R.string.settings_tmux_session_selector) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_tmux_session_selector),
                 summary = stringResource(R.string.settings_tmux_session_selector_summary),
@@ -2104,7 +2174,7 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                 onCheckedChange = actions.onTmuxSessionSelectorEnabled,
             )
         }
-        item {
+        item(key = R.string.settings_keepalive_interval) {
             Text(
                 text = stringResource(R.string.settings_keepalive_interval),
                 style = MaterialTheme.typography.bodyLarge,
@@ -2135,7 +2205,7 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                     }
             }
         }
-        item {
+        item(key = R.string.settings_automatic_reconnect) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_automatic_reconnect),
                 summary = stringResource(R.string.settings_automatic_reconnect_summary),
@@ -2170,7 +2240,7 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
         }
         item { SectionDivider() }
         item { SectionLabel(R.string.settings_power_heading) }
-        item {
+        item(key = R.string.settings_keep_cpu_awake) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_keep_cpu_awake),
                 summary = stringResource(R.string.settings_keep_cpu_awake_summary),
@@ -2178,7 +2248,7 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                 onCheckedChange = actions.onKeepCpuAwake,
             )
         }
-        item {
+        item(key = R.string.settings_keep_screen_on) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_keep_screen_on),
                 summary = stringResource(R.string.settings_keep_screen_on_summary),
@@ -2188,7 +2258,7 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
         }
         item { SectionDivider() }
         item { SectionLabel(R.string.settings_background_health_heading) }
-        item {
+        item(key = R.string.settings_notifications_status) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_notifications_status),
                 summary = stringResource(R.string.settings_notifications_status_summary),
@@ -2198,6 +2268,8 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                     stringResource(R.string.settings_status_limited)
                 },
             )
+        }
+        item(key = R.string.settings_background_restriction) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_background_restriction),
                 summary = stringResource(R.string.settings_background_restriction_summary),
@@ -2207,6 +2279,8 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                     stringResource(R.string.settings_status_not_restricted)
                 },
             )
+        }
+        item(key = R.string.settings_battery_optimisation) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_battery_optimisation),
                 summary = stringResource(R.string.settings_battery_optimisation_summary),
@@ -2216,6 +2290,8 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
                     stringResource(R.string.settings_status_unrestricted)
                 },
             )
+        }
+        item(key = R.string.settings_data_saver) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_data_saver),
                 summary = stringResource(R.string.settings_data_saver_summary),
@@ -2245,25 +2321,29 @@ private fun SessionsBackgroundSettings(state: SettingsUiState, actions: Settings
 private fun NotificationSettings(state: SettingsUiState, actions: SettingsActions) {
     val context = LocalContext.current
     val health = rememberBackgroundHealth(context)
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { DetailHeading(R.string.settings_category_notifications, R.string.settings_notifications_intro) }
-        item {
+        item(key = R.string.settings_notification_privacy) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_notification_privacy),
                 summary = stringResource(R.string.settings_notification_privacy_summary),
                 checked = state.preferences.notificationPrivacyEnabled,
                 onCheckedChange = actions.onNotificationPrivacy,
             )
+        }
+        item(key = R.string.settings_disconnect_notifications) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_disconnect_notifications),
                 summary = stringResource(R.string.settings_disconnect_notifications_summary),
                 checked = state.preferences.disconnectNotificationsEnabled,
                 onCheckedChange = actions.onDisconnectNotifications,
             )
+        }
+        item(key = R.string.settings_reconnect_notifications) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_reconnect_notifications),
                 summary = stringResource(R.string.settings_reconnect_notifications_summary),
@@ -2272,7 +2352,7 @@ private fun NotificationSettings(state: SettingsUiState, actions: SettingsAction
             )
         }
         item { SectionDivider() }
-        item {
+        item(key = R.string.settings_notification_permission) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_notification_permission),
                 summary = stringResource(R.string.settings_notification_permission_summary),
@@ -2282,6 +2362,8 @@ private fun NotificationSettings(state: SettingsUiState, actions: SettingsAction
                     stringResource(R.string.settings_status_not_allowed)
                 },
             )
+        }
+        item(key = R.string.settings_session_channel) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_session_channel),
                 summary = stringResource(R.string.settings_session_channel_summary),
@@ -2324,14 +2406,14 @@ private fun SecuritySettings(
     val context = LocalContext.current
     val appLockAvailability = rememberAppLockAvailability(context)
     val canEnableAppLock = appLockAvailability == AppLockAvailability.AVAILABLE
-    LazyColumn(
+    SearchableSettingsOptions(
         modifier = Modifier.fillMaxSize().testTag(SecuritySettingsTestTag),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { DetailHeading(R.string.settings_category_security, R.string.settings_security_intro) }
         item { SectionLabel(R.string.settings_app_lock_heading) }
-        item {
+        item(key = R.string.settings_app_lock_authentication) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_app_lock_authentication),
                 summary = stringResource(R.string.settings_app_lock_authentication_summary),
@@ -2400,13 +2482,15 @@ private fun SecuritySettings(
             }
         }
         item { SectionDivider() }
-        item {
+        item(key = R.string.settings_block_screenshots) {
             SettingSwitchRow(
                 title = stringResource(R.string.settings_block_screenshots),
                 summary = stringResource(R.string.settings_block_screenshots_summary),
                 checked = state.preferences.screenshotBlockingEnabled,
                 onCheckedChange = onScreenshotBlocking,
             )
+        }
+        item(key = R.string.settings_credential_storage) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_credential_storage),
                 summary = stringResource(R.string.settings_credential_storage_summary),
@@ -2425,6 +2509,8 @@ private fun SecuritySettings(
                 }
                 Text(stringResource(R.string.settings_clear_saved_credentials))
             }
+        }
+        item(key = R.string.settings_remote_clipboard) {
             ReadOnlySettingRow(
                 title = stringResource(R.string.settings_remote_clipboard),
                 summary = stringResource(R.string.settings_remote_clipboard_summary),
@@ -2433,6 +2519,8 @@ private fun SecuritySettings(
                     else -> stringResource(R.string.settings_disabled)
                 },
             )
+        }
+        item(key = R.string.settings_clipboard_clear_heading) {
             Text(
                 text = stringResource(R.string.settings_clipboard_clear_heading),
                 style = MaterialTheme.typography.bodyLarge,
@@ -2456,7 +2544,7 @@ private fun SecuritySettings(
             }
         }
         item { SectionDivider() }
-        item {
+        item(key = R.string.settings_known_hosts_heading) {
             SectionLabel(R.string.settings_known_hosts_heading)
             Text(
                 text = stringResource(R.string.settings_known_hosts_summary),

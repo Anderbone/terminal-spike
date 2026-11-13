@@ -75,12 +75,17 @@ internal sealed interface TmuxStartupChoice : StartupSessionChoice {
 /** Owns one authenticated, pre-shell tmux selection interaction. */
 internal class TmuxSessionSelector(
     private val commandRunner: TmuxCommandRunner,
+    private val autoAttachSingleHerdrSession: Boolean = false,
     private val onPrompt: (TmuxSessionPrompt) -> Unit,
 ) {
-    constructor(session: Session, onPrompt: (TmuxSessionPrompt) -> Unit) : this(
+    constructor(session: Session, autoAttachSingleHerdrSession: Boolean = false, onPrompt: (TmuxSessionPrompt) -> Unit) : this(
         JschTmuxCommandRunner(session),
+        autoAttachSingleHerdrSession,
         onPrompt,
     )
+
+    constructor(commandRunner: TmuxCommandRunner, onPrompt: (TmuxSessionPrompt) -> Unit) :
+        this(commandRunner, false, onPrompt)
 
     private val token = nextPromptToken.getAndIncrement()
     private val actions = LinkedBlockingQueue<TmuxSelectorAction>()
@@ -89,6 +94,9 @@ internal class TmuxSessionSelector(
     fun awaitChoice(): StartupSessionChoice? {
         var inspection = inspectTmuxSessions(commandRunner)
         val herdr = inspectHerdrSessions(commandRunner)
+        if (autoAttachSingleHerdrSession) {
+            herdr.singleSessionStartupChoice()?.let { return it }
+        }
         var deleteFailed = false
         while (true) {
             inspection.executable?.let { tasks.refresh(commandRunner, it) }

@@ -64,7 +64,7 @@ internal enum class SettingsCategory(
         R.string.settings_category_sessions_background,
         R.string.settings_category_sessions_background_summary,
         "sessions background battery optimisation optimization data saver keep screen awake cpu " +
-            "foreground ssh keepalive reconnect network retry tmux selector attach session 会话 后台 电池 屏幕 常亮 保活 重连",
+            "foreground ssh keepalive reconnect network retry tmux selector attach session herdr auto 自动 进入 会话 后台 电池 屏幕 常亮 保活 重连",
     ),
     NOTIFICATIONS(
         R.string.settings_category_notifications,
@@ -89,7 +89,7 @@ internal enum class SettingsCategory(
     MOSH(
         R.string.settings_category_mosh,
         R.string.settings_category_mosh_summary,
-        "mosh extension plugin version api licence source signature 扩展 插件 传输 签名",
+        "mosh version api licence source signature 传输 签名",
     ),
     GUIDE(
         R.string.guide_title,
@@ -167,11 +167,13 @@ internal enum class VoiceInputLanguage(
 internal data class AppPreferences(
     val appearanceMode: AppearanceMode = AppearanceMode.SYSTEM,
     val dynamicColorEnabled: Boolean = false,
+    val codexInputStatusEnabled: Boolean = false,
     val accentPreset: AccentPreset = AccentPreset.MINT,
     val keepaliveIntervalSeconds: Int = 30,
     val reconnectEnabled: Boolean = false,
     val reconnectMaxAttempts: Int = 5,
     val tmuxSessionSelectorEnabled: Boolean = true,
+    val autoAttachSingleHerdrSession: Boolean = true,
     val keepCpuAwake: Boolean = false,
     val notificationPrivacyEnabled: Boolean = false,
     val disconnectNotificationsEnabled: Boolean = false,
@@ -834,8 +836,8 @@ internal val advancedSettingsCategories: Set<SettingsCategory> = setOf(
     SettingsCategory.NOTIFICATIONS,
     SettingsCategory.PORT_FORWARDING,
     SettingsCategory.SECURITY,
-    SettingsCategory.MOSH,
     SettingsCategory.DEVELOPER,
+    SettingsCategory.MOSH,
 )
 
 internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
@@ -845,11 +847,13 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
         else -> AppearanceMode.SYSTEM
     },
     dynamicColorEnabled = dynamicColorEnabled,
+    codexInputStatusEnabled = codexInputStatusEnabled,
     accentPreset = AccentPreset.fromWireCode(accentPreset),
     keepaliveIntervalSeconds = keepaliveIntervalSeconds,
     reconnectEnabled = reconnectEnabled,
     reconnectMaxAttempts = reconnectMaxAttempts,
     tmuxSessionSelectorEnabled = !tmuxSessionSelectorDisabled,
+    autoAttachSingleHerdrSession = !hasAutoAttachSingleHerdrSession() || autoAttachSingleHerdrSession,
     keepCpuAwake = keepCpuAwake,
     notificationPrivacyEnabled = notificationPrivacyEnabled,
     disconnectNotificationsEnabled = disconnectNotificationsEnabled,

@@ -41,6 +41,12 @@ internal data class HerdrSessionCatalog(
     val executable: String? = null,
 )
 
+internal fun HerdrSessionCatalog.singleSessionStartupChoice(): HerdrStartupChoice? {
+    if (availability != HerdrAvailability.AVAILABLE) return null
+    val session = sessions.singleOrNull() ?: return null
+    return HerdrStartupChoice(executable ?: return null, session.name)
+}
+
 /** Runs only during authenticated startup selection, never on the input/render path. */
 internal fun inspectHerdrSessions(runner: TmuxCommandRunner): HerdrSessionCatalog = runCatching {
     parseHerdrSessionCatalog(runner.run(HERDR_LIST_COMMAND))

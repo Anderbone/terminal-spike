@@ -79,6 +79,9 @@ class SettingsModelsTest {
         assertEquals(SettingsCategory.ADVANCED, main.last())
         assertTrue(main.none { it in advancedSettingsCategories })
         assertTrue(SettingsCategory.LOCAL_ARCH in main)
+        assertFalse(SettingsCategory.MOSH in main)
+        assertEquals(listOf(SettingsCategory.LOCAL_ARCH), settingsCategoriesForSearch("arch linux", includeDeveloper = false))
+        assertEquals(listOf(SettingsCategory.MOSH), settingsCategoriesForSearch("mosh", includeDeveloper = false).filter { it != SettingsCategory.PORT_FORWARDING })
         assertTrue(SettingsCategory.SESSIONS_BACKGROUND in advancedSettingsCategories)
         assertTrue(SettingsCategory.SECURITY in advancedSettingsCategories)
         assertEquals(
