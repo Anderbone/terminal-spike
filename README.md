@@ -10,11 +10,8 @@ Optimized for Galaxy Fold and other foldable phones, with full support for regul
 **[Get it on Google Play](https://play.google.com/store/apps/details?id=com.yanjiyu.terminalspike)** · **[Download APK](https://github.com/Anderbone/terminal-spike/releases/latest/download/terminal-spike-latest.apk)** · [Releases](https://github.com/Anderbone/terminal-spike/releases/latest) · [Website](https://yanjiyu.com/terminal-spike/) · [Discord](https://discord.gg/yMPzeCeWMT)
 
 <p>
-  <img src="docs/images/fold-herdr-workspace.jpg" width="760" alt="Terminal Spike on a Galaxy Fold, showing Herdr project navigation beside a Codex terminal and touch shortcut keys.">
-</p>
-
-<p>
   <img src="store-assets/google-play/screenshots/phone/01-mosh-workspaces.png" width="240" alt="User-supplied Mosh terminal showing project workspaces, session tabs and a buffered command input.">
+  <img src="docs/images/02-fold-workspace.png" width="240" alt="Your whole workspace. Optimized for Fold. Ready for any phone. Real Galaxy Fold capture showing Herdr navigation, a Codex terminal and touch controls.">
   <img src="store-assets/google-play/screenshots/phone/03-code-review.png" width="240" alt="Native project reader showing an actual Git diff of a small JavaScript change.">
   <img src="store-assets/google-play/screenshots/phone/04-code-server.png" width="240" alt="A real code-server editor open inside Terminal Spike with an Atlas project file.">
 </p>

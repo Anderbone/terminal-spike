@@ -1,0 +1,17 @@
+<!-- Rebuild: rsvg-convert docs/images/fold-herdr-workspace.svg -o docs/images/02-fold-workspace.png -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x2=".8" y2="1"><stop stop-color="#172723"/><stop offset="1" stop-color="#0b1110"/></linearGradient>
+    <clipPath id="screen"><rect x="64" y="370" width="952" height="1057" rx="26"/></clipPath>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <path d="M830 0V325M864 0V325M898 0V325" stroke="#c9f58b" stroke-opacity=".06" stroke-width="1"/>
+  <text x="74" y="55" fill="#bdd1c8" font-family="Liberation Sans" font-size="23" letter-spacing="4">TERMINAL SPIKE</text>
+  <text x="1008" y="55" fill="#bdd1c8" text-anchor="end" font-family="Liberation Sans" font-size="23">02</text>
+  <text x="72" y="156" fill="#e7f5d5" font-family="Liberation Sans" font-weight="bold" font-size="88" letter-spacing="-2"><tspan x="72" dy="0">Your whole</tspan><tspan x="72" dy="96">workspace.</tspan></text>
+  <text x="76" y="319" fill="#b6c7c0" font-family="Liberation Sans" font-size="30">Optimized for Fold. Ready for any phone.</text>
+  <rect x="52" y="358" width="976" height="1081" rx="38" fill="#060b09" stroke="#42534a" stroke-width="2"/>
+  <image x="64" y="370" width="952" height="1057" preserveAspectRatio="xMidYMid meet" clip-path="url(#screen)" xlink:href="fold-herdr-workspace.jpg"/>
+  <text x="76" y="1680" fill="#bdd1c8" font-family="Liberation Sans" font-size="23" letter-spacing="3">MORE ROOM TO WORK</text>
+  <text x="76" y="1740" fill="#b6c7c0" font-family="Liberation Sans" font-size="30">SSH + Mosh. Herdr workspaces. Touch controls.</text>
+</svg>
