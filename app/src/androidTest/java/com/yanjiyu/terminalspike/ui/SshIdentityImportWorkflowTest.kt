@@ -141,6 +141,7 @@ class SshIdentityImportWorkflowTest {
         key.dispose()
         val before = runBlocking { container.sshKeyIdentities.observeAll().first().map { it.id }.toSet() }
         var importedId: String? = null
+        var pickerPackage: String? = null
         fun writeDownload(fileName: String, contents: ByteArray) {
             // Only generated disposable test material is copied; never a user's key.
             // Use direct commands: UiAutomation does not interpret shell quoting/redirection.
@@ -154,6 +155,7 @@ class SshIdentityImportWorkflowTest {
             } finally { source.delete() }
         }
         fun launchPicker() {
+            pickerPackage = sshIdentitySystemDocumentIntent(context)?.component?.packageName
             compose.onNodeWithContentDescription(context.getString(R.string.connections_add_item)).performClick()
             compose.onNodeWithText(context.getString(R.string.connections_import_key)).performClick()
             compose.onNodeWithText(context.getString(R.string.key_import_file)).performClick()
@@ -167,6 +169,22 @@ class SshIdentityImportWorkflowTest {
             val deviceName = Settings.Global.getString(context.contentResolver, "device_name")
             val storageNames = "${Pattern.quote(deviceName ?: android.os.Build.MODEL)}|Internal storage|Internal shared storage|内部存储空间|内部存储"
             val storageSelector = By.res("android:id/title").text(Pattern.compile(storageNames))
+            // Android 8 hides the device root until DocumentsUI's own menu enables it.
+            // Keep browsing the real Download directory rather than replacing the picker.
+            if (android.os.Build.VERSION.SDK_INT <= 27) {
+                val drawer = By.res(Pattern.compile(".*:id/roots_list"))
+                if (device.hasObject(drawer)) {
+                    device.pressBack()
+                    assertTrue("Close the roots drawer before opening its toolbar menu", device.wait(Until.gone(drawer), 5000))
+                }
+                val menu = device.findObject(By.desc(Pattern.compile("More options|更多选项")))
+                assertNotNull("DocumentsUI must offer its storage visibility menu", menu)
+                menu!!.click()
+                device.waitForIdle()
+                val showStorage = device.findObject(By.text(Pattern.compile("Show internal storage|显示内部存储空间")))
+                if (showStorage != null) showStorage.click() else device.pressBack()
+                device.waitForIdle()
+            }
             if (device.findObject(storageSelector) == null) {
                 val roots = device.findObject(By.desc(Pattern.compile("Show roots|显示根目录")))
                 assertNotNull("System picker must offer storage roots", roots)
@@ -202,7 +220,8 @@ class SshIdentityImportWorkflowTest {
             assertTrue("Download row must be below the pinned toolbar", folderBounds.bottom - 3 > toolbarBottom + 24)
             assertTrue(device.click(folderBounds.centerX(), folderBounds.bottom - 3))
             assertTrue("Tapping Download must navigate out of the storage root",
-                device.wait(Until.gone(By.res("android:id/title").text("Download")), 5000))
+                device.wait(Until.gone(By.res("android:id/title").text("Download")
+                    .hasAncestor(By.res(Pattern.compile(".*:id/dir_list")))), 5000))
             device.waitForIdle()
             device.findObject(By.desc(Pattern.compile("List View|List view|列表视图")))?.click()
             device.waitForIdle()
@@ -267,6 +286,13 @@ class SshIdentityImportWorkflowTest {
                 .exceptionOrNull()?.let(failure::addSuppressed)
             throw failure
         } finally {
+            // Orchestrator clears this app, not external system activities. Stop only
+            // the system picker this test resolved, after retaining failure evidence.
+            pickerPackage?.let { packageName ->
+                if (packageName in setOf("com.android.documentsui", "com.google.android.documentsui")) {
+                    device.executeShellCommand("am force-stop $packageName")
+                }
+            }
             // Delete only this test's identity/files, including after a partially completed import.
             runBlocking {
                 container.sshKeyIdentities.observeAll().first().filter { it.name == name && it.id !in before }

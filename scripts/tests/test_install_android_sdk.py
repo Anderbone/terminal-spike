@@ -40,6 +40,20 @@ class InstallAndroidSdkTest(unittest.TestCase):
         failure = self.result(1, "HTTP response code: 502")
         self.assertEqual((1, 2, 1), self.run_install([failure, failure]))
 
+    def test_image_fallback_keeps_exact_package_and_accepts_license(self):
+        tools = Path("/sdk/tools")
+        image = "system-images;android-35;google_apis;x86_64"
+        with patch.object(sdk.os, "access", return_value=True), patch.object(sdk, "install", side_effect=[1, 0]) as install:
+            self.assertEqual(0, sdk.install_image(tools, image))
+        self.assertEqual([
+            ((["/sdk/tools/android", "sdk", "install", image], "y\n"),),
+            ((["/sdk/tools/sdkmanager", image], "y\n"),),
+        ], [(call.args,) for call in install.call_args_list])
+
+    def test_image_fallback_failure_is_not_hidden(self):
+        with patch.object(sdk.os, "access", return_value=True), patch.object(sdk, "install", return_value=1):
+            self.assertEqual(1, sdk.install_image(Path("/sdk/tools"), "system-images;android-35;google_apis;x86_64"))
+
     def test_configuration_and_unknown_failures_are_not_retried(self):
         for message in ("Failed to find package emulator", "License not accepted",
                         "HTTP response code: 403", "HTTP response code: 404", "unknown error"):

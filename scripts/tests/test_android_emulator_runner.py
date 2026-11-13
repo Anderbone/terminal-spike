@@ -20,6 +20,7 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
             "run-android-emulator-tests.sh",
             "instrumentation-output-to-junit.py",
             "redact-android-test-log.py",
+            "install-android-sdk.py",
             "verify-android-test-contract.py",
         ):
             shutil.copy2(SOURCE_SCRIPTS / name, scripts / name)
@@ -267,6 +268,16 @@ esac
         env["FAKE_INSTRUMENTATION_OUTPUT"] = "OK (0 tests)\nINSTRUMENTATION_CODE: -1"
         result = self.run_runner("--api", "35", "--suite", "full", env=env)
         self.assertNotEqual(0, result.returncode)
+
+    def test_instrumentation_timeout_retains_failure_xml_and_cleans(self) -> None:
+        env = self.env.copy()
+        env["FAKE_INSTRUMENTATION_DELAY"] = "2"
+        env["TERMINAL_SPIKE_INSTRUMENTATION_TIMEOUT_SECONDS"] = "1"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(124, result.returncode)
+        self.assertTrue((self.output / "instrumentation-api35-full.txt").exists())
+        self.assertIn('errors="1"', (self.output / "TEST-api35-full.xml").read_text())
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
 
     def test_focus_evidence_is_filtered_redacted_and_keeps_test_failure(self) -> None:
         env = self.env.copy()

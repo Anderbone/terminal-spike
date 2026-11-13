@@ -25,7 +25,10 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/terminal-spike-ci-autofix"
 install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/terminal-spike-ci-autofix"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p "$install_dir" "$state_dir" "$unit_dir"
-install -m 0755 "$checkout_dir/scripts/ci-autofix.py" "$install_dir/ci-autofix.py"
+for script in ci-autofix.py ci-status.py; do
+    install -m 0755 "$checkout_dir/scripts/$script" "$install_dir/$script.next"
+    mv "$install_dir/$script.next" "$install_dir/$script"
+done
 python3 - "$checkout_dir" "$install_dir" "$unit_dir" "$state_dir" "$codex_bin" "$gh_bin" <<'PY'
 from pathlib import Path
 import os
@@ -70,3 +73,5 @@ systemctl --user enable --now terminal-spike-ci-autofix.timer
 echo "Installed for Anderbone/terminal-spike only. State: $state_dir/state.json"
 echo 'Progress: journalctl --user -u terminal-spike-ci-autofix.service -f'
 echo 'Pause: systemctl --user stop terminal-spike-ci-autofix.timer'
+
+echo "Read-only status (also inside Herdr): python3 $install_dir/ci-status.py"

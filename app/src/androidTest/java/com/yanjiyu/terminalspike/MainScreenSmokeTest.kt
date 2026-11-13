@@ -35,6 +35,9 @@ import com.yanjiyu.terminalspike.ui.settings.KeyboardSettingsTestTag
 import com.yanjiyu.terminalspike.ui.settings.SecuritySettingsTestTag
 import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import com.yanjiyu.terminalspike.ui.NewTerminalSessionTestTag
+import com.yanjiyu.terminalspike.ui.NewTerminalSessionVisualTestTag
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
 import com.yanjiyu.terminalspike.ui.TerminalChromeTitleTestTag
 import com.yanjiyu.terminalspike.ui.TerminalEmptyStateTestTag
@@ -72,6 +75,9 @@ class MainScreenSmokeTest {
             "Choose a saved connection to start a secure terminal session.",
         ).assertIsDisplayed()
         composeRule.onNodeWithTag(NewTerminalSessionTestTag)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(NewTerminalSessionVisualTestTag, useUnmergedTree = true)
             .assertWidthIsEqualTo(30.dp)
             .assertHeightIsEqualTo(30.dp)
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
@@ -121,6 +127,9 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Open settings").performClick()
         composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+            .performScrollToNode(hasText(composeRule.activity.getString(R.string.settings_category_advanced)))
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.settings_category_advanced)).performClick()
+        composeRule.onNodeWithTag(AdvancedSettingsListTestTag)
             .performScrollToNode(hasText("Security"))
         composeRule.onNodeWithText("Security").performClick()
 

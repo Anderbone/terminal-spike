@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-ci-${{ github.ref }}-${{ (github.event_name == 'workflow_dispatch') && 'compatibility' || 'required' }}
@@ -31,6 +32,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Validate assets, tooling, and exact test inventory before building
         run: scripts/verify-android.sh preflight
@@ -110,6 +113,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -127,7 +132,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -143,6 +148,12 @@ jobs:
           --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
           --test-services-apk build/ci-apks/test-services-1.6.0.apk
           --output-dir build/ci-android-results
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-android-results --name 'android-runtime-api-${{ matrix.api }}-shard-${{ matrix.shard }}'
 
       - name: Upload sanitized API ${{ matrix.api }} evidence
         if: always()
@@ -160,17 +171,20 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 5
     strategy:
+      fail-fast: false
       matrix:
         api: [26, 35]
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Require every runtime shard to pass
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
+      - name: Require both shards for this API to pass
         env:
-          SHARD_RESULT: ${{ needs.required-runtime-shard.result }}
-        run: test "$SHARD_RESULT" = success
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-ci-shards.py --api ${{ matrix.api }}
       - name: Download both shard reports
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           pattern: android-runtime-api-${{ matrix.api }}-shard-*
           path: build/runtime-shards
@@ -193,6 +207,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -210,7 +226,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -225,6 +241,12 @@ jobs:
           --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
           --test-services-apk build/ci-apks/test-services-1.6.0.apk
           --output-dir build/ci-backup-clean-install-results
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-backup-clean-install-results --name 'android-backup-clean-install-api-35'
 
       - name: Upload sanitized clean-install backup evidence
         if: always()
@@ -249,6 +271,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -266,7 +290,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -281,6 +305,12 @@ jobs:
           --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
           --test-services-apk build/ci-apks/test-services-1.6.0.apk
           --output-dir build/ci-android-results
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-android-results --name 'android-boundary-api-${{ matrix.api }}'
 
       - name: Upload sanitized API ${{ matrix.api }} evidence
         if: always()
@@ -306,6 +336,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -323,7 +355,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -339,6 +371,12 @@ jobs:
           --orchestrator-apk build/ci-apks/orchestrator-1.6.1.apk
           --test-services-apk build/ci-apks/test-services-1.6.0.apk
           --output-dir build/ci-android-results
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-android-results --name 'android-scheduled-api-${{ matrix.api }}-shard-${{ matrix.shard }}'
 
       - name: Upload sanitized API ${{ matrix.api }} evidence
         if: always()
@@ -356,17 +394,20 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 5
     strategy:
+      fail-fast: false
       matrix:
         api: [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Require every scheduled shard to pass
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
+      - name: Require all four shards for this API to pass
         env:
-          SHARD_RESULT: ${{ needs.scheduled-runtime-shard.result }}
-        run: test "$SHARD_RESULT" = success
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-ci-shards.py --api ${{ matrix.api }} --scheduled
       - name: Download all four shard reports
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           pattern: android-scheduled-api-${{ matrix.api }}-shard-*
           path: build/scheduled-shards
@@ -388,6 +429,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -405,7 +448,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -444,6 +487,12 @@ jobs:
           -f integration-tests/openssh/compose.yaml
           down --volumes --remove-orphans
 
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-android-results --name 'android-openssh-api-35-37'
+
       - name: Upload sanitized OpenSSH evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -463,6 +512,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -480,7 +531,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download runtime-test APKs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-test-apks
           path: build/ci-apks
@@ -491,6 +542,12 @@ jobs:
           --api 35
           --app-apk build/ci-apks/app-debug.apk
           --output-dir build/ci-lifecycle-results
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-lifecycle-results --name 'android-lifecycle-api-35'
 
       - name: Upload sanitized lifecycle evidence
         if: always()
@@ -511,6 +568,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare disk-backed temporary files
+        uses: ./.github/actions/prepare-ci-temp
 
       - name: Set up Java 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -528,7 +587,7 @@ jobs:
         run: test -r /dev/kvm && test -w /dev/kvm
 
       - name: Download verified unsigned release artifacts from this run
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: ./.github/actions/download-ci-artifact
         with:
           name: android-verified-release
           path: build/ci-release
@@ -547,6 +606,12 @@ jobs:
           --project-directory integration-tests/openssh
           -f integration-tests/openssh/compose.yaml
           down --volumes --remove-orphans
+
+      - name: Retain sanitized evidence on the runner
+        if: always()
+        run: >-
+          python3 scripts/preserve-ci-evidence.py
+          --source build/ci-release-smoke-result --name 'android-release-update-api-35'
 
       - name: Upload sanitized release-smoke status only
         if: always()

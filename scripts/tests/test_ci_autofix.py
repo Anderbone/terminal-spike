@@ -13,6 +13,55 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CiAutofixTest(unittest.TestCase):
+    def test_artifact_failure_does_not_hide_remaining_reports_or_job_logs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            loop = MODULE.Loop(Path(temporary), Path(temporary) / "state")
+            responses = [{"jobs": [{"id": 42, "conclusion": "failure"}]},
+                         {"artifacts": [{"name": "broken", "expired": False},
+                                        {"name": "available", "expired": False}]}]
+            with patch.object(loop, "api", side_effect=responses), patch.object(MODULE, "command", side_effect=[
+                    RuntimeError("artifact download 404"), "downloaded", "failed job details"]):
+                evidence = loop.evidence(self.run_record(), Path(temporary))
+            self.assertEqual("failed job details", (evidence / "job-42.log").read_text())
+            receipt = MODULE.json.loads((evidence / "collection.json").read_text())
+            self.assertEqual(2, receipt["collected"])
+            self.assertEqual("broken", receipt["missing"][0]["artifact"])
+
+    def test_no_patch_retains_agent_blocker_in_state_without_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "app").mkdir()
+            (root / "app/build.gradle.kts").write_text('versionName = "0.0.24"\n')
+            loop = MODULE.Loop(root, root / "state")
+            chain = {"branch": "codex/ci-fix-10", "sha": "a" * 40, "attempts": 0,
+                     "started": MODULE.time.time(), "pr": None}
+            with patch.object(loop, "workspace", return_value=root), \
+                    patch.object(loop, "evidence", return_value=root / "evidence"), \
+                    patch.object(loop, "agent", return_value="Blocked: emulator has no KVM access"), \
+                    patch.object(MODULE, "command", side_effect=["a" * 40, ""]) as command:
+                loop.repair(self.run_record(), chain)
+            self.assertTrue(chain["stopped"])
+            self.assertIn("no KVM access", chain["result"])
+            self.assertIn("report_path", chain)
+            self.assertEqual(2, command.call_count)
+
+    def test_missing_kvm_does_not_launch_agent_or_consume_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "app").mkdir()
+            (root / "app/build.gradle.kts").write_text('versionName = "0.0.24"\n')
+            loop = MODULE.Loop(root, root / "state")
+            chain = {"branch": "codex/ci-fix-10", "sha": "a" * 40, "attempts": 0,
+                     "started": MODULE.time.time(), "pr": None}
+            with patch.object(loop, "workspace", return_value=root), \
+                    patch.object(loop, "evidence", return_value=root / "evidence"), \
+                    patch.object(MODULE.os, "access", return_value=False), \
+                    patch.object(MODULE.subprocess, "Popen") as launch:
+                loop.repair(self.run_record(), chain)
+            launch.assert_not_called()
+            self.assertEqual(0, chain["attempts"])
+            self.assertEqual("blocked_environment", chain["phase"])
+
     def test_terminal_control_sequences_are_removed_without_losing_log_text(self):
         raw = '\x1b[31mFAILED\x1b[0m\n\x1b]0;malicious title\x07中文\tline\x00\x9b'
         self.assertEqual('FAILED\n中文\tline', MODULE.clean_log(raw))
@@ -42,7 +91,7 @@ class CiAutofixTest(unittest.TestCase):
             scripts = checkout / "scripts"
             scripts.mkdir(parents=True)
             source = Path(__file__).resolve().parents[1]
-            for name in ["install-ci-autofix.sh", "ci-autofix.py"]:
+            for name in ["install-ci-autofix.sh", "ci-autofix.py", "ci-status.py"]:
                 shutil.copy2(source / name, scripts / name)
             binaries = root / "bin"
             binaries.mkdir()

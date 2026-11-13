@@ -28,7 +28,10 @@ internal fun InputKeyboardFrame(
             val side: @Composable (IntRange) -> Unit = { indices ->
                 indices.toList().chunked(2).forEach { column ->
                     Column(Modifier.width(keyWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(TerminalAccessoryRowGap)) {
-                        column.forEach { index -> key(index, tokens[index], Modifier.height(48.dp).fillMaxWidth()) }
+                        // Match the shortcut deck's weighted rows, including its allocation
+                        // of an odd remaining pixel at fractional display densities.
+                        column.forEach { index -> key(index, tokens[index], Modifier.weight(1f).fillMaxWidth()) }
+                        if (column.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             }

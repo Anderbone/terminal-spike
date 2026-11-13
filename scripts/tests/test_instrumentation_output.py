@@ -50,14 +50,56 @@ class InstrumentationOutputTest(unittest.TestCase):
             "OK (0 tests)\n",
             "nothing useful\n",
             "OK (1 test)\nOK (1 test)\n",
-            "FAILURES!!!\nOK (1 test)\n",
-            "INSTRUMENTATION_FAILED: crash\n",
         )
         for fixture in fixtures:
             with self.subTest(fixture=fixture):
                 result, xml = self.run_parser(fixture)
                 self.assertNotEqual(0, result.returncode)
-                self.assertEqual("", xml)
+                self.assertIn('errors="1"', xml)
+
+    def test_failed_run_retains_test_identity_and_stack_but_exits_failed(self):
+        import xml.etree.ElementTree as ET
+        result, xml = self.run_parser(
+            "INSTRUMENTATION_STATUS: class=example.Test\n"
+            "INSTRUMENTATION_STATUS: test=broken\n"
+            "INSTRUMENTATION_STATUS: stack=AssertionError: mismatch\n"
+            "  at example.Test.broken(Test.kt:42)\n"
+            "INSTRUMENTATION_STATUS_CODE: -2\nFAILURES!!!\n")
+        self.assertNotEqual(0, result.returncode)
+        suite = ET.fromstring(xml)
+        self.assertEqual("1", suite.get("failures"))
+        self.assertEqual("broken", suite.find("testcase").get("name"))
+        self.assertIn("Test.kt:42", suite.find("testcase/failure").text)
+
+    def test_completed_failed_summary_does_not_invent_an_extra_crash(self):
+        import xml.etree.ElementTree as ET
+        result, xml = self.run_parser(
+            "INSTRUMENTATION_STATUS: class=example.Test\n"
+            "INSTRUMENTATION_STATUS: test=broken\n"
+            "INSTRUMENTATION_STATUS: stack=AssertionError: mismatch\n"
+            "INSTRUMENTATION_STATUS_CODE: -2\nFAILURES!!!\n"
+            "Tests found: 1, Tests run: 1,  Failures: 1\n")
+        self.assertNotEqual(0, result.returncode)
+        suite = ET.fromstring(xml)
+        self.assertEqual("1", suite.get("tests"))
+        self.assertEqual("1", suite.get("failures"))
+        self.assertEqual("0", suite.get("errors"))
+
+    def test_incomplete_run_retains_completed_cases_and_a_completion_error(self):
+        result, xml = self.run_parser(
+            "INSTRUMENTATION_STATUS: class=example.Test\n"
+            "INSTRUMENTATION_STATUS: test=finishedBeforeTimeout\n"
+            "INSTRUMENTATION_STATUS_CODE: 0\n")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('name="finishedBeforeTimeout"', xml)
+        self.assertIn('name="run-completion"', xml)
+        self.assertIn('errors="1"', xml)
+
+    def test_crash_or_failure_marker_cannot_become_success(self):
+        for fixture in ("FAILURES!!!\nOK (1 test)\n", "INSTRUMENTATION_FAILED: crash\n"):
+            result, xml = self.run_parser(fixture)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('errors="1"', xml)
 
     def test_redacts_credentials_addresses_and_private_key_blocks(self) -> None:
         source = (

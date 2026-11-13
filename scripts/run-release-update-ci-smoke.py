@@ -157,7 +157,7 @@ class ReleaseSmokeRunner:
         self.log("preflight", "pass", api=str(self.arguments.api))
 
     def prepare_workspace(self) -> tuple[Path, str, str]:
-        temp_root = Path(os.environ.get("TMPDIR", "/tmp")).resolve()
+        temp_root = Path(os.environ.get("TMPDIR") or os.environ.get("RUNNER_TEMP", "/tmp")).resolve()
         self.workspace = Path(
             tempfile.mkdtemp(prefix="terminal-spike-release-ci.", dir=temp_root)
         ).resolve()

@@ -15,7 +15,7 @@ class AppLifecycleE2eTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
-        for name in ("run-app-lifecycle-e2e.py", "redact-android-test-log.py"):
+        for name in ("run-app-lifecycle-e2e.py", "redact-android-test-log.py", "install-android-sdk.py"):
             shutil.copy2(SOURCE_ROOT / "scripts" / name, self.scripts / name)
             (self.scripts / name).chmod(0o755)
         self.runner = self.scripts / "run-app-lifecycle-e2e.py"

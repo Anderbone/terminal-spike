@@ -23,12 +23,18 @@ fi
 if [[ "$mode" != preflight ]]; then
     start=$SECONDS
     signing_options=()
+    temporary_options=()
+    if [[ -n "${TMPDIR:-${RUNNER_TEMP:-}}" ]]; then
+        # A reused desktop Kotlin daemon can still point at a quota-limited /tmp.
+        # Make its temporary-directory input explicit without disabling caches.
+        temporary_options+=("-Pkotlin.daemon.jvmargs=-Djava.io.tmpdir=${TMPDIR:-$RUNNER_TEMP}")
+    fi
     if [[ -n "${TERMINAL_SPIKE_RELEASE_STORE_FILE:-}" ]]; then
         # Signing passwords must not be serialized into the configuration cache.
         signing_options+=(--no-configuration-cache --no-daemon)
     fi
     # Do not clean caches, disable incremental compilation, or run the same graph twice.
-    if ./gradlew --dependency-verification=strict --console=plain --max-workers=2 "${signing_options[@]}" \
+    if ./gradlew --dependency-verification=strict --console=plain --max-workers=2 "${signing_options[@]}" "${temporary_options[@]}" \
         :mosh-api:testDebugUnitTest :mosh-api:lintDebug :mosh-api:assembleDebug \
         :mosh-core:testDebugUnitTest :mosh-core:lintDebug :mosh-core:lintRelease \
         :mosh-core:assembleDebug :mosh-core:assembleRelease :mosh-core:assembleDebugAndroidTest \

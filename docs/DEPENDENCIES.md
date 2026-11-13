@@ -260,6 +260,12 @@ stable version above, only when absent. Existing Codex and account files are kep
 No authentication or AI request runs automatically; users initiate both logins
 and subsequent commands. The APK contains setup instructions, not these binaries.
 
+The CI host also uses its existing stable GitHub CLI installation (verified 2.103.3)
+to download exact current-run Artifact IDs, check SHA-256 metadata, report shard
+results and display local CI status. This is host tooling under the same MIT source
+and redistribution obligations in the `github-cli` entry above; the CLI binary
+remains on the runner.
+
 Pacman versions are resolved by signed stable repository metadata and recorded by pacman
 in the guest; no testing/staging or prerelease channel is enabled. Arch's full
 upgrade avoids partial upgrades. Omarchy's CLI package list is a selection reference

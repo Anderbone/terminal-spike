@@ -76,6 +76,7 @@ import com.yanjiyu.terminalspike.ui.theme.spacing
 internal const val TerminalSessionStripTestTag = "terminal-session-strip"
 internal const val TerminalSessionTabTestTagPrefix = "terminal-session-tab-"
 internal const val NewTerminalSessionTestTag = "new-terminal-session"
+internal const val NewTerminalSessionVisualTestTag = "new-terminal-session-visual"
 internal const val TerminalChromeTitleTestTag = "terminal-chrome-title"
 internal const val TerminalChromeBackTestTag = "terminal-chrome-back"
 internal const val KeyboardInteractiveDialogTestTag = "keyboard-interactive-dialog"
@@ -339,14 +340,19 @@ fun SessionChrome(
                     onClick = onNewSession,
                     enabled = canAddSession && settingsReady,
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(48.dp)
                         .testTag(NewTerminalSessionTestTag)
                         .semantics { contentDescription = newSessionDescription },
                 ) {
-                    ConnectionsGlyphIcon(
-                        glyph = ConnectionsGlyph.ADD,
-                        modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                    )
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(30.dp).testTag(NewTerminalSessionVisualTestTag),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ConnectionsGlyphIcon(
+                            glyph = ConnectionsGlyph.ADD,
+                            modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
+                        )
+                    }
                 }
             }
             if (visibleSessions.isEmpty() && !notice.isNullOrBlank()) {

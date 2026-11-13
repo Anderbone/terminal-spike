@@ -1,0 +1,27 @@
+name: Download verified current-run artifacts
+description: Fetch exact artifact IDs through REST and verify their SHA-256 before extraction
+inputs:
+  name:
+    description: Exact artifact name
+    default: ''
+  pattern:
+    description: Artifact name pattern for combined shard reports
+    default: ''
+  path:
+    description: Destination directory
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ARTIFACT_NAME: ${{ inputs.name }}
+        ARTIFACT_PATTERN: ${{ inputs.pattern }}
+        ARTIFACT_PATH: ${{ inputs.path }}
+      run: |
+        if [[ -n "$ARTIFACT_NAME" ]]; then
+          python3 scripts/download-ci-artifact.py --name "$ARTIFACT_NAME" --path "$ARTIFACT_PATH"
+        else
+          python3 scripts/download-ci-artifact.py --pattern "$ARTIFACT_PATTERN" --path "$ARTIFACT_PATH"
+        fi

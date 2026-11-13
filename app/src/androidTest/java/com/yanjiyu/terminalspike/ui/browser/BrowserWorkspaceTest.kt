@@ -79,7 +79,7 @@ class BrowserWorkspaceTest {
             compose.onNodeWithTag("browser-url-input").performImeAction()
         }
         compose.waitUntil(15_000) { compose.runOnIdle { tab.view?.progress == 100 && tab.view?.url?.startsWith(tab.address) == true } }
-        compose.waitUntil(15_000) { script(tab, "document.getElementById('editor')?.textContent") == "\"Original code\"" }
+        compose.waitUntil(15_000) { script(tab, "(function(){var editor=document.getElementById('editor');return editor && editor.textContent;})()") == "\"Original code\"" }
         return tab
     }
 
@@ -164,7 +164,7 @@ class BrowserWorkspaceTest {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val position = org.json.JSONArray(requireNotNull(script(tab, """(function(){
             const r=document.getElementById('next').getBoundingClientRect();
-            const scale=window.devicePixelRatio*(window.visualViewport?.scale || 1);
+            const scale=window.devicePixelRatio*((window.visualViewport && window.visualViewport.scale) || 1);
             return [(r.x+r.width/2)*scale,(r.y+r.height/2)*scale];
         })()""")))
         val origin = compose.runOnIdle {

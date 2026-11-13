@@ -44,6 +44,7 @@ scripts/install-ci-autofix.sh
 systemctl --user status terminal-spike-ci-autofix.timer
 journalctl --user -u terminal-spike-ci-autofix.service -f
 python3 scripts/ci-autofix.py --status
+python3 scripts/ci-status.py
 ```
 
 The timer checks every minute when idle, with a process lock as an additional overlap
@@ -86,3 +87,17 @@ The local Codex process must retain a valid login and available model allowance.
 Authentication/quota errors stop the attempt and appear in the local journal/state;
 if a PR already exists, its body also records the blocker. This service cannot
 guarantee that every CI failure has an automatic fix.
+
+## Failure visibility and evidence
+
+`ci-status.py` is a read-only terminal view; it works inside Herdr without creating
+an interactive agent session. The controller records agent PID, log/report paths,
+evidence directory and a specific blocker even if no patch is produced. Repeated
+idle checks update `checked_at`, not the last actual status transition `updated_at`.
+The background `codex exec` process is not registered as a Herdr workspace.
+
+Artifact collection records missing files in `collection.json` and continues with
+other reports and failed-job logs. Evidence-only failures do not consume a Codex
+attempt. Host KVM and emulator-tool preflight blocks before launching the agent;
+the agent must still verify capabilities inside its own execution context. A
+blocked environment never authorizes disabling assertions or widening permissions.

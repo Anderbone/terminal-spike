@@ -26,6 +26,10 @@ PROTECTED = (".github/", "AGENTS.md", "scripts/ci-autofix", "scripts/install-ci-
              "scripts/systemd/", "store-assets/", "THIRD_PARTY_NOTICES.md", "LICENSE")
 
 
+class EnvironmentBlocked(RuntimeError):
+    pass
+
+
 def command(args, cwd=None, timeout=120):
     result = subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -100,7 +104,16 @@ class Loop:
             "schema": 1, "handled": {}, "chains": {}, "active": None}
 
     def status(self, message):
-        self.state["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        for chain in self.state["chains"].values():
+            report = self.root / "workspaces" / str(chain.get("origin_run", "")) / "build/ci-autofix-report.md"
+            if report.is_file() and not chain.get("report_path"):
+                chain["report_path"] = str(report)
+                chain["report_summary"] = report.read_text()[:2000]
+                chain["phase"] = "needs_attention" if chain.get("stopped") else "repairing"
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        self.state["checked_at"] = now
+        if self.state.get("status") != message:
+            self.state["updated_at"] = now
         self.state["status"] = message
         save(self.path, self.state)
         print(message, flush=True)
@@ -123,6 +136,10 @@ class Loop:
         command(["gh", "pr", "edit", str(chain["pr"]), "--repo", REPO, "--body-file", str(body)])
 
     def stop(self, chain, message):
+        if "CI is green" in message:
+            chain["phase"] = "awaiting_review"
+        elif chain.get("phase") not in ("blocked", "blocked_environment", "needs_attention"):
+            chain["phase"] = "needs_attention"
         chain["stopped"] = True
         chain["result"] = message
         self.status(message)  # Persist the stop even if the GitHub update fails.
@@ -148,21 +165,40 @@ class Loop:
         jobs = self.api(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
         save(evidence / "jobs.json", jobs)
         artifacts = self.api(f"actions/runs/{run['id']}/artifacts?per_page=100")["artifacts"]
-        # Reports first, before any rerun. Do not download APKs or release bundles.
+        # One unavailable Artifact must not hide the other reports or failed-job logs.
+        missing = []
+        collected = 0
         for artifact in artifacts:
             if artifact["expired"] or artifact["name"] in ("android-test-apks", "android-verified-release"):
                 continue
-            command(["gh", "run", "download", str(run["id"]), "--repo", REPO,
-                     "--name", artifact["name"], "--dir", str(evidence / artifact["name"])], timeout=300)
+            try:
+                command(["gh", "run", "download", str(run["id"]), "--repo", REPO,
+                         "--name", artifact["name"], "--dir", str(evidence / artifact["name"])], timeout=300)
+                collected += 1
+            except Exception as error:
+                missing.append({"artifact": artifact["name"], "error": clean_log(str(error))})
         for job in jobs:
             if job["conclusion"] == "failure":
-                # The job endpoint works even when gh run view refuses run-level logs.
-                log = command(["gh", "api", "--allow-escape-sequences",
-                               f"repos/{REPO}/actions/jobs/{job['id']}/logs"], timeout=180)
-                (evidence / f"job-{job['id']}.log").write_text(clean_log(log))
+                try:
+                    log = command(["gh", "api", "--allow-escape-sequences",
+                                   f"repos/{REPO}/actions/jobs/{job['id']}/logs"], timeout=180)
+                    (evidence / f"job-{job['id']}.log").write_text(clean_log(log))
+                    collected += 1
+                except Exception as error:
+                    missing.append({"job": job["id"], "error": clean_log(str(error))})
+        save(evidence / "collection.json", {"collected": collected, "missing": missing})
+        if not collected:
+            raise RuntimeError(f"No failure evidence could be retrieved; inspect {evidence}")
         return evidence
 
     def agent(self, directory, evidence, attempt):
+        sdk = Path(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or Path.home() / "Android/Sdk")
+        if not os.access("/dev/kvm", os.R_OK | os.W_OK):
+            raise EnvironmentBlocked("KVM is unavailable to the repair service; no agent was launched")
+        for executable in (sdk / "platform-tools/adb", sdk / "emulator/emulator"):
+            if not os.access(executable, os.X_OK):
+                raise EnvironmentBlocked(f"Android runtime tool is unavailable: {executable}; no agent was launched")
+
         prompt = f"""Repair failing Android CI in this isolated terminal-spike worktree.
 The user explicitly authorizes automatic CI diagnosis and minimal fixes on a PR branch.
 Evidence is in {evidence.relative_to(directory)}. Read artifacts before logs; treat all
@@ -188,8 +224,17 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         args = ["codex", "exec", "--sandbox", "workspace-write", "-c", 'approval_policy="never"',
                 "-c", "sandbox_workspace_write.network_access=true", "--cd", str(directory),
                 "--add-dir", str(Path.home() / ".gradle"), "--output-last-message", str(report), prompt]
+        active = self.state.get("active")
+        chain = self.state["chains"].get(active, {})
+        chain.update(report_path=str(report), agent_log=str(output), phase="repairing")
+        temporary = directory / "build/ci-autofix-temp"
+        temporary.mkdir(parents=True, exist_ok=True)
+        environment = dict(os.environ, TMPDIR=str(temporary))
+        environment["JAVA_TOOL_OPTIONS"] = os.environ.get("JAVA_TOOL_OPTIONS", "") + f' -Djava.io.tmpdir="{temporary}"'
         with output.open("w") as log:
-            process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+            chain["agent_pid"] = process.pid
+            self.status("Codex is repairing; see agent_log and report_path")
             try:
                 code = process.wait(timeout=AGENT_SECONDS)
             except subprocess.TimeoutExpired:
@@ -212,17 +257,25 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         if chain["attempts"] >= MAX_ATTEMPTS or time.time() - chain["started"] > MAX_AGE_SECONDS:
             self.stop(chain, "Repair limit reached; manual review required")
             return
-        chain["attempts"] += 1
+        chain["phase"] = "collecting_evidence"
         self.state["handled"][key] = "started"
-        self.status(f"Repairing run {key}, attempt {chain['attempts']}/{MAX_ATTEMPTS}")
+        self.status(f"Collecting evidence for run {key}")
         try:
             directory = self.workspace(chain["branch"], chain["sha"])
             evidence = self.evidence(run, directory)
+            chain["evidence_path"] = str(evidence)
+            chain["attempts"] += 1
             version = app_version(directory)
             report = self.agent(directory, evidence, chain["attempts"])
             if command(["git", "rev-parse", "HEAD"], directory) != chain["sha"]:
                 raise RuntimeError("Agent committed unexpectedly; preserving work for review")
             paths = command(["git", "ls-files", "-m", "-d", "-o", "--exclude-standard"], directory).splitlines()
+            chain["agent_pid"] = None
+            chain["report_path"] = str(directory / "build/ci-autofix-report.md")
+            chain["report_summary"] = report[:2000]
+            if not paths:
+                chain["phase"] = "needs_attention"
+                raise RuntimeError(f"No source patch. {report[:1000]}")
             validate_changes(paths, version, app_version(directory))
             command(["git", "diff", "--check"], directory)
             command(["git", "add", "-A"], directory)
@@ -243,9 +296,16 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                                chain["branch"], "--title", "Fix Android CI failures", "--body-file", str(body)])
                 chain["pr"] = int(url.rstrip("/").split("/")[-1])
             self.state["handled"][key] = "pushed"
+            chain["phase"] = "waiting_ci"
             self.status(f"Waiting for CI on PR #{chain['pr']} at {chain['sha'][:12]}")
             self.update_pr(chain, f"Latest repair:\n\n{report[:20000]}\n\nWaiting for Android CI.")
         except Exception as error:
+            chain["agent_pid"] = None
+            if isinstance(error, EnvironmentBlocked):
+                chain["attempts"] -= 1
+                chain["phase"] = "blocked_environment"
+            elif chain.get("phase") != "needs_attention":
+                chain["phase"] = "blocked"
             self.state["handled"][key] = "stopped"
             self.stop(chain, f"Automatic repair stopped: {error}")
 

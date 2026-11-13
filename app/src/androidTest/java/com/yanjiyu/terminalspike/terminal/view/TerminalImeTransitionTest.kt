@@ -182,7 +182,22 @@ class TerminalImeTransitionTest {
         }
     }
 
-    @Test fun actualKeyboardUsesProductionBridgeAndSubmitsTargetDuringBothAnimations() {
+    private fun withImeAnimations(block: () -> Unit) {
+        val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val scales = listOf("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
+        val original = scales.associateWith { device.executeShellCommand("settings get global $it").trim() }
+        try {
+            scales.forEach { device.executeShellCommand("settings put global $it 1") }
+            block()
+        } finally {
+            original.forEach { (setting, value) ->
+                if (value == "null") device.executeShellCommand("settings delete global $setting")
+                else device.executeShellCommand("settings put global $setting $value")
+            }
+        }
+    }
+
+    @Test fun actualKeyboardUsesProductionBridgeAndSubmitsTargetDuringBothAnimations() = withImeAnimations {
         val controller = TerminalController().apply { reportTerminalSize(1, 1) }
         val engine = VtTerminalEngine()
         lateinit var ime: WindowInsets

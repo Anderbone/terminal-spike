@@ -116,6 +116,10 @@ class ArchRootfsExtractorTest {
     private fun tar(vararg entries: Entry): ByteArray {
         val bytes = ByteArrayOutputStream()
         TarArchiveOutputStream(bytes).use { tar ->
+            // Disk-backed CI temporary paths can exceed the USTAR link-name field.
+            // Build a valid PAX fixture so the extractor, not the fixture builder,
+            // must reject a symlink that redirects writes outside staging.
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
             entries.forEach { item ->
                 val entry = TarArchiveEntry(
                     ArchRootfsManifest.ARCHIVE_PREFIX + "/" + item.path,

@@ -206,7 +206,7 @@ class Runner:
             raise LifecycleFailure("emulator AVD identity does not match the owned lifecycle AVD")
 
     def prepare_emulator(self) -> None:
-        temp_root = Path(os.environ.get("TMPDIR", "/tmp")).resolve()
+        temp_root = Path(os.environ.get("TMPDIR") or os.environ.get("RUNNER_TEMP", "/tmp")).resolve()
         self.workspace = Path(
             tempfile.mkdtemp(prefix="terminal-spike-lifecycle-avd.", dir=temp_root)
         ).resolve()
@@ -216,17 +216,19 @@ class Runner:
         image = f"system-images;android-{self.arguments.api};google_apis;x86_64"
         environment = os.environ.copy()
         environment["ANDROID_AVD_HOME"] = str(self.avd_home)
-        installer = (
-            [self.android_bin, "sdk", "install", image]
-            if self.android_bin.is_file() and os.access(self.android_bin, os.X_OK)
-            else [self.sdkmanager_bin, image]
+        installation = self.command(
+            [sys.executable, self.project / "scripts/install-android-sdk.py", "--system-image",
+             self.android_bin.parent, image],
+            label="Android system-image installation", environment=environment, timeout=600, check=False,
         )
-        self.command(
-            installer,
-            label="Android system-image installation",
-            environment=environment,
-            timeout=600,
-        )
+        sanitized = self.command(
+            [sys.executable, self.project / "scripts/redact-android-test-log.py"],
+            label="SDK log redaction", input_text=installation.stdout + installation.stderr,
+        ).stdout
+        (self.output_dir / "sdk-install.txt").write_text(sanitized, encoding="utf-8")
+        if installation.returncode:
+            print(sanitized, file=sys.stderr)
+            raise LifecycleFailure("Android system-image installation failed; see sdk-install.txt")
         self.command(
             [
                 self.avdmanager_bin,

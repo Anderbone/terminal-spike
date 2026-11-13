@@ -152,7 +152,7 @@ fi
 
 mkdir -p "$output_dir"
 output_dir="$(realpath "$output_dir")"
-task_temp_root="$(realpath "${TMPDIR:-/tmp}")"
+task_temp_root="$(realpath "${TMPDIR:-${RUNNER_TEMP:-/tmp}}")"
 avd_workspace="$(mktemp -d "$task_temp_root/terminal-spike-avd.XXXXXX")"
 export ANDROID_AVD_HOME="$avd_workspace/avd"
 mkdir -p "$ANDROID_AVD_HOME"
@@ -169,6 +169,18 @@ stop_focus_monitor() {
 
 cleanup() {
     stop_focus_monitor
+    # Cancellation can arrive before the normal post-instrumentation export.
+    # Retain only redacted evidence before removing the private AVD workspace.
+    if [[ -n "${private_result:-}" && -f "$private_result" && ! -f "$raw_result" ]]; then
+        timeout 5 python3 "$project_dir/scripts/redact-android-test-log.py" \
+            <"$private_result" >"$raw_result" || true
+        timeout 5 python3 "$project_dir/scripts/instrumentation-output-to-junit.py" \
+            "$raw_result" "$output_dir/TEST-api${api}-${suite}.xml" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${private_focus:-}" && -f "$private_focus" && ! -f "$output_dir/focus-api${api}-${suite}.txt" ]]; then
+        timeout 5 python3 "$project_dir/scripts/redact-android-test-log.py" \
+            <"$private_focus" >"$output_dir/focus-api${api}-${suite}.txt" || true
+    fi
     if [[ -n "$emulator_pid" ]]; then
         # A stalled console or emulator must not keep a completed test job alive.
         timeout --kill-after=1 5 "$adb_bin" -s "$serial" emu kill >/dev/null 2>&1 || true
@@ -189,23 +201,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 sdk_install_log="$avd_workspace/sdk-install.txt"
-# Accept only the selected stable image's license. API 32 still references the SDK's
-# legacy preview-license identifier; unattended installers otherwise skip it.
-if [[ -x "$android_cli_bin" ]]; then
-    if ! printf 'y\n' | "$android_cli_bin" sdk install "$system_image" >"$sdk_install_log" 2>&1; then
-        # The new CLI can fail reading its object cache for legacy AOSP images
-        # that sdkmanager installs successfully. Keep the same exact image.
-        echo "Android CLI installation failed; trying sdkmanager for the same image." >&2
-        if [[ ! -x "$sdkmanager_bin" ]] ||
-            ! printf 'y\n' | "$sdkmanager_bin" "$system_image" >>"$sdk_install_log" 2>&1; then
-            echo "Android system-image installation failed:" >&2
-            sed -n '1,120p' "$sdk_install_log" >&2
-            exit 4
-        fi
-    fi
-elif ! printf 'y\n' | "$sdkmanager_bin" "$system_image" >"$sdk_install_log" 2>&1; then
+if ! python3 "$project_dir/scripts/install-android-sdk.py" --system-image "$android_tools_dir" "$system_image" >"$sdk_install_log" 2>&1; then
+    python3 "$project_dir/scripts/redact-android-test-log.py" <"$sdk_install_log" >"$output_dir/sdk-install.txt"
     echo "Android system-image installation failed:" >&2
-    sed -n '1,120p' "$sdk_install_log" >&2
+    cat "$output_dir/sdk-install.txt" >&2
     exit 4
 fi
 avd_create_log="$avd_workspace/avd-create.txt"
@@ -224,7 +223,7 @@ if [[ "$avd_target" != "android-$platform_version" && "$avd_target" != "android-
 fi
 # CI text entry uses semantics and Espresso actions. A hardware keyboard prevents the old API 26
 # software IME from repeatedly resizing Compose dialogs; real IME behavior remains device-tested.
-printf '\nhw.keyboard=yes\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
+printf '\nhw.keyboard=no\n' >>"$ANDROID_AVD_HOME/$avd_name.avd/config.ini"
 graphics_options=(-gpu swiftshader)
 if [[ "$api" == "37" ]]; then
     # API 37's mapper rejects the host ReadColorBufferDMA path, crashing
@@ -486,6 +485,12 @@ timeout --kill-after=1 5 "$adb_bin" -s "$serial" logcat -d | \
     >"$output_dir/logcat-api${api}-${suite}.txt" || {
         echo "WARNING: Android logcat collection failed or timed out; instrumentation evidence was preserved. Test validation remains required." >&2
     }
+# Write failure XML before enforcing process status, so crashes/timeouts retain diagnostics.
+set +e
+python3 "$project_dir/scripts/instrumentation-output-to-junit.py" \
+    "$raw_result" "$output_dir/TEST-api${api}-${suite}.xml"
+report_status=$?
+set -e
 [[ $instrumentation_status -eq 0 ]] || {
     echo "Android instrumentation command failed." >&2
     exit "$instrumentation_status"
@@ -522,8 +527,7 @@ elif [[ "$suite" == "lan-openssh" ]]; then
     done
 fi
 
-python3 "$project_dir/scripts/instrumentation-output-to-junit.py" \
-    "$raw_result" "$output_dir/TEST-api${api}-${suite}.xml"
+[[ $report_status -eq 0 ]] || exit "$report_status"
 if [[ "$suite" != "openssh" && "$suite" != "lan-openssh" && -z "$requested_test_filter" ]]; then
     python3 "$project_dir/scripts/verify-android-test-contract.py" \
         "$test_contract" "$raw_result" "$suite" "$api" "${contract_shard_arguments[@]}"

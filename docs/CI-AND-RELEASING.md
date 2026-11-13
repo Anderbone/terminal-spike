@@ -243,3 +243,34 @@ References: [Android test sharding and Orchestrator](https://developer.android.c
 [Gradle on GitHub Actions](https://docs.gradle.org/current/userguide/github-actions.html),
 [Play bundle upload](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload),
 [Play track update](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.tracks/update).
+
+## CI infrastructure failure evidence
+
+The self-hosted runner requires a stable `gh` executable on `PATH`. Artifact and
+job metadata reads use the workflow token's `actions: read` permission.
+
+Emulator scratch directories use the runner's disk through `TMPDIR` (with a
+`RUNNER_TEMP` fallback), avoiding
+the desktop user's quota-limited `/tmp` tmpfs. Runtime test AVDs have no emulated
+hardware keyboard so the software keyboard follows touch-input policy. Required
+IME assertions and test identities remain unchanged.
+
+The shared `install-android-sdk.py --system-image TOOLS IMAGE` path installs the
+same selected stable image with the Android CLI and falls back to sdkmanager.
+Only recognized transient download errors retry once. Lifecycle failures retain
+the redacted installer output in `sdk-install.txt`.
+
+CI downloads use the local `download-ci-artifact` action and authenticated GitHub
+REST API. Run ID, source SHA, artifact ID and SHA-256 must match before extraction.
+An artifact ZIP request retries once for a known transport error, or for a 404 only
+when metadata confirms the same unexpired artifact still exists. Digest errors,
+missing membership and exhausted retries fail the job. No APK is rebuilt to
+recover an artifact transfer.
+
+Before uploads, sanitized runtime evidence is retained separately under
+`~/.local/state/terminal-spike-ci-evidence/<run>/<attempt>/<artifact>/` on the
+self-hosted runner. This archive survives the next checkout's cleanup and Artifact
+service failures; it contains the same sanitized outputs intended for upload.
+Failed instrumentation produces JUnit test identities/stacks and still exits
+nonzero. Per-API aggregation reports its own exact shard outcomes, and one failed
+aggregate no longer cancels the other API's diagnostic gate.

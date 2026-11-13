@@ -131,7 +131,12 @@ class BrowserLoginTest {
         // Force a fresh login page: a new controller/WebView must use the encrypted password,
         // independently of the successful session cookie and the old in-memory browser.
         val fresh = reopen()
-        compose.runOnIdle { fresh.view?.loadUrl(address + "login") }
+        // Wait for the initial configured navigation before expiring the new browser's
+        // session. Otherwise its pending initial load can overwrite this login request.
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { fresh.view?.url == address && fresh.view?.progress == 100 }
+        }
+        compose.runOnIdle { requireNotNull(fresh.view).loadUrl(address + "login") }
         compose.waitUntil(10_000) { posts.get() == 4 && compose.runOnIdle { fresh.view?.url == address && fresh.view?.progress == 100 } }
         compose.onNodeWithTag("browser-password-input").assertDoesNotExist()
         compose.onNodeWithTag("browser-tab-menu").performClick()

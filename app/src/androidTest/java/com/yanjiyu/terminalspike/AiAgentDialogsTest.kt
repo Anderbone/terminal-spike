@@ -3,12 +3,10 @@ package com.yanjiyu.terminalspike
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.test.platform.app.InstrumentationRegistry
 import android.graphics.Bitmap
 import java.io.File
@@ -71,7 +69,8 @@ class AiAgentDialogsTest {
         composeRule.onNodeWithTag("ai_agent_command_preview").performScrollTo()
         composeRule.onNodeWithText("codex --yolo --model 'gpt-6.1-sol' -c 'model_reasoning_effort=\"high\"'")
             .assertIsDisplayed()
-        val screenshot = composeRule.onNodeWithTag("ai_agent_picker").captureToImage().asAndroidBitmap()
+        composeRule.onNodeWithTag("ai_agent_picker").assertIsDisplayed()
+        val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ai-agent-launcher.png")
             .outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
         composeRule.onNodeWithTag("ai_agent_picker_save").performClick()
@@ -108,7 +107,8 @@ class AiAgentDialogsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val panelHeight = composeRule.onNodeWithTag("ai_agent_editor").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Four agents should fit in a compact dialog", panelHeight <= 480f * context.resources.displayMetrics.density)
-        val screenshot = composeRule.onNodeWithTag("ai_agent_editor").captureToImage().asAndroidBitmap()
+        composeRule.onNodeWithTag("ai_agent_editor").assertIsDisplayed()
+        val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ai-agents-compact.png")
             .outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
         for (text in listOf("OpenCode", "codex --yolo")) {

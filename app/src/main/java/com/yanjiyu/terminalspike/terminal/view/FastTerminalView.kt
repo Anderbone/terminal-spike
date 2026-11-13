@@ -61,6 +61,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /** Bounded, text-free evidence for the most recent tmux touch gesture. */
 internal data class TmuxScrollGestureDiagnostic(
@@ -1899,7 +1900,9 @@ class FastTerminalView @JvmOverloads constructor(
         val naturalLineHeight = fontMetrics.descent - fontMetrics.ascent +
             resources.displayMetrics.density
         lineHeightPx = ceil(naturalLineHeight * lineHeightMultiplier).coerceAtLeast(1f)
-        baselineOffsetPx = -fontMetrics.ascent + (lineHeightPx - naturalLineHeight) / 2f
+        // Pixel-align the font baseline, while keeping viewport movement fractional.
+        // Old HWUI otherwise changes thin glyphs when the retained frame translates.
+        baselineOffsetPx = (-fontMetrics.ascent + (lineHeightPx - naturalLineHeight) / 2f).roundToInt().toFloat()
         cellWidthPx = TerminalRunRenderGeometry.cellAdvance(
             singleGlyphWidth = textPaint.measureText(CELL_METRIC_GLYPH),
             repeatedGlyphWidth = textPaint.measureText(CELL_METRIC_GLYPH.repeat(2)),

@@ -1,0 +1,9 @@
+name: Use runner disk for temporary files
+description: Keep JVM, Python and emulator temporary files off desktop tmpfs quotas
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP"
+        printf 'TMPDIR=%s\nJAVA_TOOL_OPTIONS=%s -Djava.io.tmpdir="%s"\n' "$RUNNER_TEMP" "${JAVA_TOOL_OPTIONS:-}" "$RUNNER_TEMP" >> "$GITHUB_ENV"
