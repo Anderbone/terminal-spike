@@ -391,6 +391,7 @@ class ConnectionsScreenTest {
 
         composeRule.onNodeWithContentDescription("Add host").performClick()
         composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
+        waitForNodeWithTag(HostEditorNearbySshButtonTestTag)
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performScrollTo().performClick()
         composeRule.onNodeWithTag(NearbySshDiscoveryDialogTestTag).assertIsDisplayed()
         composeRule.onNodeWithText("Office server").performClick()
@@ -425,6 +426,7 @@ class ConnectionsScreenTest {
 
         composeRule.onNodeWithContentDescription("Add host").performClick()
         composeRule.onNodeWithText("Show advanced settings").performScrollTo().performClick()
+        waitForNodeWithTag(HostEditorNearbySshButtonTestTag)
         composeRule.onNodeWithTag(HostEditorNearbySshButtonTestTag).performScrollTo().performClick()
         composeRule.onAllNodesWithText("Nearby SSH detection timed out", substring = true)[0]
             .performScrollTo()
