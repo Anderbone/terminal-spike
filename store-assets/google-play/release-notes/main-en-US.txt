@@ -1,3 +1,6 @@
-• Simplified SSH private key import to one Choose a file button.
-• Opens the Android system file picker first and falls back to the default picker if unavailable.
-• Kept Paste private key as an alternative, including for extensionless keys.
+• Enter the only running Herdr session automatically, including after upgrading.
+• Improved terminal selection with optional Text tools and Copy as one line.
+• Search individual settings in English or Chinese and jump to the matching option.
+• Added optional Codex context and weekly allowance in the input box.
+• Improved Herdr workspace taps, recent projects and in-app notices.
+• Optimized for Fold screens with full support for regular phones.
