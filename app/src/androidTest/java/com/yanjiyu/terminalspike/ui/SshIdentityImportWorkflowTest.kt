@@ -181,8 +181,17 @@ class SshIdentityImportWorkflowTest {
                 assertNotNull("DocumentsUI must offer its storage visibility menu", menu)
                 menu!!.click()
                 device.waitForIdle()
-                val showStorage = device.findObject(By.text(Pattern.compile("Show internal storage|显示内部存储空间")))
-                if (showStorage != null) showStorage.click() else device.pressBack()
+                val visibilityAction = By.text(Pattern.compile(
+                    "Show internal storage|Hide internal storage|显示内部存储空间|隐藏内部存储空间"))
+                val storageAction = device.wait(Until.findObject(visibilityAction), 5000)
+                assertNotNull("DocumentsUI must report its current storage visibility", storageAction)
+                when (storageAction!!.text) {
+                    "Show internal storage", "显示内部存储空间" -> storageAction.click()
+                    "Hide internal storage", "隐藏内部存储空间" -> device.pressBack()
+                    else -> fail("Unexpected DocumentsUI storage visibility action")
+                }
+                assertTrue("Storage visibility menu must close before browsing roots",
+                    device.wait(Until.gone(visibilityAction), 5000))
                 device.waitForIdle()
             }
             if (device.findObject(storageSelector) == null) {
