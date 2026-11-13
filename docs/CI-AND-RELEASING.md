@@ -69,6 +69,13 @@ their features; never run tests on the foldable.
   first build's unsigned APK/AAB, signs copies with its temporary key, verifies both
   signatures and runs the existing release/update SSH acceptance. It does not compile
   the release a second time. Production credentials never enter this workflow.
+- The persistent self-hosted verification runner reuses its local Gradle User Home.
+  `setup-gradle` still validates the wrapper but does not synchronize a remote cache;
+  the November 13 run downloaded about 22 GB before a cache authentication failure.
+  Local incremental/task caches remain enabled. Fresh acceptance installs complete
+  the visible Getting started guide before connecting. Lifecycle authentication
+  selects the native password field by its accessible label; saved-data, process-death
+  and remote-output assertions remain required.
 - Verification logs and test reports are retained for seven days. Use the Gradle
   setup summary and `FROM-CACHE`/`UP-TO-DATE` counts to assess caching. Compare job
   durations and total billed minutes over several similar runs before claiming a

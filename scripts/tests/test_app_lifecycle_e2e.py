@@ -211,7 +211,7 @@ elif f'exec-out run-as {package} cat databases/terminal-spike.db-' in joined:
 elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
     if os.environ.get('FAKE_FIRST_RUN_GUIDE') == '1' and not (state / 'guide-dismissed').exists():
         print('<hierarchy><node text="Getting started" bounds="[0,0][500,100]" />'
-              '<node text="Skip" bounds="[1000,0][1080,100]" /></hierarchy>')
+              '<node text="Next" bounds="[1000,0][1080,100]" /></hierarchy>')
         raise SystemExit(0)
     incomplete = os.environ.get('FAKE_UI_INCOMPLETE', '')
     seen = state / 'ui-incomplete-seen'
@@ -233,7 +233,7 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
 <node text="Add host" class="android.widget.TextView" bounds="[0,100][100,200]" />
 <node text="" content-desc="Add host" class="android.view.View" bounds="[0,100][100,200]" />
 <node text="" content-desc="Connect to {'10.0.2.2' if serial.startswith('emulator-') else '127.0.0.1'}" class="android.view.View" bounds="[0,200][100,300]" />
-<node text="Password" class="android.widget.TextView" bounds="[0,300][100,400]" />
+<node text="" content-desc="Password" password="true" class="android.widget.EditText" bounds="[0,300][100,400]" />
 <node text="Save" class="android.widget.TextView" bounds="[0,400][100,500]" />
 <node text="Connect" class="android.widget.TextView" bounds="[0,500][100,600]" />
 <node text="Trust once" class="android.widget.TextView" bounds="[0,600][100,700]" />
@@ -246,7 +246,11 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
 <node text="" class="android.widget.EditText" bounds="[0,1600][100,1700]" />
 </hierarchy>''' + '')
 elif joined.endswith('shell input tap 1040 50'):
-    (state / 'guide-dismissed').touch()
+    page_path = state / 'guide-page'
+    page = int(page_path.read_text()) + 1 if page_path.exists() else 1
+    page_path.write_text(str(page))
+    if page == 4 and os.environ.get('FAKE_GUIDE_STUCK') != '1':
+        (state / 'guide-dismissed').touch()
 elif 'shell input text printf%s' in joined:
     marker = joined.split('printf%s', 1)[1]
     with (state / 'markers').open('a', encoding='utf-8') as stream:
@@ -284,11 +288,20 @@ elif 'shell input text printf%s' in joined:
     def commands(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
 
-    def test_first_run_guide_is_skipped_before_connecting_fixture(self) -> None:
-        result = self.run_runner(env=self.fresh_env(FAKE_FIRST_RUN_GUIDE="1"))
+    def test_first_run_guide_is_completed_before_connecting_fixture(self) -> None:
+        result = self.run_runner(env=self.fresh_env(
+            FAKE_FIRST_RUN_GUIDE="1", TERMINAL_SPIKE_LIFECYCLE_POLL_ATTEMPTS="6"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "guide-dismissed").exists())
-        self.assertTrue(any("shell input tap 1040 50" in command for command in self.commands()))
+        self.assertEqual(4, sum("shell input tap 1040 50" in command for command in self.commands()))
+
+    def test_persistent_first_run_guide_still_blocks_acceptance(self) -> None:
+        result = self.run_runner(env=self.fresh_env(
+            FAKE_FIRST_RUN_GUIDE="1", FAKE_GUIDE_STUCK="1",
+            TERMINAL_SPIKE_LIFECYCLE_POLL_ATTEMPTS="6"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(4, sum("shell input tap 1040 50" in command for command in self.commands()))
+        self.assertNotIn("stage=complete status=pass", result.stdout)
 
     def fresh_env(self, **values: str) -> dict[str, str]:
         environment = self.env.copy()

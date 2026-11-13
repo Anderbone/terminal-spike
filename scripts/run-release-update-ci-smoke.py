@@ -452,7 +452,7 @@ class ReleaseSmokeRunner:
         for line in result.stdout.splitlines():
             marker = re.fullmatch(
                 r"RELEASE_APP_UPDATE_SMOKE stage=(preflight|fixture|initial_install|initial_connection|"
-                r"update_install|preserved_connection|notification_rationale|tmux_chooser) "
+                r"update_install|preserved_connection|notification_rationale|tmux_chooser|first_run_guide) "
                 r"status=(start|pass|dismissed|open_shell)",
                 line,
             )
@@ -462,6 +462,12 @@ class ReleaseSmokeRunner:
             # Classify only exact, fixed harness errors; never publish private output.
             failure_reason = "unclassified"
             for message, reason in (
+                ("Timed out waiting for UI node content-desc=Add host.", "add_host_button"),
+                ("Timed out waiting for UI node content-desc=Connect to 10.0.2.2.", "saved_host_action"),
+                ("Timed out waiting for privacy-safe UI marker: Connections", "connections_screen"),
+                ("Timed out waiting for privacy-safe UI marker: Add host", "host_editor"),
+                ("Timed out waiting for privacy-safe UI marker: Password", "password_prompt"),
+                ("Timed out waiting for privacy-safe UI marker: Trust once", "host_trust_prompt"),
                 ("Timed out waiting for a privacy-safe terminal marker.", "terminal_marker"),
                 ("Timed out waiting for UI node content-desc=Native terminal renderer.", "terminal_renderer"),
                 ("Timed out waiting for privacy-safe UI marker: Terminal", "terminal_screen"),

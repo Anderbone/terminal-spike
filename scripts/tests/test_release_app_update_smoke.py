@@ -199,6 +199,40 @@ printf "package: name='%s' versionCode='%s' versionName='test'\n" "$package" "$v
         self.assertNotIn('tap_node text "New connection"', text)
         self.assertNotIn('tap_node text "Save host details"', text)
 
+    def test_connections_complete_real_first_run_guide_and_keep_blockers_red(self) -> None:
+        source = self.runner.read_text(encoding="utf-8")
+        helper = "wait_for_connections() {" + source.split("wait_for_connections() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        probe = r'''
+page=$1
+stuck=$2
+taps=0
+dump_ui() { :; }
+node_center() {
+    if [ "$2" = Connections ] && [ "$page" -eq 4 ]; then printf '10 20'; fi
+    if [ "$2" = 'Getting started' ] && [ "$page" -lt 4 ]; then printf '10 20'; fi
+}
+tap_node() {
+    [ "$*" = 'text Next' ] || exit 2
+    taps=$((taps + 1))
+    if [ "$stuck" = no ]; then page=$((page + 1)); fi
+}
+log_stage() { :; }
+sleep() { :; }
+''' + helper + r'''
+code=0
+wait_for_connections || code=$?
+printf 'taps=%s code=%s\n' "$taps" "$code"
+exit "$code"
+'''
+        for page, stuck, code, taps in ((0, "no", 0, 4), (4, "no", 0, 0), (0, "yes", 1, 4)):
+            with self.subTest(page=page, stuck=stuck):
+                result = subprocess.run(
+                    ["sh", "-c", probe, "guide-probe", str(page), stuck],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(code, result.returncode, result.stderr)
+                self.assertIn(f"taps={taps} code={code}", result.stdout)
+
     def test_terminal_readiness_opens_shell_from_the_current_session_chooser(self) -> None:
         import xml.etree.ElementTree as ET
 

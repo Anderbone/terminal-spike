@@ -47,7 +47,10 @@ jobs:
       - name: Set up and validate Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
+          # This persistent self-hosted runner already retains its Gradle User Home.
+          # Avoid restoring/uploading multi-GB remote copies of the same cache.
           cache-provider: basic
+          cache-disabled: true
 
       - name: Install Android platform
         run: >-

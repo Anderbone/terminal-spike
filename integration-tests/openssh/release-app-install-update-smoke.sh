@@ -321,14 +321,36 @@ replace_edit_text() {
     sleep 0.25
 }
 
+wait_for_connections() {
+    attempt=0
+    guide_pages=0
+    while [ "$attempt" -lt 120 ]; do
+        dump_ui
+        if [ -n "$(node_center text Connections)" ]; then
+            if [ "$guide_pages" -gt 0 ]; then log_stage first_run_guide pass; fi
+            return 0
+        fi
+        # A release install shows the real four-page guide before Connections.
+        # Complete it through its visible controls; never preseed app preferences.
+        if [ "$guide_pages" -lt 4 ] && [ -n "$(node_center text 'Getting started')" ]; then
+            tap_node text Next
+            guide_pages=$((guide_pages + 1))
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.25
+    done
+    printf 'Timed out waiting for privacy-safe UI marker: Connections\n' >&2
+    return 1
+}
+
 launch_app() {
     adb shell am force-stop "$app_package"
     adb shell am start -W -n "$activity_component" >/dev/null
-    wait_for_ui_text "Connections"
+    wait_for_connections
 }
 
 connect_new_saved_host() {
-    tap_node content-desc "Add host" 0 android.view.View
+    tap_node content-desc "Add host" 0 android.widget.Button
     wait_for_ui_text "Add host"
     replace_edit_text 0 "$fixture_host"
     replace_edit_text 1 "$fixture_user"

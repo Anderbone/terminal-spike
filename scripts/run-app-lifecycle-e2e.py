@@ -248,7 +248,7 @@ class Runner:
         )
         config = self.avd_home / f"{self.avd_name}.avd/config.ini"
         with config.open("a", encoding="utf-8") as stream:
-            stream.write("\nhw.keyboard=yes\n")
+            stream.write("\nhw.keyboard=no\n")
         private_stream = self.private_log.open("wb")
         self.emulator_process = subprocess.Popen(
             [
@@ -438,21 +438,28 @@ class Runner:
         occurrence: int = 0,
         class_name: str | None = None,
     ) -> tuple[int, int]:
+        guide_pages = 0
+
         def locate() -> tuple[int, int] | None:
+            nonlocal guide_pages
             root = self.dump_ui()
             if (
                 attribute == "text" and value == "Connections"
-                and (self.matching_nodes(root, "text", "Getting started")
-                     or self.matching_nodes(root, "text", "User guide"))
-                and self.matching_nodes(root, "text", "Skip")
+                and guide_pages < 4
+                and self.matching_nodes(root, "text", "Getting started")
+                and self.matching_nodes(root, "text", "Next")
             ):
-                # A clean install offers the tour before the lifecycle fixture connects.
-                # Dismiss it through the same visible action as a user, retaining the normal launch gate.
-                self.tap_node("text", "Skip")
+                # Complete the current first-run guide through its real controls.
+                # Keep the Connections gate and the same bounded polling budget.
+                self.tap_node("text", "Next")
+                guide_pages += 1
+                self.log("first_run_guide", "next", page=str(guide_pages))
                 return None
             nodes = self.matching_nodes(root, attribute, value, class_name)
             if occurrence >= len(nodes):
                 return None
+            if guide_pages:
+                self.log("first_run_guide", "pass")
             match = re.fullmatch(
                 r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
                 nodes[occurrence].attrib.get("bounds", ""),
@@ -519,7 +526,7 @@ class Runner:
         self.tap_node("text", "Save", class_name="android.widget.TextView")
         self.wait_for_text("Connections")
         self.tap_node("content-desc", f"Connect to {self.fixture_host}")
-        self.wait_for_text("Password")
+        self.wait_for_node("content-desc", "Password", class_name="android.widget.EditText")
         self.replace_edit_text(0, FIXTURE_PASSWORD)
         self.tap_node("text", "Connect", class_name="android.widget.TextView")
         self.wait_for_text("Trust once")
@@ -819,7 +826,7 @@ class Runner:
         self.log("restart_state", "pass", new_pid=new_pid)
 
         self.tap_node("content-desc", f"Connect to {self.fixture_host}")
-        self.wait_for_text("Password")
+        self.wait_for_node("content-desc", "Password", class_name="android.widget.EditText")
         self.replace_edit_text(0, FIXTURE_PASSWORD)
         self.tap_node("text", "Connect", class_name="android.widget.TextView")
         self.wait_for_terminal()
