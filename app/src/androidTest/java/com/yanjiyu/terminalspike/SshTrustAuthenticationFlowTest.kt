@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike
 
 import android.text.InputType
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
+import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.connection.Connection
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.connection.HostIdentityDecision
@@ -226,7 +228,8 @@ class SshTrustAuthenticationFlowTest {
             },
         )
 
-        composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+        startHostConnectionTest()
+        awaitActiveWindowText(prompt.newFingerprint)
         composeRule.onNodeWithText("SHA256:complete-test-fingerprint", substring = true)
             .assertIsDisplayed()
         composeRule.onNodeWithText("Trust and save").assertIsDisplayed()
@@ -264,12 +267,14 @@ class SshTrustAuthenticationFlowTest {
             },
         )
 
-        composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+        startHostConnectionTest()
+        awaitActiveWindowText(prompt.newFingerprint)
         composeRule.onNodeWithText("SHA256:complete-previous", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("SHA256:complete-offered", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("Replace saved key").assertDoesNotExist()
         composeRule.onNodeWithText("Review replacement").performClick()
         composeRule.runOnIdle { assertNull(answer) }
+        awaitActiveWindowText("Replace saved key")
         composeRule.onNodeWithText("Replace saved key").performClick()
 
         composeRule.runOnIdle {
@@ -299,7 +304,7 @@ class SshTrustAuthenticationFlowTest {
             },
         )
 
-        composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+        startHostConnectionTest()
         composeRule.onNodeWithTag(HostEditorHostnameTestTag).assertIsNotEnabled()
         composeRule.runOnIdle {
             state.value = HostConnectionTestUiState.Complete(
@@ -329,7 +334,7 @@ class SshTrustAuthenticationFlowTest {
         try {
             showLiveHostTestEditor(coordinator)
 
-            composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+            startHostConnectionTest()
             composeRule.onNodeWithTag(HostTestKeyboardInteractiveDialogTestTag).assertIsDisplayed()
             val firstState = coordinator.state.value as
                 HostConnectionTestUiState.AwaitingKeyboardInteractive
@@ -367,7 +372,7 @@ class SshTrustAuthenticationFlowTest {
 
             // Start a second operation through the recreated editor, then replace that exact live
             // owner. A retained response for the replaced token must be destroyed and rejected.
-            composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+            startHostConnectionTest()
             composeRule.onNodeWithTag(HostTestKeyboardInteractiveDialogTestTag).assertIsDisplayed()
             val secondState = coordinator.state.value as
                 HostConnectionTestUiState.AwaitingKeyboardInteractive
@@ -680,6 +685,42 @@ class SshTrustAuthenticationFlowTest {
                 )
             }
         }
+    }
+
+    private fun startHostConnectionTest() {
+        awaitActiveWindowText(InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.host_editor_test_connection))
+        composeRule.onNodeWithTag(HostEditorTestConnectionTestTag).performClick()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun awaitActiveWindowText(text: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        // Compose semantics may exist before a new native Dialog receives input on API 26.
+        // Require its visible accessibility content in the active window before a real tap.
+        composeRule.waitUntil(5_000) {
+            val root = instrumentation.uiAutomation.rootInActiveWindow ?: return@waitUntil false
+            try {
+                root.packageName?.toString() == instrumentation.targetContext.packageName &&
+                    root.containsVisibleText(text)
+            } finally {
+                root.recycle()
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun AccessibilityNodeInfo.containsVisibleText(expected: String): Boolean {
+        if (isVisibleToUser && text?.contains(expected) == true) return true
+        for (index in 0 until childCount) {
+            val child = getChild(index) ?: continue
+            try {
+                if (child.containsVisibleText(expected)) return true
+            } finally {
+                child.recycle()
+            }
+        }
+        return false
     }
 
     private fun installTestContent(content: @Composable () -> Unit) {
