@@ -21,6 +21,10 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.pressBack
+import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.TerminalSpikeComponentTestActivity
@@ -227,6 +231,12 @@ class QuickStartGuideTest {
         composeRule.runOnIdle { assertFalse(open.value) }
     }
 
+    private fun pressGuideSystemBack() {
+        // The default root can bind to the Activity before its new dialog takes focus.
+        // Wait for that dialog and inject the same real Back action into its focused root.
+        onView(isRoot()).inRoot(isDialog()).perform(pressBack())
+    }
+
     @Test
     fun systemBackExitsAnyPageAndSettingsChapterReentryRemainsAvailable() {
         val open = mutableStateOf(true)
@@ -236,11 +246,11 @@ class QuickStartGuideTest {
                 if (open.value) QuickStartGuide(firstRun = true, onDismiss = { open.value = false })
             }
         }
-        androidx.test.espresso.Espresso.pressBack()
+        pressGuideSystemBack()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
         openLesson(GuideLesson.PROJECTS)
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
-        androidx.test.espresso.Espresso.pressBack()
+        pressGuideSystemBack()
         openLesson(GuideLesson.RECENT_PROJECTS)
         composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
             .performScrollTo().assertIsDisplayed()
@@ -249,13 +259,13 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-7").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-back").performClick()
         composeRule.onNodeWithTag("guide-title-6").assertIsDisplayed()
-        androidx.test.espresso.Espresso.pressBack()
+        pressGuideSystemBack()
         openLesson(GuideLesson.SNIPPETS)
         composeRule.onNodeWithTag("guide-title-1").assertIsDisplayed()
-        androidx.test.espresso.Espresso.pressBack()
+        pressGuideSystemBack()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
         openLesson(GuideLesson.entries.last())
-        androidx.test.espresso.Espresso.pressBack()
+        pressGuideSystemBack()
         composeRule.onNodeWithTag("user-guide-index").assertIsDisplayed()
     }
 }
