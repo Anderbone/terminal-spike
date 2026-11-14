@@ -38,7 +38,7 @@ class HerdrRemoteScrollRecoveryTest {
             val releaseMetadata = CountDownLatch(1)
             val base = ScrolledHerdr("w6:pC")
             val connection = object : Connection by base {
-                override fun captureInputContext(): com.yanjiyu.terminalspike.terminal.TerminalInputContext {
+                override fun captureInputContext(includeCodexStatus: Boolean): com.yanjiyu.terminalspike.terminal.TerminalInputContext {
                     metadataEntered.countDown()
                     check(releaseMetadata.await(15, TimeUnit.SECONDS))
                     return base.captureInputContext()

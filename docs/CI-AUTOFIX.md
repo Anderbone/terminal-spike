@@ -10,9 +10,15 @@ credential is uploaded to GitHub and no other repository is watched.
 1. A completed, failed `Android CI` push run must match the current `main` commit.
 2. The controller creates an isolated worktree and `codex/ci-fix-<run-id>` branch,
    downloads report artifacts and failed-job logs, and starts a bounded Codex session.
-3. Codex diagnoses/reproduces the failures, changes only relevant source/tests/harness
-   code, and runs focused checks and the shared local verification gate. The controller
-   commits and pushes the repair branch, then opens one PR targeting `main`.
+3. The controller reproduces affected API 26/35 test classes on the host using retained
+   XML reports and the fixed `ci-host-check.py` gate. Codex reads that evidence and edits
+   relevant source/tests inside its existing workspace sandbox. The controller then
+   runs the shared local gate and those classes on the host. A failing host check feeds
+   new evidence back to Codex within the same attempt budget. A patch is committed and
+   pushed only after host verification succeeds, then one PR is opened against `main`.
+   Host plans are stored outside the model worktree; class names and API levels are
+   validated, no model-supplied shell command is executed, and harness/build changes
+   stop host execution for review.
 4. Each push to the same-repository `codex/ci-fix-*` branch runs the normal required
    CI checks, which appear on the matching PR. There are no `pull_request` or
    `pull_request_target` triggers; fork/ordinary feature PRs never reach checkout.
@@ -59,7 +65,7 @@ Progress is visible in the repair PR's **Checks** and body, the repository's
 live under `~/.local/state/terminal-spike-ci-autofix/`. The installed controller is
 a pinned copy under `~/.local/share/terminal-spike-ci-autofix/`; editing a repair
 branch cannot replace the running controller. Re-run the installer after reviewing
-controller updates. Existing signing material stays outside all repair worktrees.
+controller updates, including the pinned host-check companion. Existing signing material stays outside all repair worktrees.
 The installer resolves local mise auto-update wrappers to the installed Codex/GitHub
 CLI binaries; background checks do not upgrade tools or rewrite mise configuration.
 
@@ -101,3 +107,18 @@ other reports and failed-job logs. Evidence-only failures do not consume a Codex
 attempt. Host KVM and emulator-tool preflight blocks before launching the agent;
 the agent must still verify capabilities inside its own execution context. A
 blocked environment never authorizes disabling assertions or widening permissions.
+
+## Host verification and phone status
+
+The controller can access KVM even when the Codex workspace sandbox cannot. Keep
+that sandbox enabled: the host gate owns emulator runs and the final shared gate.
+Both artifact downloads and build tools use dedicated disk temporary directories.
+Host validation has bounded process groups; a timeout terminates its emulator
+children, and the service has a three-hour overall execution limit.
+
+Personal Brain observes the controller's categorical phase and activity. During an
+explicit foreground repair, `operator-status.json` may supply a short activity and
+`repairing`, `validating`, or `waiting_ci` phase with an ISO `checked_at` timestamp.
+This is an expiring observation, not authority to launch work or bypass checks.
+The observer ignores future or older-than-120-second leases. Remove the lease when
+foreground ownership ends; retained failure reports and attempt budgets remain.

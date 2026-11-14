@@ -22,11 +22,15 @@ MAX_ATTEMPTS = 5
 AGENT_SECONDS = 3600
 MAX_AGE_SECONDS = 24 * 3600
 DEFAULT_STATE = Path.home() / ".local/state/terminal-spike-ci-autofix"
-PROTECTED = (".github/", "AGENTS.md", "scripts/ci-autofix", "scripts/install-ci-autofix",
+PROTECTED = (".github/", "AGENTS.md", "scripts/ci-autofix", "scripts/ci-host-check.py", "scripts/install-ci-autofix",
              "scripts/systemd/", "store-assets/", "THIRD_PARTY_NOTICES.md", "LICENSE")
 
 
 class EnvironmentBlocked(RuntimeError):
+    pass
+
+
+class HostVerificationFailed(RuntimeError):
     pass
 
 
@@ -191,6 +195,56 @@ class Loop:
             raise RuntimeError(f"No failure evidence could be retrieved; inspect {evidence}")
         return evidence
 
+    def host_check(self, directory, evidence, baseline=False):
+        chain = self.state['chains'][self.state['active']]
+        chain.update(phase='validating', agent_pid=None)
+        self.status('Host is reproducing failed classes' if baseline else 'Host is validating the repair')
+        for path in ('scripts', '.github', 'gradlew', 'gradle', 'build.gradle.kts',
+                     'settings.gradle.kts', 'gradle.properties', 'app/build.gradle.kts',
+                     'mosh-api/build.gradle.kts', 'mosh-core/build.gradle.kts'):
+            if command(['git', 'diff', chain['sha'], '--', path], directory):
+                raise RuntimeError('Host verification harness changed; manual review required')
+        output = evidence / ('host-baseline' if baseline else f"host-validation-{chain['attempts']}")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('host_gate', Path(__file__).with_name('ci-host-check.py'))
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        archive = Path.home() / f".local/state/terminal-spike-ci-evidence/{chain['origin_run']}"
+        plan = helper.failure_plan(archive)
+        failure_type = EnvironmentBlocked if baseline else RuntimeError
+        if not plan:
+            raise failure_type('No retained runtime XML for focused host validation')
+        chain['activity'] = ('正在复现原始失败' if baseline else '正在验证修复') + ' · ' + '、'.join(f"API {api} 的 {len(classes)} 个测试类" for api, classes in sorted(plan.items()))
+        self.status(chain['activity'])
+        plan_file = self.root / 'host-plans' / f"{chain['origin_run']}.json"
+        save(plan_file, plan)
+        args = [sys.executable, str(Path(__file__).with_name('ci-host-check.py')),
+                '--evidence', str(evidence), '--output', str(output), '--plan-file', str(plan_file)]
+        if baseline:
+            args.append('--baseline')
+        with (evidence / ('host-baseline.log' if baseline else 'host-validation.log')).open('w') as log:
+            process = subprocess.Popen(args, cwd=directory, stdout=log, stderr=subprocess.STDOUT,
+                                       start_new_session=True)
+            try:
+                code = process.wait(timeout=4800)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                raise failure_type('Host verification exceeded its time limit; no patch published') from None
+            if code:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        if not plan_file.exists():
+            raise failure_type('Host verification has no focused test plan; inspect host-baseline.log')
+        if code and not baseline:
+            raise HostVerificationFailed('Host verification failed; see host-validation logs. No patch was published.')
+
     def agent(self, directory, evidence, attempt):
         sdk = Path(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or Path.home() / "Android/Sdk")
         if not os.access("/dev/kvm", os.R_OK | os.W_OK):
@@ -198,6 +252,15 @@ class Loop:
         for executable in (sdk / "platform-tools/adb", sdk / "emulator/emulator"):
             if not os.access(executable, os.X_OK):
                 raise EnvironmentBlocked(f"Android runtime tool is unavailable: {executable}; no agent was launched")
+
+        archive = Path.home() / f".local/state/terminal-spike-ci-evidence/{self.state['chains'][self.state['active']]['origin_run']}"
+        import shutil
+        for source in archive.glob("*/android-runtime*/TEST-api*-full.xml"):
+            destination = evidence / source.parent.name
+            destination.mkdir(exist_ok=True)
+            shutil.copy2(source, destination / source.name)
+        if not (evidence / "host-baseline/result.json").exists():
+            self.host_check(directory, evidence, baseline=True)
 
         prompt = f"""Repair failing Android CI in this isolated terminal-spike worktree.
 The user explicitly authorizes automatic CI diagnosis and minimal fixes on a PR branch.
@@ -211,8 +274,13 @@ Read AGENTS.md. The following task-specific scope overrides routine release defa
 - Preserve assertions and test membership. Do not skip tests, relax bounds/timeouts, remove
   scenarios, or change expectations merely to turn failures green. Diagnose product behavior,
   outdated contracts, deterministic harness defects and infrastructure failures separately.
-- Reproduce the affected test/class first. Make the minimal justified repair and run affected
-  checks. Group related fixes; use scripts/verify-android.sh once for the final local gate.
+- The model sandbox cannot access KVM by design. Host baseline reproduction is in
+  the evidence host-baseline directory. Read it before editing. The controller runs
+  the same affected classes and final gate on the host after your patch. Do not stop
+  solely because KVM is unavailable inside your sandbox. Never bypass the sandbox.
+- Read the host reproduction before editing. Make the minimal justified repair and run
+  JVM checks available in the sandbox. The host owns emulator reproduction and the final gate;
+  do not duplicate the full gate inside the sandbox. Group related fixes.
 - No full API 26–37 sweep, full CI rerun, or indefinite waiting. The PR CI checks the next commit.
 - If credentials, product decisions, protected files, external state, or lack of a valid fix
   block progress, leave source untouched and clearly report the blocker.
@@ -226,7 +294,8 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                 "--add-dir", str(Path.home() / ".gradle"), "--output-last-message", str(report), prompt]
         active = self.state.get("active")
         chain = self.state["chains"].get(active, {})
-        chain.update(report_path=str(report), agent_log=str(output), phase="repairing")
+        chain.update(report_path=str(report), agent_log=str(output), phase="repairing",
+                     activity="AI 正在根据失败证据和宿主复现结果修改代码")
         temporary = directory / "build/ci-autofix-temp"
         temporary.mkdir(parents=True, exist_ok=True)
         environment = dict(os.environ, TMPDIR=str(temporary))
@@ -277,6 +346,23 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                 chain["phase"] = "needs_attention"
                 raise RuntimeError(f"No source patch. {report[:1000]}")
             validate_changes(paths, version, app_version(directory))
+            # Fixed host command only, after protected-path validation.
+            while True:
+                try:
+                    self.host_check(directory, evidence)
+                    break
+                except HostVerificationFailed:
+                    if chain['attempts'] >= MAX_ATTEMPTS or time.time() - chain['started'] > MAX_AGE_SECONDS:
+                        raise
+                    chain['attempts'] += 1
+                    report = self.agent(directory, evidence, chain['attempts'])
+                    if command(['git', 'rev-parse', 'HEAD'], directory) != chain['sha']:
+                        raise RuntimeError('Agent committed unexpectedly; no patch published')
+                    paths = command(['git', 'ls-files', '-m', '-d', '-o', '--exclude-standard'], directory).splitlines()
+                    validate_changes(paths, version, app_version(directory))
+                    chain.update(agent_pid=None, report_summary=report[:2000])
+            chain.update(phase="preparing", activity="本地验证已通过，正在准备修复提交")
+            self.status(chain["activity"])
             command(["git", "diff", "--check"], directory)
             command(["git", "add", "-A"], directory)
             command(["git", "commit", "-m", f"Fix CI failures from run {run['id']}"], directory, timeout=300)
@@ -297,6 +383,7 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                 chain["pr"] = int(url.rstrip("/").split("/")[-1])
             self.state["handled"][key] = "pushed"
             chain["phase"] = "waiting_ci"
+            chain["activity"] = "修复已提交，等待 GitHub 验证；通过后需要人工审阅 PR"
             self.status(f"Waiting for CI on PR #{chain['pr']} at {chain['sha'][:12]}")
             self.update_pr(chain, f"Latest repair:\n\n{report[:20000]}\n\nWaiting for Android CI.")
         except Exception as error:
@@ -340,7 +427,9 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                 # permits the next chain without retrying the stopped failure.
                 closed = chain.get("pr") and self.api(f"pulls/{chain['pr']}")["state"] != "open"
                 newer_main = not chain.get("pr") and self.api("git/ref/heads/main")["object"]["sha"] != chain["base_sha"]
-                if closed or newer_main:
+                latest_main = latest_run(runs, "main", chain.get("base_sha", ""), "push") if not chain.get("pr") else None
+                recovered = not chain.get("pr") and latest_main and latest_main["status"] == "completed" and latest_main["conclusion"] == "success"
+                if closed or newer_main or recovered:
                     self.state["active"] = None
                     self.status("Previous repair finished; watching main again")
                     return
@@ -411,6 +500,11 @@ def main():
     args = parser.parse_args()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     args.state_dir.chmod(0o700)
+    # Artifact downloads happen before the model starts; gh needs disk-backed
+    # temporary storage too, not just the agent and Gradle subprocesses.
+    temporary = args.state_dir / "tmp"
+    temporary.mkdir(exist_ok=True, mode=0o700)
+    os.environ["TMPDIR"] = str(temporary.resolve())
     if args.status:
         print((args.state_dir / "state.json").read_text() if (args.state_dir / "state.json").exists() else "Not started")
         return

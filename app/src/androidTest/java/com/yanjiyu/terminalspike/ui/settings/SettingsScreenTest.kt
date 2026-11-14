@@ -282,6 +282,19 @@ class SettingsScreenTest {
             .assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("settings-search-target").assertIsDisplayed()
         composeRule.onNodeWithText("Automatically enter a single herdr session").assertIsDisplayed()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        // IME hide is asynchronous on Android 8. Wait for the actual window
+        // inset before sending the single Back that tests page navigation.
+        composeRule.waitUntil(5000) {
+            var imeHidden = false
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val activity = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single()
+                imeHidden = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+                    ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == false
+            }
+            imeHidden
+        }
         androidx.test.espresso.Espresso.pressBack()
         composeRule.onNodeWithTag("settings-search-results").assertIsDisplayed()
         composeRule.onNodeWithTag(SettingsSearchTestTag).assertTextEquals("herdr")

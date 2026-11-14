@@ -25,7 +25,7 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/terminal-spike-ci-autofix"
 install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/terminal-spike-ci-autofix"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p "$install_dir" "$state_dir" "$unit_dir"
-for script in ci-autofix.py ci-status.py; do
+for script in ci-autofix.py ci-status.py ci-host-check.py; do
     install -m 0755 "$checkout_dir/scripts/$script" "$install_dir/$script.next"
     mv "$install_dir/$script.next" "$install_dir/$script"
 done
@@ -49,7 +49,7 @@ Type=oneshot
 WorkingDirectory={str(checkout).replace('%', '%%')}
 Environment={quote('PATH=' + str(codex_bin.parent) + ':' + str(gh_bin.parent) + ':' + os.environ['PATH'])}
 ExecStart=/usr/bin/python3 {quote(installed / 'ci-autofix.py')} --checkout {quote(checkout)} --state-dir {quote(state)}
-TimeoutStartSec=75min
+TimeoutStartSec=3h
 KillMode=control-group
 UMask=0077
 Nice=10

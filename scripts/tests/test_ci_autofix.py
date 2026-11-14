@@ -91,7 +91,7 @@ class CiAutofixTest(unittest.TestCase):
             scripts = checkout / "scripts"
             scripts.mkdir(parents=True)
             source = Path(__file__).resolve().parents[1]
-            for name in ["install-ci-autofix.sh", "ci-autofix.py", "ci-status.py"]:
+            for name in ["install-ci-autofix.sh", "ci-autofix.py", "ci-status.py", "ci-host-check.py"]:
                 shutil.copy2(source / name, scripts / name)
             binaries = root / "bin"
             binaries.mkdir()
@@ -180,6 +180,20 @@ class CiAutofixTest(unittest.TestCase):
             with patch.object(loop, "workspace") as workspace:
                 loop.repair(run, {"attempts": 0})
                 workspace.assert_not_called()
+
+    def test_successful_retry_of_same_main_rearms_a_pre_pr_blocker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            loop = MODULE.Loop(Path(temp), Path(temp) / 'state')
+            branch = MODULE.PREFIX + '10'
+            loop.state['active'] = branch
+            loop.state['chains'][branch] = {'stopped': True, 'base_sha': 'a' * 40,
+                                           'pr': None, 'result': 'Old environment blocker'}
+            run = dict(self.run_record(), conclusion='success', run_attempt=2)
+            with patch.object(loop, 'runs', return_value=[run]), patch.object(loop, 'api', return_value={'object': {'sha': 'a' * 40}}), patch.object(loop, 'repair') as repair:
+                loop.tick()
+                repair.assert_not_called()
+            self.assertIsNone(loop.state['active'])
+            self.assertTrue(loop.state['chains'][branch]['stopped'])
 
     def test_green_pr_stops_loop_without_merge_or_another_agent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -294,16 +308,25 @@ class CiAutofixTest(unittest.TestCase):
                 (workspace / "app/Fix.kt").write_text(f"// focused fix {attempt}\n")
                 return "Focused test passed."
 
+            host_checks = []
+            def verify_host(workspace, evidence, baseline=False):
+                host_checks.append(chain['attempts'])
+                if len(host_checks) == 1:
+                    with self.assertRaises(RuntimeError):
+                        native_command(['git', 'rev-parse', f'refs/heads/{branch}'], remote)
+                    raise MODULE.HostVerificationFailed('focused test failed; retry from new evidence')
+
             run = dict(self.run_record(), html_url="https://example.invalid/run/10")
             with patch.object(MODULE, "command", side_effect=invoke), patch.object(MODULE, "gh", return_value=[]), \
                     patch.object(loop, "evidence", return_value=root / "evidence"), \
-                    patch.object(loop, "agent", side_effect=agent), patch.object(loop, "update_pr"):
+                    patch.object(loop, "agent", side_effect=agent), patch.object(loop, "host_check", side_effect=verify_host), patch.object(loop, "update_pr"):
                 loop.repair(run, chain)
                 first = chain["sha"]
                 loop.repair(dict(run, id=11), chain)
             self.assertEqual(1, len(creations))
             self.assertEqual(3, chain["pr"])
-            self.assertEqual(2, chain["attempts"])
+            self.assertEqual(3, chain["attempts"])
+            self.assertEqual([1, 2, 3], host_checks)
             self.assertNotEqual(first, chain["sha"])
             self.assertNotIn("stopped", chain)
             self.assertEqual(initial, native_command(["git", "rev-parse", "HEAD"], checkout))

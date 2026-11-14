@@ -6,6 +6,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.onRoot
 import com.yanjiyu.terminalspike.ui.theme.upperNoticePlacement
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performTouchInput
 import org.junit.Assert.assertTrue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -40,11 +45,13 @@ class TerminalPublishUxTest {
         lateinit var scope: CoroutineScope
         val hostState = SnackbarHostState()
         val consumptionCount = AtomicInteger()
+        val underlayClicks = AtomicInteger()
 
         composeRule.setContent {
             MaterialTheme {
                 scope = rememberCoroutineScope()
                 Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().testTag("notice-underlay").clickable { underlayClicks.incrementAndGet() })
                     NoticeSnackbarHost(
                         notice = notice.value,
                         hostState = hostState,
@@ -62,6 +69,9 @@ class TerminalPublishUxTest {
         val bounds = message.fetchSemanticsNode().boundsInRoot
         val root = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue("Notice should occupy the upper half", bounds.bottom < root.center.y)
+        composeRule.onNodeWithTag("notice-underlay").performTouchInput { click(bounds.center) }
+        composeRule.runOnIdle { assertEquals("Passive notice must not swallow the covered control's tap", 1, underlayClicks.get()) }
+        message.assertIsDisplayed()
         // Verify the real Snackbar timeout, rather than manually dismissing the notice.
         composeRule.mainClock.advanceTimeBy(5_000)
         composeRule.waitUntil(timeoutMillis = 5_000) { consumptionCount.get() == 1 }
