@@ -25,6 +25,7 @@ class ReleaseUpdateCiSmokeTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
+        shutil.copy2(SOURCE_ROOT / "scripts/install-android-sdk.py", self.scripts / "install-android-sdk.py")
         shutil.copy2(
             SOURCE_ROOT / "scripts/run-release-update-ci-smoke.py",
             self.scripts / "run-release-update-ci-smoke.py",
@@ -45,6 +46,7 @@ class ReleaseUpdateCiSmokeTest(unittest.TestCase):
         (sdk / "cmdline-tools/latest/bin").mkdir(parents=True)
         (sdk / "platform-tools").mkdir()
         (sdk / "emulator").mkdir()
+        (sdk / "emulator/source.properties").write_text("Pkg.Revision=37.2.12\n")
         (sdk / "build-tools/36.0.0").mkdir(parents=True)
         jdk = self.root / "jdk/bin"
         jdk.mkdir(parents=True)

@@ -58,6 +58,7 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
         sdk = self.root / "sdk"
         (sdk / "cmdline-tools/latest/bin").mkdir(parents=True)
         (sdk / "emulator").mkdir()
+        (sdk / "emulator/source.properties").write_text("Pkg.Revision=37.2.12\n")
         (sdk / "platform-tools").mkdir()
         self.write_tool(
             sdk / "cmdline-tools/latest/bin/sdkmanager",

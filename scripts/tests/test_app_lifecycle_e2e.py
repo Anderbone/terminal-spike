@@ -35,6 +35,7 @@ class AppLifecycleE2eTest(unittest.TestCase):
         (sdk / "cmdline-tools/latest/bin").mkdir(parents=True)
         (sdk / "platform-tools").mkdir()
         (sdk / "emulator").mkdir()
+        (sdk / "emulator/source.properties").write_text("Pkg.Revision=37.2.12\n")
         self.write_python_tool(
             sdk / "cmdline-tools/latest/bin/android",
             "log('android ' + ' '.join(sys.argv[1:]))\n",

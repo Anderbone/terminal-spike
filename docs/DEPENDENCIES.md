@@ -167,6 +167,16 @@ runner rejects an incorrect generated target before boot. These are development-
 the [Android SDK License Agreement](https://developer.android.com/studio/terms), with bundled
 component notices; they are not redistributed in the app and add no APK notice obligation.
 
+Linux x86_64 verification pins the existing Android Emulator host tool to **37.2.12
+Stable**, build **16428233**, from the [official emulator archive](https://developer.android.com/studio/emulator_archive).
+Its Linux ZIP SHA-256 is `b08fc43d8608d2955f607f1b287beb525041e730086bdca3af152accac3af9c1`.
+The 37.2.13 host repeatedly crashed in gfxstream EGL process cleanup; the preceding
+stable version passed the same API 29/37 boundary APKs. The selector uses a verified,
+separate cache and leaves the shared SDK directory intact. This is a version pin of
+existing development tooling, with the same bundled licenses and no APK redistribution.
+Fresh AVDs and bounded jobs remain mandatory: 37.2.12 predates the newer host graphics
+resource cleanup fix. A newer stable tool must be validated before changing this pin.
+
 The project-owned `mosh-api` Android library adds no direct runtime dependency. It reuses the
 catalogued Android Gradle Plugin, JUnit 4, AndroidX Test Ext JUnit, and AndroidX Test Runner entries
 above for building and verification. Its AIDL, models, and tests are licensed under Apache-2.0 in

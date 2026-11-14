@@ -322,6 +322,9 @@ class ReleaseSmokeRunner:
         return private_apk, private_aab
 
     def prepare_emulator(self) -> None:
+        self.emulator_bin = Path(subprocess.check_output(
+            [sys.executable, str(Path(__file__).with_name("install-android-sdk.py")), "--emulator-path", str(self.sdk_root)],
+            text=True, timeout=240).strip())
         assert self.workspace is not None and self.avd_home is not None
         image = "system-images;android-35;google_apis;x86_64"
         environment = os.environ.copy()

@@ -122,3 +122,9 @@ explicit foreground repair, `operator-status.json` may supply a short activity a
 This is an expiring observation, not authority to launch work or bypass checks.
 The observer ignores future or older-than-120-second leases. Remove the lease when
 foreground ownership ends; retained failure reports and attempt budgets remain.
+
+Linux verification uses the shared SDK selector's checksum-verified Emulator 37.2.12
+cache, including runtime, lifecycle, and release-update callers. The shared SDK is
+not overwritten while another job is running. This avoids the observed 37.2.13
+host EGL cleanup crash without changing tests or accepting incomplete instrumentation.
+See `docs/DEPENDENCIES.md` for the archive provenance and version-pin limits.

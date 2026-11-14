@@ -129,7 +129,7 @@ android_tools_dir="$sdk_root/cmdline-tools/22.0/bin"
 android_cli_bin="$android_tools_dir/android"
 sdkmanager_bin="$android_tools_dir/sdkmanager"
 avdmanager_bin="$android_tools_dir/avdmanager"
-emulator_bin="${TERMINAL_SPIKE_EMULATOR_BIN:-$sdk_root/emulator/emulator}"
+emulator_bin="$(python3 "$project_dir/scripts/install-android-sdk.py" --emulator-path "$sdk_root")"
 adb_bin="$sdk_root/platform-tools/adb"
 for required_tool in "$avdmanager_bin" "$emulator_bin" "$adb_bin"; do
     [[ -x "$required_tool" ]] || { echo "Required Android SDK tool is missing: $required_tool" >&2; exit 3; }

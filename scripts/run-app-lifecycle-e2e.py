@@ -206,6 +206,9 @@ class Runner:
             raise LifecycleFailure("emulator AVD identity does not match the owned lifecycle AVD")
 
     def prepare_emulator(self) -> None:
+        self.emulator_bin = Path(subprocess.check_output(
+            [sys.executable, str(Path(__file__).with_name("install-android-sdk.py")), "--emulator-path", str(self.sdk_root)],
+            text=True, timeout=240).strip())
         temp_root = Path(os.environ.get("TMPDIR") or os.environ.get("RUNNER_TEMP", "/tmp")).resolve()
         self.workspace = Path(
             tempfile.mkdtemp(prefix="terminal-spike-lifecycle-avd.", dir=temp_root)
