@@ -719,6 +719,7 @@ internal data class HostConnectRequest(
     val persistentHostId: String,
     val secret: CharArray = CharArray(0),
     val forceSsh: Boolean = false,
+    val shellOnly: Boolean = false,
 ) {
     fun wipe() = secret.fill('\u0000')
 }

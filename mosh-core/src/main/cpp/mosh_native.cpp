@@ -266,6 +266,14 @@ int run_transport( JNIEnv *environment,
   uint64_t shutdown_timestamp = 0;
   bool connected = false;
   bool input_closed = false;
+  bool output_closed = false;
+  auto local_close_result = [&]() {
+    return control.stop_requested.load() ? kCancelled : kTerminalPipeClosed;
+  };
+  auto begin_shutdown = [&]() {
+    if ( !transport->shutdown_in_progress() ) transport->start_shutdown();
+    if ( shutdown_timestamp == 0 ) shutdown_timestamp = frozen_timestamp();
+  };
 
   while ( true ) {
     freeze_timestamp();
@@ -282,15 +290,10 @@ int run_transport( JNIEnv *environment,
     }
 
     if ( control.stop_requested.load( std::memory_order_acquire ) ) {
-      if ( !transport->shutdown_in_progress() && transport->has_remote_addr() ) {
-        transport->start_shutdown();
-        shutdown_timestamp = frozen_timestamp();
-      } else if ( !transport->has_remote_addr() ) {
-        return kCancelled;
-      }
+      begin_shutdown();
     }
 
-    if ( connected ) {
+    if ( connected && !output_closed && shutdown_timestamp == 0 ) {
       Terminal::Framebuffer frame = transport->get_latest_remote_state().state.get_fb();
       predictions.cull( frame );
       predictions.apply( frame );
@@ -318,12 +321,12 @@ int run_transport( JNIEnv *environment,
     descriptors.reserve( network_fds.size() + 3 );
     for ( int fd : network_fds ) descriptors.push_back( { fd, POLLIN, 0 } );
     const size_t input_index = descriptors.size();
-    descriptors.push_back( { terminal_input.get(), POLLIN | POLLHUP, 0 } );
+    descriptors.push_back( { input_closed ? -1 : terminal_input.get(), POLLIN | POLLHUP, 0 } );
     const size_t wake_index = descriptors.size();
     descriptors.push_back( { control.wake_read.get(), POLLIN | POLLHUP, 0 } );
     const size_t output_index = descriptors.size();
     descriptors.push_back( {
-      terminal_output.get(),
+      output_closed ? -1 : terminal_output.get(),
       pending_offset < pending_output.size() ? static_cast<short>( POLLOUT ) : static_cast<short>( 0 ),
       0,
     } );
@@ -389,10 +392,11 @@ int run_transport( JNIEnv *environment,
       }
     }
 
+    if ( descriptors[ input_index ].revents & (POLLERR | POLLNVAL) ) input_closed = true;
     if ( descriptors[ output_index ].revents & (POLLERR | POLLHUP | POLLNVAL) ) {
-      return control.stop_requested.load() ? kCancelled : kTerminalPipeClosed;
+      output_closed = true;
     }
-    if ( descriptors[ output_index ].revents & POLLOUT ) {
+    if ( !output_closed && descriptors[ output_index ].revents & POLLOUT ) {
       ssize_t count;
       do {
         count = write(
@@ -407,12 +411,19 @@ int run_transport( JNIEnv *environment,
           pending_offset = 0;
         }
       } else if ( count < 0 && errno != EAGAIN && errno != EWOULDBLOCK ) {
-        return control.stop_requested.load() ? kCancelled : kTerminalPipeClosed;
+        output_closed = true;
       }
     }
 
-    if ( input_closed ) {
-      return control.stop_requested.load() ? kCancelled : kTerminalPipeClosed;
+    if ( input_closed || output_closed ) {
+      // Java may close its pipes before the asynchronous Binder stop arrives.
+      // Keep UDP alive to send/retry the authenticated shutdown instead of
+      // abandoning mosh-server and its Herdr frontend. Never poll a dead pipe.
+      begin_shutdown();
+      input_closed = true;
+      output_closed = true;
+      pending_output.clear();
+      pending_offset = 0;
     }
 
     try {
@@ -423,13 +434,15 @@ int run_transport( JNIEnv *environment,
       // See recv(): a network change is a roaming condition, not session loss.
     }
 
-    if ( transport->counterparty_shutdown_ack_sent() ) return kRemoteClosed;
-    if ( transport->shutdown_in_progress() && transport->shutdown_acknowledged() ) {
-      return control.stop_requested.load() ? kCancelled : kRemoteClosed;
+    if ( transport->counterparty_shutdown_ack_sent() ) {
+      return shutdown_timestamp != 0 ? local_close_result() : kRemoteClosed;
     }
-    if ( control.stop_requested.load() && shutdown_timestamp != 0 &&
+    if ( transport->shutdown_in_progress() && transport->shutdown_acknowledged() ) {
+      return shutdown_timestamp != 0 ? local_close_result() : kRemoteClosed;
+    }
+    if ( shutdown_timestamp != 0 &&
          frozen_timestamp() - shutdown_timestamp >= kGracefulShutdownMs ) {
-      return kCancelled;
+      return local_close_result();
     }
     if ( !connected && frozen_timestamp() - startup_timestamp >= kInitialResponseTimeoutMs ) {
       return kUdpTimeout;

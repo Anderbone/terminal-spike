@@ -23,24 +23,20 @@ class AppSettingsRepositoryTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun codexInputStatusDefaultsOffAndItsChoiceSurvivesRepositoryRecreation() = runBlocking {
-        val file = settingsFile("codex-input-status.pb", AppSettingsSerializer.defaultValue.toByteArray())
+    fun legacyRemovedSettingDoesNotResetOtherPreferences() = runBlocking {
+        val current = AppSettingsSerializer.defaultValue.toBuilder()
+            .setKeepaliveIntervalSeconds(45).build().toByteArray()
+        // Older installs may still contain the retired bool at protobuf field 35.
+        val file = settingsFile("legacy-setting.pb", current + byteArrayOf(0x98.toByte(), 0x02, 0x01))
         val first = dataStoreOwner(file)
         try {
-            assertEquals(false, first.repository.settings.first().codexInputStatusEnabled)
-            first.repository.update { it.setCodexInputStatusEnabled(true) }
+            assertEquals(45, first.repository.settings.first().keepaliveIntervalSeconds)
+            first.repository.update { it.setKeepaliveIntervalSeconds(60) }
         } finally { first.close() }
         val second = dataStoreOwner(file)
         try {
-            assertEquals(true, second.repository.settings.first().codexInputStatusEnabled)
-            second.repository.update { it.setCodexInputStatusEnabled(false) }
+            assertEquals(60, second.repository.settings.first().keepaliveIntervalSeconds)
         } finally { second.close() }
-        val third = dataStoreOwner(file)
-        try {
-            assertEquals(false, third.repository.settings.first().codexInputStatusEnabled)
-        } finally { third.close() }
-        assertEquals(AppSettingsSerializer.defaultValue.toBackupGlobalSettings(),
-            AppSettingsSerializer.defaultValue.toBuilder().setCodexInputStatusEnabled(true).build().toBackupGlobalSettings())
     }
 
     @Test

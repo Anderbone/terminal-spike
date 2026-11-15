@@ -1712,7 +1712,6 @@ fun TerminalSpikeScreen(
                                     bufferedInputSendEnabled = state.canSendTerminalInput,
                                     bufferedInputDraftState = viewModel.bufferedInputDraftState,
                                     inputContext = inputContext,
-                                    showCodexInputStatus = state.codexInputStatusEnabled,
                                     onAction = { action ->
                                         if (action is TerminalAccessoryAction.Local) {
                                             when (action.action) {

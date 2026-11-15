@@ -78,31 +78,6 @@ import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
     @Test
-    fun appearanceOffersAnOffByDefaultCodexInputStatusSwitch() {
-        val preferences = mutableStateOf(completeState().preferences.copy(codexInputStatusEnabled = false))
-        val title = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_codex_input_status)
-        composeRule.setContent {
-            MaterialTheme {
-                SettingsScreen(
-                    state = completeState().copy(preferences = preferences.value),
-                    initialCategory = SettingsCategory.APPEARANCE,
-                    knownHosts = emptyList(), moshExtension = MoshExtensionStatus.Absent.toUiState(),
-                    actions = noOpActions().copy(onCodexInputStatus = { enabled ->
-                        preferences.value = preferences.value.copy(codexInputStatusEnabled = enabled)
-                    }),
-                    onForgetKnownHost = { _, _ -> }, onRefreshMoshExtension = {}, onOpenRendererLab = {},
-                    onNavigateBack = {}, onOpenWorkspace = {}, onOpenTerminal = {}, onOpenSettings = {}, onDismissMessage = {},
-                )
-            }
-        }
-        assertFalse(preferences.value.codexInputStatusEnabled)
-        composeRule.onNodeWithText(title).performScrollTo().performClick()
-        composeRule.runOnIdle { assertTrue(preferences.value.codexInputStatusEnabled) }
-        composeRule.onNodeWithText(title).performClick()
-        composeRule.runOnIdle { assertFalse(preferences.value.codexInputStatusEnabled) }
-    }
-
-    @Test
     fun visualInputEditorAddsReplacesRemovesAndSavesTheVisibleLayout() {
         var saved: String? = null
         composeRule.setContent {

@@ -166,7 +166,6 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun setAppearanceMode(mode: AppearanceMode) = updateGlobal { it.setThemeMode(mode.toProto()) }
 
     fun setDynamicColor(enabled: Boolean) = updateGlobal { it.setDynamicColorEnabled(enabled) }
-    fun setCodexInputStatus(enabled: Boolean) = updateGlobal { it.setCodexInputStatusEnabled(enabled) }
 
     fun setAccentPreset(preset: AccentPreset) = updateGlobal { it.setAccentPreset(preset.wireCode) }
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="interaction_diagnostics_send">Send diagnostics and analyze</string>
+    <string name="interaction_diagnostics_send_summary">An authorized ADB-connected computer receives queued reports and starts read-only Codex analysis. Reports wait on this phone while the computer is disconnected.</string>
+    <string name="interaction_diagnostics_queued">Diagnostics queued. The connected computer will receive and analyze them automatically.</string>
+    <string name="interaction_diagnostics_delivered">Diagnostics received by the computer for analysis</string>
+    <string name="interaction_diagnostics_analysis_failed">The computer received the report, but automatic analysis failed. The report is preserved.</string>
+    <string name="interaction_diagnostics_send_failed">Could not queue diagnostics. Connect the computer to deliver pending reports, or save a diagnostic file.</string>
+    <string name="interaction_diagnostics_export">Save freeze diagnostics</string>
+    <string name="interaction_diagnostics_summary">This debug build keeps bounded local records of touch routing, send queues, received data and screen updates. No terminal text, typed text, passwords or keys are recorded. If the terminal stops responding, save diagnostics before reconnecting.</string>
+    <string name="interaction_diagnostics_saved">Diagnostics saved</string>
+    <string name="interaction_diagnostics_failed">Could not export diagnostics. The local recording remains on this phone.</string>
+</resources>

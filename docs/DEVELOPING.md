@@ -51,6 +51,63 @@ scripts/verify-android.sh
 See [CI and releasing](CI-AND-RELEASING.md) for focused UI checks, shared artifacts,
 CI timing and repeatable internal publishing.
 
+### Local interaction diagnostics (debug)
+
+Debug builds automatically keep bounded numeric interaction diagnostics in the app-private
+`files/interaction-diagnostics/` directory. They record touch routing, input acceptance,
+SSH/Mosh writer progress, incoming chunks, parsed/published/drawn frames, and a main-thread
+heartbeat. They never include terminal/input text, endpoints, titles, passwords or keys.
+High-frequency output and draw events are sampled once per second. Two 256 KiB files rotate
+on a background worker; at most 2,048 events wait in memory. The newest two seconds may be
+lost if the process is killed abruptly. Release builds do not start the recorder.
+
+When an incident occurs, long-press the app session tab and choose **Save freeze diagnostics**
+(**保存卡顿诊断**), or use **Settings → Developer**. Save before disconnecting/reconnecting.
+The action freezes `last-incident.txt` locally before opening Android's document picker;
+that frozen copy remains even if the picker is cancelled. Exporting only writes to the
+document chosen by the user and never uploads a report. An attached, explicitly targeted
+ADB connection can also retrieve the private files with `run-as com.yanjiyu.terminalspike`.
+Mosh writer completion only confirms delivery into the native client's input pipe, not
+acknowledgement from the remote host. An idle terminal without output is not itself a fault.
+
+The debug session menu also offers **Send diagnostics and analyze** (**发送诊断并分析**).
+It freezes and queues up to four private reports on the phone. The explicitly installed
+computer receiver uses the existing authorized ADB connection, independent of a blocked
+SSH/Mosh terminal. It accepts only bounded, numeric diagnostic reports from authorized
+supported phones, saves them under ignored `build/diagnostics/`, then acknowledges receipt.
+Disconnected phones retain their outbox. No GitHub issue, Git commit, or release is created.
+
+Install the local receiver with `python3 scripts/install-diagnostic-receiver.py --codex
+<existing-codex-binary>`. This creates the user service `terminal-spike-diagnostics.service`
+and a backed-up, idempotent Bash startup hook. New shells and user services default to
+`~/.cache/terminal-spike/tmp` unless a different `TMPDIR` was explicitly chosen. Existing
+Herdr servers and their panes are not restarted. The Android verification gate also probes
+an actual 4 KiB write and passes this disk directory to Gradle, Kotlin and SQLite; `df`
+free space alone cannot detect a per-user tmpfs quota failure.
+
+Each user-requested submission starts one bounded Codex analysis with a read-only sandbox,
+no approvals, no user MCP configuration, and no model override. Authentication uses the
+existing Codex installation. It may inspect source but cannot fix, commit, push, publish,
+install, or run device tests. Reports include a current host write probe and separate facts
+from suspected causes. The newest result is `build/diagnostics/latest-analysis.md` with
+status in `latest-status.json`; 64 completed submissions are retained. Interrupted analysis
+is reported as failed and is not automatically billed/replayed. Inspect the service with
+`systemctl --user status terminal-spike-diagnostics.service`; disable it with
+`systemctl --user disable --now terminal-spike-diagnostics.service`.
+The receiver and its analysis children use nice 19, a 50% CPU quota and a 2 GiB memory
+ceiling. The installed shell hook defaults this project's verification to one Gradle worker
+and one JVM processor; explicit `TERMINAL_SPIKE_GRADLE_WORKERS` and
+`TERMINAL_SPIKE_JVM_PROCESSORS` override those defaults. Verification uses low CPU/I/O
+priority where the host provides those controls. Keep unrelated concurrent changes out of
+a diagnostic APK by building a reviewed isolated checkout when necessary.
+
+For an explicitly selected S10e and an owned two-tab Herdr session, the opt-in host runner
+`scripts/run-herdr-quota-device-check.py` performs an isolated EDQUOT versus writable-path
+comparison and dispatches real Android taps. Its host-only preload fixture never fills
+real `/tmp` or modifies user panes. Screenshots, OCR and per-tap server acknowledgement times
+are retained. This validates the controlled write failure and UI interactions; it does not
+by itself reproduce or prove the cause of an intermittent saved-session freeze.
+
 ### Stable local debug signing
 
 The main app and its instrumentation APK explicitly use `~/.android/debug.keystore`.
@@ -426,6 +483,49 @@ device; profile and frame measurements use the pinned API 35 AOSP Gradle-managed
 Benchmark fixtures and their target Activity are test/profile-variant only and are excluded from the
 production release. See [docs/PERFORMANCE.md](../docs/PERFORMANCE.md) for scenario sizes and evidence
 recording requirements.
+
+## Local Herdr/Mosh frontend cleanup
+
+The host helper `scripts/cleanup-herdr-mosh.py` defaults to a dry run. It combines
+Mosh's own disconnected utmp record with three minutes of passive Tailscale traffic
+observation. Only same-user Mosh processes at least one hour old, bound to this
+host's Tailscale address, with exactly one child that is a leaf Herdr frontend,
+are eligible. Missing records, live peers, other shells, tmux clients and the
+persistent Herdr server are preserved. PID identities and disconnected state are
+checked again before SIGTERM. Capture failures abort cleanup. No packet payloads
+or peer addresses are saved.
+
+```bash
+python3 scripts/cleanup-herdr-mosh.py --report build/diagnostics/mosh-cleanup-preview.json
+# Explicitly authorized cleanup:
+python3 scripts/cleanup-herdr-mosh.py --apply --report build/diagnostics/mosh-cleanup.json
+```
+
+This is an explicitly invoked recovery helper, not a scheduled cleanup policy.
+Disconnected or quiet does not prove that the user closed a connection. Open
+connections must persist through inactivity, sleep and temporary loss of network.
+No idle-expiry wrapper or cleanup timer is installed. The one-off 2026-11-15
+cleanup reclaimed 146 user-confirmed excess frontend pairs and preserved every
+workspace, tab and pane ID. A briefly installed 24-hour expiry wrapper was removed
+in the same session to honor the user's lifecycle requirement.
+
+Native Mosh treats a closed local input/output pipe as the start of authenticated
+shutdown. It removes closed pipes from polling, continues UDP shutdown/ACK retries,
+and exits after acknowledgement or the bounded shutdown deadline. This also covers
+Java closing the pipes before its asynchronous Binder stop arrives. A connection
+that is still open has no inactivity deadline. The persistent Herdr server and
+its panes have a separate lifetime from a disconnected frontend.
+
+`scripts/run-mosh-close-device-check.py` runs one opt-in acceptance case on the
+authorized S10e, using a disposable named Herdr server and one already-permitted,
+unused LAN UDP port. It verifies both the remote Mosh process and its Herdr
+frontend exit, while the fixture server and the user's main workspace/tab/pane
+IDs survive. `--expect-leak` records the old-build red case. The four close cases
+are both pipes, input only, output only and explicit stop before pipe close. Keys
+are kept out of saved logs and evidence; device and APK identity are recorded.
+
+For resource-constrained native builds, `TERMINAL_SPIKE_NATIVE_JOBS=1` limits
+Make/CMake compilation alongside the existing single-worker JVM options.
 
 ## Known limitations
 

@@ -50,38 +50,15 @@ class HerdrInputContextTest {
         assertTrue(commands.any { "'process-info' '--pane' 'w1:p2'" in it })
     }
 
-    @Test fun codexUsageIsJoinedByExactThreadAndDiscardedIfThePaneChangesDuringRead() {
-        for (replaced in listOf(false, true)) {
-            var gets = 0
-            val captured = captureHerdrInputContext({ command ->
-                if (command.startsWith("'python3'")) {
-                    assertTrue(command.endsWith("'thread-A'"))
-                    TmuxExecOutput("""{"context":52,"fiveHour":86,"weekly":70}""".toByteArray(), 0)
-                } else {
-                    val output = response(command)
-                    if ("'get'" in command) {
-                        gets++
-                        val thread = if (replaced && gets > 1) "thread-B" else "thread-A"
-                        output.copy(stdout = output.stdout.toString(Charsets.UTF_8).replace(
-                            "\"agent\":\"codex\"", "\"agent\":\"codex\",\"agent_session\":{\"agent\":\"codex\",\"kind\":\"id\",\"value\":\"$thread\"}").toByteArray())
-                    } else output
-                }
-            }, choice, includeCodexStatus = true)
-            if (replaced) assertEquals(TerminalInputContext(), captured)
-            else assertEquals(com.yanjiyu.terminalspike.terminal.CodexInputStatus(52, 70), captured.codexStatus)
-        }
-    }
-
-    @Test fun disabledStatusDoesNotReadTheCodexIndexEvenWhenAThreadIsKnown() {
+    @Test fun inputContextDoesNotReadCodexUsageFiles() {
         val captured = captureHerdrInputContext({ command ->
-            assertFalse("Disabled status must not execute its reader", command.startsWith("'python3'"))
+            assertFalse("Input context must not read usage files", command.startsWith("'python3'"))
             val output = response(command)
             if ("'get'" in command) output.copy(stdout = output.stdout.toString(Charsets.UTF_8).replace(
                 "\"agent\":\"codex\"", "\"agent\":\"codex\",\"agent_session\":{\"agent\":\"codex\",\"kind\":\"id\",\"value\":\"thread-A\"}").toByteArray())
             else output
         }, choice)
         assertEquals("codex", captured.agentId)
-        assertNull(captured.codexStatus)
     }
 
     @Test fun letterPaneNumberPreservesAgentInputContext() {

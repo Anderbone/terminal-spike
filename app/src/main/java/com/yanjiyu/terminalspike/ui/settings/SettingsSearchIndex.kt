@@ -16,7 +16,6 @@ internal data class SettingsSearchEntry(
 
 internal val settingsSearchEntries = listOf(
     SettingsSearchEntry(SettingsCategory.APPEARANCE, R.string.settings_app_appearance_heading, "app theme light dark system 应用主题 浅色 深色 系统"),
-    SettingsSearchEntry(SettingsCategory.APPEARANCE, R.string.settings_codex_input_status, "codex context week quota usage input status 上下文 每周 额度 用量 输入框 状态"),
     SettingsSearchEntry(SettingsCategory.APPEARANCE, R.string.settings_terminal_theme_heading, "terminal theme color 终端主题 颜色 配色"),
     SettingsSearchEntry(SettingsCategory.APPEARANCE, R.string.settings_font_heading, "font import monospace 字体 导入 等宽"),
     SettingsSearchEntry(SettingsCategory.APPEARANCE, R.string.settings_font_size, "font size 字号 字体大小"),

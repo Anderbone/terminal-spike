@@ -33,6 +33,119 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SftpSessionControllerTest {
     @Test
+    fun hostIdentityAnswerCannotDismissANewerPrompt() = runTest {
+        val first = HostIdentityPrompt.FirstContact(
+            endpoint = "host", algorithm = "ssh-ed25519",
+            newFingerprint = "SHA256:first", promptToken = 1,
+        )
+        val newer = first.copy(promptToken = 2, newFingerprint = "SHA256:newer")
+        val client = FakeSftpSession(initialHostPrompt = first)
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        client.beforeHostIdentityAnswer = { client.publishHostPrompt(newer) }
+        controller.answerHostIdentity(first.promptToken, HostIdentityDecision.TrustOnce)
+        assertEquals(newer, (controller.state.value as SftpUiState.Connecting).hostIdentityPrompt)
+        client.beforeHostIdentityAnswer = { error("Stale answer must not reach the client") }
+        controller.answerHostIdentity(first.promptToken, HostIdentityDecision.TrustOnce)
+        assertEquals(newer, (controller.state.value as SftpUiState.Connecting).hostIdentityPrompt)
+        controller.close()
+    }
+
+    @Test
+    fun uploadAndDownloadCloseLocalStreamsWhenClientFailsBeforeIo() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        var inputClosed = false
+        var outputClosed = false
+        client.onUpload = { _, _, _ -> error("Remote validation failed") }
+        client.onDownload = { _, _ -> error("Remote validation failed") }
+        fun input() = object : java.io.ByteArrayInputStream(byteArrayOf(1)) {
+            override fun close() { inputClosed = true; super.close() }
+        }
+        assertTrue(controller.upload("file", ::input).isFailure)
+        assertTrue(inputClosed)
+        inputClosed = false
+        assertTrue(controller.uploadFiles { listOf("file" to ::input) }.isFailure)
+        assertTrue(inputClosed)
+        controller.select("/work/file")
+        assertTrue(controller.download {
+            object : java.io.ByteArrayOutputStream() {
+                override fun close() { outputClosed = true; super.close() }
+            }
+        }.isFailure)
+        assertTrue(outputClosed)
+    }
+
+    @Test
+    fun operationsWithoutSelectionOrClipboardLeaveBrowserReady() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+
+        listOf<() -> Unit>(
+            { controller.paste() },
+            { controller.renameSelection("renamed") },
+            { controller.deleteSelection() },
+        ).forEach { action ->
+            action()
+            runCurrent()
+            assertFalse((controller.state.value as SftpUiState.Browsing).busy)
+        }
+    }
+
+    @Test
+    fun unrelatedPickerFailureDoesNotUnlockTransfer() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        client.onUpload = { _, _, source ->
+            assertTrue((controller.state.value as SftpUiState.Browsing).busy)
+            controller.reportFailure(IllegalStateException("Unrelated picker failure"))
+            assertTrue((controller.state.value as SftpUiState.Browsing).busy)
+            source.close()
+        }
+        assertTrue(controller.upload("file") {
+            java.io.ByteArrayInputStream(byteArrayOf(1))
+        }.isSuccess)
+        assertFalse((controller.state.value as SftpUiState.Browsing).busy)
+    }
+
+    @Test
+    fun rejectedTransferWhileRefreshIsPendingKeepsBrowserBusy() = runTest {
+        val client = FakeSftpSession(completedPath = "/work")
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        controller.refresh()
+        assertTrue(controller.upload("file") { error("Must not open source") }.isFailure)
+        assertTrue((controller.state.value as SftpUiState.Browsing).busy)
+        runCurrent()
+        assertFalse((controller.state.value as SftpUiState.Browsing).busy)
+    }
+
+    @Test
+    fun staleAuthenticationCancellationDoesNotCloseCurrentSession() = runTest {
+        val current = challenge(2L, "Current")
+        val client = FakeSftpSession(initialKeyboardChallenges = listOf(current),
+            acceptedKeyboardToken = current.challengeToken)
+        val controller = controller { client }
+        controller.connect("host", config("host"))
+        runCurrent()
+        controller.cancelKeyboardInteractive(1L)
+        assertFalse(client.closed)
+        assertEquals(current,
+            (controller.state.value as SftpUiState.Connecting).keyboardInteractiveChallenge)
+        controller.cancelKeyboardInteractive(current.challengeToken)
+        assertTrue(client.closed)
+        assertSame(SftpUiState.Closed, controller.state.value)
+    }
+
+    @Test
     fun uploadMetadataFailureIsReportedWithoutStartingUploadOrDiscardingTheListing() = runTest {
         val client = FakeSftpSession(completedPath = "/work")
         val file = SftpFile("existing", "/work/existing", false, 1, 0)
@@ -487,6 +600,7 @@ private class FakeSftpSession(
     private val ignoreCancellation: Boolean = false,
     completedPath: String? = null,
     private val promptAfterGate: HostIdentityPrompt? = null,
+    private val initialHostPrompt: HostIdentityPrompt? = null,
     private val initialKeyboardChallenges: List<KeyboardInteractiveChallenge> = emptyList(),
     private val acceptedKeyboardToken: Long? = null,
 ) : SftpSession {
@@ -502,6 +616,11 @@ private class FakeSftpSession(
     var onList: () -> Unit = {}
     var closed = false
         private set
+    var beforeHostIdentityAnswer: (() -> Unit)? = null
+    private var hostPromptCallback: ((HostIdentityPrompt) -> Unit)? = null
+
+    fun publishHostPrompt(prompt: HostIdentityPrompt) = requireNotNull(hostPromptCallback)(prompt)
+
     var beforeAcceptedKeyboardAnswer: (() -> Unit)? = null
     private var keyboardChallengeCallback: ((KeyboardInteractiveChallenge) -> Unit)? = null
 
@@ -530,6 +649,8 @@ private class FakeSftpSession(
         lastConfig = config
         if (connectCount > 1) reconnectFailure?.let { throw it }
         isConnected = true
+        hostPromptCallback = onHostIdentityPrompt
+        initialHostPrompt?.let(onHostIdentityPrompt)
         keyboardChallengeCallback = onKeyboardInteractiveChallenge
         initialKeyboardChallenges.forEach(onKeyboardInteractiveChallenge)
         val result = if (ignoreCancellation) {
@@ -561,7 +682,9 @@ private class FakeSftpSession(
     ) = Unit
     override suspend fun uploadRecursively(parent: String, source: SftpUploadSource) = Unit
 
-    override fun answerHostIdentityPrompt(token: Long, decision: HostIdentityDecision) = Unit
+    override fun answerHostIdentityPrompt(token: Long, decision: HostIdentityDecision) {
+        beforeHostIdentityAnswer?.invoke()
+    }
     override fun answerKeyboardInteractive(token: Long, responses: List<CharArray>): Boolean {
         val accepted = acceptedKeyboardToken == null || token == acceptedKeyboardToken
         if (accepted) {
@@ -571,7 +694,8 @@ private class FakeSftpSession(
         }
         return accepted
     }
-    override fun cancelKeyboardInteractive(token: Long) = true
+    override fun cancelKeyboardInteractive(token: Long) =
+        acceptedKeyboardToken == null || token == acceptedKeyboardToken
 
     override fun close() {
         closed = true

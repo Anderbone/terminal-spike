@@ -103,10 +103,10 @@ internal class MoshBootstrapResult(
         return captureHerdrAgentStates(runner, choice)
     }
 
-    fun captureInputContext(includeCodexStatus: Boolean = false): TerminalInputContext {
+    fun captureInputContext(): TerminalInputContext {
         val choice = herdrChoice ?: return tmuxTasks.inputContext(synchronized(this) { discoveredTmuxClient?.paneId })
         val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return TerminalInputContext()
-        return captureHerdrInputContext(runner, choice, includeCodexStatus)
+        return captureHerdrInputContext(runner, choice)
     }
 
     fun recentHerdrProjects(): List<String>? {

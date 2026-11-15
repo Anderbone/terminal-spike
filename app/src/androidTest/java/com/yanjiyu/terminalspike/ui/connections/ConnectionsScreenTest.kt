@@ -154,10 +154,10 @@ class ConnectionsScreenTest {
 
     @Test
     fun compactHostCatalogShowsPolishedMetadataAndDispatchesConnect() {
-        var connectedId: String? = null
+        val requests = mutableListOf<HostConnectRequest>()
         render(
-            state = populatedState(),
-            callbacks = callbacks(onConnectHost = { connectedId = it }),
+            state = editorState(savedSecretAvailable = true),
+            callbacks = callbacks().copy(onConnectCatalogHost = { requests += it }),
             width = 599.dp,
         )
 
@@ -171,7 +171,17 @@ class ConnectionsScreenTest {
         composeRule.onNodeWithContentDescription("Host actions for Production").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Connect to Production").performClick()
 
-        composeRule.runOnIdle { assertEquals(HOST_ID, connectedId) }
+        composeRule.runOnIdle {
+            assertEquals(HOST_ID, requests.single().persistentHostId)
+            assertEquals(false, requests.single().shellOnly)
+        }
+        composeRule.onNodeWithContentDescription("Host actions for Production").performClick()
+        composeRule.onNodeWithText("Connect", useUnmergedTree = true).performClick()
+        composeRule.runOnIdle {
+            assertEquals(2, requests.size)
+            assertEquals(HOST_ID, requests.last().persistentHostId)
+            assertEquals(true, requests.last().shellOnly)
+        }
     }
 
     @Test

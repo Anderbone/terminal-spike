@@ -1,5 +1,8 @@
 package com.yanjiyu.terminalspike.terminal.view
 
+import com.yanjiyu.terminalspike.core.security.InteractionDiagnostics
+import com.yanjiyu.terminalspike.core.security.InteractionTraceEvent
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -456,6 +459,14 @@ class FastTerminalView @JvmOverloads constructor(
         Trace.beginSection(if (resizePicture != null) "Terminal.retainedFrame" else "Terminal.liveFrame")
         try {
             drawTerminalFrame(canvas)
+            terminalController?.let { controller ->
+                InteractionDiagnostics.record(InteractionTraceEvent.DRAW, System.identityHashCode(controller),
+                    controller.renderedOutputRevision, controller.viewport.scrollY.toLong(),
+                    if (controller.viewport.autoFollow) 1 else 0,
+                    (if (controller.herdrHistoryReading) 1L else 0L) +
+                        (if (resizePicture != null) 2L else 0L) + (if (selectionSnapshot != null) 4L else 0L),
+                    sampleMillis = 1_000)
+            }
         } finally {
             Trace.endSection()
         }
@@ -899,6 +910,14 @@ class FastTerminalView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            terminalController?.let { controller ->
+                InteractionDiagnostics.record(InteractionTraceEvent.TOUCH_DOWN, System.identityHashCode(controller),
+                    terminalColumnAt(event.x).toLong(), ((event.y - verticalPaddingPx) / lineHeightPx).toLong(),
+                    if (herdrScroll.reader.snapshot != null) 1 else 0,
+                    if (selection.hasSelection || selectionSnapshot != null) 1 else 0)
+            }
+        }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             historyLongPressTracking = selectionSnapshot == null && herdrScroll.reader.snapshot != null
         }
         if (historyLongPressTracking) {
@@ -951,6 +970,13 @@ class FastTerminalView @JvmOverloads constructor(
             val consumed = herdrScroll.touch(event, herdrSource, cellWidthPx, lineHeightPx,
                 horizontalPaddingPx, verticalPaddingPx, ::handleHerdrHistoryTap)
             if (consumed) {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP ||
+                    event.actionMasked == MotionEvent.ACTION_CANCEL
+                ) InteractionDiagnostics.record(InteractionTraceEvent.HISTORY_TOUCH,
+                    herdrController?.let(System::identityHashCode) ?: 0, event.actionMasked.toLong(),
+                    if (herdrController?.herdrHistoryReading == true) 1 else 0,
+                    if (herdrController?.herdrHistoryPinned == true) 1 else 0,
+                    herdrController?.viewport?.scrollY?.toLong() ?: 0)
                 recordHerdrScrollRoute(herdrController, "native", "verified_history")
                 if (!herdrTouchConsumed) {
                     val cancel = MotionEvent.obtain(event)
@@ -1309,6 +1335,11 @@ class FastTerminalView @JvmOverloads constructor(
         selectionSource()?.let(selection::selectedText)
 
     private fun handleTerminalTap(x: Float, y: Float): Boolean {
+        terminalController?.let { controller ->
+            InteractionDiagnostics.record(InteractionTraceEvent.TAP, System.identityHashCode(controller),
+                terminalColumnAt(x).toLong(), ((y - verticalPaddingPx) / lineHeightPx).toLong(),
+                if (controller.viewport.autoFollow) 1 else 0, if (controller.isMouseTrackingEnabled()) 1 else 0)
+        }
         if (selectionSnapshot != null) {
             clearSelectionAndLinkActions()
             invalidate()

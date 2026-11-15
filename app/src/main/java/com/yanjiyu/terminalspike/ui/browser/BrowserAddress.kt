@@ -20,13 +20,14 @@ private val COPIED_URL_MARKERS = setOf('\u200B', '\u200E', '\u200F', '\u202A', '
     '\u202D', '\u202E', '\u2060', '\u2066', '\u2067', '\u2068', '\u2069', '\uFEFF')
 
 internal fun browserProjectAddress(address: String, directory: String?): String {
-    if (directory.isNullOrBlank()) return address
+    val normalized = browserAddress(address)
+    if (directory.isNullOrBlank()) return normalized
     require(directory.startsWith('/') && directory.none(Char::isISOControl))
-    val uri = URI(browserAddress(address))
+    val uri = URI(normalized)
     val query = uri.rawQuery.orEmpty().split('&').filter {
         it.isNotEmpty() && it.substringBefore('=') !in setOf("folder", "workspace")
     } + "folder=${URLEncoder.encode(directory, Charsets.UTF_8.name())}"
-    return address.substringBefore('#').substringBefore('?') + "?" + query.joinToString("&") +
+    return normalized.substringBefore('#').substringBefore('?') + "?" + query.joinToString("&") +
         (uri.rawFragment?.let { "#$it" } ?: "")
 }
 

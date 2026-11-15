@@ -16,9 +16,11 @@ class AndroidVerificationTest(unittest.TestCase):
             wrapper = root / "gradlew"
             wrapper.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" > arguments.txt\n')
             wrapper.chmod(0o755)
+            (root / "gradle.properties").write_text("org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8\n")
             for signed in (False, True):
                 with self.subTest(signed=signed):
                     environment = dict(os.environ)
+                    environment["TMPDIR"] = str(root / "disk temporary")
                     environment.pop("TERMINAL_SPIKE_RELEASE_STORE_FILE", None)
                     if signed:
                         environment["TERMINAL_SPIKE_RELEASE_STORE_FILE"] = "/external/test-only.p12"
@@ -34,6 +36,8 @@ class AndroidVerificationTest(unittest.TestCase):
                     self.assertEqual(signed, "--no-daemon" in arguments)
                     self.assertNotIn("clean", arguments)
                     self.assertNotIn("-Pkotlin.incremental=false", arguments)
+                    self.assertIn("-Pkotlin.compiler.execution.strategy=in-process", arguments)
+                    self.assertTrue(any("-Djava.io.tmpdir=" in value and str(root / "disk temporary") in value for value in arguments))
 
 
 if __name__ == "__main__":

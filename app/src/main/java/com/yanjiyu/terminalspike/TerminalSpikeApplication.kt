@@ -24,6 +24,9 @@ class TerminalSpikeApplication : Application() {
             java.io.File("/proc/self/cmdline").readText().substringBefore('\u0000')
         }
         if (processName != packageName) return
+        if (BuildConfig.DEBUG) {
+            com.yanjiyu.terminalspike.core.security.InteractionDiagnostics.initialize(this)
+        }
         container = AppContainer(this)
         container.resolveStartup()
         if (BuildConfig.DEBUG) {

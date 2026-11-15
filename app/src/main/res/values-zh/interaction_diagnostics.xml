@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="interaction_diagnostics_send">发送诊断并分析</string>
+    <string name="interaction_diagnostics_send_summary">电脑通过已授权的 ADB 连接接收诊断，并启动 Codex 只读分析。电脑未连接时，诊断先保存在手机上，连接后自动发送。</string>
+    <string name="interaction_diagnostics_queued">诊断已排队，电脑连接后会自动接收并分析。</string>
+    <string name="interaction_diagnostics_delivered">电脑已收到诊断，将自动分析。</string>
+    <string name="interaction_diagnostics_analysis_failed">电脑已收到诊断，但自动分析失败，记录已保留。</string>
+    <string name="interaction_diagnostics_send_failed">无法排队发送诊断。请连接电脑接收待传记录，或先保存诊断文件。</string>
+    <string name="interaction_diagnostics_export">保存卡顿诊断</string>
+    <string name="interaction_diagnostics_summary">此调试版在手机本地限量保留点击去向、发送队列、数据接收和画面刷新记录，不记录终端正文、输入正文、密码或密钥。终端无响应时，请先保存诊断，再重新连接。</string>
+    <string name="interaction_diagnostics_saved">诊断已保存</string>
+    <string name="interaction_diagnostics_failed">无法导出诊断，本地记录仍保留在手机上。</string>
+</resources>

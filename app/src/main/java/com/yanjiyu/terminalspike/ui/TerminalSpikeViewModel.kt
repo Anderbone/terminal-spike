@@ -526,7 +526,6 @@ data class TerminalSpikeUiState(
     val remoteClipboardPrompt: RemoteClipboardPromptUi? = null,
     val multilinePasteConfirmationEnabled: Boolean = false,
     val snippetsAboveKeyboard: Boolean = false,
-    val codexInputStatusEnabled: Boolean = false,
     val voiceInputEnabled: Boolean = false,
     val inputButtonsOnRight: Boolean = false,
     val inputKeyboardLayout: String = "",
@@ -1744,7 +1743,7 @@ class TerminalSpikeViewModel(
                         val rendererProfile = profile.toRendererProfile(
                             customTerminalFonts,
                             snapshot.customTerminalThemes,
-                        ).copy(codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled)
+                        )
                         TerminalTypefaceRegistry.registerProfileFont(
                             context = getApplication(),
                             fontId = rendererProfile.fontId,
@@ -1754,7 +1753,7 @@ class TerminalSpikeViewModel(
                     }
                     val rendererProfile = snapshot.terminalProfile
                         ?.let { profile -> rendererProfiles[profile.id] }
-                        ?: TerminalRendererProfile(codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled)
+                        ?: TerminalRendererProfile()
                     withContext(Dispatchers.Main.immediate) {
                         terminalProfilesById = snapshot.terminalProfiles.associateBy(TerminalProfile::id)
                         customTerminalThemesById = snapshot.customTerminalThemes.associateBy(
@@ -1802,7 +1801,6 @@ class TerminalSpikeViewModel(
                                     snapshot.appSettings.multilinePasteConfirmationEnabled,
                                 voiceInputLanguageTag = snapshot.appSettings.voiceInputLanguageTag,
                                 snippetsAboveKeyboard = snapshot.appSettings.snippetsAboveKeyboard,
-                                codexInputStatusEnabled = snapshot.appSettings.codexInputStatusEnabled,
                                 voiceInputEnabled = snapshot.appSettings.hasVoiceInputDisabled() && !snapshot.appSettings.voiceInputDisabled,
                                 inputButtonsOnRight = snapshot.appSettings.inputButtonsOnRight,
                                 inputKeyboardLayout = snapshot.appSettings.inputKeyboardLayout,
@@ -2687,6 +2685,7 @@ class TerminalSpikeViewModel(
                         replacementSessionId = null,
                         connectionOptions = connectionOptions,
                         keyboardInteractive = keyboardInteractive,
+                        shellOnly = request.shellOnly,
                     )
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -3392,6 +3391,7 @@ class TerminalSpikeViewModel(
         replacementSessionId: Long?,
         connectionOptions: RemoteConnectionOptions,
         keyboardInteractive: KeyboardInteractiveStart? = null,
+        shellOnly: Boolean = false,
     ) {
         var ownershipTransferred = false
         try {
@@ -3482,10 +3482,10 @@ class TerminalSpikeViewModel(
             authentication = authentication,
             keepaliveIntervalSeconds = runtimeProfiles.keepaliveIntervalSeconds,
             terminalType = runtimeProfiles.terminalType,
-            startupCommand = runtimeProfiles.startupCommand,
+            startupCommand = runtimeProfiles.startupCommand.takeUnless { shellOnly },
             portForwards = runtimeProfiles.portForwards,
-            tmuxSessionSelectorEnabled = tmuxSessionSelectorEnabled,
-            autoAttachSingleHerdrSession = autoAttachSingleHerdrSession,
+            tmuxSessionSelectorEnabled = tmuxSessionSelectorEnabled && !shellOnly,
+            autoAttachSingleHerdrSession = autoAttachSingleHerdrSession && !shellOnly,
         )
             val safeWorkspaceName = privacySafeWorkspaceFriendlyName(
             candidate = workspaceName,

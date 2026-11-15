@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.connection
 
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.SftpATTRS
+import com.jcraft.jsch.SftpException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
@@ -394,12 +395,21 @@ internal class SftpClient(
         }
     }
 
-    private fun exists(path: String): Boolean = runCatching { attributes(path) }.isSuccess
+    private fun exists(path: String): Boolean = sftpPathExists { attributes(path) }
 
     private companion object {
         const val CHANNEL_TIMEOUT_MILLIS = 15_000
         const val MAX_TEMP_NAME_ATTEMPTS = 8
     }
+}
+
+/** Permission and transport failures must never be mistaken for an available destination name. */
+internal fun sftpPathExists(stat: () -> Unit): Boolean = try {
+    stat()
+    true
+} catch (error: SftpException) {
+    if (error.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw error
+    false
 }
 
 private data class RemotePathNode(val path: String, val isDirectory: Boolean) {

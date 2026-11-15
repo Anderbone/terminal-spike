@@ -48,7 +48,8 @@ patch --batch --fuzz=0 -d "$source_dir/mosh-1.4.0" -p1 \
 patch --batch --fuzz=0 -d "$source_dir/mosh-1.4.0" -p1 \
     < "$extension_dir/patches/mosh-1.4.0-android-network.patch"
 
-jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+jobs=${TERMINAL_SPIKE_NATIVE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
+[[ "$jobs" =~ ^[1-9][0-9]?$ ]] || { echo 'Invalid native build job limit.' >&2; exit 2; }
 if [[ "$jobs" -gt 8 ]]; then jobs=8; fi
 
 build_abi() {

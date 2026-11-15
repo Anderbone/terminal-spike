@@ -13,7 +13,6 @@ import java.io.InputStream
 interface Connection : TerminalInputSink {
     /** Background-only foreground inspection through the existing authenticated connection. */
     fun captureInputContext(): TerminalInputContext = TerminalInputContext()
-    fun captureInputContext(includeCodexStatus: Boolean): TerminalInputContext = captureInputContext()
 
     val isHerdrSession: Boolean get() = false
 

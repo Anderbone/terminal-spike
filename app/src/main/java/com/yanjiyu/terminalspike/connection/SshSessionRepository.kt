@@ -1,5 +1,8 @@
 package com.yanjiyu.terminalspike.connection
 
+import com.yanjiyu.terminalspike.core.security.InteractionDiagnostics
+import com.yanjiyu.terminalspike.core.security.InteractionTraceEvent
+
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.ModelLimits
 import com.yanjiyu.terminalspike.core.model.MoshPortRange
@@ -2295,6 +2298,9 @@ private class DefaultSshSessionTerminal(
     }
 
     override fun attach(connection: Connection, onInputAccepted: () -> Unit) {
+        InteractionDiagnostics.record(InteractionTraceEvent.ATTACH, System.identityHashCode(controller),
+            System.identityHashCode(connection).toLong(),
+            when (connection) { is JschSshConnection -> 1; is MoshConnection -> 2; else -> 0 })
         synchronized(tmuxHistoryLock) {
             attachedConnection = connection
             controller.herdrSessionActive = connection.isHerdrSession
@@ -2372,6 +2378,8 @@ private class DefaultSshSessionTerminal(
         onTerminalNotification: (String) -> Unit,
         onTerminalBell: () -> Unit,
     ) {
+        InteractionDiagnostics.record(InteractionTraceEvent.RECEIVED, System.identityHashCode(controller),
+            bytes.size.toLong(), sampleMillis = 1_000)
         synchronized(tmuxHistoryLock) {
             controller.herdrSessionActive = attachedConnection?.isHerdrSession == true
             if (attachedConnection?.isHerdrSession == true) {
@@ -2408,6 +2416,7 @@ private class DefaultSshSessionTerminal(
     }
 
     override fun detach() {
+        InteractionDiagnostics.record(InteractionTraceEvent.DETACH, System.identityHashCode(controller))
         synchronized(tmuxHistoryLock) {
             herdrHistoryRefresh?.cancel(false)
             herdrHistoryRefresh = null
@@ -2435,7 +2444,7 @@ private class DefaultSshSessionTerminal(
 
     private fun refreshInputContext(connection: Connection) {
         val generationAtCapture = controller.herdrHistoryGeneration
-        val context = runCatching { connection.captureInputContext(controller.rendererProfile.codexInputStatusEnabled) }
+        val context = runCatching { connection.captureInputContext() }
             .getOrDefault(TerminalInputContext())
         synchronized(tmuxHistoryLock) {
             if (!stopped && attachedConnection === connection &&

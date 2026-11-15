@@ -306,6 +306,9 @@ private object RecentEndpointIdentityEncoding {
         require(textualParts.withIndex().all { (index, part) ->
             '.' !in part || index == textualParts.lastIndex
         }) { "Embedded IPv4 is valid only at the end of an IPv6 literal." }
+        require(compression < 0 || left.none { '.' in it }) {
+            "Embedded IPv4 cannot precede compressed IPv6 groups."
+        }
         val leftGroups = parseIpv6Groups(left)
         val rightGroups = parseIpv6Groups(right)
         val presentGroupCount = leftGroups.size + rightGroups.size

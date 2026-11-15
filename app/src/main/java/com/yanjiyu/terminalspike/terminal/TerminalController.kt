@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
+import com.yanjiyu.terminalspike.core.security.InteractionDiagnostics
+import com.yanjiyu.terminalspike.core.security.InteractionTraceEvent
 import com.yanjiyu.terminalspike.connection.TmuxHistoryPageRequest
 import com.yanjiyu.terminalspike.core.model.CursorStyle
 import com.yanjiyu.terminalspike.core.model.ModelLimits
@@ -438,8 +440,23 @@ class TerminalController(
 
     /** A tap targets the live grid only; old scrollback must never click an unseen control. */
     fun sendMouseClick(column: Int, row: Int, secondary: Boolean = false): Boolean {
-        if (!terminalModes.mouseTracking || !viewport.autoFollow) return false
-        if (column !in 0 until terminalColumns || row !in 0 until terminalRows) return false
+        val traceOwner = System.identityHashCode(this)
+        InteractionDiagnostics.record(InteractionTraceEvent.CLICK_ATTEMPT, traceOwner,
+            column.toLong(), row.toLong(), if (viewport.autoFollow) 1 else 0, if (terminalModes.mouseTracking) 1 else 0)
+        if (!terminalModes.mouseTracking) {
+            InteractionDiagnostics.record(InteractionTraceEvent.CLICK_REJECT_MOUSE, traceOwner)
+            return false
+        }
+        if (!viewport.autoFollow) {
+            InteractionDiagnostics.record(InteractionTraceEvent.CLICK_REJECT_HISTORY, traceOwner,
+                viewport.scrollY.toLong(), if (herdrHistoryReading) 1 else 0, if (herdrHistoryPinned) 1 else 0)
+            return false
+        }
+        if (column !in 0 until terminalColumns || row !in 0 until terminalRows) {
+            InteractionDiagnostics.record(InteractionTraceEvent.CLICK_REJECT_BOUNDS, traceOwner,
+                terminalColumns.toLong(), terminalRows.toLong())
+            return false
+        }
         val close = if (herdrSessionActive && !secondary) terminalScreen?.let {
             HerdrNavigationChrome.switcherCloseForTabClick(it, terminalColumns, terminalRows, column, row)
         } else null
@@ -452,7 +469,7 @@ class TerminalController(
             TerminalMouseSequences.click(closeColumn, closeRow, terminalModes.sgrMouseEncoding,
                 reportRelease = terminalModes.mouseTrackingMode != TerminalMouseTrackingMode.X10)
         } ?: byteArrayOf()
-        return trySendUserInput(
+        val accepted = trySendUserInput(
             bytes = dismiss + TerminalMouseSequences.click(
                 column = column,
                 row = row,
@@ -462,6 +479,8 @@ class TerminalController(
             ),
             applyDirectSendPolicy = true,
         )
+        InteractionDiagnostics.record(InteractionTraceEvent.CLICK_SENT, traceOwner, if (accepted) 1 else 0)
+        return accepted
     }
 
     fun isMouseTrackingEnabled(): Boolean = terminalModes.mouseTracking
@@ -646,6 +665,9 @@ class TerminalController(
         } else {
             inputSink.trySend(bytes)
         }
+        InteractionDiagnostics.record(InteractionTraceEvent.INPUT, System.identityHashCode(this),
+            bytes.size.toLong(), if (accepted) 1 else 0, if (viewport.autoFollow) 1 else 0,
+            if (herdrHistoryReading) 1 else 0)
         if (accepted) {
             herdrHistoryReading = false
             if (rendererProfile.jumpToBottomOnKeyboardInput) jumpToBottom()
@@ -696,6 +718,9 @@ class TerminalController(
         private set
 
     fun updateTerminalFrame(frame: TerminalFrameUpdate, isResize: Boolean = false) {
+        InteractionDiagnostics.record(InteractionTraceEvent.PARSED, System.identityHashCode(this),
+            if (isResize) 1 else 0, if (frame.synchronizedOutput) 1 else 0,
+            if (frame.modes.mouseTracking) 1 else 0, if (frame.alternateScreen) 1 else 0, sampleMillis = 1_000)
         val configuredTmux = tmuxSessionProvider?.invoke() == true
         synchronized(queueLock) {
             pendingTransportOutput = pendingTransportOutput || !isResize
@@ -1313,7 +1338,12 @@ class TerminalController(
                 hasPendingLiveLine || pendingTerminalFrame != null
         }
         if (terminalScreenModeChanged) viewport.jumpToBottom()
-        if (contentChanged) notifyContentChanged(contentChange)
+        if (contentChanged) {
+            InteractionDiagnostics.record(InteractionTraceEvent.PUBLISHED, System.identityHashCode(this),
+                renderedOutputRevision, viewport.scrollY.toLong(), if (viewport.autoFollow) 1 else 0,
+                if (herdrHistoryReading) 1 else 0, sampleMillis = 1_000)
+            notifyContentChanged(contentChange)
+        }
         when {
             tmuxSnapshotRequiresLiveBottom -> viewport.jumpToBottom()
             rendererProfile.keepViewportPositionOnOutput -> {

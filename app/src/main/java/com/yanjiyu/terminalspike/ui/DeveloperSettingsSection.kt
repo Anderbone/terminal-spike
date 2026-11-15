@@ -47,6 +47,20 @@ internal fun DeveloperSettingsSection(
             }
         }
         item {
+            Text(stringResource(R.string.interaction_diagnostics_summary))
+            Text(stringResource(R.string.interaction_diagnostics_send_summary))
+            InteractionDiagnosticsSend { send, enabled ->
+                Button(onClick = send, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.interaction_diagnostics_send))
+                }
+            }
+            InteractionDiagnosticsExport { save, enabled ->
+                Button(onClick = save, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.interaction_diagnostics_export))
+                }
+            }
+        }
+        item {
             Button(
                 onClick = onOpenRendererLab,
                 modifier = Modifier

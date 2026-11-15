@@ -102,7 +102,7 @@ private sealed interface PendingConnectionsEditor {
     data object GenerateKey : PendingConnectionsEditor
     data class RenameKey(val persistentId: String) : PendingConnectionsEditor
     data class KeyFingerprint(val persistentId: String) : PendingConnectionsEditor
-    data class ConnectHost(val persistentId: String) : PendingConnectionsEditor
+    data class ConnectHost(val persistentId: String, val shellOnly: Boolean = false) : PendingConnectionsEditor
 }
 
 private fun PendingConnectionsEditor.saveToken(): String = when (this) {
@@ -111,7 +111,8 @@ private fun PendingConnectionsEditor.saveToken(): String = when (this) {
     PendingConnectionsEditor.GenerateKey -> "generate-key"
     is PendingConnectionsEditor.RenameKey -> "rename-key:$persistentId"
     is PendingConnectionsEditor.KeyFingerprint -> "key-fingerprint:$persistentId"
-    is PendingConnectionsEditor.ConnectHost -> "connect-host:$persistentId"
+    is PendingConnectionsEditor.ConnectHost ->
+        if (shellOnly) "connect-shell:$persistentId" else "connect-host:$persistentId"
 }
 
 private fun decodePendingConnectionsEditor(token: String): PendingConnectionsEditor? = when {
@@ -128,6 +129,9 @@ private fun decodePendingConnectionsEditor(token: String): PendingConnectionsEdi
     token.startsWith("key-fingerprint:") -> token.removePrefix("key-fingerprint:")
         .takeIf(String::isNotEmpty)
         ?.let { PendingConnectionsEditor.KeyFingerprint(it) }
+    token.startsWith("connect-shell:") -> token.removePrefix("connect-shell:")
+        .takeIf(String::isNotEmpty)
+        ?.let { PendingConnectionsEditor.ConnectHost(it, shellOnly = true) }
     token.startsWith("connect-host:") -> token.removePrefix("connect-host:")
         .takeIf(String::isNotEmpty)
         ?.let { PendingConnectionsEditor.ConnectHost(it) }
@@ -203,6 +207,33 @@ internal fun ConnectionsScreen(
     val pendingEditor = pendingEditorToken?.let(::decodePendingConnectionsEditor)
     val readyEditorCatalog = (state.loadState as? ConnectionsLoadState.Ready)?.editorCatalog
     val editorCatalog = readyEditorCatalog ?: ConnectionsEditorCatalog()
+
+    fun connectHost(id: String, shellOnly: Boolean) {
+        if (!shellOnly && callbacks.onOpenExistingHost?.invoke(id) == true) return
+        val seed = editorCatalog.hosts.firstOrNull {
+            it.draft.persistentId == id
+        }
+        val key = seed?.draft?.keyIdentityId?.let { keyId ->
+            editorCatalog.keys.firstOrNull { it.persistentId == keyId }
+        }
+        val requiresSecret = when (seed?.draft?.authenticationMethod) {
+            HostAuthenticationMethod.PASSWORD ->
+                !seed.savedSecretAvailable
+            HostAuthenticationMethod.KEYBOARD_INTERACTIVE -> false
+            HostAuthenticationMethod.PRIVATE_KEY ->
+                key?.passphraseProtected == true && !seed.savedSecretAvailable
+            null -> true
+        }
+        val moshBlocked = seed?.draft?.protocol ==
+            com.yanjiyu.terminalspike.core.model.ConnectionProtocol.MOSH &&
+            !moshAvailable
+        if (requiresSecret || moshBlocked) {
+            pendingEditorToken = PendingConnectionsEditor.ConnectHost(id, shellOnly).saveToken()
+        } else {
+            callbacks.onConnectCatalogHost?.invoke(HostConnectRequest(id, shellOnly = shellOnly))
+        }
+    }
+
     val displayedState = state.copy(
         selectedTab = displayedTab,
         searchQuery = if (displayedTab == ConnectionsTab.HOSTS) "" else state.searchQuery,
@@ -312,32 +343,11 @@ internal fun ConnectionsScreen(
                                 onSelectHost = { selectedHostId = it },
                                 onSelectKey = { selectedKeyId = it },
                                 onSelectSnippet = { selectedSnippetId = it },
-                                onConnectHost = callbacks.onConnectCatalogHost?.let { connect ->
-                                    openHost@{ id ->
-                                        if (callbacks.onOpenExistingHost?.invoke(id) == true) return@openHost
-                                        val seed = editorCatalog.hosts.firstOrNull {
-                                            it.draft.persistentId == id
-                                        }
-                                        val key = seed?.draft?.keyIdentityId?.let { keyId ->
-                                            editorCatalog.keys.firstOrNull { it.persistentId == keyId }
-                                        }
-                                        val requiresSecret = when (seed?.draft?.authenticationMethod) {
-                                            HostAuthenticationMethod.PASSWORD ->
-                                                !seed.savedSecretAvailable
-                                            HostAuthenticationMethod.KEYBOARD_INTERACTIVE -> false
-                                            HostAuthenticationMethod.PRIVATE_KEY ->
-                                                key?.passphraseProtected == true && !seed.savedSecretAvailable
-                                            null -> true
-                                        }
-                                        val moshBlocked = seed?.draft?.protocol ==
-                                            com.yanjiyu.terminalspike.core.model.ConnectionProtocol.MOSH &&
-                                            !moshAvailable
-                                        if (requiresSecret || moshBlocked) {
-                                            pendingEditorToken = PendingConnectionsEditor.ConnectHost(id).saveToken()
-                                        } else {
-                                            connect(HostConnectRequest(id))
-                                        }
-                                    }
+                                onConnectHost = callbacks.onConnectCatalogHost?.let {
+                                    { id -> connectHost(id, shellOnly = false) }
+                                } ?: callbacks.onConnectHost,
+                                onConnectShellHost = callbacks.onConnectCatalogHost?.let {
+                                    { id -> connectHost(id, shellOnly = true) }
                                 } ?: callbacks.onConnectHost,
                                 onOpenSftp = callbacks.onOpenSftp,
                                 onEditHost = callbacks.onSaveHost?.let {
@@ -558,9 +568,11 @@ internal fun ConnectionsScreen(
                         },
                         moshAvailable = moshAvailable,
                         onDismiss = { pendingEditorToken = null },
-                        onConnect = { request -> callbacks.onConnectCatalogHost?.invoke(request) },
-                        onConnectWithSsh = {
-                            request -> callbacks.onConnectCatalogHost?.invoke(request)
+                        onConnect = { request ->
+                            callbacks.onConnectCatalogHost?.invoke(request.copy(shellOnly = editor.shellOnly))
+                        },
+                        onConnectWithSsh = { request ->
+                            callbacks.onConnectCatalogHost?.invoke(request.copy(shellOnly = editor.shellOnly))
                         },
                     )
                 }

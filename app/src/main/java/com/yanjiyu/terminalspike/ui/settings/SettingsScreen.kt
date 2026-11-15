@@ -189,7 +189,6 @@ import kotlin.math.roundToInt
 internal data class SettingsActions(
     val onAppearanceMode: (AppearanceMode) -> Unit,
     val onDynamicColor: (Boolean) -> Unit,
-    val onCodexInputStatus: (Boolean) -> Unit = {},
     val onAccent: (AccentPreset) -> Unit,
     val onTerminalTheme: (String) -> Unit,
     val onSaveCustomTheme: (CustomTerminalThemeDraft) -> Unit = {},
@@ -331,7 +330,6 @@ internal fun SettingsDestination(
         actions = SettingsActions(
             onAppearanceMode = settingsViewModel::setAppearanceMode,
             onDynamicColor = settingsViewModel::setDynamicColor,
-            onCodexInputStatus = settingsViewModel::setCodexInputStatus,
             onAccent = settingsViewModel::setAccentPreset,
             onTerminalTheme = settingsViewModel::setTerminalTheme,
             onSaveCustomTheme = settingsViewModel::saveCustomTerminalTheme,
@@ -1005,14 +1003,6 @@ private fun AppearanceSettings(state: SettingsUiState, actions: SettingsActions)
             )
         }
         item(key = R.string.settings_app_appearance_heading) { SectionLabel(R.string.settings_app_appearance_heading) }
-        item(key = R.string.settings_codex_input_status) {
-            SettingSwitchRow(
-                title = stringResource(R.string.settings_codex_input_status),
-                summary = stringResource(R.string.settings_codex_input_status_summary),
-                checked = state.preferences.codexInputStatusEnabled,
-                onCheckedChange = actions.onCodexInputStatus,
-            )
-        }
         item {
             HorizontalChoices {
                 AppearanceMode.entries.forEach { mode ->

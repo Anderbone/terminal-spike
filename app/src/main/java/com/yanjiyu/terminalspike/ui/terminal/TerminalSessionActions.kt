@@ -36,6 +36,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import com.yanjiyu.terminalspike.R
+import com.yanjiyu.terminalspike.BuildConfig
+import com.yanjiyu.terminalspike.ui.InteractionDiagnosticsExport
+import com.yanjiyu.terminalspike.ui.InteractionDiagnosticsSend
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.ui.SessionTabUi
 import com.yanjiyu.terminalspike.ui.SshConnectionSeed
@@ -125,6 +128,18 @@ internal fun TerminalSessionActions(
                 SessionActionRow(R.string.session_action_reconnect) {
                     onDismiss()
                     onReconnect(target.id)
+                }
+            }
+            if (BuildConfig.DEBUG) {
+                InteractionDiagnosticsSend { send, enabled ->
+                    TextButton(onClick = send, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.interaction_diagnostics_send))
+                    }
+                }
+                InteractionDiagnosticsExport { save, enabled ->
+                    TextButton(onClick = save, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.interaction_diagnostics_export))
+                    }
                 }
             }
             if (availability.duplicate) {

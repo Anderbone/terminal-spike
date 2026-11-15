@@ -167,7 +167,6 @@ internal enum class VoiceInputLanguage(
 internal data class AppPreferences(
     val appearanceMode: AppearanceMode = AppearanceMode.SYSTEM,
     val dynamicColorEnabled: Boolean = false,
-    val codexInputStatusEnabled: Boolean = false,
     val accentPreset: AccentPreset = AccentPreset.MINT,
     val keepaliveIntervalSeconds: Int = 30,
     val reconnectEnabled: Boolean = false,
@@ -847,7 +846,6 @@ internal fun AppSettings.toPreferences(): AppPreferences = AppPreferences(
         else -> AppearanceMode.SYSTEM
     },
     dynamicColorEnabled = dynamicColorEnabled,
-    codexInputStatusEnabled = codexInputStatusEnabled,
     accentPreset = AccentPreset.fromWireCode(accentPreset),
     keepaliveIntervalSeconds = keepaliveIntervalSeconds,
     reconnectEnabled = reconnectEnabled,

@@ -597,6 +597,7 @@ internal fun ConnectionsReadyContent(
     onSelectKey: (String) -> Unit,
     onSelectSnippet: (String) -> Unit,
     onConnectHost: ((String) -> Unit)?,
+    onConnectShellHost: ((String) -> Unit)? = onConnectHost,
     onOpenSftp: ((String) -> Unit)?,
     onEditHost: ((String) -> Unit)?,
     onDeleteHost: ((HostRowUi) -> Unit)?,
@@ -634,6 +635,7 @@ internal fun ConnectionsReadyContent(
                             nowEpochMillis = nowEpochMillis,
                             onSelect = onSelectHost,
                             onConnect = onConnectHost,
+                            onConnectShell = onConnectShellHost,
                             onOpenSftp = onOpenSftp,
                             onEdit = onEditHost,
                             onDelete = onDeleteHost,
@@ -766,6 +768,7 @@ private fun HostCatalogList(
     nowEpochMillis: Long,
     onSelect: (String) -> Unit,
     onConnect: ((String) -> Unit)?,
+    onConnectShell: ((String) -> Unit)? = onConnect,
     onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
@@ -905,6 +908,7 @@ private fun HostCatalogList(
                         activationDescription = stringResource(R.string.connections_connect_to, host.displayName),
                         onShowDetails = if (listDetail) ({ onSelect(host.id) }) else null,
                         onConnect = onConnect,
+                        onConnectShell = onConnectShell,
                         onOpenSftp = onOpenSftp,
                         onEdit = onEdit,
                         onDelete = onDelete,
@@ -1125,6 +1129,7 @@ private fun HostCatalogRow(
     activationDescription: String,
     onShowDetails: (() -> Unit)?,
     onConnect: ((String) -> Unit)?,
+    onConnectShell: ((String) -> Unit)? = onConnect,
     onOpenSftp: ((String) -> Unit)?,
     onEdit: ((String) -> Unit)?,
     onDelete: ((HostRowUi) -> Unit)?,
@@ -1231,7 +1236,7 @@ private fun HostCatalogRow(
                     )
                 }
             }
-            HostOverflowMenu(host, onConnect, onOpenSftp, onEdit, onDelete)
+            HostOverflowMenu(host, onConnectShell, onOpenSftp, onEdit, onDelete)
         }
     }
 }

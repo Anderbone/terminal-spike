@@ -20,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -30,6 +31,33 @@ import org.junit.runner.RunWith
 class MoshDirectRealEndToEndTest {
     @Test
     fun directServerKeyCarriesInteractiveTerminalBytesThroughTheExtension() = runBlocking {
+        runDirectFixture(verifyCommand = true)
+    }
+
+    @Test
+    fun closingBothPipesStillCompletesNativeShutdown() = runBlocking {
+        runDirectFixture(closeRoute = "both")
+    }
+
+    @Test
+    fun closingInputPipeStillCompletesNativeShutdown() = runBlocking {
+        runDirectFixture(closeRoute = "input")
+    }
+
+    @Test
+    fun closingOutputPipeStillCompletesNativeShutdown() = runBlocking {
+        runDirectFixture(closeRoute = "output")
+    }
+
+    @Test
+    fun explicitStopCompletesNativeShutdownBeforePipesClose() = runBlocking {
+        runDirectFixture(closeRoute = "stop")
+    }
+
+    private suspend fun kotlinx.coroutines.CoroutineScope.runDirectFixture(
+        verifyCommand: Boolean = false,
+        closeRoute: String = "both",
+    ) {
         val arguments = InstrumentationRegistry.getArguments()
         val host = arguments.getString(ARG_HOST).orEmpty()
         val port = arguments.getString(ARG_PORT)?.toIntOrNull()
@@ -51,6 +79,11 @@ class MoshDirectRealEndToEndTest {
         )
         val extension = AndroidMoshConnectionExtension(client)
         val sessionId = UUID.randomUUID()
+        val terminalEnded = async(start = CoroutineStart.UNDISPATCHED) {
+            extension.sessionEvents(sessionId).first { event ->
+                event.state == MoshSessionState.ERROR || event.state == MoshSessionState.DISCONNECTED
+            }
+        }
         val terminalEvent = async(start = CoroutineStart.UNDISPATCHED) {
             withTimeout(CONNECT_TIMEOUT_MILLIS) {
                 extension.sessionEvents(sessionId).first { event ->
@@ -91,6 +124,35 @@ class MoshDirectRealEndToEndTest {
                 event.state == MoshSessionState.CONNECTED,
             )
 
+            if (!verifyCommand) {
+                // Open, quiet connections must not expire; shutdown is tied to a close action.
+                delay(1_500)
+                assertTrue("An open quiet Mosh connection ended", !terminalEnded.isCompleted)
+                when (closeRoute) {
+                    "input" -> transport.terminalInput.close()
+                    "output" -> transport.terminalOutput.close()
+                    "stop" -> {
+                        extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED)
+                        // stopSession deliberately forgets further callbacks. Observe native
+                        // completion through its output EOF while our pipes stay open instead.
+                        val outputEnded = async(Dispatchers.IO) {
+                            val buffer = ByteArray(8 * 1024)
+                            while (transport.terminalOutput.read(buffer) >= 0) Unit
+                        }
+                        try {
+                            withTimeout(5_000) { outputEnded.await() }
+                        } finally {
+                            // Closing the pipe releases a blocking Android read on timeout.
+                            transport.terminalOutput.close()
+                            outputEnded.cancel()
+                        }
+                    }
+                    else -> transport.close()
+                }
+                if (closeRoute != "stop") withTimeout(5_000) { terminalEnded.await() }
+                return
+            }
+
             // Keep the fixture command portable across common login shells. In particular, Fish
             // intentionally does not implement the POSIX-shell `$((...))` arithmetic syntax.
             val command = "printf 'MOSH_DIRECT_42\\n'\n".encodeToByteArray()
@@ -121,6 +183,7 @@ class MoshDirectRealEndToEndTest {
             }
             assertTrue("Native framebuffer boundaries must survive the PFD pipe", completedSynchronizedFrame)
         } finally {
+            terminalEnded.cancel()
             transport.close()
             extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED)
         }

@@ -127,9 +127,18 @@ internal class SftpSessionController(
     }
 
     fun answerHostIdentity(token: Long, decision: HostIdentityDecision) {
-        client?.answerHostIdentityPrompt(token, decision)
-        (_state.value as? SftpUiState.Connecting)?.let {
-            _state.value = it.copy(hostIdentityPrompt = null)
+        val owned = synchronized(ownershipLock) {
+            val current = _state.value as? SftpUiState.Connecting
+            if (current?.hostIdentityPrompt?.promptToken != token) return
+            client?.let { OwnedPromptClient(it, generation) }
+        } ?: return
+        owned.active.answerHostIdentityPrompt(token, decision)
+        synchronized(ownershipLock) {
+            if (generation != owned.generation || client !== owned.active) return@synchronized
+            val current = _state.value as? SftpUiState.Connecting ?: return@synchronized
+            if (current.hostIdentityPrompt?.promptToken == token) {
+                _state.value = current.copy(hostIdentityPrompt = null)
+            }
         }
     }
 
@@ -152,8 +161,13 @@ internal class SftpSessionController(
     }
 
     fun cancelKeyboardInteractive(token: Long) {
-        client?.cancelKeyboardInteractive(token)
-        close()
+        val owned = synchronized(ownershipLock) {
+            client?.let { OwnedPromptClient(it, generation) }
+        } ?: return
+        if (!owned.active.cancelKeyboardInteractive(token)) return
+        synchronized(ownershipLock) {
+            if (generation == owned.generation && client === owned.active) close()
+        }
     }
 
     fun openDirectory(path: String) = mutate { state, active, ownerGeneration ->
@@ -223,7 +237,7 @@ internal class SftpSessionController(
     }
 
     suspend fun upload(name: String, open: () -> InputStream): Result<Unit> = transfer { owned ->
-        withContext(operationContext) { owned.active.upload(owned.state.path, name, open()) }
+        withContext(operationContext) { open().use { owned.active.upload(owned.state.path, name, it) } }
         showDirectory(
             owned.state.hostName,
             owned.state.path,
@@ -238,7 +252,9 @@ internal class SftpSessionController(
         val files = withContext(operationContext) { readFiles() }
         require(files.isNotEmpty()) { "Choose at least one file to upload." }
         withContext(operationContext) {
-            files.forEach { (name, open) -> owned.active.upload(owned.state.path, name, open()) }
+            files.forEach { (name, open) ->
+                open().use { owned.active.upload(owned.state.path, name, it) }
+            }
         }
         showDirectory(
             owned.state.hostName,
@@ -269,7 +285,7 @@ internal class SftpSessionController(
 
     suspend fun download(open: () -> OutputStream): Result<Unit> = transfer { owned ->
         val selected = owned.state.selectedPath ?: error("Select a file to download.")
-        withContext(operationContext) { owned.active.download(selected, open()) }
+        withContext(operationContext) { open().use { owned.active.download(selected, it) } }
         publishIfOwned(owned.generation, owned.active) {
             val current = _state.value as? SftpUiState.Browsing ?: owned.state
             current.copy(selectedPath = null, busy = false)
@@ -366,6 +382,11 @@ internal class SftpSessionController(
             } catch (error: Exception) {
                 publishIfOwned(ownerGeneration, active) {
                     current.copy(busy = false, message = error.safeMessage())
+                }
+            } finally {
+                publishIfOwned(ownerGeneration, active) {
+                    val latest = _state.value as? SftpUiState.Browsing ?: current
+                    latest.copy(busy = false)
                 }
             }
         }
@@ -466,7 +487,7 @@ internal class SftpSessionController(
     private fun showFailure(error: Throwable) {
         val current = _state.value
         _state.value = when (current) {
-            is SftpUiState.Browsing -> current.copy(busy = false, message = error.safeMessage())
+            is SftpUiState.Browsing -> current.copy(message = error.safeMessage())
             is SftpUiState.Connecting -> SftpUiState.Failed(current.hostName, error.safeMessage())
             else -> current
         }
@@ -502,16 +523,6 @@ internal class SftpSessionController(
     ) {
         synchronized(ownershipLock) {
             if (generation == ownerGeneration && client === active) _state.value = state()
-        }
-    }
-
-    private fun showFailureIfOwned(
-        error: Throwable,
-        ownerGeneration: Long,
-        active: SftpSession,
-    ) {
-        synchronized(ownershipLock) {
-            if (generation == ownerGeneration && client === active) showFailure(error)
         }
     }
 

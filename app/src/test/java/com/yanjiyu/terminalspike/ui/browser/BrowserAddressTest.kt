@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAddressTest {
+    @Test fun projectLinksUseTheNormalizedAddress() {
+        assertEquals("https://host/code/?folder=%2Frepo#view",
+            browserProjectAddress(" \u2068host/code/#view\u2069 ", "/repo"))
+        assertEquals("https://host/code/", browserProjectAddress("host/code/", null))
+    }
+
     @Test fun pastedTailscaleAddressDiscardsInvisibleClipboardFormatting() {
         val url = "https://epee.tail719241.ts.net:9443"
         assertEquals(url, browserAddress(url))

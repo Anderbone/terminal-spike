@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike.connection
 
+import com.yanjiyu.terminalspike.core.security.InteractionDiagnostics
+import com.yanjiyu.terminalspike.core.security.InteractionTraceEvent
+import android.os.SystemClock
+
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.JSchException
@@ -89,9 +93,7 @@ class JschSshConnection(
         }
     }
 
-    override fun captureInputContext(): TerminalInputContext = captureInputContext(false)
-
-    override fun captureInputContext(includeCodexStatus: Boolean): TerminalInputContext {
+    override fun captureInputContext(): TerminalInputContext {
         val (session, choice) = synchronized(lock) {
             if (!running) return TerminalInputContext()
             val choice = herdrChoice ?: return tmuxTasks.inputContext(discoveredTmuxClient?.paneId)
@@ -99,7 +101,7 @@ class JschSshConnection(
                 ?: return TerminalInputContext()
             session to choice
         }
-        val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice, includeCodexStatus)
+        val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
         return synchronized(lock) {
             captured.takeIf { running && authenticatedSession?.session === session && herdrChoice == choice }
                 ?: TerminalInputContext()
@@ -398,6 +400,7 @@ class JschSshConnection(
             val newWriter = BoundedSshWriter(
                 capacity = OUTGOING_QUEUE_CAPACITY,
                 pollIntervalMillis = WRITER_POLL_MS,
+                diagnosticConnectionId = System.identityHashCode(this),
             )
             val newStartupInputGate = StartupFirstInputGate(
                 capacity = OUTGOING_QUEUE_CAPACITY - STARTUP_RESERVED_WRITER_SLOTS,
@@ -1047,6 +1050,7 @@ internal class StartupFirstInputGate(
 internal class BoundedSshWriter(
     capacity: Int,
     private val pollIntervalMillis: Long,
+    private val diagnosticConnectionId: Int = 0,
 ) {
     private val lock = Any()
     private val queue: ArrayBlockingQueue<ByteArray>
@@ -1054,6 +1058,9 @@ internal class BoundedSshWriter(
     private var pendingSize: Pair<Int, Int>? = null
     private var accepting = false
     private var writerThread: Thread? = null
+    @Volatile private var diagnosticOperation = 0
+    @Volatile private var diagnosticStartedAt = 0L
+    @Volatile private var diagnosticCompletedAt = 0L
 
     init {
         require(capacity > 0) { "SSH writer capacity must be positive." }
@@ -1069,6 +1076,13 @@ internal class BoundedSshWriter(
         synchronized(lock) {
             check(!accepting && writerThread == null) { "SSH writer is already started." }
             accepting = true
+            InteractionDiagnostics.trackWriter(System.identityHashCode(this)) {
+                val now = SystemClock.uptimeMillis()
+                InteractionDiagnostics.record(InteractionTraceEvent.WRITER_STATUS, diagnosticConnectionId,
+                    queue.size.toLong(), diagnosticOperation.toLong(),
+                    if (diagnosticOperation == 0) 0 else now - diagnosticStartedAt,
+                    if (diagnosticCompletedAt == 0L) -1 else now - diagnosticCompletedAt)
+            }
             writerThread = thread(name = "ssh-terminal-writer", isDaemon = true) {
                 runWriter(stream, onResize, onFailure)
             }
@@ -1081,6 +1095,8 @@ internal class BoundedSshWriter(
         val accepted = synchronized(lock) {
             (accepting && queue.offer(owned)).also { if (it) workAvailable.release() }
         }
+        InteractionDiagnostics.record(InteractionTraceEvent.WRITER_OFFER, diagnosticConnectionId,
+            bytes.size.toLong(), if (accepted) 1 else 0, queue.size.toLong(), sampleMillis = if (accepted) 1_000 else 0)
         if (!accepted) owned.fill(0)
         return accepted
     }
@@ -1095,6 +1111,7 @@ internal class BoundedSshWriter(
     }
 
     fun stop() {
+        InteractionDiagnostics.record(InteractionTraceEvent.WRITER_STOP, diagnosticConnectionId)
         val threadToInterrupt = synchronized(lock) {
             accepting = false
             wipeQueuedBytes()
@@ -1113,13 +1130,30 @@ internal class BoundedSshWriter(
                 if (!workAvailable.tryAcquire(pollIntervalMillis, TimeUnit.MILLISECONDS)) continue
                 val size = synchronized(lock) { pendingSize.also { pendingSize = null } }
                 if (size != null) {
+                    diagnosticStartedAt = SystemClock.uptimeMillis()
+                    diagnosticOperation = 2
+                    InteractionDiagnostics.record(InteractionTraceEvent.RESIZE_START, diagnosticConnectionId,
+                        size.first.toLong(), size.second.toLong())
                     onResize(size.first, size.second)
+                    diagnosticCompletedAt = SystemClock.uptimeMillis()
+                    diagnosticOperation = 0
+                    InteractionDiagnostics.record(InteractionTraceEvent.RESIZE_END, diagnosticConnectionId,
+                        size.first.toLong(), size.second.toLong())
                     continue
                 }
                 val bytes = queue.poll() ?: continue
                 try {
+                    diagnosticStartedAt = SystemClock.uptimeMillis()
+                    diagnosticOperation = 1
+                    InteractionDiagnostics.record(InteractionTraceEvent.WRITE_START, diagnosticConnectionId,
+                        bytes.size.toLong(), queue.size.toLong(), sampleMillis = 1_000)
+                    val started = SystemClock.uptimeMillis()
                     stream.write(bytes)
                     stream.flush()
+                    diagnosticCompletedAt = SystemClock.uptimeMillis()
+                    diagnosticOperation = 0
+                    InteractionDiagnostics.record(InteractionTraceEvent.WRITE_END, diagnosticConnectionId,
+                        bytes.size.toLong(), SystemClock.uptimeMillis() - started, queue.size.toLong(), sampleMillis = 1_000)
                 } finally {
                     bytes.fill(0)
                 }
@@ -1137,8 +1171,12 @@ internal class BoundedSshWriter(
                     true
                 }
             }
-            if (reportFailure) onFailure(error)
+            if (reportFailure) {
+                InteractionDiagnostics.record(InteractionTraceEvent.WRITE_FAILED, diagnosticConnectionId)
+                onFailure(error)
+            }
         } finally {
+            InteractionDiagnostics.untrackWriter(System.identityHashCode(this))
             synchronized(lock) {
                 accepting = false
                 wipeQueuedBytes()
