@@ -5,6 +5,9 @@
 package com.yanjiyu.terminalspike.mosh
 
 internal interface MoshNativeListener {
+    /** Rechecked after native control registration to cover cancellation before JNI starts. */
+    fun isCancellationRequested(): Boolean = false
+
     /** Called after an authenticated server packet for [connectivityGeneration] is accepted. */
     fun onConnected(connectivityGeneration: Long)
 }

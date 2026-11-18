@@ -3,7 +3,6 @@ package com.yanjiyu.terminalspike.terminal
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLineAnchor
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLineGeometry
-import com.yanjiyu.terminalspike.terminal.selection.TerminalLineSpace
 import java.io.OutputStream
 
 data class TerminalTranscriptWriteResult(
@@ -78,32 +77,6 @@ data class TerminalTranscriptSnapshot(
 
     companion object {
         const val MAX_LINES = 100_000
-
-        /** Test/local-workload adapter. Controller snapshots use their actual stable anchors. */
-        fun fromLines(
-            lines: List<TerminalLine>,
-            revision: Long = 0L,
-            sourceId: Long = 0L,
-        ): TerminalTranscriptSnapshot {
-            require(revision >= 0L)
-            require(sourceId >= 0L)
-            val first = (lines.size - MAX_LINES).coerceAtLeast(0)
-            return TerminalTranscriptSnapshot(
-                sourceId = sourceId,
-                revision = revision,
-                rows = lines.subList(first, lines.size).mapIndexed { index, line ->
-                    TerminalTranscriptRow(
-                        anchor = TerminalLineAnchor(
-                            space = TerminalLineSpace.VOLATILE_SCREEN,
-                            id = revision,
-                            volatileRow = first + index,
-                        ),
-                        line = line,
-                    )
-                },
-                truncatedBefore = first > 0,
-            )
-        }
     }
 }
 
@@ -265,19 +238,6 @@ fun findTerminalText(
         truncated = truncated,
     )
 }
-
-/** Backwards-compatible convenience for bounded engine/unit-test line lists. */
-fun findTerminalText(
-    lines: List<TerminalLine>,
-    query: String,
-    caseSensitive: Boolean = false,
-    maxMatches: Int = DEFAULT_MAX_MATCHES,
-): List<TerminalFindMatch> = findTerminalText(
-    snapshot = TerminalTranscriptSnapshot.fromLines(lines),
-    query = query,
-    caseSensitive = caseSensitive,
-    maxMatches = maxMatches,
-).matches
 
 private data class SearchSlice(
     val row: TerminalTranscriptRow,

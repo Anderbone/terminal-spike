@@ -141,7 +141,7 @@ class JschAuthenticatedSessionTest {
         var observedKeepaliveMillis: Int? = null
         var observedKeepaliveFailureCount: Int? = null
         val factory = JschAuthenticatedSessionFactory(
-            KnownHostManager { File("unused-known-hosts") },
+            fileKnownHostManager { File("unused-known-hosts") },
         )
 
         val result = factory.connect(
@@ -176,7 +176,7 @@ class JschAuthenticatedSessionTest {
     fun zeroKeepaliveDisablesProtocolProbeWithoutNetworkIo() = runTest {
         var observedKeepaliveMillis: Int? = null
         val factory = JschAuthenticatedSessionFactory(
-            KnownHostManager { File("unused-known-hosts") },
+            fileKnownHostManager { File("unused-known-hosts") },
         )
 
         val result = factory.connect(

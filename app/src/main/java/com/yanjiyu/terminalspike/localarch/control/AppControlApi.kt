@@ -32,6 +32,10 @@ internal class AppControlApi(
                 buildJsonObject {
                     put("methods", JsonArray(METHODS.map(::JsonPrimitive)))
                     put("keyboardActions", JsonArray(KeyboardAction.entries.map { JsonPrimitive(it.wireCode) }))
+                    put("inputKeyboardTokens", JsonArray((listOf("input", "toggle") + KeyboardAction.entries.map { it.wireCode }).map(::JsonPrimitive)))
+                    put("inputKeyboardMaxButtons", InputKeyboardLayout.MAX_KEYS)
+                    put("inputKeyboardRequiredTokens", JsonArray(listOf("input", "toggle").map(::JsonPrimitive)))
+                    put("inputKeyboardKeysPerColumn", 2)
                     put("keyboardLayouts", JsonArray(KeyboardLayout.entries.map { JsonPrimitive(it.wireCode) }))
                     put("modifierBehaviors", JsonArray(ModifierBehavior.entries.map { JsonPrimitive(it.wireCode) }))
                     put("inputModes", JsonArray(TerminalInputMode.entries.map { JsonPrimitive(it.wireCode) }))

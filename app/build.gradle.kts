@@ -671,8 +671,8 @@ extensions.configure<ApplicationExtension>("android") {
         ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         minSdk = 26
         targetSdk = 37
-        versionCode = 40
-        versionName = "0.0.25"
+        versionCode = 42
+        versionName = "0.0.26"
 
         testInstrumentationRunner = "com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
@@ -694,6 +694,14 @@ extensions.configure<ApplicationExtension>("android") {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Destructive device fixtures must use their own package and storage.
+            if (providers.gradleProperty("terminalSpikeDeviceVerify")
+                    .map(String::toBooleanStrict).getOrElse(false)
+            ) {
+                applicationIdSuffix = ".deviceverify"
+            }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -723,7 +731,7 @@ extensions.configure<ApplicationExtension>("android") {
 
     packaging.jniLibs.useLegacyPackaging = true
     sourceSets.named("main") {
-        assets.srcDir(rootProject.file("local-arch-runtime/licenses"))
+        assets.directories.add(rootProject.file("local-arch-runtime/licenses").absolutePath)
     }
 
     testOptions {
@@ -732,17 +740,19 @@ extensions.configure<ApplicationExtension>("android") {
     }
 
     sourceSets {
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
         getByName("testDebug").kotlin.directories.add("src/benchmarkFixtures/java")
         maybeCreate("nonMinifiedRelease").apply {
             kotlin.directories.add("src/release/java")
             kotlin.directories.add("src/benchmarkFixtures/java")
-            res.srcDir("src/release/res")
-            assets.srcDir("src/test/resources/terminal-benchmark-fixtures")
+            res.directories.add("src/release/res")
+            assets.directories.add("src/test/resources/terminal-benchmark-fixtures")
         }
         maybeCreate("benchmarkRelease").apply {
             kotlin.directories.add("src/nonMinifiedRelease/java")
             kotlin.directories.add("src/benchmarkFixtures/java")
-            assets.srcDir("src/test/resources/terminal-benchmark-fixtures")
+            assets.directories.add("src/test/resources/terminal-benchmark-fixtures")
         }
     }
 

@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.connection
 
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.MoshPortRange
+import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.core.model.RecentSession
 import com.yanjiyu.terminalspike.core.model.RemoteClipboardMode
 import com.yanjiyu.terminalspike.terminal.TerminalController
@@ -29,11 +30,93 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshSessionRepositoryTest {
+    @Test
+    fun runtimeMoshSeedRetainsLocaleAndConfiguredFallbackForManualReconnect() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { FakeConnection() },
+            terminalFactory = SshSessionTerminalFactory { FakeTerminal() },
+        )
+        try {
+            for (locale in listOf(DEFAULT_MOSH_LOCALE, "en_GB.UTF-8", "C.UTF-8")) {
+                for (policy in MoshFallbackPolicy.entries) {
+                    val started = repository.startUserInitiatedSession(RemoteSessionStartRequest(
+                        title = "Mosh fixture", workspaceName = "Mosh fixture", sourceProfileId = 7,
+                        connection = RemoteSessionConnectionRequest.Mosh(MoshBootstrapRequest(
+                            ssh = config(SshAuthentication.StoredPassword { byteArrayOf(1, 2, 3) }),
+                            locale = locale, udpPortRange = MoshPortRange(60_010, 60_020),
+                            serverCommand = "/opt/mosh-server",
+                        )),
+                        moshFallbackPolicy = policy,
+                    )) as StartSshSessionResult.Started
+                    runCurrent()
+
+                    val seed = requireNotNull(repository.connectionSeedFor(started.sessionId))
+                    assertEquals(locale, seed.moshLocale)
+                    assertEquals(policy, seed.moshFallbackPolicy)
+                    assertEquals(7L, seed.sourceProfileId)
+                    assertEquals(MoshPortRange(60_010, 60_020), seed.moshPortRange)
+                    assertEquals("/opt/mosh-server", seed.moshServerCommand)
+                    repository.close(started.sessionId)
+                    runCurrent()
+                }
+            }
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun fallbackToSshClearsMoshOptionsAndPolicyFromReconnectSeed() = runTest {
+        val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val mosh = FakeConnection()
+        val connections = ArrayDeque(listOf(mosh, FakeConnection()))
+        val repository = SshSessionRepository(
+            applicationScope = ownerScope,
+            foregroundStarter = SessionForegroundStarter {
+                SessionForegroundStartResult.Started(SessionNotificationVisibility.VISIBLE)
+            },
+            connectionFactory = RemoteSessionConnectionFactory { connections.removeFirst() },
+            terminalFactory = SshSessionTerminalFactory { FakeTerminal() },
+        )
+        try {
+            val started = repository.startUserInitiatedSession(RemoteSessionStartRequest(
+                title = "Mosh fixture", workspaceName = "Mosh fixture",
+                connection = RemoteSessionConnectionRequest.Mosh(MoshBootstrapRequest(
+                    ssh = config(SshAuthentication.StoredPassword { byteArrayOf(1, 2, 3) }),
+                    locale = "en_GB.UTF-8", udpPort = 60_011, serverCommand = "/opt/mosh-server",
+                )),
+                moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC,
+            )) as StartSshSessionResult.Started
+            runCurrent()
+            mosh.emit(ConnectionState.Failed("Controlled UDP failure", moshFallbackFailure = MoshFallbackFailure.UDP))
+            runCurrent()
+
+            val seed = requireNotNull(repository.connectionSeedFor(started.sessionId))
+            assertEquals(ConnectionProtocol.SSH, seed.protocol)
+            assertNull(seed.moshPort)
+            assertNull(seed.moshPortRange)
+            assertNull(seed.moshServerCommand)
+            assertNull(seed.moshLocale)
+            assertEquals(MoshFallbackPolicy.NEVER, seed.moshFallbackPolicy)
+            assertTrue(connections.isEmpty())
+        } finally {
+            repository.disconnectAll()
+            ownerScope.cancel()
+        }
+    }
+
     @Test
     fun projectRefreshReconnectsLostSessionWithoutCreatingAnotherTab() = runTest {
         val ownerScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))

@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import fcntl
+import functools
 import json
 import os
 from pathlib import Path
@@ -19,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.yanjiyu.terminalspike"
@@ -58,7 +61,12 @@ def access_token(credential: Path) -> str:
               "aud": TOKEN_URL, "iat": now, "exp": now + 3600}
     unsigned = b".".join(encode(json.dumps(value).encode()) for value in ({"alg": "RS256", "typ": "JWT"}, claims))
     # OpenSSL handles the cryptography; the private key is never a command argument.
-    with tempfile.TemporaryDirectory(prefix="terminal-spike-play-", dir="/tmp") as temporary:
+    temporary_root = os.environ.get("TMPDIR") or os.environ.get("RUNNER_TEMP")
+    if not temporary_root:
+        cache_root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        temporary_root = cache_root / "terminal-spike" / "tmp"
+    Path(temporary_root).mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="terminal-spike-play-", dir=temporary_root) as temporary:
         key = Path(temporary) / "key.pem"
         key.touch(mode=0o600)
         key.write_text(account["private_key"])
@@ -81,6 +89,90 @@ def source_fingerprint() -> str:
     return digest.hexdigest()
 
 
+def atomic_json(path: Path, record):
+    """Persist a complete receipt before allowing an irreversible API operation."""
+    temporary = None
+    payload = json.dumps(record, indent=2) + "\n"
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".play-receipt-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        return payload.encode("utf-8")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def locked_operation(function):
+    @functools.wraps(function)
+    def locked(*args, **kwargs):
+        # Keep the inode stable: every cooperating publish/promote uses this lock.
+        with (STATE.parent / ".publisher.lock").open("a+b") as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("another publication operation is running") from None
+            for journal in STATE.parent.glob("operation-*.json"):
+                if json.loads(journal.read_text()).get("state") == "started":
+                    raise RuntimeError("an operation already started; inspect its saved edit before retrying")
+            return function(*args, **kwargs)
+    return locked
+
+
+class ReviewedSource:
+    def __init__(self, head, remote, paths):
+        self.head = head
+        self.remote = remote
+        self.fingerprint = source_fingerprint()
+        self.files = dict(paths)
+
+    def check(self):
+        if (source_fingerprint() != self.fingerprint
+                or any(path.read_bytes() != content for path, content in self.files.items())
+                or command(["git", "rev-parse", "HEAD"], text=True).strip() != self.head
+                or command(["git", "status", "--porcelain"]).strip()
+                or command(["git", "ls-remote", "origin", "refs/heads/main"], text=True).split() != self.remote):
+            raise RuntimeError("reviewed source or artifact changed; publication stopped")
+
+
+class OwnedReceipt:
+    def __init__(self, path):
+        self.path = path
+        self.expected = path.read_bytes() if path.exists() else None
+        self.owner = uuid.uuid4().hex
+        self.journal = path.parent / f"operation-{self.owner}.json"
+        self.journal_expected = None
+
+    def check(self):
+        actual = self.path.read_bytes() if self.path.exists() else None
+        if actual != self.expected:
+            raise RuntimeError("publication receipt ownership changed; inspect saved edits before retrying")
+        if self.journal_expected is not None and self.journal.read_bytes() != self.journal_expected:
+            raise RuntimeError("publication operation journal changed; inspect saved edits before retrying")
+
+    def write(self, record):
+        # The operation lock makes check/write exclusive among cooperating processes.
+        # External writers ignoring that lock still have a check/replace window.
+        self.check()
+        record = dict(record, operation=self.owner)
+        self.journal_expected = atomic_json(self.journal, record)
+        self.check()
+        self.expected = atomic_json(self.path, record)
+
+    def guard(self, source):
+        source.check()
+        self.check()
+
+
 def consumed_codes(bundles, tracks) -> set[int]:
     return ({int(bundle["versionCode"]) for bundle in bundles.get("bundles", [])}
             | {int(code) for track in tracks.get("tracks", [])
@@ -99,17 +191,22 @@ def inspect_play(token, selected_track="internal"):
         request("DELETE", f"{API}/edits/{edit}", token=token)
 
 
+@locked_operation
 def promote(args):
     """Promote the already verified/uploaded bundle without rebuilding or uploading it."""
     if args.track != "all":
         raise RuntimeError("promote requires --track all")
-    state = json.loads(STATE.read_text())
-    uploaded = json.loads((STATE.parent / "publish-receipt.json").read_text())
+    state_bytes = STATE.read_bytes()
+    state = json.loads(state_bytes)
+    upload_receipt = STATE.parent / "publish-receipt.json"
+    upload_receipt_bytes = upload_receipt.read_bytes()
+    uploaded = json.loads(upload_receipt_bytes)
     bundle = STATE.parent / "app-release.aab"
+    bundle_bytes = bundle.read_bytes()
     if (state.get("schema") != 1 or state.get("package") != PACKAGE
             or uploaded.get("state") != "completed"
             or uploaded.get("versionCode") != state["versionCode"]
-            or hashlib.sha256(bundle.read_bytes()).hexdigest() != state["sha256"]):
+            or hashlib.sha256(bundle_bytes).hexdigest() != state["sha256"]):
         raise RuntimeError("promotion requires the verified bundle and its completed upload receipt")
     if command(["git", "status", "--porcelain"]).strip():
         raise RuntimeError("review and commit intended source before promotion")
@@ -119,17 +216,24 @@ def promote(args):
         raise RuntimeError("push the reviewed commit to origin/main before promotion")
     changes = command(["git", "diff", "--name-only", uploaded["commit"], head], text=True).splitlines()
     allowed = {"AGENTS.md", "README.md", "scripts/publish-play-internal.py", "scripts/tests/test_play_publishing.py",
+               "scripts/tests/test_play_publishing_mutation_probe.py",
                "scripts/verify-publication.py", "scripts/tests/test_publication_verification.py",
                "store-assets/google-play/release-notes/main-en-US.txt"}
     if any(path not in allowed and not path.startswith("docs/") for path in changes):
         raise RuntimeError("application inputs changed since upload; prepare and publish the latest source first")
-    notes = (ROOT / "store-assets/google-play/release-notes/main-en-US.txt").read_text().rstrip("\n")
+    notes_path = ROOT / "store-assets/google-play/release-notes/main-en-US.txt"
+    notes_bytes = notes_path.read_bytes()
+    notes = notes_bytes.decode().rstrip("\n")
     if not notes or len(notes) > 500:
         raise RuntimeError("release notes must contain 1 to 500 characters")
     receipt = STATE.parent / "promotion-receipt.json"
-    if receipt.exists() and json.loads(receipt.read_text()).get("state") == "started":
+    owned = OwnedReceipt(receipt)
+    if owned.expected is not None and json.loads(owned.expected).get("state") == "started":
         raise RuntimeError("a promotion already started; inspect its saved edit and tracks before retrying")
+    reviewed = ReviewedSource(head, remote, [(STATE, state_bytes), (bundle, bundle_bytes),
+                                           (upload_receipt, upload_receipt_bytes), (notes_path, notes_bytes)])
     token = access_token(args.credential)
+    owned.guard(reviewed)
     edit = request("POST", f"{API}/edits", {}, token)["id"]
     started = False
     try:
@@ -147,12 +251,16 @@ def promote(args):
         record = {"state": "started", "edit": edit, "versionCode": state["versionCode"],
                   "versionName": state["versionName"], "artifactCommit": uploaded["commit"],
                   "commit": head, "sha256": state["sha256"], "previousTracks": tracks}
-        receipt.write_text(json.dumps(record, indent=2) + "\n")
+        owned.guard(reviewed)
+        owned.write(record)
         started = True
         for track in sorted(targets):
+            owned.guard(reviewed)
             request("PUT", f"{API}/edits/{edit}/tracks/{track}",
                     {"track": track, "releases": [release]}, token)
+        owned.guard(reviewed)
         request("POST", f"{API}/edits/{edit}:validate", {}, token)
+        owned.guard(reviewed)
         request("POST", f"{API}/edits/{edit}:commit", {}, token)
         readback = request("POST", f"{API}/edits", {}, token)["id"]
         try:
@@ -162,8 +270,9 @@ def promote(args):
                 raise RuntimeError("all-track promotion readback differs; inspect before retrying")
         finally:
             request("DELETE", f"{API}/edits/{readback}", token=token)
+        owned.guard(reviewed)
         record.update(state="completed", confirmedTracks=confirmed)
-        receipt.write_text(json.dumps(record, indent=2) + "\n")
+        owned.write(record)
         print(f"All four Play tracks confirmed {state['versionName']} ({state['versionCode']}). "
               "Google review, managed publishing and store propagation may still delay availability.")
     finally:
@@ -255,12 +364,15 @@ def prepare(args, used):
     print("Prepared and verified. Review, commit and push this source; then run publish. No upload yet.")
 
 
+@locked_operation
 def publish(args, used):
-    state = json.loads(STATE.read_text())
+    state_bytes = STATE.read_bytes()
+    state = json.loads(state_bytes)
     bundle = STATE.parent / "app-release.aab"
+    bundle_bytes = bundle.read_bytes()
     if (state.get("schema") != 1 or state.get("package") != PACKAGE or state.get("track") != args.track
             or state["source"] != source_fingerprint()
-            or state["sha256"] != hashlib.sha256(bundle.read_bytes()).hexdigest()):
+            or state["sha256"] != hashlib.sha256(bundle_bytes).hexdigest()):
         raise RuntimeError("prepared source/artifact changed; prepare again")
     if command(["git", "status", "--porcelain"]).strip():
         raise RuntimeError("review and commit all intended source before publishing")
@@ -270,8 +382,9 @@ def publish(args, used):
         raise RuntimeError("push the reviewed commit to origin/main before publishing")
     code = state["versionCode"]
     receipt = STATE.parent / "publish-receipt.json"
-    if receipt.exists():
-        previous = json.loads(receipt.read_text())
+    owned = OwnedReceipt(receipt)
+    if owned.expected is not None:
+        previous = json.loads(owned.expected)
         if previous.get("versionCode") == code and previous.get("state") == "started":
             raise RuntimeError("an upload attempt already started; inspect its saved edit before retrying")
     if code in used:
@@ -298,18 +411,25 @@ def publish(args, used):
             or command(["git", "status", "--porcelain"]).strip()
             or command(["git", "ls-remote", "origin", "refs/heads/main"], text=True).split() != remote):
         raise RuntimeError("source or artifact changed while waiting; publication stopped")
+    reviewed = ReviewedSource(head, remote, [(STATE, state_bytes), (bundle, bundle_bytes)])
     token = access_token(args.credential)
+    owned.guard(reviewed)
     edit = request("POST", f"{API}/edits", {}, token)["id"]
     # Preserve the edit ID immediately: a timeout after upload must never trigger a blind retry.
     receipt = STATE.parent / "publish-receipt.json"
-    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "track": args.track, "state": "started"}) + "\n")
+    owned.guard(reviewed)
+    owned.write({"edit": edit, "versionCode": code, "commit": head, "track": args.track, "state": "started"})
+    owned.guard(reviewed)
     uploaded = request("POST", f"{UPLOAD}/edits/{edit}/bundles?uploadType=media", artifact_bytes, token,
                        "application/octet-stream")
     if int(uploaded["versionCode"]) != code or uploaded.get("sha256", "").lower() != state["sha256"]:
         raise RuntimeError("Play uploaded artifact metadata differs; edit was not committed")
     asset_hashes = upload_store_assets(token, edit, listing, images) if args.with_store_assets else {}
+    owned.guard(reviewed)
     request("PUT", f"{API}/edits/{edit}/tracks/{args.track}", {"track": args.track, "releases": [release]}, token)
+    owned.guard(reviewed)
     request("POST", f"{API}/edits/{edit}:validate", {}, token)
+    owned.guard(reviewed)
     request("POST", f"{API}/edits/{edit}:commit", {}, token)
     _, track = inspect_play(token, args.track)
     if track.get("track") != args.track or not any(str(code) in release.get("versionCodes", []) and release.get("status") == "completed"
@@ -321,8 +441,9 @@ def publish(args, used):
             verify_store_assets(token, readback, listing, images)
         finally:
             request("DELETE", f"{API}/edits/{readback}", token=token)
-    receipt.write_text(json.dumps({"edit": edit, "versionCode": code, "commit": head, "state": "completed",
-                                  "track": track, "storeAssetHashes": asset_hashes}, indent=2) + "\n")
+    owned.guard(reviewed)
+    owned.write({"edit": edit, "versionCode": code, "commit": head, "state": "completed",
+                 "track": track, "storeAssetHashes": asset_hashes})
     print(f"Play {args.track} track confirmed {state['versionName']} ({code}); CI {'passed' if args.require_green_ci else 'not checked'}. Store availability may lag.")
 
 

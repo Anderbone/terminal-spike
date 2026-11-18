@@ -13,6 +13,7 @@ import com.yanjiyu.terminalspike.core.model.KeyboardProfile
 import com.yanjiyu.terminalspike.core.model.LinkBehavior
 import com.yanjiyu.terminalspike.core.model.ModifierBehavior
 import com.yanjiyu.terminalspike.core.model.MoshPortRange
+import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.core.model.ReconnectPolicy
 import com.yanjiyu.terminalspike.core.model.RemoteClipboardMode
 import com.yanjiyu.terminalspike.core.model.ScrollBehavior
@@ -31,6 +32,7 @@ import com.yanjiyu.terminalspike.settings.SavedSshProfile
 import com.yanjiyu.terminalspike.settings.SettingsLoadFailure
 import com.yanjiyu.terminalspike.settings.UserSettings
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.ui.connectionSeed
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -52,6 +54,177 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TerminalDataRepositoryTest {
+    @Test
+    fun defaultReplacementOriginIsDurableInBothSnippetSavePathsAndCatalogProjection() = runTest {
+        val persistence = FakePersistence(emptyRecords())
+        val repository = repository(persistence)
+        repository.load()
+        val presentationId = repository.reserveSnippetPresentationId()
+        repository.saveSnippet(CommandSnippet(presentationId, "Settings replacement", "pwd", false), -1L)
+        val first = requireNotNull(repository.loadCatalog().catalog)
+        assertEquals(setOf(-1L), first.hiddenDefaultSnippetIds)
+        assertEquals("Settings replacement", first.snippets.single().snippet.name)
+        val model = Snippet(
+            id = SNIPPET_ID, name = "Toolbar replacement", command = "ls",
+            createdAtEpochMillis = 100, updatedAtEpochMillis = 100,
+        )
+        repository.saveSnippet(model, 0L)
+        val second = requireNotNull(repository.loadCatalog().catalog)
+        assertEquals(setOf(-1L, 0L), second.hiddenDefaultSnippetIds)
+        assertEquals(2, second.snippets.size)
+        repository.deleteSnippet(model.id)
+        assertEquals(setOf(-1L, 0L), requireNotNull(repository.loadCatalog().catalog).hiddenDefaultSnippetIds)
+    }
+
+    @Test
+    fun unknownDefaultOriginCannotSaveOrHideAnything() = runTest {
+        val persistence = FakePersistence(emptyRecords())
+        val repository = repository(persistence)
+        repository.load()
+        val snippet = CommandSnippet(repository.reserveSnippetPresentationId(), "Invalid origin", "pwd", false)
+        assertTrue(runCatching { repository.saveSnippet(snippet, -99L) }.isFailure)
+        assertTrue(runCatching { repository.hideDefaultSnippet(-99L) }.isFailure)
+        assertTrue(persistence.records.snippets.isEmpty())
+        assertTrue(requireNotNull(repository.loadCatalog().catalog).hiddenDefaultSnippetIds.isEmpty())
+    }
+
+    @Test
+    fun cancellationAfterDefaultReplacementCommitReconcilesCatalogWithoutUICallback() = runTest {
+        val persistence = FakePersistence(emptyRecords())
+        val gate = readyAuthorityGate()
+        val repository = repository(persistence, gate = gate)
+        repository.load()
+        val snippet = CommandSnippet(repository.reserveSnippetPresentationId(), "Committed replacement", "pwd", false)
+        lateinit var save: Deferred<UserSettings>
+        persistence.snippetPostCommitAction = { save.cancel(CancellationException("owned post-commit cancellation")) }
+        save = async(start = CoroutineStart.LAZY) { repository.saveSnippet(snippet, -1L) }
+        save.start()
+        assertTrue(runCatching { save.await() }.exceptionOrNull() is CancellationException)
+        assertEquals(1L, gate.awaitReady())
+        val catalog = requireNotNull(repository.loadCatalog().catalog)
+        assertEquals(setOf(-1L), catalog.hiddenDefaultSnippetIds)
+        assertEquals("Committed replacement", catalog.snippets.single().snippet.name)
+        val restarted = repository(persistence)
+        assertEquals(setOf(-1L), requireNotNull(restarted.loadCatalog().catalog).hiddenDefaultSnippetIds)
+    }
+
+    @Test
+    fun failedReplacementPersistenceKeepsTheDefaultVisible() = runTest {
+        val persistence = FakePersistence(emptyRecords())
+        val repository = repository(persistence)
+        repository.load()
+        persistence.snippetWriteFailure = IllegalStateException("owned pre-commit failure")
+        val snippet = CommandSnippet(repository.reserveSnippetPresentationId(), "Rejected replacement", "pwd", false)
+        assertTrue(runCatching { repository.saveSnippet(snippet, 0L) }.isFailure)
+        val catalog = requireNotNull(repository.loadCatalog().catalog)
+        assertTrue(catalog.snippets.isEmpty())
+        assertTrue(catalog.hiddenDefaultSnippetIds.isEmpty())
+    }
+
+    @Test
+    fun newCompatibilityProfilesPersistTheirMoshMetadataWithAndWithoutPassword() = runTest {
+        for (withPassword in listOf(false, true)) {
+            val persistence = FakePersistence(emptyRecords())
+            val repository = repository(persistence)
+            repository.load()
+            val profile = SavedSshProfile(99, "New Mosh", "mobile.example", 22, "operator",
+                protocol = ConnectionProtocol.MOSH,
+                connectionCompatibility = SavedHostConnectionCompatibility.MOSH_PASSWORD,
+                moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.ASK)
+            val password = "owned fixture password".encodeToByteArray()
+            try {
+                if (withPassword) repository.saveProfileWithPassword(profile, password)
+                else repository.saveProfile(profile)
+
+                assertEquals("en_GB.UTF-8", persistence.records.hosts.single().moshLocale)
+                assertEquals(MoshFallbackPolicy.ASK, persistence.records.hosts.single().moshFallbackPolicy)
+                val seed = repository.load().settings.profiles.single().connectionSeed()
+                assertEquals("en_GB.UTF-8", seed.connectionOptions.moshLocale)
+                assertEquals(MoshFallbackPolicy.ASK, seed.connectionOptions.moshFallbackPolicy)
+                if (withPassword) assertTrue(password.all { it == 0.toByte() })
+            } finally {
+                password.fill(0)
+            }
+        }
+    }
+
+    @Test
+    fun compatibilityProfileEditsPreserveExistingMoshLocaleAndFallback() = runTest {
+        val original = populatedRecords()
+        val records = original.copy(hosts = original.hosts.map {
+            it.copy(protocol = ConnectionProtocol.MOSH, moshLocale = "en_GB.UTF-8",
+                moshFallbackPolicy = MoshFallbackPolicy.ASK)
+        })
+        val persistence = FakePersistence(records)
+        val repository = repository(persistence)
+        val saved = repository.load().settings.profiles.single()
+
+        repository.saveProfile(saved.copy(label = "Renamed"))
+
+        assertEquals("Renamed", persistence.records.hosts.single().displayName)
+        assertEquals("en_GB.UTF-8", persistence.records.hosts.single().moshLocale)
+        assertEquals(MoshFallbackPolicy.ASK, persistence.records.hosts.single().moshFallbackPolicy)
+    }
+
+    @Test
+    fun compatibilityProfilePasswordSavePreservesExistingMoshLocaleAndFallback() = runTest {
+        val original = populatedRecords()
+        val records = original.copy(hosts = original.hosts.map {
+            it.copy(protocol = ConnectionProtocol.MOSH, moshLocale = "en_GB.UTF-8",
+                moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC)
+        })
+        val persistence = FakePersistence(records)
+        val repository = repository(persistence)
+        val saved = repository.load().settings.profiles.single()
+        val password = "owned fixture password".encodeToByteArray()
+        try {
+            repository.saveProfileWithPassword(saved, password)
+
+            assertEquals("en_GB.UTF-8", persistence.records.hosts.single().moshLocale)
+            assertEquals(MoshFallbackPolicy.AUTOMATIC, persistence.records.hosts.single().moshFallbackPolicy)
+            assertTrue(password.all { it == 0.toByte() })
+        } finally {
+            password.fill(0)
+        }
+    }
+
+    @Test
+    fun compatibilityMoshLocaleSurvivesTheCatalogToQuickConnectionSeed() = runTest {
+        val original = populatedRecords()
+        val records = original.copy(hosts = original.hosts.map {
+            it.copy(
+                protocol = ConnectionProtocol.MOSH,
+                moshLocale = "en_GB.UTF-8",
+                moshPortRange = MoshPortRange(60_010, 60_020),
+                moshServerCommand = "/usr/local/bin/mosh-server",
+            )
+        })
+
+        val saved = repository(FakePersistence(records)).load().settings.profiles.single()
+        val seed = saved.connectionSeed()
+
+        assertEquals("en_GB.UTF-8", seed.connectionOptions.moshLocale)
+        assertEquals(MoshPortRange(60_010, 60_020), seed.connectionOptions.moshPortRange)
+        assertEquals("/usr/local/bin/mosh-server", seed.connectionOptions.moshServerCommand)
+        assertTrue(saved.hasSavedPassword)
+        assertTrue(seed.matches(saved))
+    }
+
+    @Test
+    fun compatibilityMoshFallbackSurvivesTheCatalogToQuickConnectionSeed() = runTest {
+        val original = populatedRecords()
+        val records = original.copy(hosts = original.hosts.map {
+            it.copy(protocol = ConnectionProtocol.MOSH, moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC)
+        })
+
+        val saved = repository(FakePersistence(records)).load().settings.profiles.single()
+        val seed = saved.connectionSeed()
+
+        assertEquals(MoshFallbackPolicy.AUTOMATIC, seed.connectionOptions.moshFallbackPolicy)
+        assertTrue(saved.hasSavedPassword)
+        assertTrue(seed.matches(saved))
+    }
+
     @Test
     fun clearAllSavedCredentialsUsesAuthorityAndRefreshesCatalogBeforeReturning() = runTest {
         val persistence = FakePersistence(catalogRecords())
@@ -1319,6 +1492,8 @@ class TerminalDataRepositoryTest {
         var passwordFailure: RuntimeException? = null
         var nextReadFailure: RuntimeException? = null
         var deleteHostPostCommitAction: (() -> Unit)? = null
+        var snippetPostCommitAction: (() -> Unit)? = null
+        var snippetWriteFailure: RuntimeException? = null
         var lastHostWrite: HostProfile? = null
         var lastAttemptedHostId: String? = null
         var lastExpectedCredentialAfterWrite: String? = null
@@ -1471,10 +1646,17 @@ class TerminalDataRepositoryTest {
             return true
         }
 
-        override suspend fun upsertSnippet(snippet: Snippet) {
+        override suspend fun upsertSnippet(snippet: Snippet, replacedDefaultId: Long?) {
+            snippetWriteFailure?.let { throw it }
             records = records.copy(
                 snippets = records.snippets.filterNot { it.id == snippet.id } + snippet,
+                hiddenDefaultSnippetIds = records.hiddenDefaultSnippetIds + listOfNotNull(replacedDefaultId),
             )
+            snippetPostCommitAction?.invoke()
+        }
+
+        override suspend fun hideDefaultSnippet(defaultId: Long) {
+            records = records.copy(hiddenDefaultSnippetIds = records.hiddenDefaultSnippetIds + defaultId)
         }
 
         override suspend fun deleteSnippet(snippetId: String): Boolean {

@@ -70,13 +70,9 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
                 temporary.delete()
                 return existing
             }
-            val encodedName = Base64.encodeToString(
-                displayName.take(MAX_DISPLAY_NAME_CHARACTERS).encodeToByteArray(),
-                Base64.NO_WRAP or Base64.URL_SAFE,
-            ).trimEnd('=')
-            val target = directory.resolve("$id$NAME_SEPARATOR$encodedName.font")
+            val target = targetFile(id, displayName)
             check(temporary.renameTo(target)) { "The imported font could not be committed." }
-            return ImportedTerminalFont(id = id, displayName = displayName, file = target)
+            return checkNotNull(decodeRecord(target))
         } catch (error: Throwable) {
             temporary.delete()
             throw error
@@ -85,16 +81,28 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
 
     /** Reads only profile-referenced content-addressed files for an explicit portable export. */
     fun readForBackup(fontIds: Set<String>): List<BackupCustomFont> = synchronized(monitor) {
+        require(fontIds.size <= BackupPayloadFormat.MAX_CUSTOM_FONTS) {
+            "Too many custom fonts for a backup."
+        }
         val records = listUnlocked().associateBy(ImportedTerminalFont::id)
-        fontIds.sorted().map { fontId ->
-            val imported = records[fontId]
+        val selected = fontIds.sorted().map { fontId ->
+            records[fontId]
                 ?: throw IOException("A selected custom font file is unavailable.")
-            validateStoredFont(imported.file, fontId)
+        }
+        val totalBytes = selected.sumOf { imported ->
+            requireSupportedStoredSize(imported.file)
+            imported.file.length()
+        }
+        require(totalBytes <= BackupPayloadFormat.MAX_PAYLOAD_BYTES) {
+            "Custom font files exceed the backup payload limit."
+        }
+        selected.map { imported ->
+            validateStoredFont(imported.file, imported.id)
             val bytes = imported.file.readBytes()
             try {
                 BackupCustomFont.takeOwnership(
-                    recordId = customFontBackupRecordId(fontId),
-                    fontId = fontId,
+                    recordId = customFontBackupRecordId(imported.id),
+                    fontId = imported.id,
                     displayName = imported.displayName,
                     bytes = bytes,
                 )
@@ -213,10 +221,14 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, ImportedTerminalFont::displayName))
         .toList()
 
-    private fun validateStoredFont(file: File, expectedId: String) {
+    private fun requireSupportedStoredSize(file: File) {
         require(file.length() in MIN_FONT_BYTES..BackupPayloadFormat.MAX_CUSTOM_FONT_BYTES.toLong()) {
             "A custom font file is outside the supported size range."
         }
+    }
+
+    private fun validateStoredFont(file: File, expectedId: String) {
+        requireSupportedStoredSize(file)
         require(hasSupportedHeader(file)) { "A custom font file has an unsupported format." }
         val typeface = Typeface.Builder(file).build()
         require(isMonospaceTerminalTypeface(typeface)) {
@@ -237,11 +249,21 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
     }
 
     private fun targetFile(fontId: String, displayName: String): File {
+        val nameBytes = displayName.take(MAX_DISPLAY_NAME_CHARACTERS).encodeToByteArray()
+        // The hash, separators and Base64 are ASCII. Reserve room for them within NAME_MAX.
+        val maximumNameBytes =
+            ((MAX_FILE_NAME_BYTES - fontId.length - NAME_SEPARATOR.length - FONT_FILE_SUFFIX.length) / 4) * 3
+        var end = minOf(nameBytes.size, maximumNameBytes)
+        if (end < nameBytes.size) {
+            // Do not split a UTF-8 code point when shortening the displayed name.
+            while (end > 0 && nameBytes[end].toInt() and 0xc0 == 0x80) end--
+        }
+        val shortenedName = nameBytes.decodeToString(endIndex = end).trimEnd()
         val encodedName = Base64.encodeToString(
-            displayName.take(MAX_DISPLAY_NAME_CHARACTERS).encodeToByteArray(),
+            shortenedName.encodeToByteArray(),
             Base64.NO_WRAP or Base64.URL_SAFE,
         ).trimEnd('=')
-        return directory.resolve("$fontId$NAME_SEPARATOR$encodedName.font")
+        return directory.resolve("$fontId$NAME_SEPARATOR$encodedName$FONT_FILE_SUFFIX")
     }
 
     private fun writeJournal(entries: List<FontJournalEntry>) {
@@ -296,7 +318,7 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
     )
 
     private fun decodeRecord(file: File): ImportedTerminalFont? {
-        val stem = file.name.removeSuffix(".font")
+        val stem = file.name.removeSuffix(FONT_FILE_SUFFIX)
         val id = stem.substringBefore(NAME_SEPARATOR)
         if (!id.startsWith(CUSTOM_ID_PREFIX) || id.length != CUSTOM_ID_LENGTH) return null
         if (!id.removePrefix(CUSTOM_ID_PREFIX).all { it in "0123456789abcdef" }) return null
@@ -342,7 +364,9 @@ class CustomTerminalFontStore(context: Context) : BackupCustomFontPersistence {
         private const val CUSTOM_ID_PREFIX = "custom_"
         private const val CUSTOM_ID_LENGTH = CUSTOM_ID_PREFIX.length + 64
         private const val NAME_SEPARATOR = "--"
+        private const val FONT_FILE_SUFFIX = ".font"
         private const val MAX_DISPLAY_NAME_CHARACTERS = 80
+        private const val MAX_FILE_NAME_BYTES = 255
         private const val MAX_FONT_BYTES = 16L * 1_024L * 1_024L
         private const val MIN_FONT_BYTES = 12L
         private const val COPY_BUFFER_BYTES = 16 * 1_024

@@ -1,5 +1,9 @@
 # Plan 003: Complete the terminal workflow without restoring cluttered chrome
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Execute after Plans 001 and 002. Preserve the
 > user's authoritative terminal layout: a short, horizontally scrollable tab
 > strip and one fixed right-edge `+`; do not add Back, status badges, a large
@@ -12,7 +16,7 @@
 > `git status --short` as this plan's post-dependency baseline, then
 > run `git diff --stat ff8435bc100f381f6925202259017e7834f7233d..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/terminal app/src/main/java/com/yanjiyu/terminalspike/ui app/src/main/java/com/yanjiyu/terminalspike/core/model`. If `SessionChrome`, `ExtraKeysBar`, `TerminalController`, or the renderer contracts differ from Current state, stop and report.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: L
@@ -40,7 +44,7 @@ indistinguishable from one-shot state.
 This plan completes those workflows using a tab context/bottom sheet and a
 compact accessory control, not a return to the rejected large header.
 
-## Current state
+## Original state
 
 - `ui/SshConnectionBar.kt:62-131` renders the intended top strip: bounded short
   tabs plus fixed `+`. Double-click duplicates, and long-click currently jumps
@@ -68,7 +72,7 @@ compact accessory control, not a return to the rejected large header.
 - Existing security boundaries centralize sensitive clipboard writes in
   `TerminalClipboardWriter` and multiline confirmation in `ExtraKeysBar`.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 ```bash
 export JAVA_HOME=/home/jiyu/.cache/terminal-spike-tools/jdk
@@ -141,7 +145,7 @@ fi
 - new terminal fonts/custom-theme schema or third-party assets (Plan 005)
 - host trust/KBI protocol changes (Plan 002)
 
-## Git workflow
+## Historical Git workflow
 
 - Work with the dirty tree, patch narrow symbols, and re-read adjacent changes
   before each patch.
@@ -149,7 +153,7 @@ fi
   `feat: add terminal session action sheet`.
 - Do not push or commit build outputs, transcripts, endpoints, or credentials.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Turn tab long-press into the session action surface
 
@@ -315,7 +319,7 @@ boundary as other terminal text.
   endpoints.
 - Keep the renderer hot-path tests and benchmark fixtures intact.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Top terminal chrome still contains only short tabs and fixed `+`.
 - [x] Long-press exposes every required session action without target races.
@@ -344,7 +348,7 @@ the sole authorized target in the final fresh `adb devices -l` snapshot, and
 known Wi-Fi phone was not connected or advertised and therefore was not a
 current authorized target for this gate.
 
-## STOP conditions
+## Historical stop conditions
 
 Stop and report if:
 

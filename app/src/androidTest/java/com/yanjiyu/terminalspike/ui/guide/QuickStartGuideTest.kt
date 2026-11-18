@@ -190,6 +190,7 @@ class QuickStartGuideTest {
 
     @Test
     fun largeTextKeepsInstructionsAndExitReachable() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
@@ -197,7 +198,7 @@ class QuickStartGuideTest {
             }
         }
         composeRule.onNodeWithTag("guide-next").assertIsDisplayed()
-        composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
+        composeRule.onNodeWithText(context.getString(GuideLesson.RECENT_PROJECTS.caption))
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Close").assertDoesNotExist()
         composeRule.onNodeWithTag("guide-back").assertIsDisplayed()
@@ -239,6 +240,7 @@ class QuickStartGuideTest {
 
     @Test
     fun systemBackExitsAnyPageAndSettingsChapterReentryRemainsAvailable() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val open = mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
@@ -252,7 +254,7 @@ class QuickStartGuideTest {
         composeRule.onNodeWithTag("guide-title-2").assertIsDisplayed()
         pressGuideSystemBack()
         openLesson(GuideLesson.RECENT_PROJECTS)
-        composeRule.onNodeWithText("In Herdr, long press New Workspace to choose a recent project.")
+        composeRule.onNodeWithText(context.getString(GuideLesson.RECENT_PROJECTS.caption))
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("7 / 12").assertIsDisplayed()
         composeRule.onNodeWithTag("guide-next").performClick()

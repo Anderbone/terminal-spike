@@ -1,17 +1,18 @@
 status: complete
 created_at: 2026-08-08T11:14:08.829Z
-updated_at: 2026-08-10T04:48:21+01:00
+updated_at: 2026-11-16T13:00:34.944431+00:00
 done_at: 2026-08-10T04:48:21+01:00
 independent: no
-dependencies: docs/polish-implementation-plan.md
+dependencies: docs/DEPENDENCIES.md
 
 # Terminal palette and font licensing
 
 ## Launcher branding
 
-- The main app and Mosh extension launcher marks are project-owned Android vector artwork created
-  for this repository. They use a shared terminal-window, prompt, and cursor language; the extension
-  adds its own `MOSH` badge so the two installed apps are distinguishable.
+- The main app launcher is project-owned Android vector artwork created for this repository.
+  It uses a terminal-window, prompt and cursor language. Under [ADR-005](ADR-005-BUNDLED-MOSH.md),
+  `mosh-core` is an internal library with no launcher or independently installed APK. The older
+  two-launcher description belongs to the superseded separate-extension design.
 - The supplied terminal-icon gallery was used only as a broad style reference. No logo, path data,
   source asset, or application artwork was copied from it or from another terminal application.
 - The shipped artwork is implemented as density-independent legacy/adaptive vectors with Android
@@ -60,7 +61,17 @@ Prefer unmodified stable-release binaries. Subsetting/modification creates an OF
 | System monospace | Android platform | No bundled font binary | Always available |
 | User custom TTF/OTF | SAF-selected user file | User-controlled local use; exclude from backup by default | Supported without redistribution claim |
 
-OFL fonts may be embedded in a paid proprietary APK; the font remains OFL and its complete notice must be easily viewable. The app itself does not become OFL.
+These terminal-font records preserve the individual OFL notices and copyrights. Application
+licensing is recorded separately in [ADR-005](ADR-005-BUNDLED-MOSH.md) and the repository
+[LICENSE](../LICENSE); this font audit does not replace those component and application records.
+
+## Interface font
+
+The application UI also bundles four static Inter faces. Their source, version and notice
+obligations are maintained in [Interface typography](DEPENDENCIES.md#interface-typography),
+with the full font notice in [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md#inter-interface-font).
+The font verifier covers these four UI files as well as the nine terminal-font files described
+here. This section adds no font, dependency or licence grant.
 
 ## Symbols Nerd Font Mono
 

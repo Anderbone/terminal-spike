@@ -11,9 +11,10 @@ import subprocess
 from typing import Any, Iterable
 import xml.etree.ElementTree as ET
 
+from junit_report import COUNT_NAMES, ReportError, report_counts
+
 
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
-COUNT_NAMES = ("tests", "failures", "errors", "skipped")
 EXCLUDED_SOURCE_PARTS = {"build", ".gradle", ".idea", ".kotlin"}
 
 
@@ -136,32 +137,17 @@ def require_fresh(path: Path, earliest_mtime: float, label: str) -> None:
         raise EvidenceError(f"{label} is stale: {path}")
 
 
-def parse_non_negative_count(raw: str | None, label: str) -> int:
-    if raw is None or re.fullmatch(r"[0-9]+", raw) is None:
-        raise EvidenceError(f"{label} has an invalid count")
-    return int(raw)
-
-
 def junit_counts(path: Path) -> dict[str, int]:
     try:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as error:
         raise EvidenceError(f"test report is malformed: {path}") from error
-    if root.tag == "testsuite":
-        suites = [root]
-    elif root.tag == "testsuites":
-        suites = list(root.findall("testsuite"))
-        if not suites:
-            raise EvidenceError(f"test report has no suites: {path}")
-    else:
-        raise EvidenceError(f"test report has unexpected root: {path}")
-    counts = {name: 0 for name in COUNT_NAMES}
-    for suite in suites:
-        for name in COUNT_NAMES:
-            raw = suite.attrib.get(name)
-            if name == "skipped" and raw is None:
-                raw = "0"
-            counts[name] += parse_non_negative_count(raw, f"{path} {name}")
+    try:
+        counts = report_counts(root)
+    except ReportError as error:
+        raise EvidenceError(f"test report is inconsistent: {path}: {error}") from error
+    except RecursionError as error:
+        raise EvidenceError(f"test report nesting is too deep: {path}") from error
     if counts["tests"] <= 0:
         raise EvidenceError(f"test report contains no tests: {path}")
     if counts["failures"] or counts["errors"]:

@@ -8,7 +8,6 @@
   "tip_close_tab": {"source": "gestures", "start": 7.7, "duration": 4, "poster_at": 0.15, "filter": "crop=720:450:0:0"},
   "tip_close_space": {"source": "projects", "start": 2, "filter": "crop=720:740:0:0"},
   "tip_actions": {"source": "gestures", "start": 0.3, "duration": 5, "poster_at": 3, "filter": "crop=720:450:0:0"},
-  "tip_keyboard": {"source": "gestures", "start": 12, "duration": 5, "poster_at": 3.7, "filter": "crop=720:800:0:750"},
   "tip_attach": {"source": "snippets", "start": 8, "filter": "crop=720:410:0:1180"},
   "tip_undo": {"source": "typing", "start": 9, "filter": "crop=720:520:0:780"}
 }

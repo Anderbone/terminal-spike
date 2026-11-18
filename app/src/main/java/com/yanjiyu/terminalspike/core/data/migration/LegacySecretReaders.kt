@@ -3,8 +3,6 @@ package com.yanjiyu.terminalspike.core.data.migration
 import android.content.Context
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.util.AtomicFile
-import com.yanjiyu.terminalspike.settings.SecureSshIdentityStore
-import com.yanjiyu.terminalspike.settings.SecureSshPasswordStore
 import com.yanjiyu.terminalspike.settings.SshPasswordScope
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -54,13 +52,13 @@ internal class LegacySecretReaders(
         return readEncrypted(
             file = AtomicFile(passwordDirectory.resolve("${scope.profileId}.password")),
             keyAlias = passwordKeyAlias,
-            maximumEncryptedBytes = SecureSshPasswordStore.MAX_PASSWORD_BYTES + ENVELOPE_OVERHEAD_BYTES,
+            maximumEncryptedBytes = MAX_PASSWORD_BYTES + ENVELOPE_OVERHEAD_BYTES,
         ) { source, key ->
             val envelope = readEnvelope(
                 source = source,
                 expectedMagic = PASSWORD_MAGIC,
                 supportedVersions = PASSWORD_VERSION_V1..PASSWORD_VERSION_V2,
-                maximumCiphertextBytes = SecureSshPasswordStore.MAX_PASSWORD_BYTES + GCM_TAG_BYTES,
+                maximumCiphertextBytes = MAX_PASSWORD_BYTES + GCM_TAG_BYTES,
             )
             val associatedData = passwordAssociatedData(scope, envelope.version)
             try {
@@ -69,7 +67,7 @@ internal class LegacySecretReaders(
                     iv = envelope.iv,
                     ciphertext = envelope.ciphertext,
                     associatedData = associatedData,
-                    maximumPlaintextBytes = SecureSshPasswordStore.MAX_PASSWORD_BYTES,
+                    maximumPlaintextBytes = MAX_PASSWORD_BYTES,
                 )
             } finally {
                 associatedData.fill(0)
@@ -84,13 +82,13 @@ internal class LegacySecretReaders(
         return readEncrypted(
             file = AtomicFile(identityDirectory.resolve("$identityId.identity")),
             keyAlias = identityKeyAlias,
-            maximumEncryptedBytes = SecureSshIdentityStore.MAX_PRIVATE_KEY_BYTES + ENVELOPE_OVERHEAD_BYTES,
+            maximumEncryptedBytes = MAX_PRIVATE_KEY_BYTES + ENVELOPE_OVERHEAD_BYTES,
         ) { source, key ->
             val envelope = readEnvelope(
                 source = source,
                 expectedMagic = IDENTITY_MAGIC,
                 supportedVersions = IDENTITY_VERSION..IDENTITY_VERSION,
-                maximumCiphertextBytes = SecureSshIdentityStore.MAX_PRIVATE_KEY_BYTES + GCM_TAG_BYTES,
+                maximumCiphertextBytes = MAX_PRIVATE_KEY_BYTES + GCM_TAG_BYTES,
             )
             val associatedData = "terminal-spike-ssh-identity-v1:$identityId".toByteArray()
             try {
@@ -99,7 +97,7 @@ internal class LegacySecretReaders(
                     iv = envelope.iv,
                     ciphertext = envelope.ciphertext,
                     associatedData = associatedData,
-                    maximumPlaintextBytes = SecureSshIdentityStore.MAX_PRIVATE_KEY_BYTES,
+                    maximumPlaintextBytes = MAX_PRIVATE_KEY_BYTES,
                 )
             } finally {
                 associatedData.fill(0)
@@ -231,20 +229,22 @@ internal class LegacySecretReaders(
     private class UnsupportedLegacySecretVersionException(version: Int) :
         IllegalArgumentException("Unsupported legacy secret version $version.")
 
-    private companion object {
-        const val PASSWORD_DIRECTORY = "ssh-passwords"
-        const val PASSWORD_KEY_ALIAS = "terminal_spike_ssh_passwords_v1"
-        const val IDENTITY_DIRECTORY = "ssh-identities"
-        const val IDENTITY_KEY_ALIAS = "terminal_spike_ssh_identities_v1"
-        const val KEYSTORE_PROVIDER = "AndroidKeyStore"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val TAG_BITS = 128
-        const val GCM_TAG_BYTES = TAG_BITS / 8
-        const val ENVELOPE_OVERHEAD_BYTES = 256
-        const val PASSWORD_MAGIC = 0x54535057
-        const val PASSWORD_VERSION_V1 = 1
-        const val PASSWORD_VERSION_V2 = 2
-        const val IDENTITY_MAGIC = 0x54534931
-        const val IDENTITY_VERSION = 1
+    companion object {
+        const val MAX_PASSWORD_BYTES = 4 * 1024
+        const val MAX_PRIVATE_KEY_BYTES = 256 * 1024
+        private const val PASSWORD_DIRECTORY = "ssh-passwords"
+        private const val PASSWORD_KEY_ALIAS = "terminal_spike_ssh_passwords_v1"
+        private const val IDENTITY_DIRECTORY = "ssh-identities"
+        private const val IDENTITY_KEY_ALIAS = "terminal_spike_ssh_identities_v1"
+        private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val TAG_BITS = 128
+        private const val GCM_TAG_BYTES = TAG_BITS / 8
+        private const val ENVELOPE_OVERHEAD_BYTES = 256
+        private const val PASSWORD_MAGIC = 0x54535057
+        private const val PASSWORD_VERSION_V1 = 1
+        private const val PASSWORD_VERSION_V2 = 2
+        private const val IDENTITY_MAGIC = 0x54534931
+        private const val IDENTITY_VERSION = 1
     }
 }

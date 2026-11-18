@@ -6,4 +6,23 @@
     <string name="herdr_projects_empty">No unopened projects in zoxide history.</string>
     <string name="herdr_project_opening">Opening project…</string>
     <string name="herdr_project_open_failed">Could not open this project. It may already be open or its directory may be unavailable. Reopen the list to refresh.</string>
+    <string name="herdr_project_clear_search">Clear search</string>
+    <string name="herdr_project_order_recent">Most recent first</string>
+    <string name="herdr_project_last_used">Last used</string>
+    <string name="herdr_project_time_unknown">Time unknown</string>
+    <string name="herdr_project_last_used_description">Last used %1$s</string>
+    <string name="herdr_projects_no_matches">No matching projects</string>
+    <string name="herdr_project_just_now">Just now</string>
+    <plurals name="herdr_project_minutes_ago">
+        <item quantity="one">%dm ago</item>
+        <item quantity="other">%dm ago</item>
+    </plurals>
+    <plurals name="herdr_project_hours_ago">
+        <item quantity="one">%dh ago</item>
+        <item quantity="other">%dh ago</item>
+    </plurals>
+    <plurals name="herdr_project_days_ago">
+        <item quantity="one">%dd ago</item>
+        <item quantity="other">%dd ago</item>
+    </plurals>
 </resources>

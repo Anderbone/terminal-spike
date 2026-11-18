@@ -53,7 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,13 +88,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -134,67 +131,6 @@ private val defaultSnippetToggle = TerminalAccessoryAction.Local(
     TerminalLocalAccessoryAction.SNIPPETS,
     stableId = "default:toggle_pinned_snippets",
 )
-
-@Stable
-class BufferedInputDraftState(
-    initialText: String = "",
-    private val persistText: (String) -> Unit = {},
-) {
-    var value by mutableStateOf(
-        TextFieldValue(initialText, selection = TextRange(initialText.length)),
-    )
-        private set
-
-    private var lastSentValue by mutableStateOf<TextFieldValue?>(null)
-
-    val canRestoreLastSent: Boolean
-        get() = lastSentValue != null
-
-    var validationMessage by mutableStateOf<UiText?>(null)
-        private set
-
-    fun update(nextValue: TextFieldValue, activeSessionId: Long) {
-        validationMessage = null
-        lastSentValue = null
-        val textChanged = value.text != nextValue.text
-        value = nextValue
-        if (textChanged) persistText(value.text)
-    }
-
-    internal fun finishComposition() {
-        value = value.copy(composition = null)
-    }
-
-    fun restoreLastSent() {
-        val restored = lastSentValue ?: return
-        value = restored.copy(selection = TextRange(restored.text.length))
-        persistText(value.text)
-        lastSentValue = null
-        validationMessage = null
-    }
-
-    /** Applies caller-targeted edits without pinning the shared draft to one terminal. */
-    fun updateForTarget(nextValue: TextFieldValue, targetSessionId: Long): Boolean {
-        update(nextValue, targetSessionId)
-        return value == nextValue
-    }
-
-    fun dispatch(
-        activeSessionId: Long,
-        sendEnabled: Boolean,
-        onSend: (Long, String) -> Boolean,
-    ) {
-        if (!value.isBufferedSendEligible(sendEnabled, validationMessage)) return
-        val sentValue = value
-        val accepted = onSend(activeSessionId, value.text)
-        value = value.afterBufferedSend(accepted)
-        if (accepted) {
-            persistText(value.text)
-            lastSentValue = sentValue
-            validationMessage = null
-        }
-    }
-}
 
 @Composable
 fun ExtraKeysBar(
@@ -366,9 +302,8 @@ fun TerminalAccessoryBar(
                 val keyWidth = terminalAccessoryKeyWidth(maxWidth)
                 val rowCount = layout.rowCount
                 val displayedActions = displayedAccessoryActions(actions)
-                val shortcutActions = displayedActions.filterNot {
-                    it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
-                        it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+                val shortcutActions = displayedActions.drop(1).filterNot {
+                    it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
                 }
                 val shortcutPages = terminalAccessoryPages(
                     shortcutActions, columnCount, rowCount,
@@ -428,6 +363,7 @@ fun TerminalAccessoryBar(
                             if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         },
                         onAction = dispatchAction, onCustomize = onCustomize,
+                        leadingAction = displayedActions.firstOrNull() ?: TerminalExtraKey.ESC.toAccessoryAction(),
                         onTyping = { manualInputMode = true }, onSelectFiles = onSelectFiles,
                         onEditAiAgents = onEditAiAgents,
                         snippetsExpanded = pinSnippets && pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
@@ -481,7 +417,9 @@ private fun displayedAccessoryActions(actions: List<TerminalAccessoryAction>): L
                     stableId = action.stableId,
                 ))
                 TerminalExtraKey.PAGE_UP -> emptyList()
-                TerminalExtraKey.BACKSPACE -> listOf(action, defaultSnippetToggle)
+                TerminalExtraKey.ESC -> listOf(TerminalExtraKey.ENTER.toAccessoryAction(), action)
+                TerminalExtraKey.ENTER -> listOf(TerminalExtraKey.CTRL.toAccessoryAction())
+                TerminalExtraKey.BACKSPACE -> listOf(defaultSnippetToggle)
                 TerminalExtraKey.CTRL -> listOf(TerminalExtraKey.SHIFT_LEFT.toAccessoryAction())
                 else -> listOf(action)
             }
@@ -502,7 +440,11 @@ private fun ExpandedTerminalKeyboard(
             TerminalExtraKey.entries.filter { it.name.matches(Regex("F[0-9]+")) }
         (first + TerminalExtraKey.entries.filter { !it.isLocalAction }).distinct()
             .map { it.toAccessoryAction() } +
-            TerminalAccessoryAction.Modifier(TerminalAccessoryModifier.SHIFT)
+            listOf(
+                TerminalAccessoryAction.Modifier(TerminalAccessoryModifier.SHIFT),
+                TerminalAccessoryAction.Local(TerminalLocalAccessoryAction.MOUSE_LEFT),
+                TerminalAccessoryAction.Local(TerminalLocalAccessoryAction.MOUSE_RIGHT),
+            )
     }
     Column(modifier.fillMaxWidth().fillMaxHeight().testTag("terminal_expanded_keyboard")) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -540,22 +482,22 @@ private fun ShortcutDeckPage(
     onAction: (TerminalAccessoryAction) -> Unit,
     onCustomize: () -> Unit,
     onTyping: () -> Unit,
+    leadingAction: TerminalAccessoryAction = TerminalExtraKey.ESC.toAccessoryAction(),
     onSelectFiles: (() -> Unit)?,
     onEditAiAgents: (() -> Unit)? = null,
     snippetsExpanded: Boolean,
     onToggleSnippets: (() -> Unit)?,
     keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
-    val escapeDescription = TerminalExtraKey.ESC.accessibilityDescription.resolve()
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
             .padding(start = 3.dp),
             verticalArrangement = Arrangement.spacedBy(TerminalAccessoryRowGap)) {
             ExtraKeyButton(
-                label = stringResource(R.string.terminal_escape_short),
-                description = escapeDescription,
-                onClick = { onAction(TerminalExtraKey.ESC.toAccessoryAction()) },
-                modifier = keyModifier(TerminalExtraKey.ESC.toAccessoryAction()).weight(1f).fillMaxWidth(),
+                label = leadingAction.label.resolve(),
+                description = leadingAction.accessibilityDescription.resolve(),
+                onClick = { onAction(leadingAction) },
+                modifier = keyModifier(leadingAction).weight(1f).fillMaxWidth(),
             )
             TypingToggle(
                 active = false,
@@ -622,9 +564,9 @@ internal fun TerminalShortcutPreview(
         BoxWithConstraints(Modifier.fillMaxWidth().height(106.dp)) {
             val columns = (terminalShortcutColumnCount(maxWidth.value) - 1).coerceAtLeast(1)
             val keyWidth = terminalAccessoryKeyWidth(maxWidth)
-            val shortcuts = displayedAccessoryActions(actions).filterNot {
-                it.defaultDeckKeyOrNull() == TerminalExtraKey.ESC ||
-                    it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+            val displayedActions = displayedAccessoryActions(actions)
+            val shortcuts = displayedActions.drop(1).filterNot {
+                it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
             }
             val pages = terminalAccessoryPages(shortcuts, columns, layout.rowCount,
                 !actions.matchDefaultAccessoryDeck())
@@ -637,7 +579,8 @@ internal fun TerminalShortcutPreview(
                         val index = sourceIndex(action)
                         if (index >= 0) onKeyClick(index) else onEditKeys()
                     },
-                    onCustomize = onEditKeys, onTyping = onEditKeys, onSelectFiles = null,
+                    onCustomize = onEditKeys, onTyping = onEditKeys,
+                    leadingAction = displayedActions.firstOrNull() ?: TerminalExtraKey.ESC.toAccessoryAction(), onSelectFiles = null,
                     snippetsExpanded = false, onToggleSnippets = null,
                     keyModifier = { action ->
                         val index = sourceIndex(action)
@@ -776,43 +719,58 @@ private fun BufferedInputPage(
     var voicePhase by remember { mutableStateOf(VoiceInputPhase.IDLE) }
     var partialTranscript by remember { mutableStateOf("") }
     var voiceFailure by remember { mutableStateOf<VoiceInputFailure?>(null) }
-    val voiceRecognizer = remember(context) {
+    val voiceTargetOwner = remember(draftState) { VoiceInputTargetOwner() }
+    fun ownsVoiceCallbacks(): Boolean =
+        voiceTargetOwner.ownsCallbacks(currentInputTargetId, currentVoiceInputEnabled)
+    val voiceRecognizer = remember(context, draftState) {
         AndroidVoiceInputRecognizer(
             context = context,
-            onPhase = { voicePhase = it },
-            onPartial = { partialTranscript = it },
+            onPhase = { if (ownsVoiceCallbacks()) voicePhase = it },
+            onPartial = { if (ownsVoiceCallbacks()) partialTranscript = it },
             onResult = { transcript ->
-                if (!currentVoiceInputEnabled) return@AndroidVoiceInputRecognizer
+                if (!ownsVoiceCallbacks()) return@AndroidVoiceInputRecognizer
                 voiceFailure = null
                 draftState.updateForTarget(
                     draftState.value.withVoiceTranscript(transcript),
                     currentInputTargetId,
                 )
             },
-            onFailure = { voiceFailure = it },
+            onFailure = { if (ownsVoiceCallbacks()) voiceFailure = it },
         )
+    }
+    fun startVoiceRecognition(request: VoiceInputRequest) {
+        voiceTargetOwner.activate(request)
+        voiceFailure = null
+        voiceRecognizer.start(request.languageTag)
     }
     val microphonePermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (!currentVoiceInputEnabled) return@rememberLauncherForActivityResult
+        val request = voiceTargetOwner.takePermissionRequest(currentInputTargetId, currentVoiceInputEnabled)
+            ?: return@rememberLauncherForActivityResult
         if (granted) {
-            voiceFailure = null
-            voiceRecognizer.start(currentVoiceLanguageTag)
+            startVoiceRecognition(request)
         } else {
             voiceFailure = VoiceInputFailure.PERMISSION_DENIED
         }
     }
 
     DisposableEffect(voiceRecognizer) {
-        onDispose { voiceRecognizer.destroy() }
+        onDispose {
+            voiceTargetOwner.invalidate()
+            voiceRecognizer.destroy()
+        }
     }
 
-    LaunchedEffect(inputTargetId, voiceInputEnabled) {
-        if (voicePhase != VoiceInputPhase.IDLE) voiceRecognizer.cancel()
-        if (!voiceInputEnabled) {
-            partialTranscript = ""
-            voiceFailure = null
+    DisposableEffect(voiceRecognizer, inputTargetId, voiceInputEnabled) {
+        voiceTargetOwner.invalidate()
+        voiceRecognizer.cancel()
+        voicePhase = VoiceInputPhase.IDLE
+        partialTranscript = ""
+        voiceFailure = null
+        onDispose {
+            voiceTargetOwner.invalidate()
+            voiceRecognizer.cancel()
         }
     }
 
@@ -991,9 +949,12 @@ private fun BufferedInputPage(
                                                             Manifest.permission.RECORD_AUDIO,
                                                         ) == PackageManager.PERMISSION_GRANTED
                                                     ) {
-                                                        voiceFailure = null
-                                                        voiceRecognizer.start(currentVoiceLanguageTag)
-                                                    } else {
+                                                        startVoiceRecognition(
+                                                            VoiceInputRequest(currentInputTargetId, currentVoiceLanguageTag),
+                                                        )
+                                                    } else if (voiceTargetOwner.requestPermission(
+                                                            VoiceInputRequest(currentInputTargetId, currentVoiceLanguageTag),
+                                                        )) {
                                                         microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
                                                     }
                                                 },
@@ -1094,17 +1055,6 @@ private fun voiceInputStatus(
         )
     }
 }
-
-/** A composing IME value is not committed user input and must never cross the transport boundary. */
-internal fun TextFieldValue.isBufferedSendEligible(
-    sendEnabled: Boolean,
-    validationMessage: UiText?,
-): Boolean = sendEnabled && text.isNotEmpty() && composition == null && validationMessage == null
-
-internal fun String.requiresMultilineConfirmation(): Boolean = any { it == '\r' || it == '\n' }
-
-internal fun TextFieldValue.afterBufferedSend(accepted: Boolean): TextFieldValue =
-    if (accepted) TextFieldValue() else this
 
 @Composable
 private fun ExtraKeyPage(

@@ -1,5 +1,9 @@
 # Plan 009: Run Android runtime and OpenSSH E2E gates in CI across supported APIs
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Build on the existing untracked CI workflow. Keep
 > actual-Codex/tmux and personal-phone acceptance out of hosted CI; they remain
 > exact-device gates. Do not turn a failed runtime test into an assumption skip.
@@ -7,7 +11,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- .github/workflows/android-ci.yml app/build.gradle.kts integration-tests/openssh app/src/androidTest`
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: M
@@ -26,7 +30,7 @@ production contains distinct API 26, 28, 29, and 33 branches. A public release
 needs repeatable runtime evidence that does not depend solely on one developer's
 phone or preconfigured AVDs.
 
-## Current state
+## Original state
 
 - `.github/workflows/android-ci.yml:38-56` runs JVM/lint/build tasks and only
   assembles Android-test APKs.
@@ -38,7 +42,7 @@ phone or preconfigured AVDs.
 - `integration-tests/openssh` provides a digest-pinned disposable server; real
   SSH/SFTP tests opt in through instrumentation arguments.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -64,11 +68,11 @@ phone or preconfigured AVDs.
 - Mosh UDP roaming in hosted CI
 - lowering `minSdk` or removing compatibility code merely to shrink the matrix
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated changes; do not commit/push unless asked.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Define the compatibility matrix by branch boundary
 
@@ -143,7 +147,7 @@ OpenSSH jobs; scheduled workflow expands the full stable matrix.
 - Runner unit tests: startup timeout, failure parsing, signal cleanup, and no
   physical serial acceptance.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [ ] Required PR CI executes—not merely assembles—instrumentation on API 26 and
   API 35.
@@ -175,7 +179,7 @@ OpenSSH jobs; scheduled workflow expands the full stable matrix.
   workflow execution requires a commit/push or pull request and is therefore
   deliberately not claimed here.
 
-## STOP conditions
+## Historical stop conditions
 
 - A required system image is preview/RC/nightly or unavailable from the stable
   SDK repository.

@@ -14,16 +14,6 @@ internal class VerifyingHostKeyRepository(
     private val endpoint: KnownHostEndpoint,
     private val onPrompt: (HostIdentityPrompt) -> Unit,
 ) : HostKeyRepository {
-    constructor(
-        store: KnownHostStore,
-        displayHost: String,
-        onPrompt: (HostIdentityPrompt) -> Unit,
-    ) : this(
-        store = FileKnownHostTrustStore(store),
-        endpoint = KnownHostEndpoint.parseDisplayHost(displayHost),
-        onPrompt = onPrompt,
-    )
-
     private val promptLock = Any()
     private var pendingDecision: PendingHostIdentityDecision? = null
     private val sessionTrustedKeys = mutableListOf<SessionTrustedHostKey>()

@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.core.backup
 
+import com.yanjiyu.terminalspike.core.data.repository.AuthoritativeDataGate
+
 /**
  * Filesystem side of a portable font restore.
  *
@@ -34,5 +36,18 @@ interface PreparedBackupCustomFontImport {
             override fun commit() = Unit
             override fun rollback() = Unit
         }
+    }
+}
+
+/**
+ * Keeps reference capture and process-death reconciliation serialized with the whole import,
+ * including the interval between preparing font files and committing their Room references.
+ */
+internal suspend fun BackupCustomFontPersistence.reconcileAfterCutover(
+    authority: AuthoritativeDataGate,
+    readReferencedFontIds: suspend () -> Set<String>,
+) {
+    authority.withRead {
+        reconcilePending(readReferencedFontIds())
     }
 }

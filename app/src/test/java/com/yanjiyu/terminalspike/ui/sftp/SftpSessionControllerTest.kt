@@ -7,7 +7,6 @@ import com.yanjiyu.terminalspike.connection.KeyboardInteractiveQuestion
 import com.yanjiyu.terminalspike.connection.SftpDownloadDestination
 import com.yanjiyu.terminalspike.connection.SftpFile
 import com.yanjiyu.terminalspike.connection.SftpSession
-import com.yanjiyu.terminalspike.connection.SftpUploadEntry
 import com.yanjiyu.terminalspike.connection.SftpUploadSource
 import com.yanjiyu.terminalspike.connection.SshAuthentication
 import com.yanjiyu.terminalspike.connection.SshConnectionConfig
@@ -629,8 +628,6 @@ private class FakeSftpSession(
     }
 
     fun complete(path: String) = complete(Result.success(path))
-
-    fun fail(error: Throwable) = complete(Result.failure(error))
 
     fun complete(result: Result<String>) {
         connection.complete(result)

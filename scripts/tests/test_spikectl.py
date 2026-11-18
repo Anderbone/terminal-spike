@@ -72,6 +72,14 @@ class SpikectlTest(unittest.TestCase):
         self.assertIn("next connection", result.stdout)
         self.assertIn("--json-file", result.stdout)
 
+    def test_input_bar_layout_is_a_string_with_explicit_reset(self):
+        for layout in ["enter,toggle,escape,shift_left,arrow_up,arrow_down,input", ""]:
+            with self.subTest(layout=layout):
+                result = self.parse(["appearance", "update", "--revision", "123", "--input-keyboard-layout", layout])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"api": 1, "method": "appearance.update", "params": {
+                    "revision": 123, "inputKeyboardLayout": layout}})
+
 
 if __name__ == "__main__":
     unittest.main()

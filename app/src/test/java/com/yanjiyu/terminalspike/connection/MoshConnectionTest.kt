@@ -32,10 +32,93 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
+import org.junit.runner.JUnitCore
+import org.junit.runner.Request
+import org.junit.runners.BlockJUnit4ClassRunner
+import org.junit.runners.model.FrameworkMethod
+import org.junit.runners.model.Statement
+import org.junit.runners.model.MultipleFailureException
 
 class MoshConnectionTest {
+    private val connectionClosers = mutableListOf<() -> Unit>()
+    private val connectionWorkers = mutableListOf<Thread>()
+
+    @get:Rule
+    val connectionResources = object : TestWatcher() {
+        override fun finished(description: Description) = releaseFixtureResources()
+    }
+
+    @Test
+    fun assertionFailureStillClosesTheConnectedPipesAndJoinsTheWorker() {
+        val fixture = MoshConnectionTest()
+        val transport = FakeMoshTerminalTransport()
+        val extension = FakeConnectionExtension(startResult = MoshTransportStartResult.Success(transport))
+        val states = Collections.synchronizedList(mutableListOf<ConnectionState>())
+        val expected = AssertionError("controlled assertion after connection")
+        var owned: MoshConnection? = null
+        var worker: Thread? = null
+        try {
+            val result = runFixture(fixture) {
+                owned = fixture.connection(FakeConnectionBootstrap(), extension)
+                worker = fixture.connectOnThread(requireNotNull(owned), states)
+                assertTrue(extension.sessionStarted.await(2, TimeUnit.SECONDS))
+                assertTrue(fixture.awaitState(states) { it is ConnectionState.Connected })
+                assertTrue(requireNotNull(worker).isAlive)
+                throw expected
+            }
+            assertEquals(1, result.failureCount)
+            assertSame(expected, result.failures.single().exception)
+            assertTrue("JUnit teardown must close the connected pipes after an assertion", transport.closed)
+            assertFalse("JUnit teardown must join its connect worker", requireNotNull(worker).isAlive)
+            assertFalse("Daemon workers must not substitute for teardown", requireNotNull(worker).isDaemon)
+        } finally {
+            // The negative probe must also be safe on the original, leaking fixture.
+            owned?.close()
+            transport.close()
+            worker?.join(2_000)
+        }
+    }
+
+    @Test
+    fun assertionFailureBeforeConnectingStillWipesThePreparedPassword() {
+        val fixture = MoshConnectionTest()
+        val password = "prepared fixture password".encodeToByteArray()
+        val expected = AssertionError("controlled assertion before connection")
+        var owned: MoshConnection? = null
+        try {
+            val result = runFixture(fixture) {
+                owned = fixture.connection(FakeConnectionBootstrap(), FakeConnectionExtension(), password)
+                throw expected
+            }
+            assertEquals(1, result.failureCount)
+            assertSame(expected, result.failures.single().exception)
+            assertTrue("JUnit teardown must wipe authentication even before connect", password.all { it == 0.toByte() })
+        } finally {
+            owned?.close()
+            password.fill(0)
+        }
+    }
+
+    /** Use JUnit's actual rule/after lifecycle while replacing one test body with a controlled failure. */
+    private fun runFixture(fixture: MoshConnectionTest, body: () -> Unit): org.junit.runner.Result {
+        val runner = object : BlockJUnit4ClassRunner(MoshConnectionTest::class.java) {
+            override fun createTest(): Any = fixture
+            override fun methodInvoker(method: FrameworkMethod, test: Any): Statement = object : Statement() {
+                override fun evaluate() = body()
+            }
+        }
+        val request = Request.runner(runner).filterWith(Description.createTestDescription(
+            MoshConnectionTest::class.java, "cleanTerminalPipeEofPublishesDisconnectedWithoutFailure",
+        ))
+        return JUnitCore().run(request)
+    }
+
     @Test
     fun bootstrapCancellationPropagatesAfterCleanupWithoutTerminalMapping() = runTest {
         val cancellation = CancellationException("expected cancellation")
@@ -530,6 +613,39 @@ class MoshConnectionTest {
         )
     }
 
+    private fun releaseFixtureResources() {
+        val failures = mutableListOf<Throwable>()
+        var interrupted = false
+        try {
+            connectionClosers.asReversed().forEach { close ->
+                try {
+                    close()
+                } catch (error: Throwable) {
+                    failures += error
+                }
+            }
+            connectionWorkers.forEach { worker ->
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                while (worker.isAlive) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0L) break
+                    try {
+                        worker.join(TimeUnit.NANOSECONDS.toMillis(remaining).coerceAtLeast(1L))
+                    } catch (error: InterruptedException) {
+                        interrupted = true
+                        failures += error
+                    }
+                }
+                if (worker.isAlive) failures += AssertionError("Fixture connect worker did not stop: ${worker.name}")
+            }
+        } finally {
+            connectionClosers.clear()
+            connectionWorkers.clear()
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+
     private fun connection(
         bootstrap: FakeConnectionBootstrap,
         extension: FakeConnectionExtension,
@@ -551,17 +667,25 @@ class MoshConnectionTest {
         controlDispatcher = Dispatchers.IO,
         writerCapacity = writerCapacity,
         writerPollMillis = writerPollMillis,
-    )
+    ).also { owned ->
+        connectionClosers += {
+            extension.releaseFirstResize.countDown()
+            owned.close()
+        }
+    }
 
     private fun connectOnThread(
         connection: MoshConnection,
         states: MutableList<ConnectionState>,
         onBytes: (ByteArray) -> Unit = {},
         onState: (ConnectionState) -> Unit = states::add,
-    ): Thread = thread(name = "mosh-connection-test") {
+    ): Thread = thread(start = false, name = "mosh-connection-test") {
         runBlocking {
             connection.connect(80, 24, onBytes, onState)
         }
+    }.also { worker ->
+        connectionWorkers += worker
+        worker.start()
     }
 
     private fun awaitState(

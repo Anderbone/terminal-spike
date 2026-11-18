@@ -8,7 +8,10 @@ import shutil
 
 
 def preserve(source: Path, root: Path, run: str, attempt: str, name: str) -> Path:
-    if not all(re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in (run, attempt, name)):
+    if not all(
+        part not in {".", ".."} and re.fullmatch(r"[A-Za-z0-9_.-]+", part)
+        for part in (run, attempt, name)
+    ):
         raise ValueError("Unsafe CI evidence identity")
     destination = root / run / attempt / name
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)

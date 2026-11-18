@@ -1,10 +1,7 @@
 package com.yanjiyu.terminalspike.connection
 
-import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.Session
 import com.yanjiyu.terminalspike.core.model.ModelLimits
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
 
@@ -187,36 +184,11 @@ internal class TmuxSessionSelector(
     }
 }
 
-internal fun interface TmuxCommandRunner {
-    fun run(command: String): TmuxExecOutput
-}
-
-internal data class TmuxExecOutput(val stdout: ByteArray, val exitStatus: Int)
-
 private data class TmuxInspection(
     val availability: TmuxAvailability,
     val executable: String? = null,
     val sessions: List<TmuxSession> = emptyList(),
 )
-
-internal class JschTmuxCommandRunner(
-    private val session: Session,
-    private val limits: TmuxExecLimits = DEFAULT_TMUX_EXEC_LIMITS,
-) : TmuxCommandRunner {
-    override fun run(command: String): TmuxExecOutput = runBoundedTmuxExec(session, command, limits)
-}
-
-internal data class TmuxExecLimits(
-    val channelConnectTimeoutMillis: Int,
-    val totalTimeoutMillis: Long,
-    val maximumOutputBytes: Int,
-) {
-    init {
-        require(channelConnectTimeoutMillis in 1..60_000)
-        require(totalTimeoutMillis in 1..60_000)
-        require(maximumOutputBytes in 1..TmuxPaneCapture.MAX_CAPTURE_BYTES)
-    }
-}
 
 private sealed interface TmuxSelectorAction {
     data class Select(val promptToken: Long, val sessionId: String?) : TmuxSelectorAction
@@ -658,79 +630,6 @@ private fun deleteTmuxSession(
     }.getOrDefault(false)
 }
 
-private fun runBoundedTmuxExec(
-    session: Session,
-    command: String,
-    limits: TmuxExecLimits,
-): TmuxExecOutput {
-    val channel = session.openChannel("exec") as ChannelExec
-    channel.setPty(false)
-    channel.setInputStream(null)
-    channel.setCommand(command)
-    val stdout = channel.inputStream
-    val stderr = channel.extInputStream
-    val output = ByteArrayOutputStream()
-    val scratch = ByteArray(TMUX_READ_BUFFER_BYTES)
-    val deadline = System.nanoTime() + limits.totalTimeoutMillis * 1_000_000L
-    try {
-        channel.connect(limits.channelConnectTimeoutMillis)
-        while (true) {
-            drainTmuxInput(
-                stdout,
-                output,
-                scratch,
-                retain = true,
-                maximumOutputBytes = limits.maximumOutputBytes,
-            )
-            drainTmuxInput(
-                stderr,
-                output,
-                scratch,
-                retain = false,
-                maximumOutputBytes = limits.maximumOutputBytes,
-            )
-            check(output.size() <= limits.maximumOutputBytes) { "tmux output exceeded its limit." }
-            if (channel.isClosed) {
-                drainTmuxInput(
-                    stdout,
-                    output,
-                    scratch,
-                    retain = true,
-                    maximumOutputBytes = limits.maximumOutputBytes,
-                )
-                check(output.size() <= limits.maximumOutputBytes) { "tmux output exceeded its limit." }
-                return TmuxExecOutput(output.toByteArray(), channel.exitStatus)
-            }
-            check(System.nanoTime() < deadline) { "tmux command timed out." }
-            Thread.sleep(TMUX_POLL_MILLIS)
-        }
-    } finally {
-        scratch.fill(0)
-        runCatching { stdout.close() }
-        runCatching { stderr.close() }
-        channel.disconnect()
-    }
-}
-
-private fun drainTmuxInput(
-    input: InputStream,
-    output: ByteArrayOutputStream,
-    scratch: ByteArray,
-    retain: Boolean,
-    maximumOutputBytes: Int,
-) {
-    while (input.available() > 0) {
-        val count = input.read(scratch, 0, minOf(input.available(), scratch.size))
-        if (count <= 0) return
-        if (retain) {
-            check(output.size() + count <= maximumOutputBytes) {
-                "tmux output exceeded its limit."
-            }
-            output.write(scratch, 0, count)
-        }
-    }
-}
-
 internal fun String.isTmuxSessionId(): Boolean = TMUX_SESSION_ID.matches(this)
 
 private fun String.isTmuxExecutablePath(): Boolean =
@@ -778,18 +677,6 @@ internal val TMUX_LIST_COMMAND = "/bin/sh -c ${quotePosixShellArgument(TMUX_PROB
 internal const val MAX_TMUX_SESSIONS = 128
 private const val MAX_TMUX_NAME_CHARS = 256
 private const val MAX_TMUX_EXECUTABLE_PATH_CHARS = 1_024
-private const val TMUX_READ_BUFFER_BYTES = 2 * 1024
-private const val TMUX_POLL_MILLIS = 10L
 private val TMUX_SESSION_ID = Regex("\\$[0-9]+")
 private val TMUX_PANE_ID = Regex("%[0-9]+")
 private const val TMUX_FIELD_SEPARATOR = '|'
-private val DEFAULT_TMUX_EXEC_LIMITS = TmuxExecLimits(
-    channelConnectTimeoutMillis = 5_000,
-    totalTimeoutMillis = 5_000L,
-    maximumOutputBytes = 64 * 1024,
-)
-internal val TMUX_HISTORY_EXEC_LIMITS = TmuxExecLimits(
-    channelConnectTimeoutMillis = 10_000,
-    totalTimeoutMillis = 30_000L,
-    maximumOutputBytes = TmuxPaneCapture.MAX_CAPTURE_BYTES,
-)

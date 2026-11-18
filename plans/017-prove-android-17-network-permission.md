@@ -1,5 +1,9 @@
 # Plan 017: Make Android 17 local-network access contextual and runtime-proven
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Android 17/API 37 is a stable released platform and
 > the app already targets it. Use only stable SDK/system images. Preserve public
 > Internet SSH when local-network permission is denied, and never run this plan's
@@ -8,7 +12,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- app/build.gradle.kts app/src/main/AndroidManifest.xml app/src/main/java/com/yanjiyu/terminalspike/ui app/src/test app/src/androidTest scripts .github/workflows/android-ci.yml docs plans/009-run-runtime-api-matrix-in-ci.md`
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: L
@@ -77,7 +81,7 @@ and <https://developer.android.com/about/versions/17/behavior-changes-17>.
 - preview/beta/RC SDK images
 - physical-phone testing for this plan
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -86,12 +90,12 @@ and <https://developer.android.com/about/versions/17/behavior-changes-17>.
 | Focused JVM | `./gradlew :app:testDebugUnitTest --tests 'com.yanjiyu.terminalspike.ui.*'` | exit 0 |
 | Full gate | `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest :benchmark:assemble` | `BUILD SUCCESSFUL` |
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty-tree work. CI edits remain local until the operator
 explicitly authorizes a commit/push or pull request.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Specify the permission decision table in tests
 
@@ -180,7 +184,7 @@ hosted evidence. Update Plan 009 status only after an actual hosted run.
 `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest :benchmark:assemble`
 → `BUILD SUCCESSFUL`.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Fresh API 37 launch never asks for unrelated broad access.
 - [x] Local permission grant, denial, revocation, and exact-action resume are tested.
@@ -222,7 +226,7 @@ hosted evidence. Update Plan 009 status only after an actual hosted run.
 - Runner/contract: API acceptance, exact membership, expected skip identities,
   cleanup, and hosted matrix expansion.
 
-## STOP conditions
+## Historical stop conditions
 
 - Only preview/RC/nightly API 37 images are available to the executor.
 - A truthful LAN-vs-Internet E2E cannot be constructed on the emulator; preserve

@@ -14,7 +14,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,7 +42,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.ui.isClearlyLocalNetworkEndpoint
 import com.yanjiyu.terminalspike.ui.resolvedEndpointIsLocalNetwork
-import java.io.ByteArrayInputStream
 import java.net.InetAddress
 import java.net.URI
 import kotlinx.coroutines.Dispatchers
@@ -234,17 +232,8 @@ private fun BrowserContent(controller: BrowserController, tab: BrowserTab, onNat
                                 return true
                             }
                         }
-                        view.webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                val blocked = !browserNavigationAllowed(request.url.toString(), address)
-                                if (blocked && request.isForMainFrame) failure = blockedMessage
-                                return blocked
-                            }
-                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                                // Permit plaintext only for the exact HTTP endpoint entered by the user.
-                                return if (request.url.scheme == "http" && !browserNavigationAllowed(request.url.toString(), address))
-                                    WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(byteArrayOf())) else null
-                            }
+                        view.webViewClient = object : BrowserNavigationClient({ tab.address }) {
+                            override fun onBlockedNavigation() { failure = blockedMessage }
                             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                                 failure = null; progress = 0; updateNavigation(view)
                             }

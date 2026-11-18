@@ -71,7 +71,7 @@ class SshIdentityImportPickerTest {
                     override fun createIntent(context: Context, input: Array<String>): Intent =
                         super.createIntent(context, input).putExtra(DocumentsContract.EXTRA_INITIAL_URI,
                             DocumentsContract.buildDocumentUri(
-                                "com.yanjiyu.terminalspike.test.keypicker.documents", "root"))
+                                PrivateKeyPickerDocumentsProvider.AUTHORITY, "root"))
                 }
                 val launcher = rememberLauncherForActivityResult(contract) {
                     selected.set(it)

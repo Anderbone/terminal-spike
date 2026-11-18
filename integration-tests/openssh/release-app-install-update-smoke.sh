@@ -382,7 +382,8 @@ send_marker() {
     marker=$1
     # The typing panel stages text; its explicit Enter action submits it to SSH.
     ensure_buffered_input
-    adb shell input text "printf%s$marker"
+    encoded_input=$(python3 "$project_dir/scripts/terminal_test_markers.py" input "$marker")
+    adb shell input text "$encoded_input"
     tap_node content-desc "Send text and press Enter"
 }
 
@@ -394,14 +395,7 @@ send_marker_and_verify() {
     while [ "$attempt" -lt 120 ]; do
         dump_ui
         # A staged draft is not proof of remote output: require the native renderer's text.
-        if python3 - "$ui_xml" "$marker" <<'PYMARKER'
-import sys
-import xml.etree.ElementTree as ET
-nodes = ET.parse(sys.argv[1]).iter("node")
-sys.exit(0 if any(node.get("content-desc") == "Native terminal renderer" and
-                  sys.argv[2] in node.get("text", "") for node in nodes) else 1)
-PYMARKER
-        then
+        if python3 "$project_dir/scripts/terminal_test_markers.py" verify "$marker" "$ui_xml"; then
             return 0
         fi
         # The rationale can be composed after the first terminal frames. If it arrives at the

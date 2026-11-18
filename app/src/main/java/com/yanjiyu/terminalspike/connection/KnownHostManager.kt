@@ -1,7 +1,5 @@
 package com.yanjiyu.terminalspike.connection
 
-import java.io.File
-
 data class KnownHostSummary(
     /** Host alias used by the existing UI: `host` for port 22, `[host]:port` otherwise. */
     val host: String,
@@ -18,11 +16,6 @@ data class KnownHostSummary(
 class KnownHostManager internal constructor(
     private val trustStore: KnownHostTrustStore,
 ) {
-    /** Compatibility constructor retained while the legacy ViewModel is cut over by its owner. */
-    constructor(file: () -> File) : this(
-        FileKnownHostTrustStore(KnownHostStores.forFile(file())),
-    )
-
     fun list(): List<KnownHostSummary> = trustStore.list()
         .map { entry -> entry.toSummary() }
         .sortedWith(

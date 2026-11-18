@@ -77,6 +77,7 @@ import com.yanjiyu.terminalspike.settings.SettingsLoadResult
 import com.yanjiyu.terminalspike.settings.UserSettings
 import com.yanjiyu.terminalspike.connection.SftpClient
 import com.yanjiyu.terminalspike.terminal.TerminalController
+import com.yanjiyu.terminalspike.terminal.containsBracketedPasteEnd
 import com.yanjiyu.terminalspike.terminal.TerminalTranscriptSnapshot
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalThemes
@@ -145,6 +146,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.InputStream
 import java.nio.CharBuffer
@@ -193,6 +197,17 @@ internal data class RemoteConnectionOptions(
     companion object {
         val SSH = RemoteConnectionOptions()
     }
+
+    /** The persisted null form and explicit pinned defaults describe the same transport. */
+    fun normalized(): RemoteConnectionOptions {
+        val command = moshServerCommand.takeUnless { it == DEFAULT_MOSH_SERVER_EXECUTABLE }
+        val locale = moshLocale.takeUnless { it == DEFAULT_MOSH_LOCALE }
+        return if (command == moshServerCommand && locale == moshLocale) this
+        else copy(moshServerCommand = command, moshLocale = locale)
+    }
+
+    fun matches(other: RemoteConnectionOptions?): Boolean =
+        other != null && normalized() == other.normalized()
 }
 
 internal data class MoshOptionsParseResult(
@@ -207,6 +222,7 @@ internal data class MoshOptionsParseResult(
 internal fun parseMoshConnectionOptions(
     udpPortOrRange: String,
     serverExecutable: String,
+    retainedOptions: RemoteConnectionOptions? = null,
 ): MoshOptionsParseResult {
     val normalizedPort = udpPortOrRange.trim()
     val parsedPort: Int?
@@ -256,7 +272,9 @@ internal fun parseMoshConnectionOptions(
             moshPort = parsedPort,
             moshPortRange = parsedRange,
             moshServerCommand = storedExecutable,
-        ),
+            moshLocale = retainedOptions?.moshLocale,
+            moshFallbackPolicy = retainedOptions?.moshFallbackPolicy ?: MoshFallbackPolicy.NEVER,
+        ).normalized(),
         error = null,
     )
 }
@@ -286,10 +304,12 @@ private fun SavedSshProfile.remoteConnectionOptionsOrNull(): RemoteConnectionOpt
             moshServerCommand = moshServerCommand
                 ?.takeIf(::isSafeMoshServerExecutable)
                 ?.takeUnless { it == DEFAULT_MOSH_SERVER_EXECUTABLE },
+            moshLocale = moshLocale,
+            moshFallbackPolicy = moshFallbackPolicy,
         )
         else -> null
     }
-}.getOrNull()
+}.getOrNull()?.normalized()
 
 /** Authoritative password hosts can use the full runtime even when they carry profile overrides. */
 internal val SavedSshProfile.canConnectFromQuickUi: Boolean
@@ -373,7 +393,7 @@ internal data class SshConnectionSeed(
             profile.host.equals(host, ignoreCase = true) &&
             profile.port == port &&
             profile.username == username &&
-            profile.remoteConnectionOptionsOrNull() == connectionOptions
+            profile.remoteConnectionOptionsOrNull()?.matches(connectionOptions) == true
 }
 
 internal enum class SshConnectPurpose {
@@ -507,8 +527,10 @@ data class TerminalSpikeUiState(
     val sessions: List<SessionTabUi> = initialTerminalTabs(),
     val activeSessionId: Long = LOCAL_TERMINAL_SESSION_ID,
     val notice: UiText? = null,
+    val identityImportNeedsReselection: Boolean = false,
     val profiles: List<SavedSshProfile> = emptyList(),
     val snippets: List<CommandSnippet> = emptyList(),
+    val hiddenDefaultSnippetIds: Set<Long> = emptySet(),
     val identities: List<SavedSshIdentity> = emptyList(),
     val knownHosts: List<KnownHostSummary> = emptyList(),
     val extraKeys: List<TerminalExtraKey> = TerminalExtraKey.DEFAULT_ORDER,
@@ -713,7 +735,6 @@ internal enum class WorkspaceProfileLaunchDecision {
     PROFILE_MISSING,
     PROFILE_UNAVAILABLE,
     MOSH_EXTENSION_UNAVAILABLE,
-    SESSION_LIMIT_REACHED,
 }
 
 internal enum class WorkspaceStoredAuthenticationDecision {
@@ -872,9 +893,6 @@ internal fun TerminalSpikeUiState.workspaceProfileLaunchDecision(
     if (profile.protocol == ConnectionProtocol.MOSH && !moshExtension.isAvailable) {
         return WorkspaceProfileLaunchDecision.MOSH_EXTENSION_UNAVAILABLE
     }
-    if (!canStartSshSession(replacementSessionId = null)) {
-        return WorkspaceProfileLaunchDecision.SESSION_LIMIT_REACHED
-    }
     return if (profile.hasSavedPassword) {
         WorkspaceProfileLaunchDecision.START_WITH_SAVED_PASSWORD
     } else {
@@ -908,8 +926,6 @@ private fun WorkspaceProfileLaunchDecision.workspaceLaunchRejectionNotice(): UiT
         uiText(R.string.notice_saved_host_unsupported)
     WorkspaceProfileLaunchDecision.MOSH_EXTENSION_UNAVAILABLE ->
         uiText(R.string.notice_mosh_extension_unavailable)
-    WorkspaceProfileLaunchDecision.SESSION_LIMIT_REACHED ->
-        uiText(R.string.notice_session_limit)
     WorkspaceProfileLaunchDecision.START_WITH_SAVED_PASSWORD,
     WorkspaceProfileLaunchDecision.REQUEST_AUTHENTICATION,
     -> error("Successful Workspace launch decisions do not have a rejection notice.")
@@ -981,7 +997,7 @@ internal fun TerminalSpikeUiState.withRemoteSessionSnapshots(
     )
 }
 
-private fun RemoteSessionConnectionSeed.toUiConnectionSeed(): SshConnectionSeed =
+internal fun RemoteSessionConnectionSeed.toUiConnectionSeed(): SshConnectionSeed =
     SshConnectionSeed(
         host = host,
         port = port,
@@ -993,7 +1009,9 @@ private fun RemoteSessionConnectionSeed.toUiConnectionSeed(): SshConnectionSeed 
                 moshPort = moshPort,
                 moshPortRange = moshPortRange,
                 moshServerCommand = moshServerCommand,
-            )
+                moshLocale = moshLocale,
+                moshFallbackPolicy = moshFallbackPolicy,
+            ).normalized()
         } else {
             RemoteConnectionOptions.SSH
         },
@@ -1245,9 +1263,11 @@ internal fun TerminalSpikeUiState.afterSettingsLoad(
     loaded: SettingsLoadResult,
     knownHosts: List<KnownHostSummary>,
     retry: Boolean,
+    hiddenDefaultSnippetIds: Set<Long> = emptySet(),
 ): TerminalSpikeUiState = copy(
     profiles = loaded.settings.profiles,
     snippets = loaded.settings.snippets,
+    hiddenDefaultSnippetIds = hiddenDefaultSnippetIds,
     identities = loaded.settings.identities,
     knownHosts = knownHosts,
     extraKeys = if (runtimeProfilesReady) extraKeys else loaded.settings.extraKeys,
@@ -1270,6 +1290,7 @@ internal fun TerminalSpikeUiState.bufferedInputValidationError(sessionId: Long, 
     val targetSession = sessions.firstOrNull { it.id == sessionId }
     return when {
         text.isEmpty() -> uiText(R.string.notice_buffer_enter_text)
+        text.containsBracketedPasteEnd() -> uiText(R.string.notice_paste_control_blocked)
         text.hasUnpairedSurrogate() -> uiText(R.string.notice_buffer_invalid_unicode)
         text.any { it.isISOControl() && it !in "\r\n\t" } ->
             uiText(R.string.notice_buffer_unsupported_control)
@@ -1531,6 +1552,17 @@ class TerminalSpikeViewModel(
     private val appLogger = AppLogger()
     private val appContainer = (application as TerminalSpikeApplication).container
     private val localAppDataResetter = AndroidLocalAppDataResetter(application)
+    private val identityPickerRequests = IdentityPickerRequestOwner()
+    // A retained ViewModel keeps fresh picker ownership through rotation. A new ViewModel
+    // must discard restored document work instead of replaying it after process death.
+    private val restoredIdentityImport = AtomicBoolean(
+        savedStateHandle.remove<String>(PENDING_IDENTITY_IMPORT_URI) != null,
+    )
+    init {
+        savedStateHandle.remove<String>(PENDING_IDENTITY_RECOVERY_TOKEN)
+    }
+    private val identityImportRecovery
+        get() = getApplication<TerminalSpikeApplication>().identityImportRecovery
     private val pendingTranscriptExport = PendingTerminalTranscriptExportOwner()
     private val localNetworkPendingAction = LocalNetworkPendingActionOwner()
     private val _localNetworkActionDispatch =
@@ -1702,16 +1734,18 @@ class TerminalSpikeViewModel(
     private fun observeRuntimeProfiles() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                appContainer.authoritativeData.awaitReady()
-                appContainer.startLegacyMigrationForCutover().await()
-                val initialSettings = appContainer.settings.settings.first()
-                appContainer.keyboardProfiles.get(initialSettings.defaultKeyboardProfileId)
-                    ?.upgradeShippedKeyboardDeck(System.currentTimeMillis())
-                    ?.let { upgraded ->
-                        appContainer.keyboardProfiles.update(
-                            upgraded,
-                        )
-                    }
+                appContainer.settingsMutations.mutate {
+                    val initialSettings = appContainer.settings.settings.first()
+                    appContainer.keyboardProfiles.get(initialSettings.defaultKeyboardProfileId)
+                        ?.upgradeShippedKeyboardDeck(System.currentTimeMillis())
+                        ?.let { upgraded ->
+                            write {
+                                check(appContainer.keyboardProfiles.update(upgraded)) {
+                                    "The shipped keyboard profile disappeared during its runtime repair."
+                                }
+                            }
+                        }
+                }
                 combine(
                     appContainer.settings.settings,
                     appContainer.terminalProfiles.observeAll(),
@@ -2092,6 +2126,9 @@ class TerminalSpikeViewModel(
     }
 
     private suspend fun loadLocalSettings(retry: Boolean) {
+        // Initialize recovery on IO before settings readiness allows an import to start.
+        val recovery = identityImportRecovery
+        if (restoredIdentityImport.getAndSet(false)) recovery.requireReselection()
         var settingsBecameReady = false
         catalogPublicationGate.publish { repositoryResult ->
             knownHostPublicationMutex.withLock {
@@ -2122,7 +2159,12 @@ class TerminalSpikeViewModel(
                 }
                 val knownHosts = knownHostRead.getOrDefault(emptyList())
                 withContext(Dispatchers.Main.immediate) {
-                    _uiState.update { state -> state.afterSettingsLoad(loaded, knownHosts, retry) }
+                    _uiState.update { state ->
+                        state.afterSettingsLoad(
+                            loaded, knownHosts, retry,
+                            hiddenDefaultSnippetIds = repositoryResult.catalog?.hiddenDefaultSnippetIds.orEmpty(),
+                        )
+                    }
                     settingsBecameReady = loaded.failure == null
                 }
             }
@@ -2316,7 +2358,13 @@ class TerminalSpikeViewModel(
         }
     }
 
-    internal suspend fun saveConnectionsSnippet(snippet: Snippet): Result<Unit> {
+    internal suspend fun saveConnectionsSnippet(snippet: Snippet): Result<Unit> =
+        saveCatalogSnippet(snippet, replacedDefaultId = null)
+
+    internal suspend fun replaceDefaultSnippet(defaultId: Long, snippet: Snippet): Result<Unit> =
+        saveCatalogSnippet(snippet, replacedDefaultId = defaultId)
+
+    private suspend fun saveCatalogSnippet(snippet: Snippet, replacedDefaultId: Long?): Result<Unit> {
         val catalog = connectionsCatalogLoad.value?.catalog
         if (!_uiState.value.settingsReady || catalog == null) {
             _uiState.update {
@@ -2334,7 +2382,7 @@ class TerminalSpikeViewModel(
             successNotice = uiText(R.string.notice_snippet_saved),
             failureMessage = uiText(R.string.notice_snippet_save_failed),
         ) {
-            terminalDataRepository.saveSnippet(snippet)
+            terminalDataRepository.saveSnippet(snippet, replacedDefaultId)
         }
     }
 
@@ -2490,6 +2538,10 @@ class TerminalSpikeViewModel(
             ?.firstOrNull { it.snippet.id == persistentId }
             ?.snippet
             ?: return false
+        if (snippet.command.containsBracketedPasteEnd()) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_paste_control_blocked)) }
+            return false
+        }
         val state = _uiState.value
         val target = state.sessions.firstOrNull { it.id == targetSessionId }
         if (target?.connectionState !is ConnectionState.Connected) {
@@ -2548,11 +2600,6 @@ class TerminalSpikeViewModel(
             }
             return false
         }
-        if (!_uiState.value.canStartSshSession(null)) {
-            request.wipe()
-            _uiState.update { it.copy(notice = uiText(R.string.notice_session_limit)) }
-            return false
-        }
         val connectionOptions = if (request.forceSsh) {
             RemoteConnectionOptions.SSH
         } else {
@@ -2563,7 +2610,7 @@ class TerminalSpikeViewModel(
                 moshServerCommand = profile.moshServerCommand,
                 moshLocale = profile.moshLocale,
                 moshFallbackPolicy = profile.moshFallbackPolicy,
-            )
+            ).normalized()
         }
         if (
             connectionOptions.protocol == ConnectionProtocol.MOSH &&
@@ -3077,14 +3124,14 @@ class TerminalSpikeViewModel(
         } else {
             _uiState.value.profiles.firstOrNull { profile ->
                 profile.canConnectFromQuickUi &&
-                    profile.remoteConnectionOptionsOrNull() == connectionOptions &&
+                    profile.remoteConnectionOptionsOrNull()?.matches(connectionOptions) == true &&
                     profile.host.equals(normalizedHost, ignoreCase = true) && profile.port == port &&
                     profile.username == normalizedUsername
             }
         }
         val savedPasswordProfile = selectedProfile?.takeIf { profile ->
             profile.hasSavedPassword &&
-                selectedProfileOptions == connectionOptions &&
+                selectedProfileOptions?.matches(connectionOptions) == true &&
                 profile.host.equals(normalizedHost, ignoreCase = true) && profile.port == port &&
                 profile.username == normalizedUsername
         }
@@ -3096,7 +3143,7 @@ class TerminalSpikeViewModel(
                 uiText(R.string.notice_saved_host_unavailable)
             selectedProfile?.canConnectFromQuickUi == false ->
                 uiText(R.string.notice_saved_host_unsupported)
-            selectedProfile != null && selectedProfileOptions != connectionOptions ->
+            selectedProfile != null && selectedProfileOptions?.matches(connectionOptions) != true ->
                 uiText(R.string.notice_saved_host_settings_changed)
             connectionOptions.protocol == ConnectionProtocol.MOSH &&
                 !_uiState.value.moshExtension.isAvailable ->
@@ -3137,7 +3184,7 @@ class TerminalSpikeViewModel(
         if (!_uiState.value.canStartSshSession(replacementSessionId)) {
             pendingPassword.fill(0)
             pendingPassphrase.fill(0)
-            _uiState.update { it.copy(notice = uiText(R.string.notice_session_limit)) }
+            _uiState.update { it.copy(notice = uiText(R.string.notice_session_reconnect_unavailable)) }
             return
         }
         val validatedPort = port!!
@@ -3218,6 +3265,8 @@ class TerminalSpikeViewModel(
                 moshPort = connectionOptions.moshPort,
                 moshPortRange = connectionOptions.moshPortRange,
                 moshServerCommand = connectionOptions.moshServerCommand,
+                moshLocale = connectionOptions.moshLocale,
+                moshFallbackPolicy = connectionOptions.moshFallbackPolicy,
             )
         } catch (error: Exception) {
             pendingPassword.fill(0)
@@ -3399,11 +3448,7 @@ class TerminalSpikeViewModel(
             if (!stateBeforeStart.canStartSshSession(replacementSessionId)) {
                 _uiState.update {
                     it.copy(
-                        notice = if (replacementSessionId == null) {
-                            uiText(R.string.notice_session_limit)
-                        } else {
-                            uiText(R.string.notice_session_reconnect_unavailable)
-                        },
+                        notice = uiText(R.string.notice_session_reconnect_unavailable),
                     )
                 }
                 return
@@ -3550,9 +3595,6 @@ class TerminalSpikeViewModel(
                     )
                 }
             }
-            StartSshSessionResult.SessionLimitReached -> _uiState.update {
-                it.copy(notice = uiText(R.string.notice_session_limit))
-            }
             StartSshSessionResult.ReplacementUnavailable -> _uiState.update {
                 it.copy(notice = uiText(R.string.notice_session_reconnect_unavailable))
             }
@@ -3575,7 +3617,9 @@ class TerminalSpikeViewModel(
     internal suspend fun saveAiAgents(value: com.yanjiyu.terminalspike.settings.AiAgents): Boolean {
         require(value.isValid())
         return try {
-            appContainer.settings.update { it.setAiAgents(value.toProto()) }
+            appContainer.settingsMutations.mutate {
+                write { appContainer.settings.update { it.setAiAgents(value.toProto()) } }
+            }
             true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -3591,7 +3635,16 @@ class TerminalSpikeViewModel(
 
     fun setInputButtonsOnRight(value: Boolean) {
         viewModelScope.launch {
-            appContainer.settings.update { it.setInputButtonsOnRight(value) }
+            try {
+                appContainer.settingsMutations.mutate {
+                    write { appContainer.settings.update { it.setInputButtonsOnRight(value) } }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                appLogger.warning(AppLogEvent.SETTINGS_WRITE_FAILED, error)
+                _uiState.update { it.copy(notice = uiText(R.string.settings_change_failed)) }
+            }
         }
     }
 
@@ -3604,8 +3657,12 @@ class TerminalSpikeViewModel(
         notificationPermissionEducationConsumed = true
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                appContainer.settings.update {
-                    it.setNotificationPermissionEducationConsumed(true)
+                appContainer.settingsMutations.mutate {
+                    write {
+                        appContainer.settings.update {
+                            it.setNotificationPermissionEducationConsumed(true)
+                        }
+                    }
                 }
             }.onFailure { error ->
                 appLogger.warning(AppLogEvent.SETTINGS_WRITE_FAILED, error) {
@@ -3696,10 +3753,6 @@ class TerminalSpikeViewModel(
                     SessionDuplicateResult.AuthenticationRequired
                 }
             }
-            DuplicateSshSessionResult.SessionLimitReached -> {
-                _uiState.update { it.copy(notice = uiText(R.string.notice_session_limit)) }
-                SessionDuplicateResult.Rejected
-            }
             DuplicateSshSessionResult.Unavailable -> {
                 _uiState.update { it.copy(notice = uiText(R.string.notice_session_duplicate_failed)) }
                 SessionDuplicateResult.Rejected
@@ -3744,14 +3797,6 @@ class TerminalSpikeViewModel(
         if (persistentHostId != null) {
             if (!state.settingsReady) {
                 val notice = WorkspaceProfileLaunchDecision.SETTINGS_UNAVAILABLE
-                    .workspaceLaunchRejectionNotice()
-                _uiState.update {
-                    it.copy(notice = notice)
-                }
-                return WorkspaceProfileLaunchResult.Rejected
-            }
-            if (!state.canStartSshSession(replacementSessionId = null)) {
-                val notice = WorkspaceProfileLaunchDecision.SESSION_LIMIT_REACHED
                     .workspaceLaunchRejectionNotice()
                 _uiState.update {
                     it.copy(notice = notice)
@@ -3817,86 +3862,6 @@ class TerminalSpikeViewModel(
         return WorkspaceProfileLaunchResult.Started
     }
 
-    fun saveSshProfile(
-        label: String,
-        host: String,
-        portText: String,
-        username: String,
-        existingId: Long? = null,
-    ) {
-        if (!_uiState.value.settingsReady) return
-        val normalizedLabel = label.trim()
-        val normalizedHost = host.trim().removeSurrounding("[", "]")
-        val normalizedUsername = username.trim()
-        val port = portText.toIntOrNull()
-        val error: UiText? = when {
-            normalizedLabel.isBlank() || normalizedLabel.length > UserSettings.MAX_LABEL_LENGTH ->
-                uiText(R.string.notice_profile_name_length, UserSettings.MAX_LABEL_LENGTH)
-            normalizedLabel.any(Char::isISOControl) ->
-                uiText(R.string.notice_profile_name_unsupported)
-            normalizedHost.isBlank() || normalizedHost.length > UserSettings.MAX_HOST_LENGTH ||
-                normalizedHost.any(Char::isWhitespace) -> uiText(R.string.notice_invalid_host)
-            port == null || port !in 1..65_535 -> uiText(R.string.notice_invalid_port)
-            normalizedUsername.isBlank() || normalizedUsername.length > UserSettings.MAX_USERNAME_LENGTH ||
-                normalizedUsername.any { it.isWhitespace() || it.isISOControl() } ->
-                uiText(R.string.notice_invalid_username)
-            else -> null
-        }
-        if (error != null) {
-            _uiState.update { it.copy(notice = error) }
-            return
-        }
-        val validatedPort = port!!
-        val state = _uiState.value
-        val selectedExisting = state.profiles.firstOrNull { it.id == existingId }
-        if (selectedExisting?.connectionCompatibility != null &&
-            selectedExisting.connectionCompatibility != SavedHostConnectionCompatibility.SSH_PASSWORD
-        ) {
-            _uiState.update {
-                it.copy(notice = uiText(R.string.notice_host_editor_incompatible))
-            }
-            return
-        }
-        val match = selectedExisting ?: state.profiles.firstOrNull {
-            it.connectionCompatibility == SavedHostConnectionCompatibility.SSH_PASSWORD &&
-                it.host.equals(normalizedHost, ignoreCase = true) && it.port == validatedPort &&
-                it.username == normalizedUsername
-        }
-        if (match == null && state.profiles.size >= UserSettings.MAX_PROFILES) {
-            _uiState.update { it.copy(notice = uiText(R.string.notice_delete_profile_before_add)) }
-            return
-        }
-        val sameCredentialScope = match != null &&
-            match.host.equals(normalizedHost, ignoreCase = true) && match.port == validatedPort &&
-            match.username == normalizedUsername
-        val profile = SavedSshProfile(
-            id = match?.id ?: terminalDataRepository.reserveHostPresentationId(),
-            label = normalizedLabel,
-            host = normalizedHost,
-            port = validatedPort,
-            username = normalizedUsername,
-            hasSavedPassword = match?.hasSavedPassword == true && sameCredentialScope,
-        )
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { terminalDataRepository.saveProfile(profile) }
-                .onSuccess { committed -> publishCommittedSettings(committed) }
-                .onFailure { error ->
-                    reportCatalogWriteFailure(error, uiText(R.string.notice_host_save_failed))
-                }
-        }
-    }
-
-    fun deleteSshProfile(id: Long) {
-        if (!_uiState.value.settingsReady) return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { terminalDataRepository.deleteProfile(id) }
-                .onSuccess { committed -> publishCommittedSettings(committed) }
-                .onFailure { error ->
-                    reportCatalogWriteFailure(error, uiText(R.string.notice_host_delete_failed))
-                }
-        }
-    }
-
     fun forgetSavedPassword(profileId: Long) {
         if (!_uiState.value.settingsReady) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -3913,15 +3878,38 @@ class TerminalSpikeViewModel(
         }
     }
 
-    fun importSshIdentity(uri: Uri, recoveryToken: String? = null) {
-        val resolver = getApplication<Application>().contentResolver
-        savedStateHandle.get<String>(PENDING_IDENTITY_IMPORT_URI)
-            ?.takeIf { it != uri.toString() }
-            ?.let(Uri::parse)
-            ?.let(::releaseIdentityImportPermission)
-        runCatching {
-            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    fun beginIdentityPicker(recoveryToken: String?): Boolean = identityPickerRequests.begin(recoveryToken)
+
+    fun cancelIdentityPicker() = identityPickerRequests.cancel()
+
+    fun importSshIdentityPickerResult(uri: Uri?) {
+        val request = identityPickerRequests.take()
+        if (uri == null) return
+        if (request == null) {
+            // An ActivityResult restored into a new process is not fresh import consent.
+            viewModelScope.launch(Dispatchers.IO) {
+                identityImportRecovery.requireReselection()
+                withContext(Dispatchers.Main.immediate) { publishIdentityImportRecovery() }
+            }
+            return
         }
+        importSshIdentity(uri, request.recoveryToken)
+    }
+
+    fun acknowledgeInterruptedIdentityImport() {
+        viewModelScope.launch(Dispatchers.IO) {
+            identityImportRecovery.acknowledgeReselection()
+            withContext(Dispatchers.Main.immediate) { publishIdentityImportRecovery() }
+        }
+    }
+
+    private fun publishIdentityImportRecovery() {
+        if (_uiState.value.settingsReady) {
+            _uiState.update { it.copy(identityImportNeedsReselection = identityImportRecovery.needsReselection) }
+        }
+    }
+
+    fun importSshIdentity(uri: Uri, recoveryToken: String? = null) {
         savedStateHandle[PENDING_IDENTITY_IMPORT_URI] = uri.toString()
         if (recoveryToken == null) {
             savedStateHandle.remove<String>(PENDING_IDENTITY_RECOVERY_TOKEN)
@@ -3938,6 +3926,7 @@ class TerminalSpikeViewModel(
     }
 
     private fun drainPendingIdentityImport() {
+        publishIdentityImportRecovery()
         val uri = savedStateHandle.get<String>(PENDING_IDENTITY_IMPORT_URI)?.let(Uri::parse) ?: return
         val recoveryToken = savedStateHandle.get<String>(PENDING_IDENTITY_RECOVERY_TOKEN)
         val state = _uiState.value
@@ -3950,7 +3939,7 @@ class TerminalSpikeViewModel(
                 ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
                 ?: getApplication<Application>().getString(R.string.notice_imported_key_default_name)
             displayName to readSshIdentityBytes(MAX_SSH_PRIVATE_KEY_BYTES) { resolver.openInputStream(uri) }
-        }, finished = { releaseIdentityImportPermission(uri) })
+        }, documentUri = uri)
     }
 
     fun importSshIdentityText(label: String, text: String, recoveryToken: String? = null) {
@@ -3960,10 +3949,10 @@ class TerminalSpikeViewModel(
     private fun launchIdentityImport(
         recoveryToken: String?,
         load: () -> Pair<String, ByteArray>,
-        finished: () -> Unit = {},
+        documentUri: Uri? = null,
     ) {
         val state = _uiState.value
-        if (!state.settingsReady) { finished(); return }
+        if (!state.settingsReady) return
         val existing = recoveryToken?.let { resolveIdentityRecoveryTarget(state.identities, it) }
         val rejection = when {
             recoveryToken != null && existing == null -> R.string.notice_key_reimport_target_missing
@@ -3972,19 +3961,30 @@ class TerminalSpikeViewModel(
             else -> null
         }
         if (rejection != null) {
-            finished()
             _uiState.update { it.copy(notice = uiText(rejection)) }
             return
         }
-        val identityId = existing?.id ?: terminalDataRepository.reserveIdentityPresentationId()
-        viewModelScope.launch(Dispatchers.IO) {
+        val lease = AtomicReference<AutoCloseable?>()
+        viewModelScope.launchSshIdentityImport(finished = { lease.getAndSet(null)?.close() }) {
             var privateKey: ByteArray? = null
             try {
+                lease.set(identityImportRecovery.begin())
+                documentUri?.let { uri ->
+                    // Some providers support only the transient picker grant.
+                    runCatching {
+                        getApplication<Application>().contentResolver.takePersistableUriPermission(
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                val identityId = existing?.id ?: terminalDataRepository.reserveIdentityPresentationId()
                 val (name, bytes) = load()
                 privateKey = bytes
-                val displayName = name.substringAfterLast('/').filterNot(Char::isISOControl).trim()
-                    .take(UserSettings.MAX_LABEL_LENGTH).takeIf { it.isNotBlank() }
-                    ?: getApplication<Application>().getString(R.string.notice_imported_key_default_name)
+                val displayName = importedSshIdentityLabel(
+                    name,
+                    getApplication<Application>().getString(R.string.notice_imported_key_default_name),
+                )
                 val committed = terminalDataRepository.importIdentity(
                     presentationId = identityId,
                     label = existing?.label ?: displayName,
@@ -4002,17 +4002,7 @@ class TerminalSpikeViewModel(
                 reportCatalogWriteFailure(error, uiText(sshIdentityImportFailureMessage(error)))
             } finally {
                 privateKey?.fill(0)
-                finished()
             }
-        }
-    }
-
-    private fun releaseIdentityImportPermission(uri: Uri) {
-        runCatching {
-            getApplication<Application>().contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
         }
     }
 
@@ -4081,8 +4071,11 @@ class TerminalSpikeViewModel(
         }
     }
 
-    fun saveSnippet(label: String, command: String, appendEnter: Boolean, existingId: Long? = null) {
-        if (!_uiState.value.settingsReady) return
+    suspend fun saveSnippet(label: String, command: String, appendEnter: Boolean, existingId: Long? = null): Result<Unit> {
+        if (!_uiState.value.settingsReady) {
+            _uiState.update { it.copy(notice = uiText(R.string.notice_local_data_before_save_snippet)) }
+            return Result.failure(IllegalStateException("The local catalog is unavailable."))
+        }
         val normalizedLabel = label.trim()
         val error: UiText? = when {
             normalizedLabel.isBlank() || normalizedLabel.length > UserSettings.MAX_LABEL_LENGTH ->
@@ -4099,12 +4092,12 @@ class TerminalSpikeViewModel(
         }
         if (error != null) {
             _uiState.update { it.copy(notice = error) }
-            return
+            return Result.failure(IllegalArgumentException("Invalid snippet."))
         }
         val state = _uiState.value
         if ((existingId == null || existingId <= 0) && state.snippets.size >= UserSettings.MAX_SNIPPETS) {
             _uiState.update { it.copy(notice = uiText(R.string.notice_delete_snippet_before_add)) }
-            return
+            return Result.failure(IllegalStateException("The saved-snippet limit has been reached."))
         }
         val existingSnippet = (state.snippets +
             com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all)
@@ -4117,11 +4110,21 @@ class TerminalSpikeViewModel(
             confirmMultilineExecution = existingSnippet?.confirmMultilineExecution ?: true,
             sendsImmediately = existingSnippet?.sendsImmediately ?: true,
         )
+        return acknowledgedCatalogWrite(
+            successNotice = uiText(R.string.notice_snippet_saved),
+            failureMessage = uiText(R.string.notice_snippet_save_failed),
+        ) {
+            terminalDataRepository.saveSnippet(snippet, existingId?.takeIf { it <= 0 })
+        }
+    }
+
+    internal fun hideDefaultSnippet(defaultId: Long) {
+        if (!_uiState.value.settingsReady) return
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { terminalDataRepository.saveSnippet(snippet) }
+            runCatching { terminalDataRepository.hideDefaultSnippet(defaultId) }
                 .onSuccess { committed -> publishCommittedSettings(committed) }
                 .onFailure { error ->
-                    reportCatalogWriteFailure(error, uiText(R.string.notice_snippet_save_failed))
+                    reportCatalogWriteFailure(error, uiText(R.string.notice_snippet_delete_failed))
                 }
         }
     }
@@ -4180,10 +4183,12 @@ class TerminalSpikeViewModel(
             ?: return false
         if (com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all.any { it.id == id }) {
             val context = controllerForExistingSession(targetSessionId)?.inputContext?.value
-            if (bufferedInputDraftState.value.text.isNotEmpty() ||
-                context != null && context.identity.isNotEmpty() && context.agentId != "codex"
+            if (bufferedInputDraftState.value.text.isNotEmpty() || context?.observationAvailable == false ||
+                !com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.canSend(
+                    id, context?.agentId.orEmpty(), !context?.identity.isNullOrEmpty(),
+                )
             ) {
-                _uiState.update { it.copy(notice = uiText(R.string.notice_codex_snippet_prompt)) }
+                _uiState.update { it.copy(notice = uiText(R.string.notice_agent_effort_prompt)) }
                 return false
             }
         }
@@ -4265,13 +4270,14 @@ class TerminalSpikeViewModel(
         confirmed: Boolean,
     ): SnippetDispatchOutcome {
         val activeController = controllerForExistingSession(state.activeSessionId)
+        val blockedPasteControl = snippet.command.containsBracketedPasteEnd()
         val parsed = runCatching {
             if (snippet.sendsImmediately) SnippetSequence.parse(snippet.command) else null
         }
         val outcome = dispatchSnippet(snippet, confirmed) { appendEnter ->
             val steps = parsed.getOrNull()
             when {
-                parsed.isFailure || activeController == null || snippetSequenceJob?.isActive == true -> false
+                blockedPasteControl || parsed.isFailure || activeController == null || snippetSequenceJob?.isActive == true -> false
                 steps == null -> activeController.sendPaste(snippet.command, appendEnter = appendEnter)
                 else -> {
                     snippetSequenceJob = viewModelScope.launch {
@@ -4339,7 +4345,10 @@ class TerminalSpikeViewModel(
                         pendingSnippetSendId = null,
                         pendingSnippetTargetSessionId = null,
                         pendingSnippetSendsImmediately = null,
-                        notice = uiText(R.string.notice_snippet_queue_failed),
+                        notice = uiText(
+                            if (blockedPasteControl) R.string.notice_paste_control_blocked
+                            else R.string.notice_snippet_queue_failed,
+                        ),
                     )
                 }
             }
@@ -4409,6 +4418,7 @@ class TerminalSpikeViewModel(
             )
         }
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var blockedPasteControl = false
             val insertedCount = transferTerminalAttachments(
                 sources = images,
                 transfer = { fileName, input ->
@@ -4421,11 +4431,17 @@ class TerminalSpikeViewModel(
                         else -> remoteSessions.uploadPastedImage(sessionId, fileName, input).getOrThrow()
                     }
                 },
-                insert = { path -> controllerForExistingSession(sessionId)?.sendPaste(path) == true },
+                insert = { path ->
+                    if (path.containsBracketedPasteEnd()) {
+                        blockedPasteControl = true
+                        false
+                    } else controllerForExistingSession(sessionId)?.sendPaste(path) == true
+                },
             )
             _uiState.update {
                 it.copy(
                     notice = when {
+                        blockedPasteControl -> uiText(R.string.notice_paste_control_blocked)
                         insertedCount == images.size -> quantityText(
                             R.plurals.notice_image_paste_attached_count,
                             insertedCount,
@@ -4442,75 +4458,6 @@ class TerminalSpikeViewModel(
             }
         }
         return true
-    }
-
-    fun setExtraKeyVisible(key: TerminalExtraKey, visible: Boolean) {
-        if (!_uiState.value.settingsReady) return
-        _uiState.update { state ->
-            val current = state.extraKeys
-            val updated = if (visible) {
-                if (key in current) current else current + key
-            } else {
-                if (current.size == 1) {
-                    return@update state.copy(notice = uiText(R.string.notice_keep_one_extra_key))
-                }
-                current - key
-            }
-            state.copy(extraKeys = updated, notice = null)
-        }
-    }
-
-    fun replaceExtraKey(currentKey: TerminalExtraKey, replacementKey: TerminalExtraKey) {
-        if (!_uiState.value.settingsReady || currentKey == replacementKey) return
-        _uiState.update { state ->
-            val index = state.extraKeys.indexOf(currentKey)
-            if (index < 0 || replacementKey in state.extraKeys) return@update state
-            val keys = state.extraKeys.toMutableList()
-            keys[index] = replacementKey
-            state.copy(extraKeys = keys, notice = null)
-        }
-    }
-
-    fun moveExtraKey(key: TerminalExtraKey, direction: Int) {
-        if (!_uiState.value.settingsReady || direction !in listOf(-1, 1)) return
-        _uiState.update { state ->
-            val from = state.extraKeys.indexOf(key)
-            val to = from + direction
-            if (from < 0 || to !in state.extraKeys.indices) return@update state
-            val keys = state.extraKeys.toMutableList()
-            val moved = keys[from]
-            keys[from] = keys[to]
-            keys[to] = moved
-            state.copy(extraKeys = keys, notice = null)
-        }
-    }
-
-    fun resetExtraKeys() {
-        if (!_uiState.value.settingsReady) return
-        _uiState.update { state ->
-            state.copy(extraKeys = TerminalExtraKey.DEFAULT_ORDER, notice = null)
-        }
-    }
-
-    fun saveExtraKeys() {
-        val state = _uiState.value
-        if (!state.settingsReady) return
-        if (!state.keyboardRuntimeCompatible) {
-            _uiState.update {
-                it.copy(notice = uiText(R.string.notice_keyboard_profile_edit_full))
-            }
-            return
-        }
-        val keys = state.extraKeys.toList()
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { terminalDataRepository.saveExtraKeys(keys) }
-                .onSuccess { committed ->
-                    publishCommittedSettings(committed, notice = uiText(R.string.notice_terminal_keys_saved))
-                }
-                .onFailure { error ->
-                    reportCatalogWriteFailure(error, uiText(R.string.notice_terminal_keys_save_failed))
-                }
-        }
     }
 
     fun answerHostIdentityPrompt(
@@ -4603,6 +4550,10 @@ class TerminalSpikeViewModel(
         }
     }
 
+    fun clickTerminalMouse(secondary: Boolean) {
+        controllerFor(_uiState.value.activeSessionId).clickMouseAtCursor(secondary)
+    }
+
     fun jumpToBottom() {
         val activeController = controllerFor(_uiState.value.activeSessionId)
         val wasAutoFollowing = activeController.viewport.autoFollow
@@ -4669,74 +4620,23 @@ class TerminalSpikeViewModel(
 
     private fun toggleTerminalAccessoryModifier(modifier: TerminalAccessoryModifier) {
         val nowNanos = System.nanoTime()
-        _uiState.update { state ->
-            when (modifier) {
-                TerminalAccessoryModifier.CONTROL -> {
-                    val activation = nextModifierActivation(
-                        armed = state.ctrlArmed,
-                        locked = state.ctrlLocked,
-                        behavior = state.modifierBehavior,
-                        lastTapNanos = lastCtrlTapNanos,
-                        nowNanos = nowNanos,
-                    )
-                    lastCtrlTapNanos = activation.lastTapNanos
-                    state.copy(ctrlArmed = activation.armed, ctrlLocked = activation.locked)
-                }
-                TerminalAccessoryModifier.ALT -> {
-                    val activation = nextModifierActivation(
-                        armed = state.altArmed,
-                        locked = state.altLocked,
-                        behavior = state.modifierBehavior,
-                        lastTapNanos = lastAltTapNanos,
-                        nowNanos = nowNanos,
-                    )
-                    lastAltTapNanos = activation.lastTapNanos
-                    state.copy(altArmed = activation.armed, altLocked = activation.locked)
-                }
-                TerminalAccessoryModifier.SHIFT -> {
-                    val activation = nextModifierActivation(
-                        armed = state.shiftArmed,
-                        locked = state.shiftLocked,
-                        behavior = state.modifierBehavior,
-                        lastTapNanos = lastShiftTapNanos,
-                        nowNanos = nowNanos,
-                    )
-                    lastShiftTapNanos = activation.lastTapNanos
-                    state.copy(shiftArmed = activation.armed, shiftLocked = activation.locked)
-                }
-            }
+        when (modifier) {
+            TerminalAccessoryModifier.CONTROL ->
+                lastCtrlTapNanos = _uiState.activateInputModifier(modifier, lastCtrlTapNanos, nowNanos)
+            TerminalAccessoryModifier.ALT ->
+                lastAltTapNanos = _uiState.activateInputModifier(modifier, lastAltTapNanos, nowNanos)
+            TerminalAccessoryModifier.SHIFT ->
+                lastShiftTapNanos = _uiState.activateInputModifier(modifier, lastShiftTapNanos, nowNanos)
         }
     }
 
     fun activateExtraKey(key: TerminalExtraKey) {
         if (key == TerminalExtraKey.CTRL) {
-            val nowNanos = System.nanoTime()
-            _uiState.update { state ->
-                val activation = nextModifierActivation(
-                    armed = state.ctrlArmed,
-                    locked = state.ctrlLocked,
-                    behavior = state.modifierBehavior,
-                    lastTapNanos = lastCtrlTapNanos,
-                    nowNanos = nowNanos,
-                )
-                lastCtrlTapNanos = activation.lastTapNanos
-                state.copy(ctrlArmed = activation.armed, ctrlLocked = activation.locked)
-            }
+            toggleTerminalAccessoryModifier(TerminalAccessoryModifier.CONTROL)
             return
         }
         if (key == TerminalExtraKey.ALT) {
-            val nowNanos = System.nanoTime()
-            _uiState.update { state ->
-                val activation = nextModifierActivation(
-                    armed = state.altArmed,
-                    locked = state.altLocked,
-                    behavior = state.modifierBehavior,
-                    lastTapNanos = lastAltTapNanos,
-                    nowNanos = nowNanos,
-                )
-                lastAltTapNanos = activation.lastTapNanos
-                state.copy(altArmed = activation.armed, altLocked = activation.locked)
-            }
+            toggleTerminalAccessoryModifier(TerminalAccessoryModifier.ALT)
             return
         }
         val state = _uiState.value
@@ -4780,6 +4680,7 @@ class TerminalSpikeViewModel(
                     state.copy(
                         profiles = authoritative.profiles,
                         snippets = authoritative.snippets,
+                        hiddenDefaultSnippetIds = latest.catalog?.hiddenDefaultSnippetIds.orEmpty(),
                         identities = authoritative.identities,
                         extraKeys = authoritative.extraKeys,
                         keyboardRuntimeCompatible = authoritative.keyboardRuntimeCompatible,
@@ -4836,20 +4737,23 @@ class TerminalSpikeViewModel(
     }
 
     override fun onCleared() {
-        cancelLocalNetworkAction()
-        sftp.close()
-        project.close()
-        browser.close()
-        webBrowser.close()
-        cancelConnectionsHostTest()
-        cancelTerminalTranscriptExport()
-        pendingRemoteClipboardRequest?.let(::discardRemoteClipboardRequest)
-        savedStateHandle.get<String>(PENDING_IDENTITY_IMPORT_URI)?.let(Uri::parse)?.let(
-            ::releaseIdentityImportPermission,
+        runViewModelCleanup(
+            ::cancelLocalNetworkAction,
+            sftp::close,
+            project::close,
+            browser::close,
+            webBrowser::close,
+            ::cancelConnectionsHostTest,
+            ::cancelTerminalTranscriptExport,
+            { pendingRemoteClipboardRequest?.let(::discardRemoteClipboardRequest) },
+            {
+                savedStateHandle.remove<String>(PENDING_IDENTITY_IMPORT_URI)
+                savedStateHandle.remove<String>(PENDING_IDENTITY_RECOVERY_TOKEN)
+            },
+            terminalBuildFeature::stop,
+            controller::stop,
+            { super.onCleared() },
         )
-        terminalBuildFeature.stop()
-        controller.stop()
-        super.onCleared()
     }
 
     internal fun stageLocalNetworkAction(
@@ -4901,16 +4805,11 @@ class TerminalSpikeViewModel(
     }
 
     companion object {
-        private const val KNOWN_HOSTS_FILE = "known_hosts"
-        private const val DEFAULT_SSH_PORT = 22
-        private const val MAX_SESSION_TITLE_LENGTH = 40
         private const val MAX_SECRET_LENGTH = 1_024
         private const val WORKSPACE_RECENT_HISTORY_SCAN_LIMIT = 64
         private const val CONNECTIONS_RECENT_HOST_LIMIT = 64
         private const val ACTIVE_TERMINAL_SESSION_ID = "active_terminal_session_id"
         private const val LAST_ACTIVE_REMOTE_SESSION_ID = "last_active_remote_session_id"
-        private const val PENDING_IDENTITY_IMPORT_URI = "pending_identity_import_uri"
-        private const val PENDING_IDENTITY_RECOVERY_TOKEN = "pending_identity_recovery_token"
     }
 }
 
@@ -4920,46 +4819,6 @@ internal fun newConnectionFailureNotice(
 ): UiText? = (current as? ConnectionState.Failed)
     ?.takeIf { previous !is ConnectionState.Failed }
     ?.let { failure -> UiText.Dynamic(failure.message) }
-
-internal data class ModifierActivation(
-    val armed: Boolean,
-    val locked: Boolean,
-    val lastTapNanos: Long,
-)
-
-internal fun TerminalSpikeUiState.afterExtraKeyDispatch(accepted: Boolean): TerminalSpikeUiState =
-    if (!accepted) {
-        this
-    } else {
-        copy(ctrlArmed = ctrlLocked, altArmed = altLocked)
-    }
-
-internal fun TerminalSpikeUiState.afterAccessoryByteDispatch(): TerminalSpikeUiState = copy(
-    ctrlArmed = ctrlLocked,
-    altArmed = altLocked,
-    shiftArmed = shiftLocked,
-)
-
-internal fun nextModifierActivation(
-    armed: Boolean,
-    locked: Boolean,
-    behavior: ModifierBehavior,
-    lastTapNanos: Long,
-    nowNanos: Long,
-): ModifierActivation {
-    if (behavior == ModifierBehavior.ONE_SHOT) {
-        return ModifierActivation(armed = !armed, locked = false, lastTapNanos = 0L)
-    }
-    if (locked || armed && nowNanos - lastTapNanos !in 1..MODIFIER_DOUBLE_TAP_NANOS) {
-        return ModifierActivation(armed = false, locked = false, lastTapNanos = 0L)
-    }
-    if (armed) {
-        return ModifierActivation(armed = true, locked = true, lastTapNanos = 0L)
-    }
-    return ModifierActivation(armed = true, locked = false, lastTapNanos = nowNanos)
-}
-
-private const val MODIFIER_DOUBLE_TAP_NANOS = 350_000_000L
 
 private fun ConnectionState.toPersistedSessionState(): SessionState = when (this) {
     ConnectionState.Connecting, is ConnectionState.AwaitingApproval -> SessionState.CONNECTING
@@ -4994,33 +4853,6 @@ internal fun buildRecentSessionRecord(
     )
 }
 
-internal fun InputStream.readSensitiveBounded(
-    maximumBytes: Int,
-    onBufferWiped: (ByteArray) -> Unit = {},
-): ByteArray {
-    require(maximumBytes > 0) { "Maximum sensitive input size must be positive." }
-    val output = SensitiveByteAccumulator(
-        initialCapacity = minOf(maximumBytes, 16 * 1024),
-        maximumCapacity = maximumBytes,
-        onBufferWiped = onBufferWiped,
-    )
-    val scratch = ByteArray(minOf(maximumBytes, 8 * 1024))
-    try {
-        while (true) {
-            val count = read(scratch)
-            if (count < 0) break
-            if (count == 0) continue
-            if (output.size > maximumBytes - count) throw SensitiveInputTooLargeException()
-            output.append(scratch, count)
-        }
-        return output.copyValue()
-    } finally {
-        scratch.fill(0)
-        onBufferWiped(scratch)
-        output.close()
-    }
-}
-
 private inline fun <reified T : Throwable> Throwable?.hasCause(): Boolean {
     var current = this
     val visited = mutableSetOf<Throwable>()
@@ -5029,46 +4861,4 @@ private inline fun <reified T : Throwable> Throwable?.hasCause(): Boolean {
         current = current.cause
     }
     return false
-}
-
-private class SensitiveByteAccumulator(
-    initialCapacity: Int,
-    private val maximumCapacity: Int,
-    private val onBufferWiped: (ByteArray) -> Unit,
-) {
-    private var storage = ByteArray(initialCapacity)
-    var size: Int = 0
-        private set
-
-    fun append(source: ByteArray, count: Int) {
-        require(count in 0..source.size)
-        ensureCapacity(size + count)
-        source.copyInto(storage, destinationOffset = size, endIndex = count)
-        size += count
-    }
-
-    fun copyValue(): ByteArray = storage.copyOf(size)
-
-    fun close() {
-        wipe(storage)
-        size = 0
-    }
-
-    private fun ensureCapacity(required: Int) {
-        if (required <= storage.size) return
-        require(required <= maximumCapacity) { "Selected file is too large." }
-        var capacity = storage.size.coerceAtLeast(1)
-        while (capacity < required) {
-            capacity = minOf(maximumCapacity, maxOf(required, capacity * 2))
-        }
-        val replacement = ByteArray(capacity)
-        storage.copyInto(replacement, endIndex = size)
-        wipe(storage)
-        storage = replacement
-    }
-
-    private fun wipe(buffer: ByteArray) {
-        buffer.fill(0)
-        onBufferWiped(buffer)
-    }
 }

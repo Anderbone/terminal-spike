@@ -1,9 +1,12 @@
 # Terminal Spike Mosh API
 
 This Android library is the project-owned, Apache-2.0 IPC contract shared by Terminal Spike and
-its separately installed Mosh-compatible extension. It contains AIDL, bounded parcelables, stable
+its built-in Mosh transport library. It contains AIDL, bounded parcelables, stable
 constants, and no transport implementation, native code, upstream Mosh code, credentials, or
 network behavior.
+
+The application and its private `:mosh_broker` and `:mosh_session_*` processes share this contract;
+users do not install a separate extension APK.
 
 The Binder interfaces are a low-frequency control plane. Terminal input/output and the one-shot
 22-character session key use `ParcelFileDescriptor` pipes. A recipient owns every descriptor it

@@ -1,53 +1,10 @@
 """Validate one JUnit XML report without disclosing report contents."""
 
 from pathlib import Path
-import re
 import sys
 import xml.etree.ElementTree as ET
 
-
-COUNT_NAMES = ("tests", "failures", "errors", "skipped")
-REQUIRED_COUNT_NAMES = ("tests", "failures", "errors")
-NON_NEGATIVE_INTEGER = re.compile(r"[0-9]+")
-
-
-class ReportError(ValueError):
-    """Raised when a report does not satisfy the accepted XML contract."""
-
-
-def parse_count(raw: str | None, name: str, *, required: bool) -> int:
-    if raw is None:
-        if required:
-            raise ReportError(f"missing {name} count")
-        return 0
-    if NON_NEGATIVE_INTEGER.fullmatch(raw) is None:
-        raise ReportError(f"invalid {name} count")
-    return int(raw)
-
-
-def suite_count(suite: ET.Element, name: str) -> int:
-    return parse_count(
-        suite.attrib.get(name),
-        name,
-        required=name in REQUIRED_COUNT_NAMES,
-    )
-
-
-def report_counts(root: ET.Element) -> dict[str, int]:
-    if root.tag == "testsuite":
-        return {name: suite_count(root, name) for name in COUNT_NAMES}
-    if root.tag != "testsuites":
-        raise ReportError("unexpected XML root")
-
-    child_suites = root.findall("testsuite")
-    counts: dict[str, int] = {}
-    for name in COUNT_NAMES:
-        raw = root.attrib.get(name)
-        if raw is not None:
-            counts[name] = parse_count(raw, name, required=True)
-        else:
-            counts[name] = sum(suite_count(suite, name) for suite in child_suites)
-    return counts
+from junit_report import ReportError, report_counts
 
 
 def fail(message: str, exit_code: int = 1) -> int:
@@ -72,6 +29,8 @@ def main(argv: list[str]) -> int:
         counts = report_counts(root)
     except ReportError as error:
         return fail(str(error))
+    except RecursionError:
+        return fail("report nesting is too deep")
 
     print(
         "TEST_REPORT"

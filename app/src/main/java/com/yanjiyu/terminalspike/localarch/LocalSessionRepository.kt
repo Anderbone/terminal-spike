@@ -193,14 +193,12 @@ internal class LocalSessionRepository(
             buffer.get(bytes, 0, bytes.size - 1)
             bytes[bytes.lastIndex] = 10
             if (buffer.hasArray()) buffer.array().fill(0)
-            scope.launch(Dispatchers.IO) {
-                try {
-                    synchronized(lock) {
-                        if (loginPty === target && mutableLogin.value.active) {
-                            target.write(bytes)
-                        }
+            scope.launchArchLoginCodeWrite(bytes) { ownedBytes ->
+                synchronized(lock) {
+                    if (loginPty === target && mutableLogin.value.active) {
+                        target.write(ownedBytes)
                     }
-                } finally { bytes.fill(0) }
+                }
             }
         } finally { code.fill('\u0000') }
     }

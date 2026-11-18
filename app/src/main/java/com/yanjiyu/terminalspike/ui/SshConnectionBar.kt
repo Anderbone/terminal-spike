@@ -1068,6 +1068,7 @@ internal fun SshConnectDialog(
     val initialConnectionOptions = initialSeed?.connectionOptions
         ?: initialProfile?.connectionSeed()?.connectionOptions
         ?: RemoteConnectionOptions.SSH
+    var retainedMoshOptions by remember(dialogStateKey) { mutableStateOf(initialConnectionOptions) }
     var protocol by remember(dialogStateKey) { mutableStateOf(initialConnectionOptions.protocol) }
     var moshUdpPortOrRange by remember(dialogStateKey) {
         mutableStateOf(
@@ -1083,14 +1084,14 @@ internal fun SshConnectDialog(
     val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId }
     val moshAvailable = moshExtension.kind == MoshExtensionUiKind.AVAILABLE
     val parsedMoshOptions = if (protocol == ConnectionProtocol.MOSH) {
-        parseMoshConnectionOptions(moshUdpPortOrRange, moshServerExecutable)
+        parseMoshConnectionOptions(moshUdpPortOrRange, moshServerExecutable, retainedMoshOptions)
     } else {
         MoshOptionsParseResult(RemoteConnectionOptions.SSH, null)
     }
     val connectionOptions = parsedMoshOptions.options
     val canUseSavedPassword = selectedIdentityId == null &&
         selectedProfile?.canConnectFromQuickUi == true && selectedProfile.hasSavedPassword &&
-        selectedProfile.connectionSeed().connectionOptions == connectionOptions &&
+        selectedProfile.connectionSeed().connectionOptions.matches(connectionOptions) &&
         !password.hasValue && selectedProfile.host.equals(host, ignoreCase = true) &&
         selectedProfile.port.toString() == port && selectedProfile.username == username
     val validPort = port.toIntOrNull()?.let { it in 1..65_535 } == true
@@ -1192,6 +1193,7 @@ internal fun SshConnectDialog(
                                     selectedIdentityId = null
                                     selectedProfileId = profile.id
                                     val options = profile.connectionSeed().connectionOptions
+                                    retainedMoshOptions = options
                                     protocol = options.protocol
                                     moshUdpPortOrRange = options.moshPort?.toString()
                                         ?: options.moshPortRange?.let { "${it.first}:${it.last}" }

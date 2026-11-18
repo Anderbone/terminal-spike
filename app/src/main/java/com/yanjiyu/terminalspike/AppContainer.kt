@@ -9,12 +9,14 @@ import com.yanjiyu.terminalspike.core.backup.BackupImportResult
 import com.yanjiyu.terminalspike.core.backup.EncryptedFileBackupStagingFactory
 import com.yanjiyu.terminalspike.core.backup.RoomBackupSnapshotSource
 import com.yanjiyu.terminalspike.core.backup.BackupTransferCoordinator
+import com.yanjiyu.terminalspike.core.backup.reconcileAfterCutover
 import com.yanjiyu.terminalspike.core.data.credential.RoomCredentialAggregateStore
 import com.yanjiyu.terminalspike.core.data.credential.RoomCredentialCiphertextStore
 import com.yanjiyu.terminalspike.core.data.db.AppDatabase
 import com.yanjiyu.terminalspike.core.data.migration.LegacyMigrationSourceOutcome
 import com.yanjiyu.terminalspike.core.data.migration.LegacyStartupMigrationCoordinator
 import com.yanjiyu.terminalspike.core.data.migration.LegacyStartupMigrationResult
+import com.yanjiyu.terminalspike.core.data.repository.SettingsMutationCoordinator
 import com.yanjiyu.terminalspike.core.data.repository.AuthoritativeDataGate
 import com.yanjiyu.terminalspike.core.data.repository.HostProfileRepository
 import com.yanjiyu.terminalspike.core.data.repository.CustomTerminalThemeRepository
@@ -91,11 +93,12 @@ class AppContainer internal constructor(
     }
 
     val database: AppDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val snippetToolbar = com.yanjiyu.terminalspike.core.data.db.SnippetToolbarStateInitializer.from(applicationContext)
         Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME,
-        ).build()
+        ).addMigrations(snippetToolbar.migration).addCallback(snippetToolbar.callback).build()
     }
 
     val settings: AppSettingsRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -103,6 +106,17 @@ class AppContainer internal constructor(
             context = applicationContext,
             scope = applicationScope,
         )
+    }
+
+    /** Settings writes share the backup recovery and catalog authority boundary. */
+    internal val settingsMutations: SettingsMutationCoordinator by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        SettingsMutationCoordinator(authoritativeData) {
+            check(startLegacyMigrationForCutover().await().isCutoverReady()) {
+                "Legacy migration did not reach an authoritative settings state."
+            }
+        }
     }
 
     /** One process-owned exact-token clipboard timer; process death cancels rather than guessing. */
@@ -469,12 +483,13 @@ class AppContainer internal constructor(
                 ) { "Recent-session endpoint identities could not be backfilled." }
             }
             runCatching {
-                val referencedFonts = database.backupSnapshotDao().readSnapshot()
-                    .terminalProfiles.asSequence()
-                    .map { it.fontId }
-                    .filter { it.startsWith("custom_") }
-                    .toSet()
-                customTerminalFonts.reconcilePending(referencedFonts)
+                customTerminalFonts.reconcileAfterCutover(authoritativeData) {
+                    database.backupSnapshotDao().readSnapshot()
+                        .terminalProfiles.asSequence()
+                        .map { it.fontId }
+                        .filter { it.startsWith("custom_") }
+                        .toSet()
+                }
             }.onFailure { error ->
                 logger.warning(
                     com.yanjiyu.terminalspike.core.security.AppLogEvent.SETTINGS_WRITE_FAILED,

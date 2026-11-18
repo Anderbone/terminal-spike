@@ -1,11 +1,23 @@
-status: active
+status: archived
 created_at: 2026-08-08T10:42:15.487Z
-updated_at: 2026-08-08T11:50:29.310Z
+updated_at: 2026-11-16T13:00:34.944431+00:00
 done_at: none
 independent: yes
 dependencies: none
+archived: true
 
-# Terminal Spike paid-release completion plan
+# Historical paid-release completion plan — 2026-08-08
+
+This is the original design and verification record, not the current backlog or
+operating procedure. Its missing-feature statements, non-goals, separate-Mosh-APK
+boundary and device commands describe the August baseline. Preserve its evidence;
+do not use it to remove later SFTP/forwarding features, reinstate an old navigation
+layout, change application licensing, or install on every connected phone.
+
+Current contracts: [architecture](ARCHITECTURE.md), [ADR-005](ADR-005-BUNDLED-MOSH.md),
+[developing](DEVELOPING.md), [CI and releasing](CI-AND-RELEASING.md), and
+[project rules](../AGENTS.md). [Historical plan index](../plans/README.md) explains
+how to reconcile an unfinished acceptance requirement with current source.
 
 ## Open Questions
 
@@ -23,7 +35,7 @@ Completion is defined by the full checklist in `IMPLEMENTATION_STATUS.md`, not b
 - Content plan: Workspace leads with live sessions and useful reconnect targets; Terminal is the direct second destination; the secondary Connections catalogue owns host/key/snippet operations; Settings exposes progressively disclosed configuration and security context.
 - Interaction thesis: use short shared-axis destination transitions, compact selection/connection-state motion, and direct press/reorder feedback; avoid ornamental animation and never animate terminal content through Compose.
 
-## Current State
+## Original State — 2026-08-08
 
 - One native Android application module uses Kotlin, Compose, and a custom Canvas `View` renderer.
 - The project-owned bounded VT engine, viewport, scrollback, frame batching, workload fixtures, strict known-host verification, JSch password/private-key SSH, encrypted local settings, and up to four ViewModel-owned SSH tabs are useful foundations.
@@ -115,7 +127,7 @@ Detailed evidence is maintained in `docs/current-state-audit.md`.
 - Complete accessibility/adaptive UI, performance fixtures/measurements, R8/content/security review, documentation, CHANGELOG, and notices.
 - Run all host/device/integration gates and perform a requirement-by-requirement completion audit.
 
-## Guardrails
+## Original guardrails (superseded by current project rules)
 
 - Preserve application ID `com.yanjiyu.terminalspike`, app name `Terminal Spike`, user data, signing assumptions, and SDK paths/secrets outside Git.
 - Use only stable dependency versions and record every direct dependency/licence obligation before completion of the slice that adds it.
@@ -127,7 +139,7 @@ Detailed evidence is maintained in `docs/current-state-audit.md`.
 - No per-cell/per-line Compose state, unbounded terminal storage, per-byte UI publishing, or main-thread network/disk I/O.
 - Review each slice diff for unrelated work and keep release builds free of developer surfaces.
 
-## Verification
+## Historical verification instructions (do not execute)
 
 Run after every substantial slice. The wrapper can be launched by JDK 17 or newer, while the checked-in daemon criteria requires an installed JDK 25 so lint and the rest of the Android toolchain execute consistently; application compilation still targets Java 17:
 

@@ -8,7 +8,7 @@ class CodexEffortTest {
         assertEquals("low", codexEffortFromLiveFooter("Working…\nGPT-6.1-Sol low · Context 49% left …"))
     }
 
-    @Test fun transientMissRetainsConfirmedValueButExpiryAndProcessChangesClearIt() {
+    @Test fun sameProcessRetainsConfirmedValueAcrossLongRunningOutputAndScrolling() {
         var time = 1L
         val observation = CodexEffortObservation { time }
         val confirmed = TerminalInputContext("pane-1", true, agentId = "codex", reasoningEffort = "low", agentProcessId = 10)
@@ -16,13 +16,49 @@ class CodexEffortTest {
         time += 1_000_000_000L
         assertEquals("low", observation.observe(confirmed.copy(reasoningEffort = null)).reasoningEffort)
         time += 3_000_000_001L
-        assertNull(observation.observe(confirmed.copy(reasoningEffort = null)).reasoningEffort)
+        assertEquals("low", observation.observe(confirmed.copy(reasoningEffort = null)).reasoningEffort)
         observation.observe(confirmed)
         assertNull(observation.observe(confirmed.copy(reasoningEffort = null, agentProcessId = 11)).reasoningEffort)
         observation.observe(confirmed)
         assertNull(observation.observe(confirmed.copy(identity = "pane-2", reasoningEffort = null)).reasoningEffort)
         assertNull(observation.observe(TerminalInputContext()).reasoningEffort)
     }
+    @Test fun failedInspectionsPreservePresentationButDisableActionsUntilConfirmed() {
+        val observation = CodexEffortObservation()
+        val confirmed = TerminalInputContext("pane-1", true, agentId = "codex", reasoningEffort = "low", agentProcessId = 10)
+        assertEquals(confirmed, observation.observe(confirmed))
+        repeat(20) {
+            assertEquals(confirmed.copy(observationAvailable = false),
+                observation.observe(TerminalInputContext(observationAvailable = false)))
+        }
+        assertEquals(confirmed, observation.observe(confirmed.copy(reasoningEffort = null)))
+        val changed = confirmed.copy(reasoningEffort = "high")
+        assertEquals(changed, observation.observe(changed))
+        val shell = TerminalInputContext("pane-1")
+        assertEquals(shell, observation.observe(shell))
+        assertEquals(shell.copy(observationAvailable = false),
+            observation.observe(TerminalInputContext(observationAvailable = false)))
+        assertEquals(TerminalInputContext(), observation.observe(TerminalInputContext()))
+    }
+
+    @Test fun failedInspectionCannotRetainPaneTouchBounds() {
+        val observation = CodexEffortObservation()
+        observation.observe(TerminalInputContext("pi-pane", true,
+            herdrPiScrollPane = HerdrPiScrollPane(0, 0, 80, 24), agentId = "pi"))
+        assertNull(observation.observe(TerminalInputContext(observationAvailable = false)).herdrPiScrollPane)
+    }
+
+    @Test fun missingProcessIdCannotRetainAnOldEffortIndefinitely() {
+        var time = 1L
+        val observation = CodexEffortObservation { time }
+        val context = TerminalInputContext("pane-1", true, agentId = "codex", reasoningEffort = "low")
+        observation.observe(context)
+        time += 1_000_000_000L
+        assertEquals("low", observation.observe(context.copy(reasoningEffort = null)).reasoningEffort)
+        time += 3_000_000_001L
+        assertNull(observation.observe(context.copy(reasoningEffort = null)).reasoningEffort)
+    }
+
     @Test fun currentFooterReportsTheActualEffort() {
         assertEquals("medium", codexEffortFromLiveFooter("›\n\n  GPT-6.1-Sol medium · Context 49% left …"))
         assertEquals("high", codexEffortFromLiveFooter("›\ngpt-6.1-sol high · /model"))

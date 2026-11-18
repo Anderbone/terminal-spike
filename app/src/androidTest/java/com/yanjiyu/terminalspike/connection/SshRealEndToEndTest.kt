@@ -37,6 +37,8 @@ import com.yanjiyu.terminalspike.ui.connections.HostConnectRequest
 import com.yanjiyu.terminalspike.ui.connections.HostEditorDraft
 import com.yanjiyu.terminalspike.ui.connections.HostEditorSubmission
 import com.yanjiyu.terminalspike.ui.connections.validateHostEditor
+import com.yanjiyu.terminalspike.testing.FixtureCleanup
+import com.yanjiyu.terminalspike.testing.assertOrderedTerminalMarkers
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -71,166 +73,168 @@ class SshRealEndToEndTest {
         val privateKeyBytes = arguments.getString(ARG_PRIVATE_KEY_BASE64)
             ?.takeIf(String::isNotBlank)
             ?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
-        assumeTrue(
-            "Pass $ARG_HOST, $ARG_USERNAME and $ARG_PRIVATE_KEY_BASE64 to run the saved-key E2E.",
-            host.isNotBlank() && username.isNotBlank() && privateKeyBytes != null,
-        )
-        val port = arguments.getString(ARG_PORT)?.toIntOrNull() ?: DEFAULT_PORT
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val targetContext = instrumentation.targetContext
-        val application = targetContext.applicationContext as TerminalSpikeApplication
-        val sessionRepository = application.container.sshSessionRepository
-        val terminalData = application.container.terminalDataRepository
-        sessionRepository.disconnectAll()
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
-        var viewModel: TerminalSpikeViewModel? = null
-        var importedIdentityId: String? = null
-        var savedHostId: String? = null
-        var startedSessionId: Long? = null
-        var keyDocument: android.net.Uri? = null
+        FixtureCleanup().use { cleanup ->
+            cleanup.onClose { privateKeyBytes?.fill(0) }
+            assumeTrue(
+                "Pass $ARG_HOST, $ARG_USERNAME and $ARG_PRIVATE_KEY_BASE64 to run the saved-key E2E.",
+                host.isNotBlank() && username.isNotBlank() && privateKeyBytes != null,
+            )
+            val port = arguments.getString(ARG_PORT)?.toIntOrNull() ?: DEFAULT_PORT
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val targetContext = instrumentation.targetContext
+            val application = targetContext.applicationContext as TerminalSpikeApplication
+            val sessionRepository = application.container.sshSessionRepository
+            val terminalData = application.container.terminalDataRepository
+            sessionRepository.disconnectAll()
+            val scenario = ActivityScenario.launch(MainActivity::class.java)
+            cleanup.onClose { scenario.close() }
+            var viewModel: TerminalSpikeViewModel? = null
+            var importedIdentityId: String? = null
+            var savedHostId: String? = null
+            var startedSessionId: Long? = null
+            var keyDocument: android.net.Uri? = null
 
-        instrumentation.uiAutomation.adoptShellPermissionIdentity(Manifest.permission.MANAGE_DOCUMENTS)
-        try {
-            scenario.onActivity { activity ->
-                viewModel = ViewModelProvider(activity)[TerminalSpikeViewModel::class.java]
-            }
-            val model = requireNotNull(viewModel)
-            withTimeout(APP_UI_TIMEOUT_MILLIS) {
-                while (!model.uiState.value.settingsReady) delay(25L)
-                while (model.connectionsUiState.value.loadState !is ConnectionsLoadState.Ready) {
-                    delay(25L)
+            cleanup.onClose { startedSessionId?.let(sessionRepository::close) }
+            cleanup.onClose { instrumentation.uiAutomation.dropShellPermissionIdentity() }
+            instrumentation.uiAutomation.adoptShellPermissionIdentity(Manifest.permission.MANAGE_DOCUMENTS)
+            try {
+                scenario.onActivity { activity ->
+                    viewModel = ViewModelProvider(activity)[TerminalSpikeViewModel::class.java]
                 }
-            }
-            val identitiesBefore = (model.connectionsUiState.value.loadState as ConnectionsLoadState.Ready)
-                .keys
-                .mapTo(mutableSetOf()) { it.id }
-            val root = DocumentsContract.buildDocumentUri(
-                LocalBackupDocumentsProvider.AUTHORITY,
-                LocalBackupDocumentsProvider.ROOT_DOCUMENT_ID,
-            )
-            keyDocument = requireNotNull(
-                DocumentsContract.createDocument(
-                    targetContext.contentResolver,
-                    root,
-                    LocalBackupDocumentsProvider.PRIVATE_KEY_MIME_TYPE,
-                    "real-saved-key${LocalBackupDocumentsProvider.PRIVATE_KEY_FILE_EXTENSION}",
-                ),
-            )
-            requireNotNull(targetContext.contentResolver.openOutputStream(keyDocument, "w")).use {
-                it.write(requireNotNull(privateKeyBytes))
-            }
-            scenario.onActivity { model.importSshIdentity(requireNotNull(keyDocument)) }
-
-            val importedKey = withTimeout(APP_UI_TIMEOUT_MILLIS) {
-                while (true) {
-                    val ready = model.connectionsUiState.value.loadState as? ConnectionsLoadState.Ready
-                    val key = ready?.keys?.singleOrNull { it.id !in identitiesBefore }
-                    if (key != null) return@withTimeout key
-                    delay(25L)
-                }
-                error("unreachable")
-            }
-            importedIdentityId = importedKey.id
-            assertTrue(importedKey.algorithm.contains("ed25519", ignoreCase = true))
-
-            val validation = validateHostEditor(
-                HostEditorDraft(
-                    displayName = SAVED_KEY_HOST_NAME,
-                    protocol = ConnectionProtocol.SSH,
-                    hostname = host,
-                    port = port.toString(),
-                    username = username,
-                    authenticationMethod = HostAuthenticationMethod.PRIVATE_KEY,
-                    keyIdentityId = importedKey.id,
-                ),
-                availableKeyIds = setOf(importedKey.id),
-            )
-            assertTrue("Saved-host validation failed: ${validation.errors}", validation.errors.isEmpty)
-            val saveResult = model.saveConnectionsHost(
-                HostEditorSubmission(
-                    value = requireNotNull(validation.value),
-                    secret = CharArray(0),
-                    savePassword = false,
-                ),
-            )
-            assertTrue("The private-key host was not saved: $saveResult", saveResult.isSuccess)
-            val hostRow = withTimeout(APP_UI_TIMEOUT_MILLIS) {
-                while (true) {
-                    val ready = model.connectionsUiState.value.loadState as? ConnectionsLoadState.Ready
-                    val row = ready?.hosts?.singleOrNull { it.displayName == SAVED_KEY_HOST_NAME }
-                    if (row != null) return@withTimeout row
-                    delay(25L)
-                }
-                error("unreachable")
-            }
-            savedHostId = hostRow.id
-
-            var accepted = false
-            scenario.onActivity {
-                accepted = model.connectConnectionsHost(HostConnectRequest(hostRow.id))
-            }
-            assertTrue("The saved host did not accept the connect action.", accepted)
-            val sessionId = withTimeout(CONNECT_TIMEOUT_MILLIS) {
-                while (sessionRepository.sessions.value.isEmpty()) delay(10L)
-                sessionRepository.sessions.value.single().id
-            }
-            startedSessionId = sessionId
-            withTimeout(CONNECT_TIMEOUT_MILLIS) {
-                while (true) {
-                    when (
-                        val state = sessionRepository.sessions.value
-                            .firstOrNull { it.id == sessionId }
-                            ?.connectionState
-                    ) {
-                        ConnectionState.Connected -> break
-                        is ConnectionState.AwaitingApproval -> {
-                            when (val prompt = state.prompt) {
-                                is HostIdentityPrompt -> sessionRepository.answerHostIdentityPrompt(
-                                    sessionId,
-                                    prompt.promptToken,
-                                    HostIdentityDecision.TrustOnce,
-                                )
-                                is TmuxSessionPrompt -> sessionRepository.answerTmuxSessionPrompt(
-                                    sessionId,
-                                    prompt.promptToken,
-                                    null,
-                                )
-                                else -> fail("Unexpected saved-key connection prompt: $prompt")
-                            }
-                        }
-                        is ConnectionState.Failed -> fail(state.message)
-                        ConnectionState.Disconnected -> fail("Saved-key SSH disconnected before ready.")
-                        ConnectionState.Connecting,
-                        is ConnectionState.Reconnecting,
-                        null,
-                        -> Unit
+                val model = requireNotNull(viewModel)
+                withTimeout(APP_UI_TIMEOUT_MILLIS) {
+                    while (!model.uiState.value.settingsReady) delay(25L)
+                    while (model.connectionsUiState.value.loadState !is ConnectionsLoadState.Ready) {
+                        delay(25L)
                     }
-                    delay(10L)
+                }
+                val identitiesBefore = (model.connectionsUiState.value.loadState as ConnectionsLoadState.Ready)
+                    .keys
+                    .mapTo(mutableSetOf()) { it.id }
+                val root = DocumentsContract.buildDocumentUri(
+                    LocalBackupDocumentsProvider.AUTHORITY,
+                    LocalBackupDocumentsProvider.ROOT_DOCUMENT_ID,
+                )
+                keyDocument = requireNotNull(
+                    DocumentsContract.createDocument(
+                        targetContext.contentResolver,
+                        root,
+                        LocalBackupDocumentsProvider.PRIVATE_KEY_MIME_TYPE,
+                        "real-saved-key${LocalBackupDocumentsProvider.PRIVATE_KEY_FILE_EXTENSION}",
+                    ),
+                )
+                requireNotNull(targetContext.contentResolver.openOutputStream(keyDocument, "w")).use {
+                    it.write(requireNotNull(privateKeyBytes))
+                }
+                scenario.onActivity { model.importSshIdentity(requireNotNull(keyDocument)) }
+
+                val importedKey = withTimeout(APP_UI_TIMEOUT_MILLIS) {
+                    while (true) {
+                        val ready = model.connectionsUiState.value.loadState as? ConnectionsLoadState.Ready
+                        val key = ready?.keys?.singleOrNull { it.id !in identitiesBefore }
+                        if (key != null) return@withTimeout key
+                        delay(25L)
+                    }
+                    error("unreachable")
+                }
+                importedIdentityId = importedKey.id
+                assertTrue(importedKey.algorithm.contains("ed25519", ignoreCase = true))
+
+                val validation = validateHostEditor(
+                    HostEditorDraft(
+                        displayName = SAVED_KEY_HOST_NAME,
+                        protocol = ConnectionProtocol.SSH,
+                        hostname = host,
+                        port = port.toString(),
+                        username = username,
+                        authenticationMethod = HostAuthenticationMethod.PRIVATE_KEY,
+                        keyIdentityId = importedKey.id,
+                    ),
+                    availableKeyIds = setOf(importedKey.id),
+                )
+                assertTrue("Saved-host validation failed: ${validation.errors}", validation.errors.isEmpty)
+                val saveResult = model.saveConnectionsHost(
+                    HostEditorSubmission(
+                        value = requireNotNull(validation.value),
+                        secret = CharArray(0),
+                        savePassword = false,
+                    ),
+                )
+                assertTrue("The private-key host was not saved: $saveResult", saveResult.isSuccess)
+                val hostRow = withTimeout(APP_UI_TIMEOUT_MILLIS) {
+                    while (true) {
+                        val ready = model.connectionsUiState.value.loadState as? ConnectionsLoadState.Ready
+                        val row = ready?.hosts?.singleOrNull { it.displayName == SAVED_KEY_HOST_NAME }
+                        if (row != null) return@withTimeout row
+                        delay(25L)
+                    }
+                    error("unreachable")
+                }
+                savedHostId = hostRow.id
+
+                var accepted = false
+                scenario.onActivity {
+                    accepted = model.connectConnectionsHost(HostConnectRequest(hostRow.id))
+                }
+                assertTrue("The saved host did not accept the connect action.", accepted)
+                val sessionId = withTimeout(CONNECT_TIMEOUT_MILLIS) {
+                    while (sessionRepository.sessions.value.isEmpty()) delay(10L)
+                    sessionRepository.sessions.value.single().id
+                }
+                startedSessionId = sessionId
+                withTimeout(CONNECT_TIMEOUT_MILLIS) {
+                    while (true) {
+                        when (
+                            val state = sessionRepository.sessions.value
+                                .firstOrNull { it.id == sessionId }
+                                ?.connectionState
+                        ) {
+                            ConnectionState.Connected -> break
+                            is ConnectionState.AwaitingApproval -> {
+                                when (val prompt = state.prompt) {
+                                    is HostIdentityPrompt -> sessionRepository.answerHostIdentityPrompt(
+                                        sessionId,
+                                        prompt.promptToken,
+                                        HostIdentityDecision.TrustOnce,
+                                    )
+                                    is TmuxSessionPrompt -> sessionRepository.answerTmuxSessionPrompt(
+                                        sessionId,
+                                        prompt.promptToken,
+                                        null,
+                                    )
+                                    else -> fail("Unexpected saved-key connection prompt: $prompt")
+                                }
+                            }
+                            is ConnectionState.Failed -> fail(state.message)
+                            ConnectionState.Disconnected -> fail("Saved-key SSH disconnected before ready.")
+                            ConnectionState.Connecting,
+                            is ConnectionState.Reconnecting,
+                            null,
+                            -> Unit
+                        }
+                        delay(10L)
+                    }
+                }
+                val controller = requireNotNull(sessionRepository.controllerFor(sessionId))
+                assertTrue(
+                    "Saved-key SSH rejected input.",
+                    controller.sendPaste("printf '$SAVED_KEY_MARKER\\n'", appendEnter = true),
+                )
+                val markerReceived = withTimeoutOrNull(OUTPUT_TIMEOUT_MILLIS) {
+                    while (controller.indexOfLineContaining(SAVED_KEY_MARKER) < 0) delay(10L)
+                    true
+                }
+                assertTrue(
+                    controller.diagnostic("Saved/imported private-key session did not return its marker."),
+                    markerReceived == true,
+                )
+            } finally {
+                savedHostId?.let { runCatching { terminalData.deleteHostProfile(it) } }
+                importedIdentityId?.let { runCatching { terminalData.deleteIdentity(it) } }
+                keyDocument?.let {
+                    runCatching { DocumentsContract.deleteDocument(targetContext.contentResolver, it) }
                 }
             }
-            val controller = requireNotNull(sessionRepository.controllerFor(sessionId))
-            assertTrue(
-                "Saved-key SSH rejected input.",
-                controller.sendPaste("printf '$SAVED_KEY_MARKER\\n'", appendEnter = true),
-            )
-            val markerReceived = withTimeoutOrNull(OUTPUT_TIMEOUT_MILLIS) {
-                while (controller.indexOfLineContaining(SAVED_KEY_MARKER) < 0) delay(10L)
-                true
-            }
-            assertTrue(
-                controller.diagnostic("Saved/imported private-key session did not return its marker."),
-                markerReceived == true,
-            )
-        } finally {
-            privateKeyBytes?.fill(0)
-            startedSessionId?.let(sessionRepository::close)
-            scenario.close()
-            savedHostId?.let { runCatching { terminalData.deleteHostProfile(it) } }
-            importedIdentityId?.let { runCatching { terminalData.deleteIdentity(it) } }
-            keyDocument?.let {
-                runCatching { DocumentsContract.deleteDocument(targetContext.contentResolver, it) }
-            }
-            instrumentation.uiAutomation.dropShellPermissionIdentity()
         }
     }
 
@@ -403,6 +407,7 @@ class SshRealEndToEndTest {
                 }
             }
             val retainedLines = (completedScrollback + latestScreen).map { it.text.trimEnd() }
+            assertOrderedTerminalMarkers(retainedLines, "SSH_SCROLL_", OUTPUT_ROW_COUNT)
             assertTrue(
                 "The first of 200 real SSH PTY rows must survive in parser scrollback.",
                 completedScrollback.any { it.text.trimEnd() == firstExpectedRow() },

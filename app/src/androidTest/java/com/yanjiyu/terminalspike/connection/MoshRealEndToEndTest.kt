@@ -17,6 +17,8 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
 import com.yanjiyu.terminalspike.terminal.view.TerminalScrollDecisionReason
 import com.yanjiyu.terminalspike.terminal.view.TerminalScrollDestination
+import com.yanjiyu.terminalspike.testing.assertOrderedTerminalMarkers
+import com.yanjiyu.terminalspike.testing.withSuspendingFixtureCleanup
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
@@ -51,16 +53,25 @@ import org.junit.runner.RunWith
 class MoshRealEndToEndTest {
     @Test(timeout = TMUX_RECREATE_TEST_TIMEOUT_MILLIS)
     fun appSelectedTmuxLocalScrollAndReaderAnchorSurviveActivityRecreation() = runBlocking {
-        val fixture = fixtureOrSkip("app-selected tmux Activity recreation")
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val application = instrumentation.targetContext.applicationContext as TerminalSpikeApplication
-        val repository = application.container.sshSessionRepository
-        val passwordBytes = fixture.password.takeIf(String::isNotEmpty)?.encodeToByteArray()
-        repository.disconnectAll()
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
-        var startedSessionId: Long? = null
+        withSuspendingFixtureCleanup { cleanup ->
+            val fixture = fixtureOrSkip("app-selected tmux Activity recreation")
+            cleanup.onClose { fixture.privateKey?.fill(0) }
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val application = instrumentation.targetContext.applicationContext as TerminalSpikeApplication
+            val repository = application.container.sshSessionRepository
+            val passwordBytes = if (fixture.privateKey == null) fixture.password.takeIf(String::isNotEmpty)?.encodeToByteArray() else null
+            cleanup.onClose { passwordBytes?.fill(0) }
+            repository.disconnectAll()
+            val scenario = ActivityScenario.launch(MainActivity::class.java)
+            cleanup.onClose { scenario.close() }
+            var startedSessionId: Long? = null
+            cleanup.onClose {
+                passwordBytes?.let { secret ->
+                    assertTrue("Repository Mosh ownership must wipe its password.", secret.all { it == 0.toByte() })
+                }
+            }
+            cleanup.onClose { startedSessionId?.let(repository::close) }
 
-        try {
             val result = repository.startUserInitiatedSession(
                 RemoteSessionStartRequest(
                     title = "Real Mosh tmux recreation",
@@ -326,13 +337,6 @@ class MoshRealEndToEndTest {
             assertTrue(explicitCopyModeGesture.remoteWheelReports > 0)
             assertEquals(0, explicitCopyModeGesture.localScrollUpdates)
             controller.send("q".encodeToByteArray())
-        } finally {
-            startedSessionId?.let(repository::close)
-            scenario.close()
-            passwordBytes?.let { secret ->
-                assertTrue("Repository Mosh ownership must wipe its password.", secret.all { it == 0.toByte() })
-            }
-            fixture.privateKey?.fill(0)
         }
     }
 
@@ -345,61 +349,72 @@ class MoshRealEndToEndTest {
         val privateKeyBytes = arguments.getString(ARG_PRIVATE_KEY_BASE64)
             ?.takeIf(String::isNotBlank)
             ?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
-        assumeTrue(
-            "Pass $ARG_HOST, $ARG_USERNAME and either $ARG_PASSWORD or " +
-                "$ARG_PRIVATE_KEY_BASE64 to run the real Mosh fixture.",
-            host.isNotBlank() && username.isNotBlank() &&
-                (password.isNotEmpty() || privateKeyBytes != null),
-        )
-        val sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT
-        val udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST
-        val udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST
-        val application = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as TerminalSpikeApplication
-        val connection = MoshConnection(
-            bootstrapExecutor = MoshBootstrapExecutor(
-                KnownHostManager(EphemeralKnownHostTrustStore()),
-            ),
-            extensionClient = application.container.moshExtension,
-            bootstrapRequest = MoshBootstrapRequest(
-                ssh = SshConnectionConfig(
-                    host = host,
-                    port = sshPort,
-                    username = username,
-                    authentication = privateKeyBytes?.let { keyBytes ->
-                        SshAuthentication.PrivateKey(
-                            identityName = "real-mosh-e2e",
-                            loadKey = { keyBytes.copyOf() },
-                            passphrase = null,
-                        )
-                    } ?: SshAuthentication.Password(password.encodeToByteArray()),
-                ),
-                udpPortRange = MoshPortRange(udpFirst, udpLast),
-            ),
-        )
-        val states = Channel<ConnectionState>(Channel.UNLIMITED)
-        val output = Channel<ByteArray>(Channel.UNLIMITED)
-        val connectionJob = async(Dispatchers.IO) {
-            connection.connect(
-                columns = 80,
-                rows = 24,
-                onBytes = { bytes -> output.trySend(bytes.copyOf()) },
-                onState = { state ->
-                    if (state is ConnectionState.AwaitingApproval) {
-                        val prompt = state.prompt as? HostIdentityPrompt
-                        if (prompt != null) {
-                            connection.answerHostIdentityPrompt(
-                                prompt.promptToken,
-                                HostIdentityDecision.TrustAndSave,
-                            )
-                        }
-                    }
-                    states.trySend(state)
-                },
+        withSuspendingFixtureCleanup { cleanup ->
+            cleanup.onClose { privateKeyBytes?.fill(0) }
+            assumeTrue(
+                "Pass $ARG_HOST, $ARG_USERNAME and either $ARG_PASSWORD or " +
+                    "$ARG_PRIVATE_KEY_BASE64 to run the real Mosh fixture.",
+                host.isNotBlank() && username.isNotBlank() &&
+                    (password.isNotEmpty() || privateKeyBytes != null),
             )
-        }
+            val sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT
+            val udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST
+            val udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST
+            val application = InstrumentationRegistry.getInstrumentation()
+                .targetContext.applicationContext as TerminalSpikeApplication
+            val passwordBytes = if (privateKeyBytes == null) password.encodeToByteArray() else null
+            cleanup.onClose { passwordBytes?.fill(0) }
+            val connection = MoshConnection(
+                bootstrapExecutor = MoshBootstrapExecutor(
+                    KnownHostManager(EphemeralKnownHostTrustStore()),
+                ),
+                extensionClient = application.container.moshExtension,
+                bootstrapRequest = MoshBootstrapRequest(
+                    ssh = SshConnectionConfig(
+                        host = host,
+                        port = sshPort,
+                        username = username,
+                        authentication = privateKeyBytes?.let { keyBytes ->
+                            SshAuthentication.PrivateKey(
+                                identityName = "real-mosh-e2e",
+                                loadKey = { keyBytes.copyOf() },
+                                passphrase = null,
+                            )
+                        } ?: SshAuthentication.Password(requireNotNull(passwordBytes)),
+                    ),
+                    udpPortRange = MoshPortRange(udpFirst, udpLast),
+                ),
+            )
+            val states = Channel<ConnectionState>(Channel.UNLIMITED)
+            val output = Channel<ByteArray>(Channel.UNLIMITED)
+            val connectionJob = async(Dispatchers.IO) {
+                connection.connect(
+                    columns = 80,
+                    rows = 24,
+                    onBytes = { bytes -> output.trySend(bytes.copyOf()) },
+                    onState = { state ->
+                        if (state is ConnectionState.AwaitingApproval) {
+                            val prompt = state.prompt as? HostIdentityPrompt
+                            if (prompt != null) {
+                                connection.answerHostIdentityPrompt(
+                                    prompt.promptToken,
+                                    HostIdentityDecision.TrustAndSave,
+                                )
+                            }
+                        }
+                        states.trySend(state)
+                    },
+                )
+            }
 
-        try {
+            cleanup.onClose {
+                if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { connectionJob.await() } == null) {
+                    connectionJob.cancelAndJoin()
+                }
+            }
+            cleanup.onClose { output.close() }
+            cleanup.onClose { states.close() }
+            cleanup.onClose { connection.close() }
             withTimeout(CONNECT_TIMEOUT_MILLIS) {
                 while (true) {
                     when (val state = states.receive()) {
@@ -472,14 +487,9 @@ class MoshRealEndToEndTest {
                 "The last of 200 real Mosh rows must remain on the final terminal screen.",
                 latestScreen.any { it.text.trimEnd() == lastExpectedRow() },
             )
-        } finally {
-            privateKeyBytes?.fill(0)
-            connection.close()
-            states.close()
-            output.close()
-            if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { connectionJob.await() } == null) {
-                connectionJob.cancelAndJoin()
-            }
+            assertOrderedTerminalMarkers(
+                (retainedHistory + latestScreen).map { it.text }, "MOSH_SCROLL_", OUTPUT_ROW_COUNT,
+            )
         }
     }
 
@@ -492,67 +502,82 @@ class MoshRealEndToEndTest {
         val privateKeyBytes = arguments.getString(ARG_PRIVATE_KEY_BASE64)
             ?.takeIf(String::isNotBlank)
             ?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
-        assumeTrue(
-            "Pass $ARG_HOST, $ARG_USERNAME and either $ARG_PASSWORD or " +
-                "$ARG_PRIVATE_KEY_BASE64 to run the concurrent real Mosh fixture.",
-            host.isNotBlank() && username.isNotBlank() &&
-                (password.isNotEmpty() || privateKeyBytes != null),
-        )
-        val sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT
-        val udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST
-        val udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST
-        val application = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as TerminalSpikeApplication
-        val passwordBytes = MutableList(CONCURRENT_SESSION_COUNT) {
-            password.takeIf(String::isNotEmpty)?.encodeToByteArray()
-        }
-        val connections = List(CONCURRENT_SESSION_COUNT) { index ->
-            MoshConnection(
-                bootstrapExecutor = MoshBootstrapExecutor(
-                    KnownHostManager(EphemeralKnownHostTrustStore()),
-                ),
-                extensionClient = application.container.moshExtension,
-                bootstrapRequest = MoshBootstrapRequest(
-                    ssh = SshConnectionConfig(
-                        host = host,
-                        port = sshPort,
-                        username = username,
-                        authentication = privateKeyBytes?.let { keyBytes ->
-                            SshAuthentication.PrivateKey(
-                                identityName = "real-mosh-concurrent-${index + 1}",
-                                loadKey = { keyBytes.copyOf() },
-                                passphrase = null,
-                            )
-                        } ?: SshAuthentication.Password(requireNotNull(passwordBytes[index])),
-                    ),
-                    udpPortRange = MoshPortRange(udpFirst, udpLast),
-                ),
+        withSuspendingFixtureCleanup { cleanup ->
+            cleanup.onClose { privateKeyBytes?.fill(0) }
+            assumeTrue(
+                "Pass $ARG_HOST, $ARG_USERNAME and either $ARG_PASSWORD or " +
+                    "$ARG_PRIVATE_KEY_BASE64 to run the concurrent real Mosh fixture.",
+                host.isNotBlank() && username.isNotBlank() &&
+                    (password.isNotEmpty() || privateKeyBytes != null),
             )
-        }
-        val states = List(CONCURRENT_SESSION_COUNT) { Channel<ConnectionState>(Channel.UNLIMITED) }
-        val outputs = List(CONCURRENT_SESSION_COUNT) { Channel<ByteArray>(Channel.UNLIMITED) }
-        val jobs = connections.indices.map { index ->
-            async(Dispatchers.IO) {
-                connections[index].connect(
-                    columns = INITIAL_COLUMNS,
-                    rows = INITIAL_ROWS,
-                    onBytes = { bytes -> outputs[index].trySend(bytes.copyOf()) },
-                    onState = { state ->
-                        if (state is ConnectionState.AwaitingApproval) {
-                            (state.prompt as? HostIdentityPrompt)?.let { prompt ->
-                                connections[index].answerHostIdentityPrompt(
-                                    prompt.promptToken,
-                                    HostIdentityDecision.TrustAndSave,
+            val sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT
+            val udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST
+            val udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST
+            val application = InstrumentationRegistry.getInstrumentation()
+                .targetContext.applicationContext as TerminalSpikeApplication
+            val passwordBytes = MutableList(CONCURRENT_SESSION_COUNT) {
+                if (privateKeyBytes == null) password.takeIf(String::isNotEmpty)?.encodeToByteArray() else null
+            }
+            cleanup.onClose { passwordBytes.filterNotNull().forEach { it.fill(0) } }
+            val connections = List(CONCURRENT_SESSION_COUNT) { index ->
+                MoshConnection(
+                    bootstrapExecutor = MoshBootstrapExecutor(
+                        KnownHostManager(EphemeralKnownHostTrustStore()),
+                    ),
+                    extensionClient = application.container.moshExtension,
+                    bootstrapRequest = MoshBootstrapRequest(
+                        ssh = SshConnectionConfig(
+                            host = host,
+                            port = sshPort,
+                            username = username,
+                            authentication = privateKeyBytes?.let { keyBytes ->
+                                SshAuthentication.PrivateKey(
+                                    identityName = "real-mosh-concurrent-${index + 1}",
+                                    loadKey = { keyBytes.copyOf() },
+                                    passphrase = null,
                                 )
-                            }
-                        }
-                        states[index].trySend(state)
-                    },
+                            } ?: SshAuthentication.Password(requireNotNull(passwordBytes[index])),
+                        ),
+                        udpPortRange = MoshPortRange(udpFirst, udpLast),
+                    ),
                 )
             }
-        }
+            val states = List(CONCURRENT_SESSION_COUNT) { Channel<ConnectionState>(Channel.UNLIMITED) }
+            val outputs = List(CONCURRENT_SESSION_COUNT) { Channel<ByteArray>(Channel.UNLIMITED) }
+            val jobs = connections.indices.map { index ->
+                async(Dispatchers.IO) {
+                    connections[index].connect(
+                        columns = INITIAL_COLUMNS,
+                        rows = INITIAL_ROWS,
+                        onBytes = { bytes -> outputs[index].trySend(bytes.copyOf()) },
+                        onState = { state ->
+                            if (state is ConnectionState.AwaitingApproval) {
+                                (state.prompt as? HostIdentityPrompt)?.let { prompt ->
+                                    connections[index].answerHostIdentityPrompt(
+                                        prompt.promptToken,
+                                        HostIdentityDecision.TrustAndSave,
+                                    )
+                                }
+                            }
+                            states[index].trySend(state)
+                        },
+                    )
+                }
+            }
 
-        try {
+            cleanup.onClose {
+                passwordBytes.filterNotNull().forEach { secret ->
+                    assertTrue("Mosh connection ownership must wipe every password.", secret.all { it == 0.toByte() })
+                }
+            }
+            jobs.forEach { job ->
+                cleanup.onClose {
+                    if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { job.await() } == null) job.cancelAndJoin()
+                }
+            }
+            outputs.forEach { output -> cleanup.onClose { output.close() } }
+            states.forEach { state -> cleanup.onClose { state.close() } }
+            connections.forEach { connection -> cleanup.onClose { connection.close() } }
             states.map { channel -> async { awaitConnected(channel) } }.awaitAll()
 
             val resizedMarkers = connections.indices.map { index ->
@@ -597,31 +622,20 @@ class MoshRealEndToEndTest {
                     )
                 }
             }.awaitAll()
-        } finally {
-            connections.forEach(MoshConnection::close)
-            states.forEach { it.close() }
-            outputs.forEach { it.close() }
-            jobs.forEach { job ->
-                if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { job.await() } == null) {
-                    job.cancelAndJoin()
-                }
-            }
-            privateKeyBytes?.fill(0)
-        }
-        passwordBytes.filterNotNull().forEach { secret ->
-            assertTrue("Mosh connection ownership must wipe every password.", secret.all { it == 0.toByte() })
         }
     }
 
     @Test
     fun realWorkerDeathFailsOnlyItsSessionAndTheReleasedSlotIsReusable() = runBlocking {
-        val fixture = fixtureOrSkip("worker-death")
-        val application = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as TerminalSpikeApplication
-        val first = startRealAttempt(application, fixture, "worker-death-first")
-        var recovered: RealMoshAttempt? = null
+        withSuspendingFixtureCleanup { cleanup ->
+            val fixture = fixtureOrSkip("worker-death")
+            cleanup.onClose { fixture.privateKey?.fill(0) }
+            val application = InstrumentationRegistry.getInstrumentation()
+                .targetContext.applicationContext as TerminalSpikeApplication
+            val first = startRealAttempt(application, fixture, "worker-death-first")
+            cleanup.onClose { closeAttempt(first) }
+            var recovered: RealMoshAttempt? = null
 
-        try {
             awaitConnected(first.states)
             val workerPid = awaitProcessPid("$MOSH_EXTENSION_PACKAGE:mosh_session_0")
             killExtensionProcess(workerPid)
@@ -633,37 +647,38 @@ class MoshRealEndToEndTest {
             withTimeout(CLOSE_TIMEOUT_MILLIS) { first.job.await() }
 
             recovered = startRealAttempt(application, fixture, "worker-death-recovery")
+            cleanup.onClose { recovered?.let { closeAttempt(it) } }
             awaitConnected(recovered.states)
             assertMarkerRoundTrip(recovered, "MOSH_WORKER_SLOT_REUSED")
-        } finally {
-            closeAttempt(first)
-            recovered?.let { closeAttempt(it) }
-            fixture.privateKey?.fill(0)
         }
     }
 
     @Test
     fun realBrokerDeathFailsTheSessionThenClientRebindsForFreshTraffic() = runBlocking {
-        val fixture = fixtureOrSkip("broker-death")
-        val application = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as TerminalSpikeApplication
-        val client = application.container.moshExtension
-        val first = startRealAttempt(application, fixture, "broker-death-first")
-        var recovered: RealMoshAttempt? = null
+        withSuspendingFixtureCleanup { cleanup ->
+            val fixture = fixtureOrSkip("broker-death")
+            cleanup.onClose { fixture.privateKey?.fill(0) }
+            val application = InstrumentationRegistry.getInstrumentation()
+                .targetContext.applicationContext as TerminalSpikeApplication
+            val client = application.container.moshExtension
+            val first = startRealAttempt(application, fixture, "broker-death-first")
+            cleanup.onClose { closeAttempt(first) }
+            var recovered: RealMoshAttempt? = null
 
-        try {
             awaitConnected(first.states)
             val observedError = async(start = CoroutineStart.UNDISPATCHED) {
                 withTimeout(REBIND_TIMEOUT_MILLIS) {
                     client.status.first { it is com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus.Error }
                 }
             }
+            cleanup.onClose { observedError.cancelAndJoin() }
             val observedRecovery = async(start = CoroutineStart.UNDISPATCHED) {
                 observedError.await()
                 withTimeout(REBIND_TIMEOUT_MILLIS) {
                     client.status.first { it is com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus.Available }
                 }
             }
+            cleanup.onClose { observedRecovery.cancelAndJoin() }
             val brokerPid = awaitProcessPid("$MOSH_EXTENSION_PACKAGE:mosh_broker")
             killExtensionProcess(brokerPid)
             val failure = awaitFailure(first.states)
@@ -676,12 +691,9 @@ class MoshRealEndToEndTest {
             observedRecovery.await()
 
             recovered = startRealAttempt(application, fixture, "broker-death-recovery")
+            cleanup.onClose { recovered?.let { closeAttempt(it) } }
             awaitConnected(recovered.states)
             assertMarkerRoundTrip(recovered, "MOSH_BROKER_REBOUND")
-        } finally {
-            closeAttempt(first)
-            recovered?.let { closeAttempt(it) }
-            fixture.privateKey?.fill(0)
         }
     }
 
@@ -693,20 +705,25 @@ class MoshRealEndToEndTest {
         val privateKeyBytes = arguments.getString(ARG_PRIVATE_KEY_BASE64)
             ?.takeIf(String::isNotBlank)
             ?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
-        assumeTrue(
-            "Pass the real Mosh fixture arguments to run $label acceptance.",
-            host.isNotBlank() && username.isNotBlank() &&
-                (password.isNotEmpty() || privateKeyBytes != null),
-        )
-        return RealMoshFixture(
-            host = host,
-            sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT,
-            username = username,
-            password = password,
-            privateKey = privateKeyBytes,
-            udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST,
-            udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST,
-        )
+        try {
+            assumeTrue(
+                "Pass the real Mosh fixture arguments to run $label acceptance.",
+                host.isNotBlank() && username.isNotBlank() &&
+                    (password.isNotEmpty() || privateKeyBytes != null),
+            )
+            return RealMoshFixture(
+                host = host,
+                sshPort = arguments.getString(ARG_SSH_PORT)?.toIntOrNull() ?: DEFAULT_SSH_PORT,
+                username = username,
+                password = password,
+                privateKey = privateKeyBytes,
+                udpFirst = arguments.getString(ARG_UDP_FIRST)?.toIntOrNull() ?: DEFAULT_UDP_FIRST,
+                udpLast = arguments.getString(ARG_UDP_LAST)?.toIntOrNull() ?: DEFAULT_UDP_LAST,
+            )
+        } catch (failure: Throwable) {
+            privateKeyBytes?.fill(0)
+            throw failure
+        }
     }
 
     private fun CoroutineScope.startRealAttempt(
@@ -714,49 +731,54 @@ class MoshRealEndToEndTest {
         fixture: RealMoshFixture,
         identityName: String,
     ): RealMoshAttempt {
-        val passwordBytes = fixture.password.takeIf(String::isNotEmpty)?.encodeToByteArray()
-        val connection = MoshConnection(
-            bootstrapExecutor = MoshBootstrapExecutor(
-                KnownHostManager(EphemeralKnownHostTrustStore()),
-            ),
-            extensionClient = application.container.moshExtension,
-            bootstrapRequest = MoshBootstrapRequest(
-                ssh = SshConnectionConfig(
-                    host = fixture.host,
-                    port = fixture.sshPort,
-                    username = fixture.username,
-                    authentication = fixture.privateKey?.let { keyBytes ->
-                        SshAuthentication.PrivateKey(
-                            identityName = identityName,
-                            loadKey = { keyBytes.copyOf() },
-                            passphrase = null,
-                        )
-                    } ?: SshAuthentication.Password(requireNotNull(passwordBytes)),
+        val passwordBytes = if (fixture.privateKey == null) fixture.password.takeIf(String::isNotEmpty)?.encodeToByteArray() else null
+        try {
+            val connection = MoshConnection(
+                bootstrapExecutor = MoshBootstrapExecutor(
+                    KnownHostManager(EphemeralKnownHostTrustStore()),
                 ),
-                udpPortRange = MoshPortRange(fixture.udpFirst, fixture.udpLast),
-            ),
-        )
-        val states = Channel<ConnectionState>(Channel.UNLIMITED)
-        val output = Channel<ByteArray>(Channel.UNLIMITED)
-        val job = async(Dispatchers.IO) {
-            connection.connect(
-                columns = INITIAL_COLUMNS,
-                rows = INITIAL_ROWS,
-                onBytes = { bytes -> output.trySend(bytes.copyOf()) },
-                onState = { state ->
-                    if (state is ConnectionState.AwaitingApproval) {
-                        (state.prompt as? HostIdentityPrompt)?.let { prompt ->
-                            connection.answerHostIdentityPrompt(
-                                prompt.promptToken,
-                                HostIdentityDecision.TrustAndSave,
+                extensionClient = application.container.moshExtension,
+                bootstrapRequest = MoshBootstrapRequest(
+                    ssh = SshConnectionConfig(
+                        host = fixture.host,
+                        port = fixture.sshPort,
+                        username = fixture.username,
+                        authentication = fixture.privateKey?.let { keyBytes ->
+                            SshAuthentication.PrivateKey(
+                                identityName = identityName,
+                                loadKey = { keyBytes.copyOf() },
+                                passphrase = null,
                             )
-                        }
-                    }
-                    states.trySend(state)
-                },
+                        } ?: SshAuthentication.Password(requireNotNull(passwordBytes)),
+                    ),
+                    udpPortRange = MoshPortRange(fixture.udpFirst, fixture.udpLast),
+                ),
             )
+            val states = Channel<ConnectionState>(Channel.UNLIMITED)
+            val output = Channel<ByteArray>(Channel.UNLIMITED)
+            val job = async(Dispatchers.IO) {
+                connection.connect(
+                    columns = INITIAL_COLUMNS,
+                    rows = INITIAL_ROWS,
+                    onBytes = { bytes -> output.trySend(bytes.copyOf()) },
+                    onState = { state ->
+                        if (state is ConnectionState.AwaitingApproval) {
+                            (state.prompt as? HostIdentityPrompt)?.let { prompt ->
+                                connection.answerHostIdentityPrompt(
+                                    prompt.promptToken,
+                                    HostIdentityDecision.TrustAndSave,
+                                )
+                            }
+                        }
+                        states.trySend(state)
+                    },
+                )
+            }
+            return RealMoshAttempt(connection, states, output, job, passwordBytes)
+        } catch (failure: Throwable) {
+            passwordBytes?.fill(0)
+            throw failure
         }
-        return RealMoshAttempt(connection, states, output, job, passwordBytes)
     }
 
     private suspend fun awaitFailure(states: Channel<ConnectionState>): ConnectionState.Failed =
@@ -811,16 +833,21 @@ class MoshRealEndToEndTest {
         }
     }
 
-    private suspend fun closeAttempt(attempt: RealMoshAttempt) {
-        attempt.connection.close()
-        if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { attempt.job.await() } == null) {
-            attempt.job.cancelAndJoin()
+    private suspend fun closeAttempt(attempt: RealMoshAttempt) = withSuspendingFixtureCleanup { cleanup ->
+        cleanup.onClose { attempt.passwordBytes?.fill(0) }
+        cleanup.onClose {
+            attempt.passwordBytes?.let { secret ->
+                assertTrue("Mosh connection ownership must wipe its password.", secret.all { it == 0.toByte() })
+            }
         }
-        attempt.states.close()
-        attempt.output.close()
-        attempt.passwordBytes?.let { secret ->
-            assertTrue("Mosh connection ownership must wipe its password.", secret.all { it == 0.toByte() })
+        cleanup.onClose { attempt.output.close() }
+        cleanup.onClose { attempt.states.close() }
+        cleanup.onClose {
+            if (withTimeoutOrNull(CLOSE_TIMEOUT_MILLIS) { attempt.job.await() } == null) {
+                attempt.job.cancelAndJoin()
+            }
         }
+        cleanup.onClose { attempt.connection.close() }
     }
 
     private suspend fun awaitConnected(states: Channel<ConnectionState>) {
@@ -904,7 +931,8 @@ class MoshRealEndToEndTest {
         const val TMUX_PREFIX_CONTROL_BYTE: Byte = 0x02
         const val TMUX_COPY_MODE_KEY = '['
         const val TMUX_ENABLE_MOUSE_COMMAND = "tmux set-option -g mouse on"
-        const val MOSH_EXTENSION_PACKAGE = "com.yanjiyu.terminalspike"
+        val MOSH_EXTENSION_PACKAGE: String
+            get() = InstrumentationRegistry.getInstrumentation().targetContext.packageName
         const val TMUX_RECREATE_ROW_COUNT = 500
         const val TMUX_RECREATE_PREFIX = "MOSH_TMUX_RECREATE_"
         const val TMUX_RECREATE_DONE_MARKER = "MOSH_TMUX_RECREATE_DONE"

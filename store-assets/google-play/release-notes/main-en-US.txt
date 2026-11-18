@@ -1,6 +1,5 @@
-• Enter the only running Herdr session automatically, including after upgrading.
-• Improved terminal selection with optional Text tools and Copy as one line.
-• Search individual settings in English or Chinese and jump to the matching option.
-• Added optional Codex context and weekly allowance in the input box.
-• Improved Herdr workspace taps, recent projects and in-app notices.
-• Optimized for Fold screens with full support for regular phones.
+• More reliable session lifecycle: safer cleanup when connections or sessions end.
+• Replacing a default snippet now saves atomically, so it cannot be half-applied.
+• Terminal accessibility now reports the rows you actually see.
+• Safer private-key import and paste handling.
+• Internal settings and storage structure reorganized for stability.

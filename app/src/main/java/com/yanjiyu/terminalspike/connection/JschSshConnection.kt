@@ -10,7 +10,6 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.yanjiyu.terminalspike.core.security.credential.CredentialStoreException
 import com.yanjiyu.terminalspike.terminal.TerminalInputContext
-import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -25,12 +24,6 @@ class JschSshConnection(
     private val knownHostManager: KnownHostManager,
     private val config: SshConnectionConfig,
 ) : Connection, RemoteImageUploadConnection, RemoteProjectConnection {
-    /** Compatibility constructor for the legacy ViewModel while its owner completes cutover. */
-    constructor(
-        knownHostsFile: () -> File,
-        config: SshConnectionConfig,
-    ) : this(KnownHostManager(knownHostsFile), config)
-
     private val lock = Any()
     private val authenticatedSessionFactory = JschAuthenticatedSessionFactory(knownHostManager)
 
@@ -98,7 +91,7 @@ class JschSshConnection(
             if (!running) return TerminalInputContext()
             val choice = herdrChoice ?: return tmuxTasks.inputContext(discoveredTmuxClient?.paneId)
             val session = authenticatedSession?.session?.takeIf { it.isConnected }
-                ?: return TerminalInputContext()
+                ?: return TerminalInputContext(observationAvailable = false)
             session to choice
         }
         val captured = captureHerdrInputContext(JschTmuxCommandRunner(session, TMUX_HISTORY_EXEC_LIMITS), choice)
@@ -108,7 +101,7 @@ class JschSshConnection(
         }
     }
 
-    override fun recentHerdrProjects(): List<String>? {
+    override fun recentHerdrProjects(): List<RecentHerdrProject>? {
         val (session, choice) = synchronized(lock) {
             val session = authenticatedSession?.session?.takeIf { running && it.isConnected } ?: return null
             session to (herdrChoice ?: return null)

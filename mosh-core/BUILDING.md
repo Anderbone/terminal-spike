@@ -52,6 +52,12 @@ The script compares every regenerated file byte-for-byte and verifies
 `src/main/cpp/generated/SHA256SUMS`. Pass `--write` only when deliberately regenerating after a
 reviewed source-version change.
 
+The generator and its child build tools use the shared disk-backed temp policy:
+nonempty `TMPDIR`, then `RUNNER_TEMP`, then `${XDG_CACHE_HOME:-~/.cache}/terminal-spike/tmp`.
+The selected root is created if missing, and only the generated private workspace
+is removed on exit. An unusable explicit root fails before source extraction or
+compilation; normal verification leaves the checked-in C++ outputs unchanged.
+
 Native output is generated under `mosh-core/build` and is never committed. The main APK is
 `app/build/outputs/apk/debug/app-debug.apk`; there is no Mosh extension APK. Install it using
 the guarded device helper in the root README. Device tests follow AGENTS.md.

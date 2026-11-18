@@ -1,5 +1,9 @@
 # Plan 015: Preserve the current SFTP keyboard-interactive prompt after stale answers
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Implement only the token-state correction and its
 > tests. Preserve mutable-response wiping on every accepted, rejected, and
 > missing-client path.
@@ -7,7 +11,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/ui/sftp/SftpSessionController.kt app/src/main/java/com/yanjiyu/terminalspike/connection/SftpClient.kt app/src/test/java/com/yanjiyu/terminalspike/ui/sftp/SftpSessionControllerTest.kt`
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: S
@@ -21,6 +25,9 @@ The controller now binds an answer to its client generation and exact challenge
 token, preserves rejected or superseding prompts, and wipes missing-client
 responses. Focused race tests and the full 956-test app JVM/repository gate pass.
 
+This is a completed implementation record. The failure description and steps below preserve the
+original baseline and fix; they are not unfinished work or fresh verification of today's checkout.
+
 ## Why this matters
 
 A delayed response from keyboard-interactive round one can arrive after round
@@ -28,12 +35,12 @@ two is displayed. The transport rejects the stale token, but the SFTP controller
 unconditionally hides the current round-two dialog. Authentication then waits
 for an answer the user can no longer submit.
 
-## Current state
+## Pre-fix state at `93d070a`
 
-- `SftpSessionController.answerKeyboardInteractive()` at lines 119-123 ignores
+- `SftpSessionController.answerKeyboardInteractive()` ignores
   the client's Boolean acceptance result and always sets the visible challenge
   to null.
-- `SftpSession.answerKeyboardInteractive()` and `SftpClient.kt:295-298` expose
+- `SftpSession.answerKeyboardInteractive()` and `SftpClient.kt` expose
   exact-token acceptance and wipe responses when no live lease exists.
 - `KeyboardInteractiveBridgeTest` already proves a stale token is rejected while
   a newer round remains valid.
@@ -54,18 +61,18 @@ for an answer the user can no longer submit.
 - host-identity prompt redesign
 - authentication timeouts, prompt count limits, or UI restyling
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Focused test | `./gradlew :app:testDebugUnitTest --tests 'com.yanjiyu.terminalspike.ui.sftp.SftpSessionControllerTest'` | exit 0 |
 | Full gate | `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest` | `BUILD SUCCESSFUL` |
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty-tree work. Do not commit, push, or open a PR unless asked.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Honor acceptance and current-token identity
 
@@ -106,7 +113,7 @@ Assert tokens, not just prompt presence.
 `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest`
 → `BUILD SUCCESSFUL`.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] A rejected stale answer never dismisses the current challenge.
 - [x] An accepted answer clears only the matching current token.
@@ -120,7 +127,7 @@ Assert tokens, not just prompt presence.
   callback-race, and replacement-client cases.
 - Inspect mutable response arrays after missing-client rejection to prove wiping.
 
-## STOP conditions
+## Historical stop conditions
 
 - The live `SftpSession` implementation does not consume/wipe responses after
   accepting ownership; fix that contract explicitly before changing the controller.

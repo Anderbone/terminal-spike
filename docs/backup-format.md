@@ -1,6 +1,6 @@
 status: implemented-manual-provider-validation-pending
 created_at: 2026-08-08T10:42:15.487Z
-updated_at: 2026-08-08T11:14:08.829Z
+updated_at: 2026-11-15T13:45:40.573120+00:00
 done_at: none
 independent: no
 dependencies: docs/architecture.md, docs/security-model.md
@@ -58,13 +58,26 @@ Before export, device-bound secrets are decrypted just in time and immediately r
 
 The product export includes only profile-referenced, content-addressed imported font bytes. Import
 rechecks the SHA-256 content ID, 16 MiB per-font cap, supported TrueType/OpenType/collection header,
-and fixed-grid representative glyph advances before any profile can reference the file. Active
+and fixed-grid representative glyph advances before any profile can reference the file. Before
+reading font contents for export, the store checks the 32-font count, individual file sizes, and
+combined font bytes against the total payload cap. The codec still enforces the complete encoded
+payload cap, including metadata and non-font records. Long font display names are shortened at a
+complete UTF-8 character boundary when needed to keep the private encoded filename within 255
+bytes. Import and restore use the same filename builder; subsequent listing and backup export use
+the stored display name. Content IDs and existing font files remain unchanged. Active
 sockets, recent terminal contents, transcripts, temporary prompts, Mosh ephemeral keys, debug logs,
 and recovery keys are always excluded.
 
 The envelope retains authenticated encryption for corruption/tamper detection, but the portability
 material is app-defined rather than supplied by the user. It is not a confidentiality boundary:
 anyone who obtains the backup file must be treated as able to recover its credential contents.
+
+Room `snippet_toolbar_state` stores device-local hidden defaults and is excluded from the portable
+payload, snapshot revisions, import and rollback. A saved replacement snippet remains portable.
+Restoring on the same installation retains its current local hidden set; a different installation
+uses its own state. This preserves the former local toolbar-preference contract and does not
+change the envelope or payload version. Full application-data reset clears both the database
+and retained toolbar preferences.
 
 ## Envelope version 1
 
@@ -154,30 +167,87 @@ dispatch is closed rather than retaining its portable credential snapshot withou
 9. On failure, roll back newly staged font files and restore database/settings/credential state
     from the recovery snapshot. On success, clear the font journal and temporary snapshot and show
     exact data/font result counts. After process death, authoritative Room profile references decide
-    whether journalled content-addressed files are retained or removed.
+    whether journalled content-addressed files are retained or removed. Startup reconciliation
+    captures those references and processes the font journal under the same application authority
+    gate as the entire import. It cannot interpret a live import's prepared files as abandoned, or
+    use references captured before a concurrent import prepares files.
+
+Settings UI persistence (including local font import and startup keyboard repair) enters the
+same process authority gate through `SettingsMutationCoordinator`. An edit waits for the complete
+backup apply/rollback interval; it cannot change DataStore between replacement and rollback checks.
+The first successful settings write also invalidates cached catalogs, even when a later write fails.
+This is a serialization boundary, not an atomic multi-store settings transaction. A started durable
+write finishes commit bookkeeping after UI cancellation; later writes check cancellation first.
 
 Merge preserves existing records unless UUID/content match permits a safe update. Keep both generates new UUIDs and rewrites internal references. Known-host conflicts never merge different keys silently. Imported custom themes/fonts receive distinct names when necessary.
+
+Import owns the decoded snapshot until the authenticated staging input and staging area have
+both closed successfully. If either close fails, decoded portable secrets are wiped and the result
+is not returned. The Android provider stream also retains ownership of its authenticated result
+until the outer stream closes successfully; a provider close failure closes the result. Cleanup
+failures are suppressed behind an existing parsing/authentication failure
+rather than replacing it. A recovery-marker writer also wipes its snapshot when cancellation occurs
+while waiting for the marker lock, before any file write begins.
+
+Recovery deletion and orphan cleanup split ID sets into bounded SQL statements within the existing
+Room transaction. Every statement has at most 999 ID bindings; a later write failure rolls back all
+chunks. Referenced credential/key secrets remain protected by the existing reference predicates.
+The bound preserves compatibility with SQLite versions that use the older host-parameter limit;
+see [SQLite limits](https://www.sqlite.org/limits.html#max_variable_number) and
+[Android's SQLite version table](https://developer.android.com/reference/android/database/sqlite/package-summary).
+
+The settings workflow stops accepting work and publishing UI state after it closes. Late unlock
+and planning results are closed instead of becoming workflow-owned. Already accepted export,
+apply, or recovery operations retain their cleanup responsibilities and may finish, without
+publishing completion to a closed workflow. The UI contains only the current complete-backup flow;
+unused private mode/passphrase/strategy forms, their action/ViewModel bindings, and their
+unreferenced English/Chinese strings have been removed.
 
 ## Compatibility and errors
 
 - Invalid portability material and authenticated tamper produce the same non-oracular unlock failure internally.
-- Truncated/oversized/malformed input fails before repository mutation.
+- Truncated/oversized/malformed input fails before repository mutation. Payload record reads check
+  the remaining total byte budget before allocation and wipe partially filled plaintext buffers on
+  EOF or provider failure, including the zero-byte-read fallback.
 - A newer unsupported required envelope/payload schema shows the producing app version and makes no changes.
 - Older schemas migrate in the isolated import model before preview.
 - Terminal-profile rendering flags added to payload version 1 are optional: older archives default
   to bold rendering and pinch zoom enabled, with ligatures and copy-on-selection disabled. Missing
   custom-theme bold-bright fields default to enabled.
 - The tmux-selector disable flag is optional; older archives retain the enabled-by-default behavior.
-- Skippable unknown optional records appear in preview/result counts.
+- Skippable unknown optional records and incompatible records remain reported through authenticated
+  preview, import planning, and the final result. An unsupported or skipped global-settings record
+  preserves the current settings during replacement; parser defaults must not disable app lock or
+  screenshot protection. A supported global-settings record still replaces settings. Same-device
+  recovery retains its exact snapshot semantics.
 - KDF iteration/salt/nonce/ciphertext limits are checked before expensive allocation/work.
 
 ## Verification
 
 - Standard and Full deterministic-model round trips through non-seekable streams.
 - Wrong passphrase, changed header, changed ciphertext/tag, truncation at every boundary, trailing bytes, duplicate required fields, excessive counts/lengths/KDF work.
-- Older payload migration and newer required/optional fields.
+- Older payload migration and newer required/optional fields. Authenticated encrypted archive
+  regressions cover unsupported global schema/required fields, optional record types, preserved
+  security settings, compatible settings replacement, and compatibility counts after apply.
+- Deterministic deferred gateway tests exercise close during inspect, unlock, planning, export,
+  apply, and recovery, plus late picker/recovery callbacks. Provider stream tests verify result
+  cleanup and primary/suppressed failure ordering.
 - Merge/Replace/Keep-both for duplicate hosts, keys, known hosts, profiles, fonts, and cross-references.
 - Repository/credential/DataStore injected failures at every transaction stage and recovery-snapshot restore.
+- Controlled settings/restore interleavings with real isolated Room and a failing DataStore fixture;
+  a queued edit waits for rollback, then persists. A separate Room/catalog regression verifies
+  generation invalidation after a profile commit followed by a second-store failure. These tests
+  do not fault or replace the real application's database or recovery marker.
+- Retained provider-buffer checks for interrupted payload reads, decoded-secret cleanup on stream
+  and staging close failures, and recovery-writer cancellation while waiting for the marker lock.
+- Isolated in-memory Room tests for large recovery deletes, rollback after a later constraint
+  failure, and preservation of referenced secrets during batched orphan cleanup. Persistent-marker
+  tests also use a temporary no-backup directory and a dedicated test key alias; they never clear
+  the app's real recovery marker.
+- Deterministic import/reconciliation interleavings, including the interval before Room commits.
+- Isolated real-device font store tests for Unicode filename boundaries, rollback/process-death
+  reconciliation, and export count/aggregate byte checks before reading contents. Font tests use
+  temporary app-private directories and never delete the user's imported-font directory.
 - SAF fake-contract UI tests plus manual local provider and Google Drive provider checks when installed.
 - Cross-install restore: export from one clean installation, clear/install clean app, restore, verify settings/data/credentials, and prove Android Keystore masters were not copied.
 

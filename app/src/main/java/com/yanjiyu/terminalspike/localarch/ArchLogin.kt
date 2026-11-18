@@ -3,6 +3,11 @@ package com.yanjiyu.terminalspike.localarch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 internal enum class ArchLoginProvider(val label: String, val verificationUrl: String, val script: String) {
     GITHUB("GitHub", "https://github.com/login/device",
@@ -21,6 +26,18 @@ internal data class ArchLoginState(
     val succeeded: Boolean = false,
     val failed: Boolean = false,
 )
+
+/** Takes ownership of one encoded, one-use code while its write waits for IO dispatch. */
+internal fun CoroutineScope.launchArchLoginCodeWrite(
+    bytes: ByteArray,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    write: (ByteArray) -> Unit,
+): Job = launch(dispatcher) { write(bytes) }.also { job ->
+    // A cancelled launch may complete without ever entering the worker body.
+    job.invokeOnCompletion {
+        bytes.fill(0)
+    }
+}
 
 /** Only a short-lived device code crosses into Android UI; never retain or log CLI output. */
 internal class ArchLoginCodeParser {

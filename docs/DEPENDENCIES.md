@@ -1,14 +1,16 @@
 # Direct dependencies
 
-## Local Arch runtime sources (implementation in progress)
+## Local Arch runtime sources
 
 The following new direct native dependencies are approved by
 [`ADR-LOCAL-ARCH-RUNTIME.md`](ADR-LOCAL-ARCH-RUNTIME.md). Their exact upstream
 source archives have been downloaded and SHA-256 verified under
 `local-arch-runtime/third_party/distfiles`. They are built and packaged in the main
-APK with the original JNI PTY bridge. Rootfs installation and end-to-end Local Arch
-are still in progress. Build inputs, integration changes and replacement instructions
-are in `local-arch-runtime/README.md`; its licence assets are packaged in the app.
+APK with the original JNI PTY bridge. The accepted runtime/installer architecture and
+its acceptance scope are in the ADR; dated compatibility evidence is maintained in
+[`local-arch-development-compatibility.md`](local-arch-development-compatibility.md).
+Build inputs, integration changes and replacement instructions are in
+`local-arch-runtime/README.md`; its licence assets are packaged in the app.
 
 | Dependency | Version | Purpose | Licence | Source / obligations |
 | --- | --- | --- | --- | --- |
@@ -53,12 +55,12 @@ The resolved `releaseRuntimeClasspath` was reviewed on 2026-09-02. In addition t
 | Dependency | Version | Purpose | Licence | Source / obligations |
 |---|---:|---|---|---|
 | Android Gradle Plugin (`com.android.application`, `com.android.library`, `com.android.test`) | 9.3.1 | Android application/library/test build plugins, AIDL generation, and built-in Kotlin support | Apache License 2.0 | [Android tools source](https://android.googlesource.com/platform/tools/base/); retain licence/notice when redistributing covered binaries |
-| AndroidX Baseline Profile Gradle plugin | 1.4.1 | Variant-safe generation, collection, and release consumption of ART Baseline/Startup Profiles | Apache License 2.0 | [AndroidX Benchmark source](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/benchmark/benchmark-baseline-profile-gradle-plugin/); build-time only; retain licence/notice if redistributed |
+| AndroidX Baseline Profile Gradle plugin | 1.5.0 | Variant-safe generation, collection, and release consumption of ART Baseline/Startup Profiles | Apache License 2.0 | [AndroidX Benchmark source](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/benchmark/benchmark-baseline-profile-gradle-plugin/); build-time only; retain licence/notice if redistributed |
 | Kotlin Compose compiler Gradle plugin | 2.4.10 | Compose compiler integration | Apache License 2.0 | [JetBrains Kotlin](https://github.com/JetBrains/kotlin); retain licence/notice when applicable |
 | Kotlin Symbol Processing Gradle plugin | 2.3.10 | Generate Room persistence code with AGP built-in Kotlin | Apache License 2.0 | [Google KSP](https://github.com/google/ksp); build-time only; retain licence/notice if redistributed |
 | AndroidX Room Gradle plugin | 2.8.4 | Export versioned Room schemas for migration verification | Apache License 2.0 | [AndroidX Room](https://developer.android.com/jetpack/androidx/releases/room); build-time only; retain licence/notice if redistributed |
 | kotlinx.serialization BOM | 1.8.1 | Align the transitive serialization core/JSON ABI used by Lifecycle and Room migration tests | Apache License 2.0 | [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization); version-alignment metadata only; licence reproduced in packaged notices |
-| Protocol Buffers Gradle plugin | 0.9.5 | Generate lite Kotlin/Java settings messages from the checked-in schema | Revised BSD | [Google protobuf-gradle-plugin](https://github.com/google/protobuf-gradle-plugin); build-time only; preserve its copyright notice, conditions, and disclaimer if redistributed |
+| Protocol Buffers Gradle plugin | 0.10.1 | Generate lite Kotlin/Java settings messages from the checked-in schema | Revised BSD | [Google protobuf-gradle-plugin](https://github.com/google/protobuf-gradle-plugin); build-time only; preserve its copyright notice, conditions, and disclaimer if redistributed |
 | Compose BOM | 2026.04.01 | Align Compose library versions | Apache License 2.0 | [AndroidX](https://android.googlesource.com/platform/frameworks/support/); BOM is build metadata |
 | Compose Foundation, UI, Graphics, Tooling Preview | BOM-managed | Swipeable input-mode pager, Compose shell, and previews | Apache License 2.0 | AndroidX; retain licence/notice |
 | Compose Material 3 | BOM-managed | Controls, scaffold, theme | Apache License 2.0 | AndroidX; retain licence/notice |

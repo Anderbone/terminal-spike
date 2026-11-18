@@ -7,11 +7,13 @@ import com.yanjiyu.terminalspike.core.backup.BackupImportPlanPreview
 import com.yanjiyu.terminalspike.core.backup.BackupImportResult
 import com.yanjiyu.terminalspike.core.backup.BackupImportStrategy
 import com.yanjiyu.terminalspike.core.backup.BackupMode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -147,12 +149,187 @@ class SettingsBackupWorkflowTest {
         workflow.close()
     }
 
+    @Test
+    fun unlockFinishingAfterCloseIsReleasedWithoutStartingAnotherStage() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply { unlockRelease = release }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.requestRestoreDocument()
+            workflow.onRestoreDocumentResult(DOCUMENT)
+            runCurrent()
+            assertEquals(BackupWorkflowStep.UNLOCKING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertTrue(gateway.unlocked.closed)
+            assertEquals(listOf("inspect:content://fake/backup", "unlock:content://fake/backup"), gateway.events)
+            assertEquals(closedState, workflow.state.value)
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun planFinishingAfterCloseIsReleasedWithoutRepopulatingWorkflowOwnership() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply { prepareRelease = release }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.requestRestoreDocument()
+            workflow.onRestoreDocumentResult(DOCUMENT)
+            runCurrent()
+            assertEquals(BackupWorkflowStep.PLANNING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertTrue(gateway.prepared.closed)
+            assertTrue(gateway.unlocked.closed)
+            assertEquals(closedState, workflow.state.value)
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun inspectionFinishingAfterCloseDoesNotStartUnlockOrPublishAnotherState() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply { inspectRelease = release }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.requestRestoreDocument()
+            workflow.onRestoreDocumentResult(DOCUMENT)
+            runCurrent()
+            assertEquals(BackupWorkflowStep.INSPECTING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf("inspect:content://fake/backup"), gateway.events)
+            assertEquals(closedState, workflow.state.value)
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun exportFinishingAfterCloseDoesNotPublishCompletionAndWipesItsPassphrase() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply { exportRelease = release }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.beginExport()
+            workflow.onExportDocumentResult(DOCUMENT)
+            runCurrent()
+            assertEquals(BackupWorkflowStep.EXPORTING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(closedState, workflow.state.value)
+            assertTrue(checkNotNull(gateway.exportPassphraseReference).all { it == '\u0000' })
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun applyFinishingAfterCloseReleasesItsPlanWithoutPublishingCompletion() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply { applyRelease = release }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.requestRestoreDocument()
+            workflow.onRestoreDocumentResult(DOCUMENT)
+            advanceUntilIdle()
+            workflow.applyPreparedImport()
+            runCurrent()
+            assertEquals(BackupWorkflowStep.APPLYING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(closedState, workflow.state.value)
+            assertTrue(gateway.prepared.closed)
+            assertEquals("apply", gateway.events.last())
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun recoveryFinishingAfterCloseDoesNotPublishCompletion() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val gateway = FakeGateway().apply {
+            recoveryPending = true
+            recoverRelease = release
+        }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        try {
+            workflow.recoverPendingImport()
+            runCurrent()
+            assertEquals(BackupWorkflowStep.RECOVERING, workflow.state.value.step)
+            workflow.close()
+            val closedState = workflow.state.value
+
+            release.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf("recover"), gateway.events)
+            assertEquals(closedState, workflow.state.value)
+        } finally {
+            release.complete(Unit)
+            workflow.close()
+        }
+    }
+
+    @Test
+    fun latePickerAndRecoveryCallbacksCannotStartWorkAfterClose() = runTest {
+        val gateway = FakeGateway().apply { recoveryPending = true }
+        val workflow = SettingsBackupWorkflow(gateway, this, StandardTestDispatcher(testScheduler))
+        workflow.close()
+        val closedState = workflow.state.value
+
+        workflow.onRestoreDocumentResult(DOCUMENT)
+        workflow.recoverPendingImport()
+        workflow.onRestoreDocumentResult(null)
+        workflow.dismiss()
+        advanceUntilIdle()
+
+        assertTrue(gateway.events.isEmpty())
+        assertEquals(closedState, workflow.state.value)
+    }
+
     private class FakeGateway : SettingsBackupGateway {
         val events = mutableListOf<String>()
         var exportPassphrase: String? = null
+        var exportPassphraseReference: CharArray? = null
         var exportIncludedCustomFonts = false
         var unlockFailure: Throwable? = null
         var recoveryPending = false
+        var inspectRelease: CompletableDeferred<Unit>? = null
+        var exportRelease: CompletableDeferred<Unit>? = null
+        var applyRelease: CompletableDeferred<Unit>? = null
+        var recoverRelease: CompletableDeferred<Unit>? = null
+        var unlockRelease: CompletableDeferred<Unit>? = null
+        var prepareRelease: CompletableDeferred<Unit>? = null
         val unlocked = FakeUnlocked()
         val prepared = FakePrepared()
 
@@ -176,12 +353,15 @@ class SettingsBackupWorkflowTest {
         ): BackupExportUiResult {
             events += "export:${mode.name.lowercase()}:${destination.encodedUri}:$createdAtEpochMillis"
             exportPassphrase = passphrase.concatToString()
+            exportPassphraseReference = passphrase
+            exportRelease?.await()
             exportIncludedCustomFonts = includeCustomFonts
             return BackupExportUiResult(mode, CONTENT, 4096)
         }
 
         override suspend fun inspect(source: BackupDocumentReference): BackupHeaderUiSummary {
             events += "inspect:${source.encodedUri}"
+            inspectRelease?.await()
             return HEADER
         }
 
@@ -191,6 +371,7 @@ class SettingsBackupWorkflowTest {
         ): SettingsUnlockedBackup {
             events += "unlock:${source.encodedUri}"
             unlockFailure?.let { throw it }
+            unlockRelease?.await()
             return unlocked
         }
 
@@ -199,17 +380,20 @@ class SettingsBackupWorkflowTest {
             strategy: BackupImportStrategy,
         ): SettingsPreparedBackupImport {
             events += "prepare:${strategy.name.lowercase()}"
+            prepareRelease?.await()
             prepared.selectedStrategy = strategy
             return prepared
         }
 
         override suspend fun apply(prepared: SettingsPreparedBackupImport): BackupImportResult {
             events += "apply"
+            applyRelease?.await()
             return IMPORT_RESULT
         }
 
         override suspend fun recoverPending(): BackupImportResult {
             events += "recover"
+            recoverRelease?.await()
             recoveryPending = false
             return IMPORT_RESULT
         }

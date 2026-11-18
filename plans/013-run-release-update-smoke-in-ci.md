@@ -1,5 +1,9 @@
 # Plan 013: Run the signed release-like update and real-SSH smoke in CI
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Implement a hermetic CI caller for the existing release smoke. Use an
 > ephemeral acceptance key created inside the job; never use production signing material. Do not
 > upload the key, password, signed APK, fixture key, or raw logs. Preserve exact AVD identity checks
@@ -9,7 +13,7 @@
 > `git diff --stat 93d070a..HEAD -- .github/workflows/android-ci.yml app/build.gradle.kts integration-tests/openssh/release-app-install-update-smoke.sh integration-tests/openssh/README.md scripts/tests docs/PUBLISHING.md`
 > The worktree was dirty when planned; review unstaged changes against the facts below.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: M
@@ -28,7 +32,7 @@ outside manual commands, so a regression can merge while hosted debug-runtime jo
 hermetic CI job closes that repeatability gap without confusing an ephemeral acceptance signature
 with production or Play signing.
 
-## Current state
+## Original state
 
 - `integration-tests/openssh/release-app-install-update-smoke.sh:82-114` accepts only the exact
   disposable AVD and verifies emulator/package/version/certificate identity.
@@ -47,7 +51,7 @@ Conventions: pin Actions by immutable SHA, use stable Android images, own AVDs w
 scripts, use strict dependency verification, upload only sanitized short-lived evidence, and avoid
 new third-party emulator actions.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -76,11 +80,11 @@ new third-party emulator actions.
 - uploading signed APKs, key material, raw logs, or fixture secrets
 - physical devices
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty changes. Do not commit, push, or open a PR without operator authorization.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Add hermetic release-smoke orchestration
 
@@ -136,7 +140,7 @@ full Gradle gate and `git diff --check` pass on the same source.
   APK/keystore upload.
 - One actual hosted workflow run tied to the candidate commit.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [ ] CI builds a minified APK/AAB with a fresh ephemeral acceptance identity and verifies both.
 - [ ] The black-box release/update real-SSH smoke passes in the hosted job.
@@ -147,7 +151,7 @@ full Gradle gate and `git diff --check` pass on the same source.
   local portions are green; the first hosted run remains pending).
 - [x] Documentation does not call the result production signing or older-version migration.
 
-## STOP conditions
+## Historical stop conditions
 
 - CI cannot keep acceptance signing material out of logs/artifacts after two diagnosed attempts.
 - The job would require a production secret or public network fixture.

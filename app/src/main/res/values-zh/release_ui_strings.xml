@@ -32,8 +32,6 @@
     <string name="navigation_open_connections">打开连接</string>
     <string name="navigation_open_terminal">打开终端</string>
     <string name="navigation_open_settings">打开设置</string>
-    <string name="navigation_back_from">从%1$s返回</string>
-    <string name="navigation_destination_screen">%1$s页面</string>
     <string name="workspace_screen_description">工作区页面</string>
     <string name="workspace_status_on_device">设备本地</string>
     <string name="workspace_status_loading">正在加载…</string>
@@ -84,7 +82,6 @@
     <string name="terminal_input_raw_page">直接终端按键，第 %1$d 页，共 %2$d 页</string>
     <string name="terminal_buffered_input_description">终端缓冲输入</string>
     <string name="terminal_buffered_input_placeholder">输入命令…</string>
-    <string name="terminal_send">发送</string>
     <string name="terminal_restore_last_sent_input">恢复上次发送的输入</string>
     <string name="terminal_multiline_paste_title">粘贴多行内容？</string>
     <string name="terminal_multiline_paste_message">将完整的多行草稿粘贴到当前终端，不额外发送回车键。</string>
@@ -287,26 +284,7 @@
     <string name="connections_search_keys">搜索密钥</string>
     <string name="connections_search_snippets">搜索命令片段</string>
     <string name="connections_clear_search">清除搜索</string>
-    <string name="connections_hide_host_controls">隐藏主机筛选和排序</string>
-    <string name="connections_show_host_controls">显示主机筛选和排序</string>
-    <string name="connections_sort_hosts_by">按%1$s排序主机</string>
-    <string name="connections_sort_value">排序：%1$s</string>
-    <string name="connections_sort_name">名称</string>
-    <string name="connections_sort_favourites">收藏</string>
-    <string name="connections_sort_recent">最近使用</string>
-    <string name="connections_sort_group">分组</string>
-    <string name="connections_favourites">收藏</string>
-    <string name="connections_filter_group">筛选主机分组，%1$s</string>
-    <string name="connections_all_groups">所有分组</string>
-    <string name="connections_clear_filters">清除</string>
-    <string name="connections_tab_hosts">主机</string>
-    <string name="connections_tab_keys">密钥</string>
     <string name="connections_tab_snippets">命令片段</string>
-    <plurals name="connections_tab_item_count_description">
-        <item quantity="one">%1$s，%2$d 项</item>
-        <item quantity="other">%1$s，%2$d 项</item>
-    </plurals>
-    <string name="connections_tab_item_count">%1$s  %2$d</string>
     <string name="connections_loading_description">正在加载连接</string>
     <string name="connections_loading">正在加载连接…</string>
     <string name="connections_unavailable_title">连接不可用</string>
@@ -398,8 +376,6 @@
     <string name="connections_key_origin_generated">已生成</string>
     <string name="connections_snippet_insert_terminal">插入终端</string>
     <string name="connections_snippet_run_immediately">立即运行</string>
-    <string name="connections_snippet_enter_appended">追加回车</string>
-    <string name="connections_snippet_confirms_multiline">确认多行内容</string>
     <string name="connections_delete_title">删除 %1$s？</string>
     <string name="connections_delete_host_detail">这将删除已保存的主机，活动终端会话仍保持连接。</string>
     <string name="connections_delete_host">删除主机</string>

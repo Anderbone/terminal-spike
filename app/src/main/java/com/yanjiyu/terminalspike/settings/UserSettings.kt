@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.settings
 
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.MoshPortRange
+import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -10,7 +11,7 @@ import java.io.OutputStream
 
 enum class SavedHostConnectionCompatibility {
     SSH_PASSWORD,
-    /** Password bootstrap is supported when the separately verified extension is available. */
+    /** Password bootstrap is supported when the verified built-in transport is available. */
     MOSH_PASSWORD,
     MOSH_UNAVAILABLE,
     PRIVATE_KEY_REQUIRES_FULL_UI,
@@ -36,6 +37,9 @@ data class SavedSshProfile(
     val moshPort: Int? = null,
     val moshPortRange: MoshPortRange? = null,
     val moshServerCommand: String? = null,
+    /** Room-backed transport metadata; not serialized by the legacy settings codec. */
+    val moshLocale: String? = null,
+    val moshFallbackPolicy: MoshFallbackPolicy = MoshFallbackPolicy.NEVER,
 ) {
     val canConnectFromCompatibilityUi: Boolean
         get() = connectionCompatibility == SavedHostConnectionCompatibility.SSH_PASSWORD ||

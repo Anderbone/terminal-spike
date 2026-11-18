@@ -1,10 +1,19 @@
 # Publishing checklist
 
-> The separate-APK packaging described in historical sections is superseded by
-> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+For the current main-app workflow, follow [verification and routine releases](CI-AND-RELEASING.md)
+and the authorization in [AGENTS.md](../AGENTS.md). An unqualified push/publish/release request
+includes all four existing Play channels and the GitHub Latest release; a commit-only request
+does not authorize publication. Finish the current workflow's `verify-publication.py` gate
+before reporting publication complete.
 
-The source tree is release-candidate quality, but it is not yet authorized for public production
-distribution. Complete every applicable item below for each separately published package.
+The September 2026 readiness record below is historical. Its pending decisions, candidate
+versions, test counts and signing status are not a description of the current checkout or
+current Play tracks. Do not use them to choose a version or infer current authorization.
+The separate-APK packaging is superseded by [ADR-005](ADR-005-BUNDLED-MOSH.md): one app
+includes the private Mosh broker and workers. Publishing the archived standalone extension
+still requires a separate explicit request and its applicable release gates.
+
+## Historical readiness evidence — September 2026
 
 <!-- release-evidence-current:start -->
 Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` failures/errors); Mosh API JVM `11` tests (`11` passed, `0` skipped, `0` failures/errors); Mosh extension JVM `8` tests (`8` passed, `0` skipped, `0` failures/errors); old-phone Android app `332` tests (`307` passed, `25` skipped, `0` failures/errors). The source and artifact hashes and any pending external gates are recorded in `build/release-evidence/candidate-manifest.json`.
@@ -13,7 +22,7 @@ Current release evidence: app JVM `971` tests (`971` passed, `0` skipped, `0` fa
 For routine main-app internal releases, use the verified `prepare`/`publish` commands
 in [CI and releasing](CI-AND-RELEASING.md). Existing applicable gates below still apply.
 
-## Repository gates — complete
+## Historical repository gates
 
 - The dated 2026-09-03 local gate was green with 960 app JVM tests. Stable API
   37.0 passed exact boundary membership `42/42` with no failures or skips. It
@@ -69,7 +78,7 @@ in [CI and releasing](CI-AND-RELEASING.md). Existing applicable gates below stil
 - Both packages target API 37, above Google Play's announced 31 August 2026 phone-app minimum of
   API 36.
 
-## Decisions and external work — required before production
+## Decisions and external work recorded in September 2026
 
 1. Approve the public product identity. Confirm whether **Terminal Spike** is the final store name,
    then approve the permanent application IDs. Change them only before the first public upload.
@@ -107,7 +116,7 @@ in [CI and releasing](CI-AND-RELEASING.md). Existing applicable gates below stil
 10. Promote only after the signed artifacts, store declarations, legal decision, manual matrix,
     release notes, support contact, and rollback plan are frozen and recorded.
 
-## Current official references
+## Official reference links retained with the historical checklist
 
 - [Google Play target API policy](https://support.google.com/googleplay/android-developer/answer/11926878)
 - [Prepare an Android app for release](https://developer.android.com/studio/publish/preparing)

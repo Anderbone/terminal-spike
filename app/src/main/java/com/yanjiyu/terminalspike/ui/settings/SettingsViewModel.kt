@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
+import com.yanjiyu.terminalspike.core.data.repository.SettingsMutationScope
 import com.yanjiyu.terminalspike.core.data.settings.AppSettings
 import com.yanjiyu.terminalspike.core.data.migration.LegacyIds
 import com.yanjiyu.terminalspike.core.data.settings.CURRENT_KEYBOARD_DECK_REVISION
@@ -33,10 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 private data class SettingsProfileTargets(
     val terminalProfileId: String? = null,
@@ -55,7 +54,6 @@ internal fun <T> resolveSettingsProfile(
 internal class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as TerminalSpikeApplication).container
     private val fontStore = container.customTerminalFonts
-    private val mutationMutex = Mutex()
     private val pendingWrites = AtomicInteger(0)
     private val _uiState = MutableStateFlow(SettingsUiState())
     private val profileTargets = MutableStateFlow(SettingsProfileTargets())
@@ -77,8 +75,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(importedFonts = fontStore.list())
             try {
+                val fonts = fontStore.list()
+                _uiState.update { it.copy(importedFonts = fonts) }
                 container.startLegacyMigrationForCutover().await()
                 repairShippedKeyboardDeckOnce()
                 combine(
@@ -106,23 +105,27 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
                         importedFonts = fontStore.list(),
                         customTerminalThemes = customThemes,
                         profilesLoading = false,
-                        writeInProgress = pendingWrites.get() > 0,
-                        message = _uiState.value.message,
                     )
-                }.collect { _uiState.value = it }
+                }.collect { loaded ->
+                    _uiState.update { current ->
+                        loaded.copy(
+                            message = current.message,
+                            writeInProgress = pendingWrites.get() > 0,
+                        )
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                _uiState.value = _uiState.value.copy(
-                    profilesLoading = false,
-                    message = R.string.settings_profiles_unavailable,
-                )
+                _uiState.update {
+                    it.copy(profilesLoading = false, message = R.string.settings_profiles_unavailable)
+                }
             }
         }
     }
 
     fun consumeMessage() {
-        _uiState.value = _uiState.value.copy(message = null)
+        _uiState.update { it.copy(message = null) }
     }
 
     fun selectProfileTargets(terminalProfileId: String?, keyboardProfileId: String?) {
@@ -130,13 +133,6 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun beginBackupExport() = backupWorkflow.beginExport()
-
-    /** Transfers mutable passphrase ownership to the backup workflow. */
-    fun requestBackupExportDocument(
-        mode: com.yanjiyu.terminalspike.core.backup.BackupMode,
-        includeCustomFonts: Boolean,
-        passphrase: CharArray,
-    ) = backupWorkflow.requestExportDocument(mode, includeCustomFonts, passphrase)
 
     fun onBackupExportDocumentSelected(uri: Uri?) = backupWorkflow.onExportDocumentResult(
         uri?.let { BackupDocumentReference(it.toString()) },
@@ -147,15 +143,6 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     fun onBackupRestoreDocumentSelected(uri: Uri?) = backupWorkflow.onRestoreDocumentResult(
         uri?.let { BackupDocumentReference(it.toString()) },
     )
-
-    /** Transfers mutable passphrase ownership to the backup workflow. */
-    fun unlockSelectedBackup(passphrase: CharArray) = backupWorkflow.unlockSelectedBackup(passphrase)
-
-    fun selectBackupImportStrategy(
-        strategy: com.yanjiyu.terminalspike.core.backup.BackupImportStrategy,
-    ) = backupWorkflow.selectImportStrategy(strategy)
-
-    fun prepareBackupImportPreview() = backupWorkflow.prepareImportPreview()
 
     fun applyPreparedBackupImport() = backupWorkflow.applyPreparedImport()
 
@@ -316,11 +303,13 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
             createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
             updatedAtEpochMillis = maxOf(now, existing?.createdAtEpochMillis ?: now),
         )
-        if (existing == null) {
-            container.customTerminalThemes.insert(theme)
-        } else {
-            check(container.customTerminalThemes.update(theme)) {
-                "The custom terminal theme could not be updated."
+        write {
+            if (existing == null) {
+                container.customTerminalThemes.insert(theme)
+            } else {
+                check(container.customTerminalThemes.update(theme)) {
+                    "The custom terminal theme could not be updated."
+                }
             }
         }
         updateTerminalProfileLocked { it.copy(themeId = theme.id) }
@@ -328,13 +317,15 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun deleteCustomTerminalTheme(id: String) = mutate {
-        check(
-            container.customTerminalThemes.deleteAndResetProfiles(
-                id = id,
-                fallbackThemeId = TerminalThemes.CURRENT_ID,
-                updatedAtEpochMillis = System.currentTimeMillis(),
-            ),
-        ) { "The custom terminal theme could not be deleted." }
+        write {
+            check(
+                container.customTerminalThemes.deleteAndResetProfiles(
+                    id = id,
+                    fallbackThemeId = TerminalThemes.CURRENT_ID,
+                    updatedAtEpochMillis = System.currentTimeMillis(),
+                ),
+            ) { "The custom terminal theme could not be deleted." }
+        }
         publishMessage(R.string.settings_terminal_theme_deleted)
     }
 
@@ -348,11 +339,12 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun importTerminalFont(uri: Uri) = mutate {
-        val imported = fontStore.import(uri)
+        val imported = write { fontStore.import(uri) }
         updateTerminalProfileLocked { it.copy(fontId = imported.id) }
-        withContext(Dispatchers.Main.immediate) {
-            _uiState.value = _uiState.value.copy(
-                importedFonts = fontStore.list(),
+        val fonts = fontStore.list()
+        _uiState.update {
+            it.copy(
+                importedFonts = fonts,
                 message = R.string.settings_font_imported,
             )
         }
@@ -402,9 +394,11 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
         val updated = updateTerminalProfileLocked { profile ->
             profile.copy(links = transform(profile.links))
         }
-        container.settings.update {
-            // Keep the security/global policy aligned with the selected default profile.
-            it.setOsc52Policy(updated.links.remoteClipboardMode.toProto())
+        write {
+            container.settings.update {
+                // Keep the security/global policy aligned with the selected default profile.
+                it.setOsc52Policy(updated.links.remoteClipboardMode.toProto())
+            }
         }
     }
 
@@ -429,7 +423,9 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
                 preserveAlternateScreenHistory = true,
             )
         }
-        container.settings.update { it.setOsc52Policy(updated.links.remoteClipboardMode.toProto()) }
+        write {
+            container.settings.update { it.setOsc52Policy(updated.links.remoteClipboardMode.toProto()) }
+        }
     }
 
     fun applyKeyboardPreset(presetId: String) {
@@ -478,25 +474,29 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private fun updateGlobal(transform: (AppSettings.Builder) -> Unit) = mutate {
-        container.settings.update(transform)
+        write { container.settings.update(transform) }
     }
 
-    private suspend fun repairShippedKeyboardDeckOnce() {
+    private suspend fun repairShippedKeyboardDeckOnce() = container.settingsMutations.mutate {
         val settings = container.settings.settings.first()
         val plan = planKeyboardDeckMigration(
             completedRevision = settings.keyboardDeckRevision,
             canonicalProfile = container.keyboardProfiles.get(LegacyIds.defaultKeyboardProfile),
             nowEpochMillis = System.currentTimeMillis(),
         )
-        if (!plan.shouldRecordCompletion) return
+        if (!plan.shouldRecordCompletion) return@mutate
         plan.upgradedProfile?.let { upgraded ->
-            check(container.keyboardProfiles.update(upgraded)) {
-                "The shipped keyboard profile disappeared during its one-time repair."
+            write {
+                check(container.keyboardProfiles.update(upgraded)) {
+                    "The shipped keyboard profile disappeared during its one-time repair."
+                }
             }
         }
-        container.settings.update { current ->
-            if (current.keyboardDeckRevision < CURRENT_KEYBOARD_DECK_REVISION) {
-                current.setKeyboardDeckRevision(CURRENT_KEYBOARD_DECK_REVISION)
+        write {
+            container.settings.update { current ->
+                if (current.keyboardDeckRevision < CURRENT_KEYBOARD_DECK_REVISION) {
+                    current.setKeyboardDeckRevision(CURRENT_KEYBOARD_DECK_REVISION)
+                }
             }
         }
     }
@@ -505,18 +505,18 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
         updateTerminalProfileLocked(transform)
     }
 
-    private suspend fun updateTerminalProfileLocked(
+    private suspend fun SettingsMutationScope.updateTerminalProfileLocked(
         transform: (TerminalProfile) -> TerminalProfile,
     ): TerminalProfile {
         val id = _uiState.value.terminalProfile?.id ?: throw IllegalStateException("No terminal profile is available.")
         val current = container.terminalProfiles.get(id)
             ?: throw IllegalStateException("The selected terminal profile no longer exists.")
         val updated = transform(current).copy(updatedAtEpochMillis = System.currentTimeMillis())
-        check(
-            container.terminalProfiles.update(
-                updated,
-            ),
-        ) { "The terminal profile could not be updated." }
+        write {
+            check(container.terminalProfiles.update(updated)) {
+                "The terminal profile could not be updated."
+            }
+        }
         return updated
     }
 
@@ -525,38 +525,34 @@ internal class SettingsViewModel(application: Application) : AndroidViewModel(ap
             ?: throw IllegalStateException("No keyboard profile is available.")
         val current = container.keyboardProfiles.get(id)
             ?: throw IllegalStateException("The selected keyboard profile no longer exists.")
-        check(
-            container.keyboardProfiles.update(
-                transform(current).copy(updatedAtEpochMillis = System.currentTimeMillis()),
-            ),
-        ) { "The keyboard profile could not be updated." }
+        write {
+            check(
+                container.keyboardProfiles.update(
+                    transform(current).copy(updatedAtEpochMillis = System.currentTimeMillis()),
+                ),
+            ) { "The keyboard profile could not be updated." }
+        }
     }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(block: suspend SettingsMutationScope.() -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             pendingWrites.incrementAndGet()
-            withContext(Dispatchers.Main.immediate) {
-                _uiState.value = _uiState.value.copy(writeInProgress = true, message = null)
-            }
             try {
-                mutationMutex.withLock { block() }
+                _uiState.update { it.copy(writeInProgress = true, message = null) }
+                container.settingsMutations.mutate(block)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
                 publishMessage(R.string.settings_change_failed)
             } finally {
-                val remaining = pendingWrites.decrementAndGet()
-                withContext(Dispatchers.Main.immediate) {
-                    _uiState.value = _uiState.value.copy(writeInProgress = remaining > 0)
-                }
+                pendingWrites.decrementAndGet()
+                _uiState.update { it.copy(writeInProgress = pendingWrites.get() > 0) }
             }
         }
     }
 
-    private suspend fun publishMessage(@StringRes message: Int) {
-        withContext(Dispatchers.Main.immediate) {
-            _uiState.value = _uiState.value.copy(message = message)
-        }
+    private fun publishMessage(@StringRes message: Int) {
+        _uiState.update { it.copy(message = message) }
     }
 
     companion object {

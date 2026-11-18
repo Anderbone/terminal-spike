@@ -8,8 +8,8 @@ runtime. It requires a 64-bit ARM Android device; Android root is not required.
 Open the terminal, choose **New session → Local Arch Linux**, then **Install Arch
 Linux**. The first installation downloads the pinned 168 MiB image, verifies its
 SHA-256, extracts it into private storage, initializes package signatures, and
-installs signed starter packages with a full system upgrade, plus the stable
-official Codex npm package. Keep at least 4.3 GiB
+installs signed starter packages with a full system upgrade, plus the current
+stable coding tools described below. Keep at least 4.3 GiB
 free, plus space for projects. The dialog closes when installation starts. A
 nonmodal progress strip remains visible while you navigate Settings or other
 screens. Choose **Open local shell** when it says **Arch is ready**; completion
@@ -25,8 +25,8 @@ fzf, bat, eza, jq, Nano, less, ZIP tools, curl, OpenSSH, rsync, base-devel, Node
 LTS and npm. Existing installations can choose **Settings → Local Arch Linux →
 Install starter tools** after closing local shells. This preserves projects,
 existing Node and coding CLI installations, credentials, and shell customizations.
-The version-3 upgrade is offered even if the earlier starter tools are installed. It includes a full package
-upgrade; it does not reinstall the root filesystem. AUR helpers are separate:
+Tools upgrades are offered when an earlier starter-tools marker is installed.
+They include a full package upgrade without reinstalling the root filesystem. AUR helpers are separate:
 `makepkg` refuses root, and AUR recipes need ARM compatibility review.
 
 For later package management, use a full upgrade:
@@ -50,6 +50,26 @@ Open another **Local Arch Linux** session for another shell in the same filesyst
 Files and installed packages survive closing tabs and restarting the app. Shell
 processes do not survive Android killing the app; reopen a shell to resume work.
 Terminal input, Ctrl+C/Ctrl+D and resize use a real PTY and the existing renderer.
+
+## PTY primitive regression gate
+
+`NativePtyDeviceTest` checks real PTY resize, Ctrl+C status, a single Ctrl+D exit,
+independent child ownership, packaged PRoot startup and failed executable launch.
+It also compares complete child output bytes for Unicode arguments and environment
+values, and launches from supplementary-Unicode working directories and executable
+paths. The shell fixture waits for its next input prompt before Ctrl+D, and every
+temporary directory is private to the test and removed afterward.
+
+Run `python3 scripts/run-local-arch-pty-device-tests.py --serial <current-endpoint>`.
+After the shared verification gate passes, add `--no-build` to reuse its APKs.
+Implicit selection prefers an authorized USB target. The primitive gate also
+supports the authorized S10e (`SM-G9708`, hardware serial `R28M227XA0E`) over its
+current USB or wireless endpoint, rechecking model and hardware before installs
+and testing. The separate `--arch-bootstrap`, `--arch-development` and
+`--arch-prisma` routes retain their USB S23 restriction. The foldable is never a
+test fallback. Every named case must pass; aggregate success text or skipped cases
+cannot satisfy this gate. This checks PTY primitives, not a full Arch installation,
+provider authorization or tmux scrolling acceptance.
 
 ## Storage and reset
 
@@ -197,11 +217,15 @@ SM-F976B and MainActivity was confirmed resumed; no tests ran on that phone.
 Login runs under the existing foreground service, survives activity recreation,
 can be cancelled, and times out after 16 minutes. Android receives only the
 short-lived code and completion state; raw CLI output is not logged or displayed.
+The one-use fallback code's encoded buffer belongs to its write job and is wiped
+on completion, including cancellation before the IO worker begins. It is not
+cleared while a synchronous PTY write still owns it.
 The CLIs retain their own credentials in the private Arch filesystem. Resetting
 Arch deletes those credentials too. Completion describes this login attempt,
 not a continuously refreshed account-status check. Existing environments can
 use **Install starter tools** without resetting files; new installs automatically
-include GitHub CLI, Codex, Claude Code, OpenCode and Pi at pinned stable versions.
+include GitHub CLI, Codex, Claude Code, OpenCode and Pi under the current stable
+installation policy described below.
 
 Settings login verification (2026-09-09): the opt-in
 `ArchLoginDeviceTest#settingsRequestRealCodesAndCancelAcrossRecreation` passed

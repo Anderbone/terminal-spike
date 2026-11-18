@@ -80,6 +80,12 @@ internal sealed interface KnownHostTrustCheck {
     }
 }
 
+internal enum class FirstHostKeyTrustResult {
+    STORED,
+    ALREADY_TRUSTED,
+    CHANGED,
+}
+
 internal enum class ConditionalHostKeyReplacementResult {
     REPLACED,
     STALE,
@@ -269,87 +275,7 @@ internal class RoomKnownHostTrustStore(
     }
 }
 
-/** Compatibility adapter retained only for callers that have not completed the Room cutover. */
-internal class FileKnownHostTrustStore(
-    private val store: KnownHostStore,
-) : KnownHostTrustStore {
-    override fun check(
-        endpoint: KnownHostEndpoint,
-        algorithm: String,
-        key: ByteArray,
-    ): KnownHostTrustCheck {
-        val trusted = store.entries(endpoint.displayHost())
-        return when {
-            trusted.any { it.algorithm == algorithm && it.key.contentEquals(key) } ->
-                KnownHostTrustCheck.Trusted
-            trusted.isEmpty() -> KnownHostTrustCheck.UnknownEndpoint
-            else -> KnownHostTrustCheck.Changed(
-                trusted.map { entry ->
-                    TrustedKnownHostKey(endpoint, entry.algorithm, entry.key)
-                },
-            )
-        }
-    }
-
-    override fun trustFirst(
-        endpoint: KnownHostEndpoint,
-        algorithm: String,
-        key: ByteArray,
-    ): FirstHostKeyTrustResult = store.trustFirstKeyIfHostUnchanged(
-        endpoint.displayHost(),
-        algorithm,
-        key,
-    )
-
-    override fun replaceEndpoint(
-        endpoint: KnownHostEndpoint,
-        algorithm: String,
-        key: ByteArray,
-    ): Int = store.replaceEndpoint(endpoint.displayHost(), algorithm, key)
-
-    override fun replaceEndpointIfUnchanged(
-        endpoint: KnownHostEndpoint,
-        expectedTrustedKeys: List<TrustedKnownHostKey>,
-        algorithm: String,
-        key: ByteArray,
-    ): ConditionalHostKeyReplacementResult {
-        expectedTrustedKeys.requireEndpoint(endpoint)
-        return if (
-            store.replaceEndpointIfUnchanged(
-                host = endpoint.displayHost(),
-                expectedKeys = expectedTrustedKeys.map { expected ->
-                    KnownHost(
-                        host = endpoint.displayHost(),
-                        algorithm = expected.algorithm,
-                        key = expected.copyKey(),
-                    )
-                },
-                algorithm = algorithm,
-                key = key,
-            )
-        ) {
-            ConditionalHostKeyReplacementResult.REPLACED
-        } else {
-            ConditionalHostKeyReplacementResult.STALE
-        }
-    }
-
-    override fun forgetEndpoint(endpoint: KnownHostEndpoint): Int =
-        store.removeEndpoint(endpoint.displayHost())
-
-    override fun list(endpoint: KnownHostEndpoint?): List<TrustedKnownHostKey> =
-        store.entries(endpoint?.displayHost()).mapNotNull { entry ->
-            runCatching {
-                TrustedKnownHostKey(
-                    endpoint = KnownHostEndpoint.parseDisplayHost(entry.host),
-                    algorithm = entry.algorithm,
-                    key = entry.key,
-                )
-            }.getOrNull()
-        }
-}
-
-private fun List<TrustedKnownHostKey>.requireEndpoint(endpoint: KnownHostEndpoint) {
+internal fun List<TrustedKnownHostKey>.requireEndpoint(endpoint: KnownHostEndpoint) {
     require(isNotEmpty()) { "Changed-key replacement requires saved host keys." }
     require(all { trusted ->
         trusted.endpoint.host == endpoint.host && trusted.endpoint.port == endpoint.port

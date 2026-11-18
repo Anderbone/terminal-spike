@@ -31,7 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -131,13 +131,18 @@ internal fun AppSessionSwitcherDialog(
 
 @Composable
 internal fun ActiveTmuxSessionSwitcherDialog(
+    ownerKey: Any,
     catalog: TmuxSessionCatalog?,
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    var deleteTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    // Destructive intent belongs to this opening and the currently offered session IDs.
+    // It must not survive process restoration or transfer to another host with the same tmux ID.
+    var deleteTarget by remember(ownerKey, catalog?.sessions?.map { it.id }) {
+        mutableStateOf<String?>(null)
+    }
     WindowSwitcherDialog(
         title = stringResource(R.string.tmux_session_switcher_title),
         summary = when {

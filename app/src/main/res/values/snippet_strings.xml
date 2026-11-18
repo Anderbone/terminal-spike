@@ -16,4 +16,5 @@
     <string name="snippet_move_later">Move later</string>
     <string name="terminal_hide_pinned_snippets">Hide snippets</string>
     <string name="terminal_show_pinned_snippets">Show snippets</string>
+    <string name="notice_agent_effort_prompt">Switch to the matching agent and clear the input box before changing effort.</string>
 </resources>

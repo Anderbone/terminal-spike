@@ -70,9 +70,10 @@ class ReleaseEvidenceTest(unittest.TestCase):
         ).strip()
 
     def write_report(self, *, tests: int = 2, failures: int = 0) -> None:
+        outcome = "<failure />" if failures else ""
         self.report.write_text(
             f'<testsuite tests="{tests}" failures="{failures}" errors="0" skipped="1">'
-            '<testcase classname="Example" name="passes" />'
+            f'<testcase classname="Example" name="first">{outcome}</testcase>'
             '<testcase classname="Example" name="skips"><skipped /></testcase>'
             "</testsuite>\n",
             encoding="utf-8",
@@ -279,6 +280,107 @@ class ReleaseEvidenceTest(unittest.TestCase):
         missing_hosted = self.run_generator()
         self.assertNotEqual(0, missing_hosted.returncode)
         self.assertIn("explicit hosted_ci pending entry", missing_hosted.stderr)
+
+    def test_case_outcomes_cannot_be_hidden_by_passing_suite_totals(self) -> None:
+        for outcome in ("failure", "error", "skipped"):
+            with self.subTest(outcome=outcome):
+                self.report.write_text(
+                    '<testsuite tests="2" failures="0" errors="0" skipped="1">'
+                    '<testcase name="private-fixture">'
+                    f'<{outcome}>fixture-secret</{outcome}></testcase>'
+                    '<testcase name="skip"><skipped /></testcase></testsuite>',
+                    encoding="utf-8",
+                )
+                result = self.run_generator()
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(self.output.exists())
+                self.assertNotIn("private-fixture", result.stdout + result.stderr)
+                self.assertNotIn("fixture-secret", result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_parent_totals_and_nested_children_must_agree(self) -> None:
+        reports = (
+            '<testsuites tests="999" failures="0" errors="0" skipped="1">'
+            '<testsuite tests="2" failures="0" errors="0" skipped="1" /></testsuites>',
+            '<testsuites><testsuite tests="2" failures="0" errors="0" skipped="1">'
+            '<testsuite tests="1" failures="1" errors="0" /></testsuite></testsuites>',
+            '<testsuites><testsuite tests="2" failures="0" errors="0" skipped="1">'
+            '<testsuite tests="invalid" failures="0" errors="0" /></testsuite></testsuites>',
+        )
+        for xml in reports:
+            with self.subTest(xml=xml):
+                self.report.write_text(xml, encoding="utf-8")
+                result = self.run_generator()
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(self.output.exists())
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_partial_case_records_cannot_be_attested_as_complete(self) -> None:
+        self.report.write_text(
+            '<testsuite tests="2" failures="0" errors="0" skipped="1">'
+            '<testcase name="only-one"><skipped /></testcase></testsuite>',
+            encoding="utf-8",
+        )
+        result = self.run_generator()
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(self.output.exists())
+
+    def test_nested_and_direct_case_evidence_retains_exact_valid_counts(self) -> None:
+        self.report.write_text(
+            '<testsuites tests="2" failures="0" errors="0" skipped="1"><testsuites>'
+            '<testsuite tests="2" failures="0" errors="0" skipped="1">'
+            '<testcase name="outer" />'
+            '<testsuite tests="1" failures="0" errors="0" skipped="1">'
+            '<testcase name="inner"><skipped /></testcase>'
+            '</testsuite></testsuite></testsuites></testsuites>',
+            encoding="utf-8",
+        )
+        result = self.run_generator()
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(self.inputs["test_suites"][0]["expected"], manifest["tests"][0]["counts"])
+
+    def test_optional_skip_total_is_derived_from_case_evidence(self) -> None:
+        self.report.write_text(
+            '<testsuite tests="2" failures="0" errors="0">'
+            '<testcase name="pass" /><testcase name="skip"><skipped /></testcase></testsuite>',
+            encoding="utf-8",
+        )
+        result = self.run_generator()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, json.loads(self.output.read_text())["tests"][0]["counts"]["skipped"])
+
+    def test_consistent_summary_only_evidence_remains_supported(self) -> None:
+        for xml in (
+            '<testsuite tests="2" failures="0" errors="0" skipped="1" />',
+            '<testsuites><testsuite tests="2" failures="0" errors="0" skipped="1" /></testsuites>',
+        ):
+            with self.subTest(xml=xml):
+                self.report.write_text(xml, encoding="utf-8")
+                result = self.run_generator()
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    self.inputs["test_suites"][0]["expected"],
+                    json.loads(self.output.read_text())["tests"][0]["counts"],
+                )
+
+    def test_invalid_reports_fail_without_disclosing_report_contents(self) -> None:
+        for xml in (
+            '<testsuite tests="private-fixture" failures="0" errors="0" />',
+            '<unexpected>fixture-secret</unexpected>',
+            '<testsuite>fixture-secret',
+            '<testsuites>' * 2_000 +
+            '<testsuite tests="2" failures="0" errors="0" skipped="1" />' +
+            '</testsuites>' * 2_000,
+        ):
+            with self.subTest(prefix=xml[:30]):
+                self.report.write_text(xml, encoding="utf-8")
+                result = self.run_generator()
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(self.output.exists())
+                self.assertNotIn("private-fixture", result.stdout + result.stderr)
+                self.assertNotIn("fixture-secret", result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
 
     def test_documentation_verifier_accepts_only_manifest_derived_block(self) -> None:
         generated = self.run_generator()

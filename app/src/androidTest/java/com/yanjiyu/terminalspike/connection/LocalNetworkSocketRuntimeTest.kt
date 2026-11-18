@@ -55,7 +55,7 @@ class LocalNetworkSocketRuntimeTest {
 
         val knownHosts = context.cacheDir.resolve("api37-denied-lan-known-hosts").apply { delete() }
         val connection = JschSshConnection(
-            KnownHostManager { knownHosts },
+            fileKnownHostManager { knownHosts },
             fixture.sshConfig(),
         )
         val terminalState = CompletableDeferred<ConnectionState>()
@@ -103,7 +103,7 @@ class LocalNetworkSocketRuntimeTest {
         )
 
         val knownHosts = context.cacheDir.resolve("api37-granted-lan-known-hosts").apply { delete() }
-        val connection = JschSshConnection(KnownHostManager { knownHosts }, fixture.sshConfig())
+        val connection = JschSshConnection(fileKnownHostManager { knownHosts }, fixture.sshConfig())
         val connected = CompletableDeferred<Unit>()
         val output = ByteArrayOutputStream()
         val connectJob = launch(Dispatchers.IO) {
@@ -145,7 +145,7 @@ class LocalNetworkSocketRuntimeTest {
                 }
             }
 
-            val client = SftpClient(KnownHostManager { knownHosts })
+            val client = SftpClient(fileKnownHostManager { knownHosts })
             val payload = "API 37 LAN SFTP ${UUID.randomUUID()}".encodeToByteArray()
             try {
                 val home = client.connect(

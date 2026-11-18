@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 
 internal const val SSH_DNS_SD_SERVICE_TYPE = "_ssh._tcp"
 internal const val NEARBY_SSH_DISCOVERY_TIMEOUT_MILLIS = 15_000L
-private const val MAX_DISCOVERED_SSH_SERVICES = 32
+internal const val MAX_DISCOVERED_SSH_SERVICES = 32
 
 internal enum class NearbySshPickerMode {
     SYSTEM,
@@ -141,7 +141,8 @@ internal class DefaultNearbySshDiscoveryController(
 
     override fun start() {
         if (closed) return
-        val operation = beginOperation()
+        val operation = invalidateOperation()
+        runCatching { boundary.stopResolution() }
         candidates.clear()
         mutableState.value = NearbySshDiscoveryState.Searching(boundary.pickerMode)
         scheduleTimeout(operation, resolving = false)
@@ -188,12 +189,16 @@ internal class DefaultNearbySshDiscoveryController(
 
     override fun select(candidateId: String) {
         if (closed) return
+        val current = state.value
+        if (current !is NearbySshDiscoveryState.Searching &&
+            current !is NearbySshDiscoveryState.Results
+        ) return
         candidates[candidateId]?.let(::beginResolution)
     }
 
     override fun cancel() {
         if (closed) return
-        beginOperation()
+        invalidateOperation()
         candidates.clear()
         runCatching { boundary.stopDiscovery() }
         runCatching { boundary.stopResolution() }
@@ -210,7 +215,7 @@ internal class DefaultNearbySshDiscoveryController(
     }
 
     private fun beginResolution(candidate: NearbySshServiceCandidate) {
-        val operation = beginOperation()
+        val operation = invalidateOperation()
         mutableState.value = NearbySshDiscoveryState.Resolving(
             pickerMode = boundary.pickerMode,
             displayName = candidate.displayName,
@@ -223,7 +228,7 @@ internal class DefaultNearbySshDiscoveryController(
                 object : NearbySshDiscoveryBoundary.ResolutionListener {
                     override fun onResolved(service: ResolvedNearbySshService) {
                         if (!owns(operation)) return
-                        timeoutJob?.cancel()
+                        invalidateOperation()
                         mutableState.value = service.toNearbySshEndpoint()
                             ?.let { endpoint -> NearbySshDiscoveryState.Selected(endpoint) }
                             ?: NearbySshDiscoveryState.Unavailable(
@@ -243,9 +248,11 @@ internal class DefaultNearbySshDiscoveryController(
         }
     }
 
-    private fun beginOperation(): Long {
+    /** Retire callbacks before stopping a boundary, which may synchronously call back. */
+    private fun invalidateOperation(): Long {
         operationId += 1
         timeoutJob?.cancel()
+        timeoutJob = null
         return operationId
     }
 
@@ -256,11 +263,10 @@ internal class DefaultNearbySshDiscoveryController(
             delay(timeoutMillis)
             if (!owns(operation)) return@launch
             if (resolving) {
-                runCatching { boundary.stopResolution() }
                 finishWithFailure(NearbySshDiscoveryFailure.TIMED_OUT)
             } else {
+                invalidateOperation()
                 runCatching { boundary.stopDiscovery() }
-                timeoutJob = null
                 mutableState.value = if (
                     boundary.pickerMode == NearbySshPickerMode.IN_APP && candidates.isNotEmpty()
                 ) {
@@ -276,8 +282,7 @@ internal class DefaultNearbySshDiscoveryController(
     }
 
     private fun finishDiscoveryWithoutSelection() {
-        timeoutJob?.cancel()
-        timeoutJob = null
+        invalidateOperation()
         mutableState.value = when {
             boundary.pickerMode == NearbySshPickerMode.SYSTEM -> NearbySshDiscoveryState.Unavailable(
                 pickerMode = NearbySshPickerMode.SYSTEM,
@@ -292,8 +297,7 @@ internal class DefaultNearbySshDiscoveryController(
     }
 
     private fun finishWithFailure(failure: NearbySshDiscoveryFailure) {
-        timeoutJob?.cancel()
-        timeoutJob = null
+        invalidateOperation()
         runCatching { boundary.stopDiscovery() }
         runCatching { boundary.stopResolution() }
         mutableState.value = NearbySshDiscoveryState.Unavailable(boundary.pickerMode, failure)

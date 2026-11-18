@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike
 
 import android.os.ParcelFileDescriptor
+import androidx.annotation.StringRes
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -33,34 +34,54 @@ import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
 import com.yanjiyu.terminalspike.ui.settings.KeyboardPreviewTestTag
 import com.yanjiyu.terminalspike.ui.settings.KeyboardSettingsTestTag
 import com.yanjiyu.terminalspike.ui.settings.SecuritySettingsTestTag
-import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import com.yanjiyu.terminalspike.ui.NewTerminalSessionTestTag
 import com.yanjiyu.terminalspike.ui.NewTerminalSessionVisualTestTag
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import com.yanjiyu.terminalspike.ui.BufferedInputDraftStore
 import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
 import com.yanjiyu.terminalspike.ui.TerminalChromeTitleTestTag
 import com.yanjiyu.terminalspike.ui.TerminalEmptyStateTestTag
 import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
 import org.junit.Rule
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.Test
 import org.junit.Assert.assertFalse
 
 class MainScreenSmokeTest {
+    private val composeRule = createAndroidComposeRule<MainActivity>()
+    private val draftFixture = object : ExternalResource() {
+        private lateinit var store: BufferedInputDraftStore
+        private var original = ""
+
+        override fun before() {
+            store = BufferedInputDraftStore(InstrumentationRegistry.getInstrumentation().targetContext)
+            original = store.load()
+            store.save("")
+        }
+
+        override fun after() {
+            store.save(original)
+        }
+    }
+
+    // The ViewModel loads its persisted draft during construction. Restore it only after the
+    // Activity and its input callbacks have closed, including when a test assertion fails.
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val rules: RuleChain = RuleChain.outerRule(draftFixture).around(composeRule)
 
     @Test
     fun connectionsAreTheLaunchDestination() {
-        composeRule.onNodeWithContentDescription("Connections screen").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
-        composeRule.onNodeWithText("SSH keys").assertDoesNotExist()
-        composeRule.onNodeWithText("Snippets").assertDoesNotExist()
-        composeRule.onNodeWithText("Renderer lab").assertDoesNotExist()
-        composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Open connections").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open terminal").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_screen_description)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_add_host)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.settings_category_ssh_keys)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.settings_category_snippets)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.developer_renderer_lab)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.settings_known_hosts_heading)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_connections)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_terminal)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).assertIsDisplayed()
     }
 
     @Test
@@ -68,11 +89,13 @@ class MainScreenSmokeTest {
         openTerminal()
 
         composeRule.onNodeWithTag(TerminalChromeTitleTestTag).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Back to Connections").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            string(R.string.terminal_predictive_back_destination, string(R.string.navigation_connections)),
+        ).assertIsDisplayed()
         composeRule.onNodeWithTag(TerminalEmptyStateTestTag).assertIsDisplayed()
-        composeRule.onNodeWithText("No terminal session is open.").assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.terminal_no_session_open)).assertIsDisplayed()
         composeRule.onNodeWithText(
-            "Choose a saved connection to start a secure terminal session.",
+            string(R.string.terminal_no_session_detail),
         ).assertIsDisplayed()
         composeRule.onNodeWithTag(NewTerminalSessionTestTag)
             .assertWidthIsAtLeast(48.dp)
@@ -81,17 +104,17 @@ class MainScreenSmokeTest {
             .assertWidthIsEqualTo(30.dp)
             .assertHeightIsEqualTo(30.dp)
         composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open connections").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open terminal").assertIsSelected()
-        composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_connections)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_terminal)).assertIsSelected()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).assertIsDisplayed()
         composeRule.onNodeWithTag("terminal_container").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
             .assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open terminal").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_terminal)).performClick()
         composeRule.onNodeWithTag(TerminalEmptyStateTestTag).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open connections").performClick()
-        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_connections)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_add_host)).assertIsDisplayed()
 
         openRendererLab()
         composeRule.onNodeWithTag("terminal_container").assertIsDisplayed()
@@ -100,13 +123,13 @@ class MainScreenSmokeTest {
 
     @Test
     fun addHostDialogIsReachable() {
-        composeRule.onNodeWithContentDescription("Add host").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_add_host)).performClick()
 
-        composeRule.onNodeWithText("Add host").assertIsDisplayed()
-        composeRule.onNodeWithText("Connection name (optional)")
+        composeRule.onNodeWithText(string(R.string.host_editor_add_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.host_editor_connection_name_optional))
             .performScrollTo()
             .assertIsDisplayed()
-        composeRule.onNodeWithText("Hostname or IP")
+        composeRule.onNodeWithText(string(R.string.host_editor_hostname))
             .performScrollTo()
             .assertIsDisplayed()
     }
@@ -114,77 +137,77 @@ class MainScreenSmokeTest {
     @Test
     fun encryptedConnectionsAreReachable() {
         composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("Connections screen").assertIsDisplayed()
-        composeRule.onNodeWithText("Active sessions").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Add host").assertIsDisplayed()
-        composeRule.onNodeWithText("SSH keys").assertDoesNotExist()
-        composeRule.onNodeWithText("Snippets").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Back from connections").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_screen_description)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.workspace_active_sessions)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_add_host)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.settings_category_ssh_keys)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.settings_category_snippets)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.connections_back)).assertDoesNotExist()
     }
 
     @Test
     fun knownHostsAreManagedOnlyUnderSettingsSecurity() {
-        composeRule.onNodeWithText("Known hosts").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+        composeRule.onNodeWithText(string(R.string.settings_known_hosts_heading)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
             .performScrollToNode(hasText(composeRule.activity.getString(R.string.settings_category_advanced)))
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.settings_category_advanced)).performClick()
         composeRule.onNodeWithTag(AdvancedSettingsListTestTag)
-            .performScrollToNode(hasText("Security"))
-        composeRule.onNodeWithText("Security").performClick()
+            .performScrollToNode(hasText(string(R.string.settings_category_security)))
+        composeRule.onNodeWithText(string(R.string.settings_category_security)).performClick()
 
         composeRule.onNodeWithTag(SecuritySettingsTestTag)
-            .performScrollToNode(hasText("Known hosts"))
-        composeRule.onNodeWithText("Known hosts").assertIsDisplayed()
+            .performScrollToNode(hasText(string(R.string.settings_known_hosts_heading)))
+        composeRule.onNodeWithText(string(R.string.settings_known_hosts_heading)).assertIsDisplayed()
     }
 
     @Test
     fun sshKeysAndSnippetsAreManagedFromSettings() {
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("SSH keys"))
-        composeRule.onNodeWithText("SSH keys").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Snippets"))
-        composeRule.onNodeWithText("Snippets").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_ssh_keys)))
+        composeRule.onNodeWithText(string(R.string.settings_category_ssh_keys)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_snippets)))
+        composeRule.onNodeWithText(string(R.string.settings_category_snippets)).assertIsDisplayed()
     }
 
     @Test
     fun extraKeyEditorOpensFromSettings() {
         composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Keyboard"))
-        composeRule.onNodeWithText("Keyboard").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_keyboard)))
+        composeRule.onNodeWithText(string(R.string.settings_category_keyboard)).performClick()
 
-        composeRule.onNodeWithContentDescription("Settings screen").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_screen_description)).assertIsDisplayed()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(KeyboardPreviewTestTag)
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag(KeyboardSettingsTestTag)
-            .performScrollToNode(hasText("Edit accessory keys"))
-        composeRule.onNodeWithText("Edit accessory keys").performClick()
+            .performScrollToNode(hasText(string(R.string.settings_edit_keyboard_keys)))
+        composeRule.onNodeWithText(string(R.string.settings_edit_keyboard_keys)).performClick()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.settings_edit_keyboard_keys_summary),
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("Cancel").assertIsDisplayed()
-        composeRule.onNodeWithText("Save").assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.cancel)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.save)).assertIsDisplayed()
     }
 
     @Test
     fun shortcutPageShowsDirectControlChords() {
         openRendererLab()
-        composeRule.onNodeWithContentDescription("Control C").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Control W").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Open expanded terminal keyboard").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.terminal_key_control_c)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.terminal_key_control_w)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.terminal_more_keys_description)).assertIsDisplayed()
     }
 
     @Test
     fun rendererLabBufferedInputStagesTextAndPreservesTerminalFocusRouting() {
         openRendererLab()
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
-        val bufferedInput = composeRule.onNodeWithContentDescription("Buffered terminal input")
+        val bufferedInput = composeRule.onNodeWithContentDescription(string(R.string.terminal_buffered_input_description))
             .assertIsDisplayed()
         bufferedInput.performTextInput("git status --short")
         bufferedInput.assertIsFocused()
@@ -200,7 +223,7 @@ class MainScreenSmokeTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
-        composeRule.onNodeWithContentDescription("Terminal key ESC").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.terminal_key_description, "ESC")).assertIsDisplayed()
         onView(isAssignableFrom(FastTerminalView::class.java)).check(matches(hasFocus()))
     }
 
@@ -220,8 +243,8 @@ class MainScreenSmokeTest {
         composeRule.onNodeWithTag("terminal_container").assertIsDisplayed()
 
         pressSystemBack()
-        composeRule.onNodeWithContentDescription("Settings screen").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open renderer lab").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_screen_description)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.developer_open_renderer_lab)).assertIsDisplayed()
     }
 
     @Test
@@ -238,9 +261,12 @@ class MainScreenSmokeTest {
         input.assert(hasText("keep my unsent command"))
 
         pressSystemBack()
-        composeRule.onNodeWithContentDescription("Settings screen").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open renderer lab").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_screen_description)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.developer_open_renderer_lab)).assertIsDisplayed()
     }
+
+    private fun string(@StringRes resource: Int, vararg arguments: Any): String =
+        composeRule.activity.getString(resource, *arguments)
 
     private fun pressSystemBack() {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
@@ -277,17 +303,17 @@ class MainScreenSmokeTest {
 
     private fun openTerminal() {
         composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("Open terminal").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_terminal)).performClick()
     }
 
     private fun openRendererLab() {
         composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Advanced options"))
-        composeRule.onNodeWithText("Advanced options").performClick()
-        composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Developer"))
-        composeRule.onNodeWithText("Developer").performClick()
-        composeRule.onNodeWithContentDescription("Open renderer lab").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_advanced)))
+        composeRule.onNodeWithText(string(R.string.settings_category_advanced)).performClick()
+        composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText(string(R.string.settings_category_developer)))
+        composeRule.onNodeWithText(string(R.string.settings_category_developer)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.developer_open_renderer_lab)).performClick()
     }
 }

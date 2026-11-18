@@ -19,15 +19,19 @@ internal fun codexEffortFromLiveFooter(text: String): String? {
     }.lastOrNull()
 }
 
-/** Smooth a missed metadata sample briefly, only for an identified, unchanged Codex process. */
+/** Keep presentation through failed inspections; confirmed identity changes always replace it. */
 internal class CodexEffortObservation(private val now: () -> Long = System::nanoTime) {
     private var previous = TerminalInputContext()
     private var confirmedAt = 0L
-    fun observe(next: TerminalInputContext): TerminalInputContext {
-        val time = now()
-        val same = next.agentId == "codex" && next.agentProcessId != null &&
+    fun captureTime(): Long = now()
+
+    fun observe(next: TerminalInputContext): TerminalInputContext = observe(next, captureTime())
+
+    fun observe(next: TerminalInputContext, time: Long): TerminalInputContext {
+        if (!next.observationAvailable) return previous.copy(observationAvailable = false, herdrPiScrollPane = null)
+        val same = next.agentId == "codex" && next.identity.isNotEmpty() &&
             next.identity == previous.identity && next.agentProcessId == previous.agentProcessId
-        val result = if (same && next.reasoningEffort == null && time - confirmedAt <= 3_000_000_000L)
+        val result = if (same && next.reasoningEffort == null && (next.agentProcessId != null || time - confirmedAt <= 3_000_000_000L))
             next.copy(reasoningEffort = previous.reasoningEffort) else next
         if (next.reasoningEffort != null) confirmedAt = time
         previous = result

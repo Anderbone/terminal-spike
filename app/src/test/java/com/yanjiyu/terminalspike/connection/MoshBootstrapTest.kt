@@ -29,7 +29,7 @@ class MoshBootstrapTest {
     fun healthySshUploadsWithoutReauthentication() {
         val original = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
         val unused = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
-        MoshImageUploadSession(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
+        MoshSshSideChannel(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
             assertEquals("/home/user/image.png", it.uploadPastedImage(
                 "image.png", ByteArrayInputStream(byteArrayOf(1, 2)),
             ))
@@ -50,7 +50,7 @@ class MoshBootstrapTest {
             }
         }
         val unused = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
-        MoshImageUploadSession(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
+        MoshSshSideChannel(original, reloadableUploadConfig(), FakeExecSessionFactory(unused)).use {
             assertThrows(java.io.IOException::class.java) {
                 it.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1, 2)))
             }
@@ -71,7 +71,7 @@ class MoshBootstrapTest {
                 throw java.io.IOException("Upload interrupted")
             }
         }
-        val owner = MoshImageUploadSession(disconnectedUploadSession(original), reloadableUploadConfig(), FakeExecSessionFactory(failing))
+        val owner = MoshSshSideChannel(disconnectedUploadSession(original), reloadableUploadConfig(), FakeExecSessionFactory(failing))
         owner.use {
             assertThrows(java.io.IOException::class.java) {
                 it.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1, 2, 3)))
@@ -87,7 +87,7 @@ class MoshBootstrapTest {
     fun closingMoshDuringUploadAuthenticationClosesPendingConnectionAndPreventsUpload() {
         val original = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
         val fresh = FakeExecSession(ipv4(192, 0, 2, 44), FakeExecChannel(byteArrayOf()))
-        lateinit var owner: MoshImageUploadSession
+        lateinit var owner: MoshSshSideChannel
         val factory = object : MoshSshExecSessionFactory {
             override suspend fun open(
                 config: SshConnectionConfig,
@@ -102,7 +102,7 @@ class MoshBootstrapTest {
                 return fresh
             }
         }
-        owner = MoshImageUploadSession(disconnectedUploadSession(original), reloadableUploadConfig(), factory)
+        owner = MoshSshSideChannel(disconnectedUploadSession(original), reloadableUploadConfig(), factory)
         assertThrows(IllegalStateException::class.java) {
             owner.uploadPastedImage("image.png", ByteArrayInputStream(byteArrayOf(1)))
         }
@@ -624,7 +624,11 @@ private class PromptingExecSessionFactory(
         onRepositoryReady: (VerifyingHostKeyRepository) -> Unit,
         registerConnectingSession: (AutoCloseable) -> Boolean,
     ): MoshSshExecSession? {
-        val repository = VerifyingHostKeyRepository(store, config.host, onPrompt)
+        val repository = VerifyingHostKeyRepository(
+            store = FileKnownHostTrustStore(store),
+            endpoint = KnownHostEndpoint.parseDisplayHost(config.host),
+            onPrompt = onPrompt,
+        )
         onRepositoryReady(repository)
         val result = repository.check(config.host, ed25519Key(7))
         check(result == com.jcraft.jsch.HostKeyRepository.OK)

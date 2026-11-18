@@ -20,6 +20,7 @@ class RealMoshDeviceRunnerTest(unittest.TestCase):
             "instrumentation-output-to-junit.py",
             "redact-android-test-log.py",
             "assert-test-report.py",
+            "junit_report.py",
         ):
             shutil.copy2(SOURCE_ROOT / "scripts" / name, scripts / name)
             (scripts / name).chmod(0o755)

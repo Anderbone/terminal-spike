@@ -741,15 +741,14 @@ fun TerminalSpikeScreen(
     var restoreTerminalFocusAfterSnippetPicker by remember { mutableStateOf(false) }
     var pendingAccessoryPaste by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var imagePickerTargetSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var tmuxSwitcherTargetId by remember { mutableStateOf<Long?>(null) }
+    val tmuxSwitcherRequests = remember { TmuxSwitcherRequestOwner() }
+    var tmuxSwitcherOwner by remember { mutableStateOf<TmuxSwitcherRequestOwner.Owner?>(null) }
     var tmuxSwitcherCatalog by remember { mutableStateOf<TmuxSessionCatalog?>(null) }
-    var tmuxDeleteTargetId by remember { mutableStateOf<String?>(null) }
     var identityImportVisible by remember { mutableStateOf(false) }
     val identityImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data?.takeIf { result.resultCode == Activity.RESULT_OK }
-        val recoveryToken = reimportIdentityToken
         reimportIdentityToken = null
-        if (uri != null) viewModel.importSshIdentity(uri, recoveryToken)
+        viewModel.importSshIdentityPickerResult(uri)
     }
     fun attachSelectedFiles(uris: List<android.net.Uri>) {
         val targetSessionId = imagePickerTargetSessionId
@@ -804,10 +803,24 @@ fun TerminalSpikeScreen(
         identityImportVisible = true
     }
 
+    if (state.identityImportNeedsReselection) {
+        AppDialog(
+            onDismissRequest = viewModel::acknowledgeInterruptedIdentityImport,
+            title = { Text(stringResource(R.string.key_import_interrupted_title)) },
+            text = { Text(stringResource(R.string.key_import_interrupted_message)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::acknowledgeInterruptedIdentityImport) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
     if (identityImportVisible) {
         SshIdentityImportDialog(
             onDismiss = { identityImportVisible = false; reimportIdentityToken = null },
-            onFile = {
+            onFile = onFile@{
+                if (!viewModel.beginIdentityPicker(reimportIdentityToken)) return@onFile
                 val context = rootView.context
                 val explicit = sshIdentitySystemDocumentIntent(context)
                 fun launch(intent: android.content.Intent): Boolean =
@@ -821,8 +834,11 @@ fun TerminalSpikeScreen(
                     }
                     launch(sshIdentityDocumentIntent(context))
                 }
-                if (!launched) screenScope.launch {
-                    snackbarHostState.showSnackbar(context.getString(R.string.key_import_picker_unavailable))
+                if (!launched) {
+                    viewModel.cancelIdentityPicker()
+                    screenScope.launch {
+                        snackbarHostState.showSnackbar(context.getString(R.string.key_import_picker_unavailable))
+                    }
                 }
             },
             onText = { label, text ->
@@ -889,20 +905,30 @@ fun TerminalSpikeScreen(
         }
     }
 
+    fun closeTmuxSessionSwitcher(owner: TmuxSwitcherRequestOwner.Owner) {
+        if (!tmuxSwitcherRequests.isCurrent(owner)) return
+        tmuxSwitcherRequests.close(owner)
+        tmuxSwitcherOwner = null
+        tmuxSwitcherCatalog = null
+    }
+
     fun openTmuxSessionSwitcher(sessionId: Long) {
         if (state.sessions.firstOrNull { it.id == sessionId }?.connectionState !is ConnectionState.Connected) {
             return
         }
-        tmuxSwitcherTargetId = sessionId
+        val owner = tmuxSwitcherRequests.open(sessionId)
+        tmuxSwitcherOwner = owner
         tmuxSwitcherCatalog = null
+        val request = tmuxSwitcherRequests.beginRequest(owner) ?: return
         screenScope.launch {
+            if (!tmuxSwitcherRequests.isCurrent(request)) return@launch
             val result = viewModel.queryActiveTmuxSessions(sessionId)
-            if (tmuxSwitcherTargetId != sessionId) return@launch
+            if (!tmuxSwitcherRequests.isCurrent(request)) return@launch
             tmuxSwitcherCatalog = result
             if (result.availability == TmuxAvailability.AVAILABLE && result.sessions.isNotEmpty()) {
                 val withPreviews = viewModel.queryActiveTmuxSessionPreviews(sessionId)
                 if (
-                    tmuxSwitcherTargetId == sessionId &&
+                    tmuxSwitcherRequests.isCurrent(request) &&
                     withPreviews.availability == TmuxAvailability.AVAILABLE
                 ) {
                     tmuxSwitcherCatalog = withPreviews
@@ -911,12 +937,17 @@ fun TerminalSpikeScreen(
         }
     }
 
-    LaunchedEffect(tmuxSwitcherTargetId) {
-        val sessionId = tmuxSwitcherTargetId ?: return@LaunchedEffect
+    LaunchedEffect(tmuxSwitcherOwner) {
+        val owner = tmuxSwitcherOwner ?: return@LaunchedEffect
         while (true) {
             kotlinx.coroutines.delay(1_000L)
-            val refreshed = viewModel.queryActiveTmuxSessions(sessionId)
-            if (tmuxSwitcherTargetId != sessionId) return@LaunchedEffect
+            val request = tmuxSwitcherRequests.beginRequest(owner)
+            if (request == null) {
+                if (!tmuxSwitcherRequests.isCurrent(owner)) return@LaunchedEffect
+                continue
+            }
+            val refreshed = viewModel.queryActiveTmuxSessions(owner.sessionId)
+            if (!tmuxSwitcherRequests.isCurrent(request)) continue
             val previews = tmuxSwitcherCatalog?.sessions?.associate { it.id to it.previewLines }.orEmpty()
             tmuxSwitcherCatalog = refreshed.copy(sessions = refreshed.sessions.map {
                 it.copy(previewLines = previews[it.id].orEmpty())
@@ -1661,9 +1692,9 @@ fun TerminalSpikeScreen(
                                             agentContextKey = "${state.activeSessionId}/${inputContext.identity}",
                                             detectedAgentId = inputContext.agentId,
                                             currentAgentEffort = inputContext.reasoningEffort,
-                                            canSendAgentSnippets = state.canSendTerminalInput &&
+                                            canSendAgentSnippets = state.canSendTerminalInput && inputContext.observationAvailable &&
                                                 viewModel.bufferedInputDraftState.value.text.isEmpty() &&
-                                                (inputContext.identity.isEmpty() || inputContext.agentId == "codex"),
+                                                (inputContext.identity.isEmpty() || com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.forAgent(inputContext.agentId).isNotEmpty()),
                                             onSend = { id ->
                                                 if (com.yanjiyu.terminalspike.settings.AgentTerminalSnippets.all.none { it.id == id }) {
                                                     terminalInputFocusRequester.resetComposingInput()
@@ -1675,6 +1706,9 @@ fun TerminalSpikeScreen(
                                                 viewModel.startNewCodex()
                                             },
                                             onSave = viewModel::saveConnectionsSnippet,
+                                            onReplaceDefault = viewModel::replaceDefaultSnippet,
+                                            onHideDefault = viewModel::hideDefaultSnippet,
+                                            hiddenDefaultSnippetIds = state.hiddenDefaultSnippetIds,
                                             onDelete = viewModel::deleteConnectionsSnippet,
                                             onEditorClosed = { restoreTerminalFocusAfterSnippetPicker = true },
                                         )
@@ -1715,6 +1749,10 @@ fun TerminalSpikeScreen(
                                     onAction = { action ->
                                         if (action is TerminalAccessoryAction.Local) {
                                             when (action.action) {
+                                                TerminalLocalAccessoryAction.MOUSE_LEFT ->
+                                                    viewModel.clickTerminalMouse(secondary = false)
+                                                TerminalLocalAccessoryAction.MOUSE_RIGHT ->
+                                                    viewModel.clickTerminalMouse(secondary = true)
                                                 TerminalLocalAccessoryAction.PASTE ->
                                                     pasteClipboardInto(state.activeSessionId)
                                                 TerminalLocalAccessoryAction.SELECT_IMAGES -> {
@@ -1782,18 +1820,14 @@ fun TerminalSpikeScreen(
                     }
                 }
 
-                AppRoute.SETTINGS -> LocalToolsScreen(
-                    destination = AppDestination.SETTINGS,
-                    profiles = state.profiles,
-                    identities = state.identities,
+                AppRoute.SETTINGS -> SettingsToolsScreen(
                     knownHosts = state.knownHosts,
                     snippets = state.snippets,
-                    extraKeys = state.extraKeys,
                     moshExtension = state.moshExtension,
                     onNavigateBack = { destination = settingsReturnDestination },
                     onOpenWorkspace = { destination = AppRoute.WORKSPACE },
                     // The second primary navigation item is the live terminal.
-                    onOpenConnections = { showTerminal(target) },
+                    onOpenTerminal = { showTerminal(target) },
                     onOpenSettings = { destination = AppRoute.SETTINGS },
                     onOpenSshKeys = { showSettingsCatalog(ConnectionsTab.KEYS) },
                     keysContent = { query ->
@@ -1810,28 +1844,11 @@ fun TerminalSpikeScreen(
                     },
                     onOpenPortForwards = { showSettingsCatalog(ConnectionsTab.HOSTS) },
                     onOpenSnippets = { showSettingsCatalog(ConnectionsTab.SNIPPETS) },
-                    onUseProfile = { profile ->
-                        showNewConnection(profile.id)
-                    },
-                    onSaveProfile = viewModel::saveSshProfile,
-                    onDeleteProfile = viewModel::deleteSshProfile,
-                    onImportIdentity = { launchIdentityImport() },
-                    onReimportIdentity = { token -> launchIdentityImport(token) },
-                    onDeleteIdentity = viewModel::deleteSshIdentity,
                     onForgetKnownHost = viewModel::forgetKnownHost,
                     onSaveSnippet = viewModel::saveSnippet,
+                    hiddenDefaultSnippetIds = state.hiddenDefaultSnippetIds,
+                    onHideDefaultSnippet = viewModel::hideDefaultSnippet,
                     onDeleteSnippet = viewModel::deleteSnippet,
-                    onSendSnippet = { id ->
-                        viewModel.sendSnippet(id)
-                        showTerminal(AppRoute.CONNECTIONS)
-                    },
-                    onSetKeyVisible = viewModel::setExtraKeyVisible,
-                    onReplaceKey = viewModel::replaceExtraKey,
-                    onMoveKey = viewModel::moveExtraKey,
-                    onResetKeys = viewModel::resetExtraKeys,
-                    onSaveKeys = {
-                        viewModel.saveExtraKeys()
-                    },
                     onRefreshMoshExtension = viewModel::refreshMoshExtension,
                     onOpenRendererLab = {
                         toolsSection = ToolSection.DEVELOPER
@@ -1848,72 +1865,51 @@ fun TerminalSpikeScreen(
 
         }
 
-        tmuxSwitcherTargetId?.let { targetId ->
+        tmuxSwitcherOwner?.let { owner ->
+            val targetId = owner.sessionId
             val targetSession = state.sessions.firstOrNull { it.id == targetId }
-            if (targetSession == null) {
-                LaunchedEffect(targetId) {
-                    tmuxSwitcherTargetId = null
-                    tmuxSwitcherCatalog = null
-                }
+            if (targetSession?.connectionState !is ConnectionState.Connected) {
+                LaunchedEffect(owner) { closeTmuxSessionSwitcher(owner) }
             } else {
                 ActiveTmuxSessionSwitcherDialog(
+                    ownerKey = owner,
                     catalog = tmuxSwitcherCatalog,
-                    onDismiss = {
-                        tmuxSwitcherTargetId = null
-                        tmuxSwitcherCatalog = null
-                        tmuxDeleteTargetId = null
+                    onDismiss = { closeTmuxSessionSwitcher(owner) },
+                    onRefresh = {
+                        if (tmuxSwitcherRequests.isCurrent(owner)) openTmuxSessionSwitcher(targetId)
                     },
-                    onRefresh = { openTmuxSessionSwitcher(targetId) },
                     onSelect = { tmuxSessionId ->
-                        screenScope.launch {
-                            if (viewModel.switchActiveTmuxSession(targetId, tmuxSessionId)) {
-                                tmuxSwitcherTargetId = null
-                                tmuxSwitcherCatalog = null
+                        val request = tmuxSwitcherRequests.beginOperation(owner)
+                        if (request != null) screenScope.launch {
+                            if (!tmuxSwitcherRequests.isCurrent(request)) return@launch
+                            val switched = try {
+                                viewModel.switchActiveTmuxSession(targetId, tmuxSessionId)
+                            } finally {
+                                tmuxSwitcherRequests.finishOperation(request)
+                            }
+                            if (!tmuxSwitcherRequests.isCurrent(request)) return@launch
+                            if (switched) {
+                                closeTmuxSessionSwitcher(owner)
                                 terminalInputFocusRequester.requestFocus()
                             } else {
                                 snackbarHostState.showSnackbar(tmuxSwitchFailedMessage)
                             }
                         }
                     },
-                    onDelete = { tmuxDeleteTargetId = it },
-                )
-            }
-        }
-
-        tmuxDeleteTargetId?.let { tmuxSessionId ->
-            val selected = tmuxSwitcherCatalog?.sessions?.firstOrNull {
-                it.id == tmuxSessionId
-            }
-            if (selected != null) {
-                AppDialog(
-                    onDismissRequest = { tmuxDeleteTargetId = null },
-                    title = { Text(stringResource(R.string.tmux_selector_delete_title)) },
-                    text = {
-                        Text(stringResource(R.string.tmux_selector_delete_message, selected.name))
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                val targetId = tmuxSwitcherTargetId
-                                tmuxDeleteTargetId = null
-                                if (targetId != null) {
-                                    tmuxSwitcherCatalog = null
-                                    screenScope.launch {
-                                        val result = viewModel.terminateActiveTmuxSession(
-                                            targetId,
-                                            tmuxSessionId,
-                                        )
-                                        if (tmuxSwitcherTargetId == targetId) {
-                                            tmuxSwitcherCatalog = result
-                                        }
-                                    }
+                    onDelete = { tmuxSessionId ->
+                        // The switcher owns the single confirmation. This callback is already confirmed.
+                        val request = tmuxSwitcherRequests.beginOperation(owner)
+                        if (request != null) {
+                            tmuxSwitcherCatalog = null
+                            screenScope.launch {
+                                if (!tmuxSwitcherRequests.isCurrent(request)) return@launch
+                                val result = try {
+                                    viewModel.terminateActiveTmuxSession(targetId, tmuxSessionId)
+                                } finally {
+                                    tmuxSwitcherRequests.finishOperation(request)
                                 }
-                            },
-                        ) { Text(stringResource(R.string.tmux_selector_delete_confirm)) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { tmuxDeleteTargetId = null }) {
-                            Text(stringResource(R.string.cancel))
+                                if (tmuxSwitcherRequests.isCurrent(request)) tmuxSwitcherCatalog = result
+                            }
                         }
                     },
                 )
@@ -2402,6 +2398,7 @@ fun TerminalSpikeScreen(
     if (releaseNotesEnabled) {
         ReleaseNotesUpdateHost(
             repository = (rootView.context.applicationContext as TerminalSpikeApplication).container.settings,
+            mutations = (rootView.context.applicationContext as TerminalSpikeApplication).container.settingsMutations,
             ready = state.settingsReady && state.settingsRecoveryFailure == null,
             canShow = destination == AppRoute.WORKSPACE &&
                 connectionsState.loadState is ConnectionsLoadState.Ready &&

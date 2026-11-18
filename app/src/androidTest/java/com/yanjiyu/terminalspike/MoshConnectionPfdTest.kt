@@ -19,11 +19,17 @@ import com.yanjiyu.terminalspike.mosh.api.MoshSessionEvent
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionHandle
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionRequest
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionState
+import com.yanjiyu.terminalspike.mosh.api.MoshStopReason
 import java.util.UUID
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +39,59 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MoshConnectionPfdTest {
+    @Test
+    fun cancelledBeforeIoStillWipesTheTransferredSessionKey() = runBlocking {
+        val client = RecordingPfdMoshClient(returnTransport = false)
+        val extension = AndroidMoshConnectionExtension(client, Dispatchers.Default)
+        val key = VALID_KEY.encodeToByteArray()
+        try {
+            val starting = launch(start = CoroutineStart.UNDISPATCHED) {
+                coroutineContext.cancel()
+                extension.startSession(startSpec(), key)
+            }
+            starting.join()
+
+            assertTrue(starting.isCancelled)
+            assertTrue(key.all { it == 0.toByte() })
+            assertEquals(null, client.receivedKey)
+            assertEquals(0, client.shutdownCalls)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    @Test
+    fun cancellationAtReturnClosesTheUndeliveredTransportAndStopsItsSession() = runBlocking {
+        val client = RecordingPfdMoshClient(returnTransport = true)
+        val extension = AndroidMoshConnectionExtension(client, Dispatchers.Default)
+        val key = VALID_KEY.encodeToByteArray()
+        val caller = QueuedCallerDispatcher()
+        val starting = launch(caller, start = CoroutineStart.UNDISPATCHED) {
+            extension.startSession(startSpec(), key)
+        }
+        try {
+            withTimeout(5_000) { caller.firstDispatch.await() }
+            assertTrue(key.all { it == 0.toByte() })
+            assertTrue(client.returnedTerminalInputWrite!!.isValidSafely())
+            assertTrue(client.returnedTerminalOutputRead!!.isValidSafely())
+            starting.cancel()
+            caller.finish(starting)
+
+            assertTrue(starting.isCancelled)
+            assertFalse(client.returnedTerminalInputWrite!!.isValidSafely())
+            assertFalse(client.returnedTerminalOutputRead!!.isValidSafely())
+            assertEquals(listOf(SESSION_ID to MoshStopReason.ERROR_RECOVERY), client.stops)
+            assertEquals(0, client.shutdownCalls)
+        } finally {
+            starting.cancel()
+            caller.finish(starting)
+            key.fill(0)
+            client.returnedTerminalInputWrite?.close()
+            client.returnedTerminalOutputRead?.close()
+            client.closeRemoteEnds()
+        }
+    }
+
     @Test
     fun oneShotKeyPipeDeliversExactly22BytesThenClosesAndWipesSameArray() = runBlocking {
         val client = RecordingPfdMoshClient(returnTransport = false)
@@ -105,6 +164,7 @@ private class RecordingPfdMoshClient(
     var returnedTerminalInputWrite: ParcelFileDescriptor? = null
     var returnedTerminalOutputRead: ParcelFileDescriptor? = null
     var shutdownCalls = 0
+    val stops = mutableListOf<Pair<UUID, Int>>()
 
     override suspend fun connect(): MoshExtensionStatus = status.value
 
@@ -153,7 +213,10 @@ private class RecordingPfdMoshClient(
     override suspend fun stopSession(
         sessionId: UUID,
         reason: Int,
-    ): MoshClientResult<Unit> = MoshClientResult.Success(Unit)
+    ): MoshClientResult<Unit> {
+        stops += sessionId to reason
+        return MoshClientResult.Success(Unit)
+    }
 
     override suspend fun shutdown() {
         shutdownCalls += 1

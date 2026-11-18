@@ -75,9 +75,6 @@ abstract class BackupImportDao {
     @Upsert
     protected abstract suspend fun upsertSnippets(rows: List<SnippetEntity>)
 
-    @Query("DELETE FROM known_hosts WHERE id = :id")
-    protected abstract suspend fun deleteKnownHost(id: String): Int
-
     @Query("DELETE FROM host_profiles WHERE id IN (:ids)")
     protected abstract suspend fun deleteHosts(ids: List<String>): Int
 
@@ -107,13 +104,6 @@ abstract class BackupImportDao {
             "AND id NOT IN (SELECT secret_id FROM ssh_credentials WHERE secret_id IS NOT NULL) " +
             "AND id NOT IN (SELECT private_secret_id FROM ssh_key_identities)",
     )
-    protected abstract suspend fun deleteRecoverySecrets(ids: List<String>): Int
-
-    @Query(
-        "DELETE FROM encrypted_secrets WHERE id IN (:ids) " +
-            "AND id NOT IN (SELECT secret_id FROM ssh_credentials WHERE secret_id IS NOT NULL) " +
-            "AND id NOT IN (SELECT private_secret_id FROM ssh_key_identities)",
-    )
     protected abstract suspend fun deleteUnreferencedSecrets(ids: List<String>): Int
 
     /**
@@ -123,7 +113,7 @@ abstract class BackupImportDao {
      */
     @Transaction
     open suspend fun applyRows(rows: BackupImportRows) {
-        rows.knownHostIdsToDelete.sorted().forEach { deleteKnownHost(it) }
+        deleteInBatches(rows.knownHostIdsToDelete, ::deleteKnownHosts)
         if (rows.secrets.isNotEmpty()) upsertSecrets(rows.secrets)
         if (rows.customTerminalThemes.isNotEmpty()) {
             upsertCustomTerminalThemes(rows.customTerminalThemes)
@@ -137,26 +127,28 @@ abstract class BackupImportDao {
         if (rows.hosts.isNotEmpty()) upsertHosts(rows.hosts)
 
         val exact = rows.exactRecoveryDeletes
-        if (exact.hostIds.isNotEmpty()) deleteHosts(exact.hostIds.sorted())
-        if (exact.credentialIds.isNotEmpty()) deleteCredentials(exact.credentialIds.sorted())
-        if (exact.identityIds.isNotEmpty()) deleteIdentities(exact.identityIds.sorted())
-        if (exact.terminalProfileIds.isNotEmpty()) {
-            deleteTerminalProfiles(exact.terminalProfileIds.sorted())
-        }
-        if (exact.customTerminalThemeIds.isNotEmpty()) {
-            deleteCustomTerminalThemes(exact.customTerminalThemeIds.sorted())
-        }
-        if (exact.keyboardProfileIds.isNotEmpty()) {
-            deleteKeyboardProfiles(exact.keyboardProfileIds.sorted())
-        }
-        if (exact.knownHostIds.isNotEmpty()) deleteKnownHosts(exact.knownHostIds.sorted())
-        if (exact.snippetIds.isNotEmpty()) deleteSnippets(exact.snippetIds.sorted())
+        deleteInBatches(exact.hostIds, ::deleteHosts)
+        deleteInBatches(exact.credentialIds, ::deleteCredentials)
+        deleteInBatches(exact.identityIds, ::deleteIdentities)
+        deleteInBatches(exact.terminalProfileIds, ::deleteTerminalProfiles)
+        deleteInBatches(exact.customTerminalThemeIds, ::deleteCustomTerminalThemes)
+        deleteInBatches(exact.keyboardProfileIds, ::deleteKeyboardProfiles)
+        deleteInBatches(exact.knownHostIds, ::deleteKnownHosts)
+        deleteInBatches(exact.snippetIds, ::deleteSnippets)
 
         if (rows.knownHosts.isNotEmpty()) upsertKnownHosts(rows.knownHosts)
         if (rows.snippets.isNotEmpty()) upsertSnippets(rows.snippets)
-        if (exact.secretIds.isNotEmpty()) deleteRecoverySecrets(exact.secretIds.sorted())
-        if (rows.possiblyOrphanedSecretIds.isNotEmpty()) {
-            deleteUnreferencedSecrets(rows.possiblyOrphanedSecretIds.sorted())
-        }
+        deleteInBatches(exact.secretIds, ::deleteUnreferencedSecrets)
+        deleteInBatches(rows.possiblyOrphanedSecretIds, ::deleteUnreferencedSecrets)
+    }
+
+    private suspend fun deleteInBatches(ids: Set<String>, delete: suspend (List<String>) -> Int) {
+        // Keep every query within old Android SQLite's 999 bind-parameter limit. The enclosing
+        // transaction still owns every chunk, including a failure in a later write.
+        ids.sorted().chunked(MAX_DELETE_BINDINGS).forEach { chunk -> delete(chunk) }
+    }
+
+    private companion object {
+        const val MAX_DELETE_BINDINGS = 999
     }
 }

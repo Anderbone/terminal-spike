@@ -21,7 +21,7 @@ class JschSshConnectionIntegrityTest {
         val cancellation = CancellationException("expected cancellation")
         val states = mutableListOf<ConnectionState>()
         val connection = JschSshConnection(
-            knownHostsFile = { File("unused-known-hosts") },
+            knownHostManager = fileKnownHostManager { File("unused-known-hosts") },
             config = SshConnectionConfig(
                 host = "example.test",
                 port = 22,
@@ -78,7 +78,7 @@ class JschSshConnectionIntegrityTest {
     fun unavailableStoredCredentialFailsBeforeHandshakeWithRecoveryMessage() = runTest {
         val states = mutableListOf<ConnectionState>()
         val connection = JschSshConnection(
-            knownHostsFile = { File("unused-known-hosts") },
+            knownHostManager = fileKnownHostManager { File("unused-known-hosts") },
             config = SshConnectionConfig(
                 host = "example.test",
                 port = 22,
@@ -117,7 +117,7 @@ class JschSshConnectionIntegrityTest {
     fun closeBeforeConnectStartsClearsConfigurationOwnedSecrets() {
         val password = "queued-password".toByteArray()
         JschSshConnection(
-            knownHostsFile = { File("unused-known-hosts") },
+            knownHostManager = fileKnownHostManager { File("unused-known-hosts") },
             config = SshConnectionConfig(
                 host = "example.test",
                 port = 22,
@@ -129,7 +129,7 @@ class JschSshConnectionIntegrityTest {
 
         val passphrase = "queued-passphrase".toByteArray()
         JschSshConnection(
-            knownHostsFile = { File("unused-known-hosts") },
+            knownHostManager = fileKnownHostManager { File("unused-known-hosts") },
             config = SshConnectionConfig(
                 host = "example.test",
                 port = 22,

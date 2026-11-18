@@ -67,4 +67,21 @@ The tool exposes no passwords, private keys, credential exports, terminal input,
 or automatic reconnect. It supports loopback listeners only. Read the operation
 result back to verify the requested saved change, and report any limits or errors.
 
-Input bar: `appearance.get` reports `inputButtonsOnRight` and `voiceInputEnabled`. Use `appearance.update` with the latest revision and `--input-buttons-on-right true|false` / `--voice-input-enabled true|false` to adjust the same saved preferences as Android Settings.
+Input-field accessory buttons use `appearance get/update`, independently of the
+ordinary `keyboard` shortcut deck. Read `inputKeyboardLayout` and
+`effectiveInputKeyboardLayout` from `appearance get`; use the effective tokens
+when adding to a default layout. Set `--input-keyboard-layout` to a comma-separated
+string: tokens before `input` go left, tokens after it go right. Each side fills
+columns top-to-bottom, two buttons per column. For example,
+`enter,toggle,escape,shift_left,arrow_up,arrow_down,input` puts six buttons on the
+left, with ↑/↓ in the column to the right of ESC/⇧←. Use
+`capabilities.inputKeyboardTokens` and `inputKeyboardMaxButtons` to discover the
+supported actions and limit. Keep exactly one `input` and at least one `toggle`
+(the typing-mode switch); other buttons can be added, removed, reordered or
+repeated. Preserve existing buttons unless asked to remove them. This global
+layout applies immediately and does not require changing a keyboard profile.
+
+An empty `--input-keyboard-layout ''` restores the default Enter/toggle pair;
+`--input-buttons-on-right true|false` selects its side only for that default.
+`--voice-input-enabled true|false` controls voice input independently. All these
+fields use the latest appearance revision and the same preferences as Settings.

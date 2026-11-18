@@ -9,6 +9,7 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalPalette
 import com.yanjiyu.terminalspike.terminal.model.sanitizeUntrustedDisplayText
+import com.yanjiyu.terminalspike.terminal.model.isSafeTerminalControlText
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import com.yanjiyu.terminalspike.terminal.model.TerminalStyle
@@ -93,8 +94,9 @@ class VtTerminalEngine(
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
     private var columns = columns.coerceIn(1, MAX_COLUMNS)
     private var rows = rows.coerceIn(1, MAX_ROWS)
-    private var primary = Screen(this.columns, this.rows)
-    private var alternate = Screen(this.columns, this.rows)
+    private val residentHyperlinks = ResidentHyperlinkPool()
+    private var primary = Screen(this.columns, this.rows, residentHyperlinks)
+    private var alternate = Screen(this.columns, this.rows, residentHyperlinks)
     private var useAlternate = false
     private var style = TerminalStyle()
     private var parserState = ParserState.TEXT
@@ -158,6 +160,8 @@ class VtTerminalEngine(
         val alternateResize = alternate.resized(boundedColumns, boundedRows)
         columns = boundedColumns
         rows = boundedRows
+        primary.releaseAllResidentLinks()
+        alternate.releaseAllResidentLinks()
         primary = primaryResize.screen
         alternate = alternateResize.screen
         val completed = ArrayList<TerminalLine>()
@@ -187,8 +191,10 @@ class VtTerminalEngine(
         pendingBytes.fill(0)
         pendingBytes = ByteArray(0)
         pendingHighSurrogate = null
-        primary = Screen(columns, rows)
-        alternate = Screen(columns, rows)
+        primary.releaseAllResidentLinks()
+        alternate.releaseAllResidentLinks()
+        primary = Screen(columns, rows, residentHyperlinks)
+        alternate = Screen(columns, rows, residentHyperlinks)
         useAlternate = false
         style = TerminalStyle()
         parserState = ParserState.TEXT
@@ -683,7 +689,9 @@ class VtTerminalEngine(
     }
 
     private fun reverseIndex() {
-        if (active.cursorRow == active.topMargin) scrollDown() else active.cursorRow -= 1
+        active.wrapPending = false
+        if (active.cursorRow == active.topMargin) scrollDown()
+        else active.cursorRow = (active.cursorRow - 1).coerceAtLeast(0)
     }
 
     private fun scrollUp(completed: MutableList<TerminalLine>) {
@@ -713,7 +721,11 @@ class VtTerminalEngine(
                 for (row in 0 until active.cursorRow) active.eraseRange(row, 0, columns, style)
                 active.eraseRange(active.cursorRow, 0, active.cursorColumn + 1, style)
             }
-            2 -> active.clear(style)
+            2 -> {
+                // ED erases cells; it does not reset the cursor or scrolling margins.
+                for (row in 0 until rows) active.eraseRange(row, 0, columns, style)
+                active.wrapPending = false
+            }
             3 -> {
                 // ED3 targets saved lines only. Rows scrolled earlier in this parser batch belong
                 // to the history being erased, while the visible screen and cursor stay intact.
@@ -745,7 +757,9 @@ class VtTerminalEngine(
     }
 
     private fun finishOsc(remoteClipboardRequests: MutableList<TerminalRemoteClipboardRequest>) {
-        applyOsc(sequence.toString(), remoteClipboardRequests)
+        val raw = sequence.toString()
+        // A Char filter alone cannot reject supplementary Unicode format code points.
+        if (isSafeTerminalControlText(raw)) applyOsc(raw, remoteClipboardRequests)
         finishControlSequence()
     }
 
@@ -995,9 +1009,14 @@ class VtTerminalEngine(
     private class Screen(
         val columns: Int,
         val rows: Int,
+        private val residentHyperlinks: ResidentHyperlinkPool,
     ) {
         private var cells = Array(rows) { blankRow(columns) }
         private var softWrappedRows = BooleanArray(rows)
+        // Plain native metadata: scrolling moves these counters with the existing row arrays.
+        private val rowExtraUtf16Units = IntArray(rows)
+        private val rowLinkedCells = IntArray(rows)
+        private var extraUtf16Units = 0
         private var cachedLines = arrayOfNulls<TerminalLine>(rows)
         private var dirtyRows = BooleanArray(rows) { true }
         var cursorRow = 0
@@ -1016,10 +1035,16 @@ class VtTerminalEngine(
             hyperlink: TerminalHyperlink?,
         ) {
             clearWideCellAt(cursorRow, cursorColumn)
-            cells[cursorRow][cursorColumn] = Cell(value, style, hyperlink, continuation = false)
-            if (width == 2 && cursorColumn + 1 < columns) {
+            val hasContinuation = width == 2 && cursorColumn + 1 < columns
+            if (hasContinuation) {
                 clearWideCellAt(cursorRow, cursorColumn + 1)
-                cells[cursorRow][cursorColumn + 1] = Cell("", style, hyperlink, continuation = true)
+                replaceBaseCell(cursorRow, cursorColumn + 1, Cell.blank())
+            }
+            replaceBaseCell(cursorRow, cursorColumn, Cell(value, style, hyperlink, continuation = false))
+            if (hasContinuation) {
+                // Admission is one decision for the whole glyph, including its continuation cell.
+                val admitted = cells[cursorRow][cursorColumn].hyperlink
+                replaceBaseCell(cursorRow, cursorColumn + 1, Cell("", style, admitted, continuation = true))
             }
             markDirty(cursorRow)
         }
@@ -1033,15 +1058,45 @@ class VtTerminalEngine(
         fun appendCombining(value: String) {
             val column = previousGraphicColumn() ?: return
             val cell = cells[cursorRow][column]
+            val codePoint = value.codePointAt(0)
+            cell.overflowTail?.let { tail ->
+                val nextTail = tail.append(codePoint)
+                if (nextTail !== tail) cells[cursorRow][column] = cell.copy(overflowTail = nextTail)
+                // Only parser state changed; the replacement's immutable row snapshot is reusable.
+                return
+            }
             if (cell.content.isNotBlank()) {
-                cells[cursorRow][column] = cell.copy(content = cell.content + value)
+                val extendedLength = cell.content.length + value.length
+                val previousExtra = cellExtraUnits(cell)
+                val extraIncrease = (extendedLength - 2).coerceAtLeast(0) - previousExtra
+                val canAppend = extendedLength <= MAX_CELL_UTF16_UNITS &&
+                    extraIncrease <= MAX_SCREEN_EXTRA_UTF16_UNITS - extraUtf16Units
+                val nextCell = if (canAppend) {
+                    cell.copy(content = cell.content + value)
+                } else {
+                    val wide = column + 1 < columns && cells[cursorRow][column + 1].continuation
+                    cell.copy(
+                        content = if (wide) "\uFFFD " else "\uFFFD",
+                        overflowTail = GraphemeTail(
+                            endsWithJoiner = cell.content.codePointBefore(cell.content.length) == ZERO_WIDTH_JOINER,
+                            oddRegionalIndicators = regionalIndicatorCount(cell.content) % 2 == 1,
+                        ).append(codePoint),
+                    )
+                }
+                adjustExtraUnits(cursorRow, if (canAppend) extraIncrease else -previousExtra)
+                cells[cursorRow][column] = nextCell
                 markDirty(cursorRow)
             }
         }
 
         fun shouldJoinGrapheme(codePoint: Int): Boolean {
             val column = previousGraphicColumn() ?: return false
-            val content = cells[cursorRow][column].content
+            val cell = cells[cursorRow][column]
+            cell.overflowTail?.let { tail ->
+                return tail.endsWithJoiner ||
+                    TerminalCellWidth.isRegionalIndicator(codePoint) && tail.oddRegionalIndicators
+            }
+            val content = cell.content
             if (content.isBlank()) return false
             val lastCodePoint = content.codePointBefore(content.length)
             if (lastCodePoint == ZERO_WIDTH_JOINER) return true
@@ -1072,30 +1127,44 @@ class VtTerminalEngine(
 
         fun insertCharacters(count: Int) {
             val amount = count.coerceIn(1, columns - cursorColumn)
+            val hadLinks = rowLinkedCells[cursorRow] != 0
+            if (hadLinks) releaseRowLinks(cursorRow)
             val row = cells[cursorRow]
             for (column in columns - 1 downTo cursorColumn + amount) row[column] = row[column - amount]
             for (column in cursorColumn until cursorColumn + amount) row[column] = Cell.blank()
             normalizeWideCells(row)
+            if (hadLinks) retainRowLinks(cursorRow)
+            recountRowExtraUnits(cursorRow)
             markDirty(cursorRow)
         }
 
         fun deleteCharacters(count: Int) {
             val amount = count.coerceIn(1, columns - cursorColumn)
+            val hadLinks = rowLinkedCells[cursorRow] != 0
+            if (hadLinks) releaseRowLinks(cursorRow)
             val row = cells[cursorRow]
             for (column in cursorColumn until columns - amount) row[column] = row[column + amount]
             for (column in columns - amount until columns) row[column] = Cell.blank()
             normalizeWideCells(row)
+            if (hadLinks) retainRowLinks(cursorRow)
+            recountRowExtraUnits(cursorRow)
             markDirty(cursorRow)
         }
 
         fun insertLines(count: Int, style: TerminalStyle) {
             if (cursorRow !in topMargin..bottomMargin) return
             repeat(count.coerceAtMost(bottomMargin - cursorRow + 1)) {
+                releaseRowLinks(bottomMargin)
+                extraUtf16Units -= rowExtraUtf16Units[bottomMargin]
                 for (row in bottomMargin downTo cursorRow + 1) {
                     cells[row] = cells[row - 1]
+                    rowExtraUtf16Units[row] = rowExtraUtf16Units[row - 1]
+                    rowLinkedCells[row] = rowLinkedCells[row - 1]
                     softWrappedRows[row] = softWrappedRows[row - 1]
                 }
                 cells[cursorRow] = blankRow(columns, style)
+                rowExtraUtf16Units[cursorRow] = 0
+                rowLinkedCells[cursorRow] = 0
                 softWrappedRows[cursorRow] = false
             }
             markDirty(cursorRow, bottomMargin)
@@ -1104,11 +1173,17 @@ class VtTerminalEngine(
         fun deleteLines(count: Int, style: TerminalStyle) {
             if (cursorRow !in topMargin..bottomMargin) return
             repeat(count.coerceAtMost(bottomMargin - cursorRow + 1)) {
+                releaseRowLinks(cursorRow)
+                extraUtf16Units -= rowExtraUtf16Units[cursorRow]
                 for (row in cursorRow until bottomMargin) {
                     cells[row] = cells[row + 1]
+                    rowExtraUtf16Units[row] = rowExtraUtf16Units[row + 1]
+                    rowLinkedCells[row] = rowLinkedCells[row + 1]
                     softWrappedRows[row] = softWrappedRows[row + 1]
                 }
                 cells[bottomMargin] = blankRow(columns, style)
+                rowExtraUtf16Units[bottomMargin] = 0
+                rowLinkedCells[bottomMargin] = 0
                 softWrappedRows[bottomMargin] = false
             }
             markDirty(cursorRow, bottomMargin)
@@ -1116,22 +1191,34 @@ class VtTerminalEngine(
 
         fun scrollUp(style: TerminalStyle): TerminalLine {
             val removed = toLine(cells[topMargin], softWrappedRows[topMargin])
+            releaseRowLinks(topMargin)
+            extraUtf16Units -= rowExtraUtf16Units[topMargin]
             for (row in topMargin until bottomMargin) {
                 cells[row] = cells[row + 1]
+                rowExtraUtf16Units[row] = rowExtraUtf16Units[row + 1]
+                rowLinkedCells[row] = rowLinkedCells[row + 1]
                 softWrappedRows[row] = softWrappedRows[row + 1]
             }
             cells[bottomMargin] = blankRow(columns, style)
+            rowExtraUtf16Units[bottomMargin] = 0
+            rowLinkedCells[bottomMargin] = 0
             softWrappedRows[bottomMargin] = false
             markDirty(topMargin, bottomMargin)
             return removed
         }
 
         fun scrollDown(style: TerminalStyle) {
+            releaseRowLinks(bottomMargin)
+            extraUtf16Units -= rowExtraUtf16Units[bottomMargin]
             for (row in bottomMargin downTo topMargin + 1) {
                 cells[row] = cells[row - 1]
+                rowExtraUtf16Units[row] = rowExtraUtf16Units[row - 1]
+                rowLinkedCells[row] = rowLinkedCells[row - 1]
                 softWrappedRows[row] = softWrappedRows[row - 1]
             }
             cells[topMargin] = blankRow(columns, style)
+            rowExtraUtf16Units[topMargin] = 0
+            rowLinkedCells[topMargin] = 0
             softWrappedRows[topMargin] = false
             markDirty(topMargin, bottomMargin)
         }
@@ -1141,16 +1228,22 @@ class VtTerminalEngine(
             val boundedEnd = endExclusive.coerceIn(boundedStart, columns)
             val erasedStyle = style.forErasedCell()
             for (column in boundedStart until boundedEnd) {
-                cells[row][column] = Cell(" ", erasedStyle, null, false)
+                replaceBaseCell(row, column, Cell(" ", erasedStyle, null, false))
             }
             if (boundedStart == 0 && boundedEnd == columns) softWrappedRows[row] = false
+            val hadLinks = rowLinkedCells[row] != 0
+            if (hadLinks) releaseRowLinks(row)
             normalizeWideCells(cells[row])
+            if (hadLinks) retainRowLinks(row)
             if (boundedStart < boundedEnd) markDirty(row)
         }
 
         fun clear(style: TerminalStyle) {
+            releaseAllResidentLinks()
             cells = Array(rows) { blankRow(columns, style) }
             softWrappedRows = BooleanArray(rows)
+            rowExtraUtf16Units.fill(0)
+            extraUtf16Units = 0
             cachedLines = arrayOfNulls(rows)
             dirtyRows = BooleanArray(rows) { true }
             cursorRow = 0
@@ -1174,12 +1267,15 @@ class VtTerminalEngine(
         }
 
         fun resized(newColumns: Int, newRows: Int): ScreenResizeResult {
+            val hadLinks = rowLinkedCells.any { it != 0 }
             val rewrapped = rewrapRows(newColumns)
-            val resized = Screen(newColumns, newRows)
+            val resized = Screen(newColumns, newRows, residentHyperlinks)
             val firstVisibleRow = (rewrapped.cursor.row - (newRows - 1)).coerceAtLeast(0)
             val visibleRows = rewrapped.rows.drop(firstVisibleRow).take(newRows)
             visibleRows.forEachIndexed { row, source ->
                 resized.cells[row] = source.cells
+                if (hadLinks) resized.retainRowLinks(row)
+                resized.recountRowExtraUnits(row)
                 resized.softWrappedRows[row] = source.softWrappedToNext
             }
             resized.cursorRow = (rewrapped.cursor.row - firstVisibleRow).coerceIn(0, newRows - 1)
@@ -1358,18 +1454,81 @@ class VtTerminalEngine(
         }
 
         private fun markDirty(row: Int) {
-            if (row in dirtyRows.indices) dirtyRows[row] = true
+            if (row in dirtyRows.indices) {
+                dirtyRows[row] = true
+                // An erased row on an inactive screen must not pin a stale hyperlink snapshot.
+                cachedLines[row] = null
+            }
         }
 
         private fun markDirty(firstRow: Int, lastRow: Int) {
             for (row in firstRow.coerceAtLeast(0)..lastRow.coerceAtMost(rows - 1)) markDirty(row)
         }
 
+        private fun cellExtraUnits(cell: Cell): Int = (cell.content.length - 2).coerceAtLeast(0)
+
+        // These callers write one code point or a blank, never a grapheme extension.
+        private fun replaceBaseCell(row: Int, column: Int, replacement: Cell) {
+            if (extraUtf16Units != 0) {
+                val previousLength = cells[row][column].content.length
+                if (previousLength > 2) adjustExtraUnits(row, 2 - previousLength)
+            }
+            val previous = cells[row][column].hyperlink
+            val proposed = replacement.hyperlink
+            val admitted = if (previous == proposed) previous else {
+                cachedLines[row] = null
+                if (previous != null) {
+                    residentHyperlinks.release(previous)
+                    rowLinkedCells[row] -= 1
+                }
+                proposed?.let(residentHyperlinks::retain).also {
+                    if (it != null) rowLinkedCells[row] += 1
+                }
+            }
+            cells[row][column] = if (admitted === proposed) replacement else replacement.copy(hyperlink = admitted)
+        }
+
+        private fun releaseRowLinks(row: Int) {
+            if (rowLinkedCells[row] == 0) return
+            cachedLines[row] = null
+            cells[row].forEach { it.hyperlink?.let(residentHyperlinks::release) }
+            rowLinkedCells[row] = 0
+        }
+
+        private fun retainRowLinks(row: Int) {
+            for (column in cells[row].indices) {
+                val cell = cells[row][column]
+                val link = cell.hyperlink ?: continue
+                val canonical = checkNotNull(residentHyperlinks.retain(link)) {
+                    "Moving existing resident metadata cannot exceed its budget."
+                }
+                if (canonical !== link) cells[row][column] = cell.copy(hyperlink = canonical)
+                rowLinkedCells[row] += 1
+            }
+        }
+
+        fun releaseAllResidentLinks() {
+            rowLinkedCells.indices.forEach(::releaseRowLinks)
+            cachedLines.fill(null)
+        }
+
+        private fun adjustExtraUnits(row: Int, delta: Int) {
+            if (delta == 0) return
+            rowExtraUtf16Units[row] += delta
+            extraUtf16Units += delta
+        }
+
+        // Character shifts already walk the row; scrolling and appending never scan the screen.
+        private fun recountRowExtraUnits(row: Int) {
+            val updated = cells[row].sumOf { cellExtraUnits(it) }
+            adjustExtraUnits(row, updated - rowExtraUtf16Units[row])
+        }
+
         private fun clearWideCellAt(row: Int, column: Int) {
             val target = cells[row][column]
-            if (target.continuation && column > 0) cells[row][column - 1] = Cell.blank()
+            if (target.continuation && column > 0) replaceBaseCell(row, column - 1, Cell.blank())
             if (!target.continuation && column + 1 < columns && cells[row][column + 1].continuation) {
-                cells[row][column + 1] = Cell.blank()
+                replaceBaseCell(row, column + 1, Cell.blank())
             }
         }
 
@@ -1439,11 +1598,25 @@ class VtTerminalEngine(
         }
     }
 
+    /** Logical tail of a discarded oversized cell, independent of its visible replacement. */
+    private data class GraphemeTail(
+        val endsWithJoiner: Boolean,
+        val oddRegionalIndicators: Boolean,
+    ) {
+        fun append(codePoint: Int): GraphemeTail {
+            val nextJoiner = codePoint == ZERO_WIDTH_JOINER
+            val nextOdd = oddRegionalIndicators xor TerminalCellWidth.isRegionalIndicator(codePoint)
+            return if (nextJoiner == endsWithJoiner && nextOdd == oddRegionalIndicators) this
+            else GraphemeTail(nextJoiner, nextOdd)
+        }
+    }
+
     private data class Cell(
         val content: String,
         val style: TerminalStyle,
         val hyperlink: TerminalHyperlink?,
         val continuation: Boolean,
+        val overflowTail: GraphemeTail? = null,
     ) {
         companion object {
             fun blank() = Cell(" ", TerminalStyle(), null, false)
@@ -1455,6 +1628,10 @@ class VtTerminalEngine(
         private const val DEFAULT_ROWS = 24
         private const val MAX_COLUMNS = 500
         private const val MAX_ROWS = 300
+        // Independent of the renderer's smaller shaping limit; ordinary/copyable text stays exact.
+        private const val MAX_CELL_UTF16_UNITS = 4_096
+        // Two UTF-16 units per cell remain free for base glyphs; extensions share this pool.
+        private const val MAX_SCREEN_EXTRA_UTF16_UNITS = 1_048_576
         private const val MAX_CONTROL_SEQUENCE = 4_096
         private const val MAX_OSC_SEQUENCE = 1_024
         private const val MAX_OSC52_BASE64_LENGTH = 1_024

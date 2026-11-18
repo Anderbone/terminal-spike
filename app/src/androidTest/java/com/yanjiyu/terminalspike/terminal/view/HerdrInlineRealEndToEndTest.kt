@@ -32,7 +32,7 @@ class HerdrInlineRealEndToEndTest {
         val command = String(android.util.Base64.decode(requireNotNull(args.getString("sshE2eCodexCommandBase64")), 0))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val knownHosts = File.createTempFile("herdr-e2e-", ".hosts", context.cacheDir)
-        val ssh = JschSshConnection({ knownHosts }, SshConnectionConfig(
+        val ssh = JschSshConnection(fileKnownHostManager { knownHosts }, SshConnectionConfig(
             host = requireNotNull(args.getString("sshE2eHost")),
             port = args.getString("sshE2ePort")?.toInt() ?: 22,
             username = requireNotNull(args.getString("sshE2eUsername")),

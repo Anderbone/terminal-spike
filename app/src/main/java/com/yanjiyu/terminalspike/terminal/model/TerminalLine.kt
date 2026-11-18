@@ -23,7 +23,8 @@ class TerminalLine private constructor(
 
         private fun create(sourceRuns: List<TerminalRun>, softWrappedToNext: Boolean): TerminalLine {
             val sanitizedRuns = sourceRuns.map { run ->
-                run.copy(text = sanitizeUnicode(run.text))
+                val sanitized = sanitizeUnicode(run.text)
+                if (sanitized === run.text) run else run.copy(text = sanitized)
             }
             val text = buildString { sanitizedRuns.forEach { append(it.text) } }
             return TerminalLine(UNASSIGNED_ID, sanitizedRuns, text, softWrappedToNext)

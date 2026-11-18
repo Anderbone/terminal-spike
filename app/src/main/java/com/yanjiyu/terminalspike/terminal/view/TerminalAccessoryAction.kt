@@ -61,6 +61,8 @@ private fun AccessoryModifierState.afterAcceptedByteDispatch(): AccessoryModifie
 }
 
 enum class TerminalLocalAccessoryAction {
+    MOUSE_LEFT,
+    MOUSE_RIGHT,
     PASTE,
     SELECT_IMAGES,
     SNIPPETS,
@@ -140,6 +142,8 @@ sealed interface TerminalAccessoryAction {
     ) : TerminalAccessoryAction {
         override val label: UiText
             get() = when (action) {
+                TerminalLocalAccessoryAction.MOUSE_LEFT -> uiText(R.string.terminal_key_mouse_left)
+                TerminalLocalAccessoryAction.MOUSE_RIGHT -> uiText(R.string.terminal_key_mouse_right)
                 TerminalLocalAccessoryAction.PASTE -> uiText(R.string.terminal_key_paste_label)
                 TerminalLocalAccessoryAction.SELECT_IMAGES ->
                     uiText(R.string.terminal_key_select_images_label)
@@ -153,6 +157,8 @@ sealed interface TerminalAccessoryAction {
             }
         override val accessibilityDescription: UiText
             get() = when (action) {
+                TerminalLocalAccessoryAction.MOUSE_LEFT -> uiText(R.string.terminal_key_mouse_left_description)
+                TerminalLocalAccessoryAction.MOUSE_RIGHT -> uiText(R.string.terminal_key_mouse_right_description)
                 TerminalLocalAccessoryAction.PASTE -> uiText(R.string.terminal_key_paste_description)
                 TerminalLocalAccessoryAction.SELECT_IMAGES ->
                     uiText(R.string.terminal_key_select_images_description)
@@ -168,6 +174,7 @@ sealed interface TerminalAccessoryAction {
 }
 
 sealed interface TerminalAccessoryDispatch {
+    /** Owns [value]; the input dispatcher may wipe it after sending. */
     data class Bytes(val value: ByteArray) : TerminalAccessoryDispatch
     data class ToggleModifier(val modifier: TerminalAccessoryModifier) : TerminalAccessoryDispatch
     data class Local(val action: TerminalLocalAccessoryAction) : TerminalAccessoryDispatch
@@ -226,7 +233,9 @@ private fun TerminalExtraKey.resolveBytes(
             )
         }
         val shiftedTab = TerminalKeySequences.SHIFT_TAB
-        return TerminalAccessoryDispatch.Bytes(if (alt) TerminalKeySequences.ESCAPE + shiftedTab else shiftedTab)
+        return TerminalAccessoryDispatch.Bytes(
+            if (alt) TerminalKeySequences.ESCAPE + shiftedTab else shiftedTab.copyOf(),
+        )
     }
 
     val base = requireNotNull(bytes)
@@ -323,7 +332,7 @@ fun shiftUsAscii(character: Char): Char = when (character) {
     else -> character
 }
 
-/** Encodes the bounded chord syntax accepted by KeyboardProfile. */
+/** Encodes the bounded chord syntax accepted by KeyboardProfile into caller-owned bytes. */
 fun encodeTerminalChord(chord: String): ByteArray? {
     if (chord.length == 1 && !chord.single().isWhitespace() && !chord.single().isISOControl()) {
         return chord.toByteArray(Charsets.UTF_8)
@@ -346,9 +355,7 @@ fun encodeTerminalChord(chord: String): ByteArray? {
     } else {
         when (parts.last()) {
             "Space" -> byteArrayOf(0)
-            "Tab" -> TerminalKeySequences.TAB
-            "Enter" -> TerminalKeySequences.ENTER
-            "Escape" -> TerminalKeySequences.ESCAPE
+            "Tab", "Enter", "Escape" -> keyBytes.copyOf()
             else -> keyBytes.singleAsciiOrNull()?.let(::controlByteForAscii)?.let { byteArrayOf(it) }
         }
     }

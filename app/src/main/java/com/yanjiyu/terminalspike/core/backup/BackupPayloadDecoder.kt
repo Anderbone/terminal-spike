@@ -283,6 +283,7 @@ private class DecoderState(private val expectedMode: BackupMode) {
                 skippedUnknownRecords = skippedUnknownRecords,
                 skippedOptionalFields = skippedOptionalFields,
                 unresolvedReferences = snapshot.unresolvedReferences,
+                globalSettingsAvailable = decodedGlobalSettings,
             ),
         )
     }
@@ -818,23 +819,28 @@ private class PayloadInput(
     }
 
     fun readExact(length: Int, section: BackupPayloadSection): ByteArray {
-        if (length < 0 || length.toLong() > maximumBytes) {
+        if (length < 0 || length.toLong() > maximumBytes - bytesRead) {
             throw BackupPayloadException.LimitExceeded(BackupPayloadLimit.TOTAL_BYTES)
         }
         val result = ByteArray(length)
-        var offset = 0
-        while (offset < length) {
-            val count = input.read(result, offset, length - offset)
-            when {
-                count < 0 -> throw BackupPayloadException.Truncated(section)
-                count == 0 -> result[offset++] = readByte(section).toByte()
-                else -> {
-                    addRead(count.toLong())
-                    offset += count
+        try {
+            var offset = 0
+            while (offset < length) {
+                val count = input.read(result, offset, length - offset)
+                when {
+                    count < 0 -> throw BackupPayloadException.Truncated(section)
+                    count == 0 -> result[offset++] = readByte(section).toByte()
+                    else -> {
+                        addRead(count.toLong())
+                        offset += count
+                    }
                 }
             }
+            return result
+        } catch (error: Throwable) {
+            result.fill(0)
+            throw error
         }
-        return result
     }
 
     private fun addRead(count: Long) {

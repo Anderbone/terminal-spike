@@ -4,11 +4,9 @@ import com.yanjiyu.terminalspike.ui.theme.appSearchFieldColors
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import android.content.Context
 import org.json.JSONArray
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -49,7 +47,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -57,15 +54,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,17 +95,12 @@ private val ExpandedConnectionsMinimumContentWidth = 680.dp
 internal fun ConnectionsHeader(
     selectedTab: ConnectionsTab,
     searchQuery: String,
-    hostSort: HostSort,
-    hostFilters: HostFilters,
-    hostGroups: List<String>,
     catalogReady: Boolean,
     onNavigateBack: (() -> Unit)?,
     callbacks: ConnectionsCallbacks,
     showTitle: Boolean = true,
     showSearch: Boolean = true,
 ) {
-    var hostControlsExpanded by rememberSaveable { mutableStateOf(hostSort != HostSort.NAME || hostFilters.isActive) }
-    val hasHostControls = selectedTab == ConnectionsTab.HOSTS
     val addActions = when (selectedTab) {
         ConnectionsTab.HOSTS -> listOfNotNull(
             callbacks.onAddHost?.let { CatalogAddAction(R.string.connections_add_host, it) },
@@ -168,13 +157,6 @@ internal fun ConnectionsHeader(
 
     val searchDescription = stringResource(selectedTab.searchLabelResId)
     val clearSearchDescription = stringResource(R.string.connections_clear_search)
-    val hostControlsDescription = stringResource(
-        if (hostControlsExpanded) {
-            R.string.connections_hide_host_controls
-        } else {
-            R.string.connections_show_host_controls
-        },
-    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,56 +267,6 @@ internal fun ConnectionsHeader(
                     },
                 )
             }
-            if (showSearch && hasHostControls) {
-                val filterContainer by animateColorAsState(
-                    targetValue = if (hostControlsExpanded || hostFilters.isActive || hostSort != HostSort.NAME) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainer
-                    },
-                    animationSpec = androidx.compose.animation.core.tween(MaterialTheme.motion.quickDurationMillis),
-                    label = "host-filter-colour",
-                )
-                Surface(
-                    onClick = { hostControlsExpanded = !hostControlsExpanded },
-                    modifier = Modifier.semantics {
-                        contentDescription = hostControlsDescription
-                    },
-                    color = filterContainer,
-                    contentColor = if (hostControlsExpanded || hostFilters.isActive || hostSort != HostSort.NAME) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Box(
-                        modifier = Modifier.size(MaterialTheme.iconMetrics.minimumTouchTarget),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        ConnectionsGlyphIcon(
-                            glyph = ConnectionsGlyph.FILTER,
-                            modifier = Modifier.size(MaterialTheme.iconMetrics.standard),
-                        )
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = showSearch && hasHostControls && hostControlsExpanded,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 3 }),
-        ) {
-            HostFilterControls(
-                sort = hostSort,
-                filters = hostFilters,
-                availableGroups = hostGroups,
-                onSortSelected = callbacks.onHostSortSelected,
-                onFavouritesOnlyChanged = callbacks.onFavouritesOnlyChanged,
-                onGroupSelected = callbacks.onHostGroupSelected,
-                onClear = callbacks.onClearHostFilters,
-            )
         }
     }
 }
@@ -385,167 +317,6 @@ private fun ConnectionsAddButton(actions: List<CatalogAddAction>) {
                     },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun HostFilterControls(
-    sort: HostSort,
-    filters: HostFilters,
-    availableGroups: List<String>,
-    onSortSelected: (HostSort) -> Unit,
-    onFavouritesOnlyChanged: (Boolean) -> Unit,
-    onGroupSelected: (String?) -> Unit,
-    onClear: () -> Unit,
-) {
-    var sortMenuExpanded by remember { mutableStateOf(false) }
-    var groupMenuExpanded by remember { mutableStateOf(false) }
-    val sortLabel = stringResource(sort.labelResId)
-    val sortDescription = stringResource(R.string.connections_sort_hosts_by, sortLabel)
-    val allGroupsLabel = stringResource(R.string.connections_all_groups)
-    val groupDescription = stringResource(
-        R.string.connections_filter_group,
-        filters.group ?: allGroupsLabel,
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .animateContentSize()
-            .testTag(ConnectionsHostFiltersTestTag),
-        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box {
-            OutlinedButton(
-                onClick = { sortMenuExpanded = true },
-                modifier = Modifier.semantics { contentDescription = sortDescription },
-            ) {
-                Text(stringResource(R.string.connections_sort_value, sortLabel))
-            }
-            DropdownMenu(
-                expanded = sortMenuExpanded,
-                onDismissRequest = { sortMenuExpanded = false },
-            ) {
-                HostSort.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(option.labelResId)) },
-                        onClick = {
-                            sortMenuExpanded = false
-                            onSortSelected(option)
-                        },
-                    )
-                }
-            }
-        }
-        FilterChip(
-            selected = filters.favouritesOnly,
-            onClick = { onFavouritesOnlyChanged(!filters.favouritesOnly) },
-            label = { Text(stringResource(R.string.connections_favourites)) },
-            leadingIcon = if (filters.favouritesOnly) {
-                {
-                    ConnectionsGlyphIcon(
-                        ConnectionsGlyph.STAR,
-                        Modifier.size(MaterialTheme.iconMetrics.compact),
-                    )
-                }
-            } else {
-                null
-            },
-        )
-        if (availableGroups.isNotEmpty()) {
-            Box {
-                OutlinedButton(
-                    onClick = { groupMenuExpanded = true },
-                    modifier = Modifier.semantics {
-                        contentDescription = groupDescription
-                    },
-                ) {
-                    Text(filters.group ?: allGroupsLabel)
-                }
-                DropdownMenu(
-                    expanded = groupMenuExpanded,
-                    onDismissRequest = { groupMenuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(allGroupsLabel) },
-                        onClick = {
-                            groupMenuExpanded = false
-                            onGroupSelected(null)
-                        },
-                    )
-                    availableGroups.forEach { group ->
-                        DropdownMenuItem(
-                            text = { Text(group) },
-                            onClick = {
-                                groupMenuExpanded = false
-                                onGroupSelected(group)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        if (filters.isActive || sort != HostSort.NAME) {
-            TextButton(onClick = onClear) {
-                Text(stringResource(R.string.connections_clear_filters))
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ConnectionsTabs(
-    selectedTab: ConnectionsTab,
-    counts: CatalogCounts,
-    onTabSelected: (ConnectionsTab) -> Unit,
-) {
-    TabRow(
-        selectedTabIndex = selectedTab.ordinal,
-        modifier = Modifier.fillMaxWidth().testTag(ConnectionsTabsTestTag),
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.primary,
-        divider = {},
-    ) {
-        ConnectionsTab.entries.forEach { tab ->
-            val count = when (tab) {
-                ConnectionsTab.HOSTS -> counts.hosts
-                ConnectionsTab.KEYS -> counts.keys
-                ConnectionsTab.SNIPPETS -> counts.snippets
-            }
-            val tabLabel = stringResource(tab.labelResId)
-            val tabDescription = if (count == 0) {
-                tabLabel
-            } else {
-                pluralStringResource(
-                    R.plurals.connections_tab_item_count_description,
-                    count,
-                    tabLabel,
-                    count,
-                )
-            }
-            Tab(
-                selected = tab == selectedTab,
-                onClick = { onTabSelected(tab) },
-                modifier = Modifier
-                    .heightIn(min = MaterialTheme.iconMetrics.minimumTouchTarget)
-                    .semantics {
-                        contentDescription = tabDescription
-                    },
-                text = {
-                    Text(
-                        text = if (count == 0) {
-                            tabLabel
-                        } else {
-                            stringResource(R.string.connections_tab_item_count, tabLabel, count)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                },
-            )
         }
     }
 }
@@ -2071,13 +1842,6 @@ internal fun formatHostLastUsed(lastActivityAtEpochMillis: Long, nowEpochMillis:
     }
 }
 
-private val ConnectionsTab.labelResId: Int
-    get() = when (this) {
-        ConnectionsTab.HOSTS -> R.string.connections_tab_hosts
-        ConnectionsTab.KEYS -> R.string.connections_tab_keys
-        ConnectionsTab.SNIPPETS -> R.string.connections_tab_snippets
-    }
-
 private val ConnectionsTab.searchLabelResId: Int
     get() = when (this) {
         ConnectionsTab.HOSTS -> R.string.connections_search_hosts
@@ -2091,17 +1855,6 @@ private val ConnectionsTab.noMatchingLabelResId: Int
         ConnectionsTab.KEYS -> R.string.connections_no_matching_keys
         ConnectionsTab.SNIPPETS -> R.string.connections_no_matching_snippets
     }
-
-private val HostSort.labelResId: Int
-    get() = when (this) {
-        HostSort.NAME -> R.string.connections_sort_name
-        HostSort.FAVOURITES -> R.string.connections_sort_favourites
-        HostSort.RECENT -> R.string.connections_sort_recent
-        HostSort.GROUP -> R.string.connections_sort_group
-    }
-
-private val HostFilters.isActive: Boolean
-    get() = favouritesOnly || group != null
 
 private val ConnectionProtocol.label: String
     get() = when (this) {
@@ -2130,16 +1883,3 @@ private val SnippetTapAction.labelResId: Int
 
 private val KeyRowUi.shortFingerprint: String
     get() = if (fingerprint.length <= 36) fingerprint else "${fingerprint.take(20)}…${fingerprint.takeLast(12)}"
-
-private fun SnippetRowUi.metadataSummary(): UiText = UiText.Joined(
-    buildList {
-        group?.let { add(UiText.Dynamic(it)) }
-        add(uiText(tapAction.labelResId))
-        if (appendEnter) add(uiText(R.string.connections_snippet_enter_appended))
-        if (confirmMultilineExecution && ('\n' in command || '\r' in command)) {
-            add(uiText(R.string.connections_snippet_confirms_multiline))
-        }
-    },
-)
-
-internal const val ConnectionsHostFiltersTestTag = "connections-host-filters"

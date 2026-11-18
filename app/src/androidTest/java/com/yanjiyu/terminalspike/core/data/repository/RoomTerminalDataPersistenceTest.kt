@@ -13,6 +13,15 @@ import com.yanjiyu.terminalspike.core.data.db.AppDatabase
 import com.yanjiyu.terminalspike.core.data.db.EncryptedSecretEntity
 import com.yanjiyu.terminalspike.core.data.settings.AppSettings
 import com.yanjiyu.terminalspike.core.data.settings.AppSettingsRepository
+import com.yanjiyu.terminalspike.QueuedCallerDispatcher
+import com.yanjiyu.terminalspike.core.model.Snippet
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CancellationException
 import com.yanjiyu.terminalspike.core.model.BellSettings
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.CursorStyle
@@ -85,6 +94,63 @@ class RoomTerminalDataPersistenceTest {
         if (::database.isInitialized && database.isOpen) database.close()
         context.deleteDatabase(DATABASE_NAME)
     }
+
+    @Test
+    fun snippetReplacementFailureRollsBackTheRowAndDefaultVisibility() = runBlocking {
+        val snippet = replacementSnippet()
+        val writer = persistence(database, afterSnippetWrite = { throw ExpectedMetadataFailure() })
+        val failure = runCatching { writer.upsertSnippet(snippet, replacedDefaultId = -1L) }.exceptionOrNull()
+        assertTrue(failure is ExpectedMetadataFailure)
+        assertNull(database.snippetDao().findById(snippet.id))
+        assertEquals(emptySet<Long>(), persistence(database).readRecords().hiddenDefaultSnippetIds)
+        database.close()
+        database = openDatabase()
+        assertNull(database.snippetDao().findById(snippet.id))
+        assertEquals(emptySet<Long>(), persistence(database).readRecords().hiddenDefaultSnippetIds)
+    }
+
+    @Test
+    fun cancellingTheCallerAfterRoomCommitKeepsReplacementAndVisibilityOnReopen() = runBlocking {
+        val snippet = replacementSnippet()
+        val committed = CompletableDeferred<Unit>()
+        val dispatcher = QueuedCallerDispatcher()
+        val save = async(dispatcher, start = CoroutineStart.UNDISPATCHED) {
+            withContext(Dispatchers.IO) {
+                persistence(database).upsertSnippet(snippet, replacedDefaultId = 0L)
+                committed.complete(Unit)
+            }
+        }
+        withTimeout(10_000) { committed.await() }
+        save.cancel()
+        dispatcher.finish(save)
+        assertTrue(runCatching { save.await() }.exceptionOrNull() is CancellationException)
+        database.close()
+        database = openDatabase()
+        val records = persistence(database).readRecords()
+        assertEquals(snippet, records.snippets.single())
+        assertEquals(setOf(0L), records.hiddenDefaultSnippetIds)
+    }
+
+    @Test
+    fun hidingDefaultsIsIdempotentAndDeletingReplacementDoesNotUnhideThem() = runBlocking {
+        val writer = persistence(database)
+        val snippet = replacementSnippet()
+        writer.upsertSnippet(snippet, replacedDefaultId = -1L)
+        writer.hideDefaultSnippet(-2L)
+        writer.hideDefaultSnippet(-2L)
+        assertTrue(writer.deleteSnippet(snippet.id))
+        database.close()
+        database = openDatabase()
+        val records = persistence(database).readRecords()
+        assertTrue(records.snippets.isEmpty())
+        assertEquals(setOf(-1L, -2L), records.hiddenDefaultSnippetIds)
+    }
+
+    private fun replacementSnippet() = Snippet(
+        id = "80000000-0000-4000-8000-000000000001",
+        name = "Replacement fixture", command = "printf fixture",
+        createdAtEpochMillis = NOW, updatedAtEpochMillis = NOW,
+    )
 
     @Test
     fun hostMetadataFailureRollsBackCiphertextCredentialAndRelationship() = runBlocking {
@@ -162,6 +228,35 @@ class RoomTerminalDataPersistenceTest {
             KeyboardProfileRepository(database.keyboardProfileDao()).get(KEYBOARD_PROFILE_ID)
                 ?.modifierBehavior,
         )
+    }
+
+    @Test
+    fun settingsCommitRefreshesAnAlreadyLoadedCatalogEvenIfTheNextWriteFails() = runBlocking {
+        val authority = AuthoritativeDataGate().also {
+            it.resolveStartup({ false }, { error("No recovery expected") })
+        }
+        val catalog = TerminalDataRepository(
+            persistence = persistence(database),
+            authorityGate = authority,
+            requireAuthority = {},
+            discardBlockedLegacySettings = { error("No legacy recovery expected") },
+            privateKeyInspector = PrivateKeyMetadataInspector { error("No private key expected") },
+        )
+        fun TerminalDataCatalogLoadResult.fontSize() = requireNotNull(this.catalog)
+            .terminalProfiles.single { it.id == TERMINAL_PROFILE_ID }.fontSizeSp
+        assertEquals(14f, catalog.loadCatalog().fontSize())
+        val profiles = TerminalProfileRepository(database.terminalProfileDao())
+        val failure = runCatching {
+            SettingsMutationCoordinator(authority).mutate {
+                val original = requireNotNull(profiles.get(TERMINAL_PROFILE_ID))
+                write { check(profiles.update(original.copy(fontSizeSp = 19f))) }
+                write { throw ExpectedMetadataFailure() }
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is ExpectedMetadataFailure)
+        assertEquals(19f, catalog.loadCatalog().fontSize())
+        assertEquals(1L, authority.awaitReady())
     }
 
     @Test
@@ -251,6 +346,7 @@ class RoomTerminalDataPersistenceTest {
 
     private fun persistence(
         target: AppDatabase,
+        afterSnippetWrite: suspend () -> Unit = {},
         beforeHostWrite: suspend () -> Unit = {},
     ): RoomTerminalDataPersistence {
         val crypto = AesGcmCredentialStore(
@@ -271,6 +367,7 @@ class RoomTerminalDataPersistenceTest {
             credentialStore = crypto,
             clock = CLOCK,
             beforeHostCredentialMetadataWrite = beforeHostWrite,
+            afterSnippetWrite = afterSnippetWrite,
         )
     }
 

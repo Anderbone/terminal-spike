@@ -103,18 +103,21 @@ class TerminalClipboardClearScheduler internal constructor(
         scheduledGeneration: Long,
         target: TerminalClipboardClearTarget,
     ) {
-        val token = synchronized(lock) {
-            pendingClear?.takeIf { current ->
-                !closed && current.expired && current.generation == scheduledGeneration &&
-                    generation == scheduledGeneration
-            }?.token
-        } ?: return
-        val result = withContext(clearDispatcher) { target.tryClearIfCurrent(token) }
-        if (result == TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE) return
-        synchronized(lock) {
-            val current = pendingClear
-            if (current?.generation == scheduledGeneration && generation == scheduledGeneration) {
-                pendingClear = null
+        withContext(clearDispatcher) {
+            // Settings/session changes can invalidate work while it waits for this dispatcher.
+            // Claim, platform operation and consumption share one lock so concurrent retries
+            // cannot both clear a token, or act after a completed disable/close operation.
+            synchronized(lock) {
+                val current = pendingClear ?: return@synchronized
+                if (
+                    closed || !current.expired || current.generation != scheduledGeneration ||
+                    generation != scheduledGeneration
+                ) return@synchronized
+                val result = target.tryClearIfCurrent(current.token)
+                if (
+                    result != TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE &&
+                    pendingClear === current
+                ) pendingClear = null
             }
         }
     }

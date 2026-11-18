@@ -1,5 +1,9 @@
 package com.yanjiyu.terminalspike.ui.settings
 
+import android.content.Context
+import android.content.res.Configuration
+import android.os.LocaleList
+import android.view.ContextThemeWrapper
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.R
 
@@ -12,11 +16,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -43,13 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
 import com.yanjiyu.terminalspike.ui.ExpandedPrimaryNavigationTestTag
-import com.yanjiyu.terminalspike.ui.ExpandedToolDetailTestTag
-import com.yanjiyu.terminalspike.ui.ExpandedToolSectionListTestTag
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.replaceText
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.withTagValue
-import androidx.test.espresso.matcher.ViewMatchers.withText
 import com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus
 import com.yanjiyu.terminalspike.core.backup.BackupContentSummary
 import com.yanjiyu.terminalspike.core.backup.BackupImportResult
@@ -59,12 +59,9 @@ import com.yanjiyu.terminalspike.core.model.BellSettings
 import com.yanjiyu.terminalspike.core.model.CursorStyle
 import com.yanjiyu.terminalspike.core.model.CustomTerminalTheme
 import com.yanjiyu.terminalspike.core.model.KeyboardAction
-import com.yanjiyu.terminalspike.core.model.KeyboardLayout
 import com.yanjiyu.terminalspike.core.model.KeyboardProfile
 import com.yanjiyu.terminalspike.core.model.LinkBehavior
-import com.yanjiyu.terminalspike.core.model.ModifierBehavior
 import com.yanjiyu.terminalspike.core.model.ScrollBehavior
-import com.yanjiyu.terminalspike.core.model.TerminalInputMode
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.ui.toUiState
 import com.yanjiyu.terminalspike.ui.theme.AppThemeMode
@@ -74,13 +71,27 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.hamcrest.CoreMatchers.equalTo
 
 class SettingsScreenTest {
+    // These component fixtures assert English copy. Real MainActivity tests use its current locale.
+    private val englishContext = InstrumentationRegistry.getInstrumentation().targetContext
+        .englishSettingsContext()
+
+    private fun setContent(content: @Composable () -> Unit) {
+        composeRule.setContent {
+            val host = LocalContext.current
+            val english = remember(host) { host.englishSettingsContext() }
+            CompositionLocalProvider(
+                LocalContext provides english,
+                LocalConfiguration provides english.resources.configuration,
+            ) { content() }
+        }
+    }
+
     @Test
     fun visualInputEditorAddsReplacesRemovesAndSavesTheVisibleLayout() {
         var saved: String? = null
-        composeRule.setContent {
+        setContent {
             MaterialTheme { InputKeyboardEditor("", false, {}, { saved = it }) }
         }
         composeRule.onNodeWithTag("input-keyboard-preview").assertIsDisplayed()
@@ -100,7 +111,7 @@ class SettingsScreenTest {
     @Test
     fun visualInputEditorDragsAKeyAcrossTheField() {
         var tokens by mutableStateOf(listOf("enter", "toggle", "input"))
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 InputKeyboardPreview(tokens, null, onSelect = {}, onMove = { from, to ->
                     tokens = tokens.toMutableList().apply { add(to, removeAt(from)) }
@@ -122,7 +133,7 @@ class SettingsScreenTest {
 
     @Test
     fun languageMenuSharesTheCompactSearchRowAndUsesRecognizableEndonyms() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme { TestSettingsScreen(Modifier.requiredSize(360.dp, 720.dp)) }
         }
         val language = composeRule.onNodeWithTag("settings-language-menu")
@@ -140,7 +151,7 @@ class SettingsScreenTest {
 
     @Test
     fun communityAndSupportLinksShareOneRowWhileLanguageStaysVisible() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme { TestSettingsScreen(Modifier.requiredSize(360.dp, 720.dp)) }
         }
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
@@ -158,7 +169,7 @@ class SettingsScreenTest {
 
     @Test
     fun userGuideIsSearchableAndOpensTheTourFromSettings() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme { TestSettingsScreen() }
         }
         composeRule.onNodeWithTag(SettingsSearchTestTag).performTextInput("guide")
@@ -176,12 +187,12 @@ class SettingsScreenTest {
 
     @Test
     fun returningFromSettingsDetailRestoresTheCategoryReadingPosition() {
-        composeRule.setContent {
+        setContent {
             TerminalSpikeTheme(updateSystemBarIcons = false) {
                 TestSettingsScreen(Modifier.requiredSize(360.dp, 500.dp))
             }
         }
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+        composeRule.onNodeWithContentDescription(englishContext.getString(R.string.settings_category_list_description))
             .performScrollToNode(hasText("About"))
         val position = composeRule.onNodeWithText("About").fetchSemanticsNode().boundsInRoot.top
         composeRule.onNodeWithText("About").performClick()
@@ -194,7 +205,7 @@ class SettingsScreenTest {
     @Test
     fun settingsRetainExpectedSurfacePolarityInLightAndDarkThemes() {
         val themeMode = mutableStateOf(AppThemeMode.LIGHT)
-        composeRule.setContent {
+        setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
                 TerminalSpikeTheme(themeMode = themeMode.value, updateSystemBarIcons = false) {
                     Box(
@@ -219,7 +230,7 @@ class SettingsScreenTest {
 
     @Test
     fun expandedSettingsKeepNavigationCategoryListAndDetailVisible() {
-        composeRule.setContent {
+        setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
                 TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                     Box(Modifier.requiredSize(700.dp, 900.dp)) {
@@ -230,14 +241,14 @@ class SettingsScreenTest {
         }
 
         composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertIsDisplayed()
-        composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertIsDisplayed()
-        composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedSettingsCategoryListTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedSettingsDetailTestTag).assertIsDisplayed()
         composeRule.onNodeWithTag(AppearanceSettingsTestTag).assertIsDisplayed()
     }
 
     @Test
     fun searchOpensConcreteHerdrOptionAndScrollsToOffscreenPowerOption() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 700.dp)) {
                     SettingsScreen(
@@ -278,13 +289,13 @@ class SettingsScreenTest {
             .assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("settings-search-target").assertIsDisplayed()
         composeRule.onNodeWithText(
-            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.settings_keep_screen_on),
+            englishContext.getString(R.string.settings_keep_screen_on),
         ).assertIsDisplayed()
     }
 
     @Test
     fun clearingSettingsSearchRestoresTheFullCategoryHierarchy() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -316,7 +327,7 @@ class SettingsScreenTest {
 
     @Test
     fun compactSplitScreenAtLargeTextKeepsSettingsHierarchyReachable() {
-        composeRule.setContent {
+        setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
                 MaterialTheme {
                     Box(Modifier.requiredSize(320.dp, 360.dp)) {
@@ -345,7 +356,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(SettingsSearchTestTag)
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
+        composeRule.onNodeWithContentDescription(englishContext.getString(R.string.settings_category_list_description))
             .performScrollToNode(hasText("About"))
         composeRule.onNodeWithText("About").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("About Terminal Spike")
@@ -355,7 +366,7 @@ class SettingsScreenTest {
 
     @Test
     fun searchableHierarchyOpensKeyboardProfileWithVisibleChordKeys() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -384,7 +395,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("^C").assertIsDisplayed()
         // The shipped deck maps the Ctrl-W slot to the expanded-keyboard control.
         composeRule.onNodeWithContentDescription(
-            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.terminal_more_keys_description),
+            englishContext.getString(R.string.terminal_more_keys_description),
         ).assertIsDisplayed()
     }
 
@@ -398,7 +409,7 @@ class SettingsScreenTest {
             onKeyboardPreset = { selectedPreset = it },
             onVoiceInputEnabled = { voiceInputEnabled = it },
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -426,8 +437,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Keyboard").performScrollTo().performClick()
         composeRule.onNodeWithText("Vim").performScrollTo().performClick()
         assertEquals("vim", selectedPreset)
-        val voiceLabel = InstrumentationRegistry.getInstrumentation().targetContext
-            .getString(R.string.settings_voice_input_enabled)
+        val voiceLabel = englishContext.getString(R.string.settings_voice_input_enabled)
         composeRule.onNodeWithTag(KeyboardSettingsTestTag).performScrollToNode(hasText(voiceLabel))
         composeRule.onNodeWithText(voiceLabel).assertIsDisplayed().performClick()
         assertEquals(!completeState().preferences.voiceInputEnabled, voiceInputEnabled)
@@ -437,7 +447,7 @@ class SettingsScreenTest {
     fun tappingAKeyboardPreviewKeyReplacesThatExactPosition() {
         var replacement: List<KeyboardAction>? = null
         val actions = noOpActions().copy(onKeyboardActions = { replacement = it })
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -486,7 +496,7 @@ class SettingsScreenTest {
     @Test
     fun accessoryKeyEditorShowsConfiguredRowsAndDefersReplacementUntilSave() {
         var savedActions: List<KeyboardAction>? = null
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -542,7 +552,7 @@ class SettingsScreenTest {
             terminalProfile = completeState().terminalProfile?.copy(themeId = theme.id),
             customTerminalThemes = listOf(theme),
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -590,7 +600,7 @@ class SettingsScreenTest {
             onLigatures = { ligatures = it },
             onPinchZoom = { pinchZoom = it },
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -636,7 +646,7 @@ class SettingsScreenTest {
         val actions = noOpActions().copy(
             onLinks = { transform -> updatedLinks = transform(LinkBehavior()) },
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -672,7 +682,7 @@ class SettingsScreenTest {
             onBeginExport = { exportStarted = true },
             onBeginRestore = { restoreStarted = true },
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(412.dp, 900.dp)) {
                     SettingsScreen(
@@ -703,7 +713,7 @@ class SettingsScreenTest {
 
     @Test
     fun exportSetupDoesNotShowModeOrPassphrasePrompts() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 BackupWorkflowDialogs(
                     state = BackupWorkflowUiState(step = BackupWorkflowStep.EXPORT_SETUP),
@@ -718,7 +728,7 @@ class SettingsScreenTest {
 
     @Test
     fun restoreDoesNotShowAPassphrasePrompt() {
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 BackupWorkflowDialogs(
                     state = BackupWorkflowUiState(step = BackupWorkflowStep.PASSPHRASE_REQUIRED),
@@ -779,7 +789,7 @@ class SettingsScreenTest {
                 ),
             ),
         )
-        composeRule.setContent {
+        setContent {
             MaterialTheme { BackupWorkflowDialogs(state, BackupSettingsActions.NONE) }
         }
 
@@ -818,7 +828,7 @@ class SettingsScreenTest {
     fun dataManagersUseSettingsDetailsWhileAdvancedSecurityStaysHidden() {
         var sshKeysOpened = false
         var snippetsOpened = false
-        composeRule.setContent {
+        setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(360.dp, 600.dp)) {
                     SettingsScreen(
@@ -970,3 +980,11 @@ private fun customTheme() = CustomTerminalTheme(
     createdAtEpochMillis = 1,
     updatedAtEpochMillis = 2,
 )
+
+private fun Context.englishSettingsContext(): Context {
+    val english = Configuration(resources.configuration).apply {
+        setLocales(LocaleList.forLanguageTags("en"))
+    }
+    // Keep the Activity in the ContextWrapper chain for ActivityResultRegistryOwner lookup.
+    return ContextThemeWrapper(this, 0).apply { applyOverrideConfiguration(english) }
+}

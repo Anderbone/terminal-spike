@@ -47,10 +47,10 @@ original licences and attribution. The full project GPL text is reproduced at th
 
 This project includes or resolves the following third-party software:
 
-- Android Gradle Plugin, AndroidX Core, Activity, Lifecycle, Room, DataStore, ProfileInstaller, Compose Foundation, Compose UI, Compose Material 3, Compose tooling/testing, AndroidX Test, UI Automator, Macrobenchmark, and the Baseline Profile Gradle plugin — Apache License 2.0.
+- Android Gradle Plugin, AndroidX Core, Activity, Lifecycle, Room, DataStore, ProfileInstaller, Compose Foundation, Compose UI, Compose Material 3, Compose tooling/testing, AndroidX Test, UI Automator, Macrobenchmark, and the Baseline Profile Gradle plugin 1.5.0 — Apache License 2.0.
 - Kotlin standard library, Kotlin Compose compiler plugin, Kotlin Symbol Processing, kotlinx.coroutines, and kotlinx.serialization — Apache License 2.0.
 - JetBrains annotations, JSpecify annotations, and Guava's standalone `listenablefuture` compatibility artefact — Apache License 2.0.
-- Protocol Buffers Kotlin Lite and compiler 4.32.1, and the Protocol Buffers Gradle plugin 0.9.5 — Revised BSD licences reproduced below.
+- Protocol Buffers Kotlin Lite and compiler 4.32.1, and the Protocol Buffers Gradle plugin 0.10.1 — Revised BSD licences reproduced below.
 - mwiede JSch 2.28.3, including its JZlib and jBCrypt portions — Revised BSD and ISC licences reproduced below.
 - Bouncy Castle Provider 1.85 — Bouncy Castle Licence (MIT-style) reproduced below.
 - Ayu Dark, One Dark, Dracula, Nord, Solarized Dark/Light, Gruvbox Dark, Tokyo Night, and Catppuccin Mocha named terminal palette inputs — MIT; immutable source details and attributions are reproduced below.
@@ -61,7 +61,11 @@ This project includes or resolves the following third-party software:
 
 Copyright remains with each upstream project and its contributors. The corresponding licence texts and notices supplied by upstream distributions must be preserved where the distribution terms require them. Detailed versions, purposes, and source locations are recorded in `docs/DEPENDENCIES.md`.
 
-No source or binary from ConnectBot, Termux, Termius, LobiShell, libvterm or xterm.js is included.
+The Android terminal renderer and VT engine use project-owned implementations; they do not
+incorporate implementations from ConnectBot, Termux, Termius, LobiShell, libvterm or xterm.js.
+The approved Local Arch native runtime separately packages the Termux-maintained PRoot and
+libandroid-shmem sources inventoried above. Their exact archives and upstream URLs are recorded
+in `local-arch-runtime/sources.lock` under `docs/ADR-LOCAL-ARCH-RUNTIME.md`.
 The main APK includes the pinned Mosh native transport through the project-owned `mosh-core`
 library. Mosh, Nettle and native Protocol Buffers notices follow below. Complete native licence
 texts, author inventory, NDK notices and OCB terms are packaged alongside the main notices.

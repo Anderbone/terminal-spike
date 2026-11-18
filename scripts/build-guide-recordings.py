@@ -4,31 +4,22 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "app/src/main/res"
+SOURCES = ROOT / "store-assets/user-guide/source"
 
 
 def run(*args: str) -> None:
     subprocess.run(["ffmpeg", "-y", "-v", "error", *map(str, args)], check=True)
 
 
-def camera_expression(anchors: list[dict]) -> str:
-    value = str(anchors[0]["y"])
-    # Each move is a half-second pan over the original pixels, with no reconstructed controls.
-    for previous, current in zip(anchors, anchors[1:]):
-        start, end = current["time"], current["time"] + .5
-        old, new = previous["y"], current["y"]
-        move = f"{old}+({new}-{old})*(t-{start})/0.5"
-        value = f"if(lt(t,{start}),{value},if(lt(t,{end}),{move},{new}))"
-    return value
-
-
-def build_short_visuals(codec: list[str]) -> None:
-    """One action per loop or still, for the three-step tour and independent tips."""
+def build_visuals(codec: list[str]) -> None:
+    """One action per loop or still, for the current tour and independent tips."""
     manifest = json.loads((ROOT / "store-assets/user-guide/visuals.json").read_text())
     for name, visual in manifest.items():
-        source = RES / "raw" / f"guide_{visual['source']}_full.mp4"
+        source = SOURCES / f"{visual['source']}.mp4"
         poster = RES / "drawable-nodpi" / f"guide_{name}.webp"
         filters = visual["filter"]
         if "duration" in visual:
@@ -46,8 +37,9 @@ def build_short_visuals(codec: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--capture-dir", type=Path, help="Import original NAME-source.mp4 recordings")
-    parser.add_argument("--short-only", action="store_true", help="Only rebuild the concise tour and tips")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--capture-dir", type=Path, help="Import original NAME-source.mp4 recordings")
+    mode.add_argument("--short-only", action="store_true", help="Compatibility alias for rebuilding the current tour and tips")
     args = parser.parse_args()
     manifest = json.loads((ROOT / "store-assets/user-guide/recordings.json").read_text())
     raw = RES / "raw"
@@ -57,21 +49,20 @@ def main() -> None:
     codec = ["-an", "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "4.0",
              "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", "-movflags", "+faststart",
              "-map_metadata", "-1"]
-    if args.short_only:
-        build_short_visuals(codec)
-        return
-    for name, clip in manifest["clips"].items():
-        full = raw / f"guide_{name}_full.mp4"
-        focused = raw / f"guide_{name}.mp4"
-        if args.capture_dir:
-            run("-i", args.capture_dir / f"{name}-source.mp4", "-vf", "fps=24,setsar=1", *codec, full)
-        expression = camera_expression(clip["camera"])
-        run("-i", full, "-vf", f"crop=720:600:0:'{expression}',setsar=1", *codec, focused)
-        for source, suffix in [(focused, ""), (full, "_full")]:
-            run("-i", source, "-frames:v", "1", "-c:v", "libwebp", "-lossless", "1",
-                posters / f"guide_{name}{suffix}.webp")
-        print(f"GUIDE_MEDIA {name} full={full.stat().st_size} focused={focused.stat().st_size}")
-    build_short_visuals(codec)
+    if args.capture_dir:
+        SOURCES.parent.mkdir(parents=True, exist_ok=True)
+        # A failed encoder must not overwrite a canonical capture or publish a mixed set.
+        with TemporaryDirectory(prefix=".guide-captures-", dir=SOURCES.parent) as temporary:
+            staged = Path(temporary)
+            for name in manifest["clips"]:
+                run("-i", args.capture_dir / f"{name}-source.mp4", "-vf", "fps=24,setsar=1",
+                    *codec, staged / f"{name}.mp4")
+            SOURCES.mkdir(exist_ok=True)
+            for name in manifest["clips"]:
+                full = SOURCES / f"{name}.mp4"
+                (staged / f"{name}.mp4").replace(full)
+                print(f"GUIDE_SOURCE {name} bytes={full.stat().st_size}")
+    build_visuals(codec)
 
 
 if __name__ == "__main__":

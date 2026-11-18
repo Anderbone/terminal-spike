@@ -58,9 +58,7 @@ class PreparedBackupImport internal constructor(
         header = archive.header,
         content = archive.payload.snapshot.contentSummary(),
         incompatibleRecords = archive.payload.compatibility.incompatibleRecords.size,
-        skippedRecords = archive.payload.compatibility.skippedUnknownRecords +
-            archive.payload.compatibility.skippedUnknownRecordTypes +
-            archive.payload.compatibility.skippedUnknownCollections,
+        skippedRecords = archive.payload.compatibility.skippedRecordCount,
         unresolvedReferences = archive.payload.compatibility.unresolvedReferences.size,
     )
 
@@ -68,12 +66,15 @@ class PreparedBackupImport internal constructor(
      * Transfers the authenticated snapshot exactly once. After this returns, [close] is a no-op
      * for the snapshot because the receiving import plan is its sole owner.
      */
-    internal fun takeSnapshot(): BackupPayloadSnapshot = synchronized(ownershipLock) {
+    internal fun takeSnapshot(): BackupPayloadSnapshot = takePayload().snapshot
+
+    /** Transfers compatibility together with its snapshot so omitted records stay omitted. */
+    internal fun takePayload(): BackupPayloadReadResult = synchronized(ownershipLock) {
         if (ownership != SnapshotOwnership.OWNED) {
             throw PreparedBackupImportConsumedException()
         }
         ownership = SnapshotOwnership.TRANSFERRED
-        archive.payload.snapshot
+        archive.payload
     }
 
     override fun close() {

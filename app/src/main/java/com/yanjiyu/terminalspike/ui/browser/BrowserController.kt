@@ -2,7 +2,6 @@ package com.yanjiyu.terminalspike.ui.browser
 
 import android.content.Context
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.webkit.RenderProcessGoneDetail
 import android.view.ViewGroup
@@ -14,7 +13,7 @@ internal class BrowserTab(
     val endpoint: String,
     val title: String,
     val projectPath: String?,
-    var address: String,
+    @Volatile var address: String,
     var desktop: Boolean,
     val codeServer: Boolean = true,
 ) {
@@ -24,7 +23,7 @@ internal class BrowserTab(
     val menuVisible = MutableStateFlow(false)
     fun detachUi(attached: WebView) {
         attached.webChromeClient = WebChromeClient()
-        attached.webViewClient = object : WebViewClient() {
+        attached.webViewClient = object : BrowserNavigationClient({ address }) {
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                 (view.parent as? ViewGroup)?.removeView(view)
                 view.destroy()

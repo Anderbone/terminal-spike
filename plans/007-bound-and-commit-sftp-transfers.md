@@ -1,5 +1,9 @@
 # Plan 007: Bound recursive SFTP work and make transfer results failure-atomic
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Complete Plan 006 first. Follow every verification
 > step and preserve unrelated dirty work. Do not implement partial cleanup that
 > can delete pre-existing user files.
@@ -9,7 +13,7 @@
 > Reconcile Plan 006 changes before proceeding. Stop if transfer ownership no
 > longer matches the current-state description.
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: L
@@ -26,7 +30,7 @@ cancellation bound. Interrupted transfers can also leave truncated artifacts
 under final-looking names. A public file-transfer surface must fail with a clear
 bounded error and expose either the prior state or a complete new artifact.
 
-## Current state
+## Original state
 
 - `SftpClient.kt:189-231` recursively deletes, copies, and downloads directly
   from server responses.
@@ -42,7 +46,7 @@ bounded error and expose either the prior state or a complete new artifact.
   bounds for tests, typed safe messages, and cleanup limited to operation-owned
   data (see backup and terminal transfer limits).
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -68,12 +72,12 @@ bounded error and expose either the prior state or a complete new artifact.
 - deleting or renaming any pre-existing destination during rollback
 - changing SSH authentication/trust or adding dependencies
 
-## Git workflow
+## Historical Git workflow
 
 Preserve the current dirty tree. Do not commit/push unless asked. If later
 authorized, use `fix: bound and atomically publish SFTP transfers`.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Define one cancellable traversal budget
 
@@ -151,7 +155,7 @@ the exact model-verified authorized old phone; never on the foldable.
   removed after injected failure.
 - Real E2E: successful file and directory operations retain current behavior.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [ ] No recursive provider/server walk can overflow the JVM stack or traverse
   more than the configured entry/depth budget.
@@ -162,7 +166,7 @@ the exact model-verified authorized old phone; never on the foldable.
 - [ ] Focused and real-fixture tests pass; full local gate is green.
 - [ ] No new dependency or out-of-scope feature is introduced.
 
-## STOP conditions
+## Historical stop conditions
 
 - Atomic publication would require overwriting or deleting a pre-existing item.
 - A provider/server cannot support temporary creation plus rename and the only

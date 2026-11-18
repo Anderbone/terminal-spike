@@ -60,12 +60,22 @@ scripts/run-port-forward-device-tests.py \
 
 The runner refuses the foldable, non-USB targets, or an already-running disposable fixture.
 It enables TCP forwarding only in its disposable OpenSSH fixture, verifies the model
-before each device action, checks installed APK hashes, requires all seven tests without
-skips, and tears down the fixture on exit. It proves real terminal input/output plus a
+before each device action, checks installed APK hashes, and requires every named test
+in the three selected classes from `scripts/android-test-contract.json`, without skips.
+The current contract has eight cases: three forwarding, one editor and four migration
+tests. The runner validates one complete instrumentation run and its final completion;
+summary text cannot replace missing or duplicate test identities. It tears down its
+owned fixture on exit and preserves an already-running fixture. The device gate proves
+real terminal input/output plus a
 256 KiB request and reversed response through chained local and remote forwards, over
 both SSH and native Mosh. A second fresh session reuses the same listener ports. Another
 test occupies a port and proves that setup fails clearly and releases earlier listeners.
 Evidence is written to ignored `build/port-forward-device-results/`.
+
+Host regressions exercise the runner main with disposable APK files and fake command
+responses. They verify gate and target selection, not physical tunnel traffic. The
+historical seven-case device evidence below predates the additional migration case;
+updating this runner does not imply a new physical eight-case acceptance run.
 
 ### Device evidence — 2026-09-23
 

@@ -4,10 +4,16 @@ import argparse
 from pathlib import Path
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
+
+from device_test_safety import APP, TEST_APP, RUNNER, verify_device, verify_apks
+
+EXPECTED = {"topTabsReflectBackgroundTaskState", "appSwitcherReflectsBackgroundTaskState",
+            "tmuxSwitcherReflectsInactiveRemoteTaskState", "startupPickerShowsRemoteTaskState"}
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Requires APKs built with -PterminalSpikeDeviceVerify=true; never installs the normal app.")
     parser.add_argument('--serial', required=True)
     parser.add_argument('--app-apk', default='app/build/outputs/apk/debug/app-debug.apk')
     parser.add_argument('--test-apk', default='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
@@ -20,32 +26,34 @@ def main():
         adb = str(Path(sdk) / 'platform-tools/adb')
 
     def verify():
-        inventory = subprocess.check_output([adb, 'devices', '-l'], text=True)
-        lines = [line.split() for line in inventory.splitlines() if line.split() and line.split()[0] == args.serial]
-        if len(lines) != 1 or lines[0][1] != 'device' or 'model:SM_S911B' not in lines[0]:
-            raise RuntimeError('Refusing unavailable, unauthorized, or non-SM_S911B target')
-        model = subprocess.check_output([adb, '-s', args.serial, 'shell', 'getprop', 'ro.product.model'], text=True).strip()
-        if model != 'SM-S911B':
-            raise RuntimeError('Refusing a target whose model is not SM-S911B')
+        return verify_device(adb, args.serial)
 
+    # Verify both artifacts before touching either installed package.
+    verify_apks(adb, root / args.app_apk, root / args.test_apk)
     for apk in (args.app_apk, args.test_apk):
         verify()
-        subprocess.run([adb, '-s', args.serial, 'install', '-r', str(root / apk)], check=True, stdout=subprocess.DEVNULL)
-    verify()
-    command = ('CLASSPATH=$(pm path androidx.test.services) app_process / '
-               'androidx.test.services.shellexecutor.ShellMain am instrument -w -r '
+        verify_apks(adb, root / args.app_apk, root / args.test_apk)
+        subprocess.run([adb, '-s', args.serial, 'install', '-r', '-t', str(root / apk)], check=True, stdout=subprocess.DEVNULL)
+    model = verify()
+    # These four component cases own a fresh Compose Rule and local fixtures;
+    # package/process clearing between cases is unnecessary in the isolated app.
+    command = ('am instrument -w -r '
                '-e class com.yanjiyu.terminalspike.TerminalTaskIndicatorTest '
-               '-e targetInstrumentation com.yanjiyu.terminalspike.test/com.yanjiyu.terminalspike.TerminalSpikeTestRunner '
-               '-e clearPackageData true androidx.test.orchestrator/.AndroidTestOrchestrator')
+               f'{TEST_APP}/{RUNNER}')
     out = root / args.output_dir
     out.mkdir(parents=True, exist_ok=True)
     result = subprocess.run([adb, '-s', args.serial, 'shell', command], capture_output=True, text=True, timeout=240)
     report = out / 'instrumentation.txt'
     report.write_text(result.stdout + result.stderr)
     subprocess.run(['python3', str(root / 'scripts/instrumentation-output-to-junit.py'), str(report), str(out / 'TEST-task-ui.xml')], check=True)
-    if 'OK (4 tests)' not in result.stdout:
+    xml = ET.parse(out / 'TEST-task-ui.xml').getroot()
+    cases = list(xml.iter('testcase'))
+    valid_cases = (len(cases) == 4 and {case.get('name') for case in cases} == EXPECTED
+                   and all(case.get('classname') == 'com.yanjiyu.terminalspike.TerminalTaskIndicatorTest' for case in cases)
+                   and all(case.find(tag) is None for case in cases for tag in ('failure', 'error', 'skipped')))
+    if result.returncode != 0 or not valid_cases or 'OK (4 tests)' not in result.stdout:
         raise SystemExit('The exact four task-indicator UI tests were not green; see the output directory.')
-    print('TERMINAL_TASK_UI_RESULT tests=4 failures=0 skips=0 model=SM-S911B')
+    print(f'TERMINAL_TASK_UI_RESULT tests=4 failures=0 skips=0 model={model} package={APP}')
 
 
 if __name__ == '__main__':

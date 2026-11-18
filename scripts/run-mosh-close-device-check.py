@@ -9,8 +9,16 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import threading
 import time
+
+from owned_process import stop_owned_child
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
 
 
 def main():
@@ -38,17 +46,20 @@ def main():
         return subprocess.check_output(['adb', '-s', args.serial, *command], timeout=timeout)
 
     def verify():
-        inventory = subprocess.check_output(['adb', 'devices', '-l'], text=True)
-        assert any(line.split()[:2] == [args.serial, 'device'] for line in inventory.splitlines())
-        assert adb('shell', 'getprop', 'ro.product.model').decode().strip() == 'SM-G9708'
-        assert adb('shell', 'getprop', 'ro.serialno').decode().strip() == 'R28M227XA0E'
+        inventory = subprocess.check_output(['adb', 'devices', '-l'], text=True, timeout=30)
+        require(any(line.split()[:2] == [args.serial, 'device'] for line in inventory.splitlines()),
+                'Selected device is not connected and authorized')
+        require(adb('shell', 'getprop', 'ro.product.model').decode().strip() == 'SM-G9708',
+                'Selected device model is not the authorized S10e')
+        require(adb('shell', 'getprop', 'ro.serialno').decode().strip() == 'R28M227XA0E',
+                'Selected device hardware is not the authorized S10e')
 
     def alive(pid):
         if pid is None:
             return False
         try:
             return Path(f'/proc/{pid}/stat').read_text().rsplit(') ', 1)[1].split()[0] != 'Z'
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             return False
 
     def frontend_children(pid):
@@ -79,20 +90,23 @@ def main():
     if not test_matches:
         verify()  # Re-verify immediately before the install.
         install = adb('install', '-r', '-t', str(args.test_apk.resolve()), timeout=90).decode()
-        assert 'Success' in install, install
+        require('Success' in install, 'Test APK install failed: ' + install)
     session = 'terminal-spike-close-' + str(time.time_ns())
     main_ids = ids()
-    log = (args.output/'fixture-server.log').open('wb')
-    server = subprocess.Popen(['herdr', '--session', session, 'server'], stdout=log, stderr=log, env=fixture_env)
+    log = None
+    server = None
     remote_pid = None
     remote_pidfd = None
     report = dict(device=args.serial, model='SM-G9708', method=args.method,
-                  expect_leak=args.expect_leak, fixture_session=session)
-    installed = adb('shell', 'pm', 'path', 'com.yanjiyu.terminalspike').decode().strip()
-    assert installed.startswith('package:/data/app/') and '\n' not in installed
-    report['installed_app_sha256'] = adb('shell', 'sha256sum', installed[8:]).decode().split()[0]
-    report['test_apk_sha256'] = test_hash
+                  expect_leak=args.expect_leak, fixture_session=session, passed=False)
     try:
+        log = (args.output/'fixture-server.log').open('wb')
+        server = subprocess.Popen(['herdr', '--session', session, 'server'], stdout=log, stderr=log, env=fixture_env)
+        installed = adb('shell', 'pm', 'path', 'com.yanjiyu.terminalspike').decode().strip()
+        require(installed.startswith('package:/data/app/') and '\n' not in installed,
+                'Installed app package path is invalid')
+        report['installed_app_sha256'] = adb('shell', 'sha256sum', installed[8:]).decode().split()[0]
+        report['test_apk_sha256'] = test_hash
         for _ in range(40):
             status = subprocess.run(['herdr', '--session', session, 'status', 'server'],
                                     capture_output=True, timeout=10, env=fixture_env)
@@ -140,8 +154,8 @@ def main():
             stop_monitor.set();monitor_thread.join(timeout=2)
         output = output.replace(key, '[redacted]')
         (args.output/'instrumentation.log').write_text(output)
-        assert 'OK (1 test)' in output, output[-2000:]
-        assert len(frontends) == 1, 'Fixture Herdr frontend did not attach'
+        require('OK (1 test)' in output, 'Close instrumentation did not pass: ' + output[-2000:])
+        require(len(frontends) == 1, 'Fixture Herdr frontend did not attach')
         deadline = time.monotonic()+12
         while alive(remote_pid) and time.monotonic()<deadline:
             time.sleep(.1)
@@ -152,26 +166,57 @@ def main():
                       persistent_fixture_server_alive=server.poll() is None,
                       main_session_ids_unchanged=ids()==main_ids,
                       fixture_session_counts={k:len(v) for k,v in ids(session).items()})
-        assert report['remote_alive_after_close'] == args.expect_leak, report
-        assert report['frontend_alive_after_close'] == args.expect_leak, report
-        assert report['persistent_fixture_server_alive'] and report['main_session_ids_unchanged'], report
+        require(report['remote_alive_after_close'] == args.expect_leak, 'Unexpected remote Mosh lifetime')
+        require(report['frontend_alive_after_close'] == args.expect_leak, 'Unexpected Herdr frontend lifetime')
+        require(report['persistent_fixture_server_alive'] and report['main_session_ids_unchanged'],
+                'Persistent fixture server or main session IDs changed')
         report['passed'] = True
     finally:
-        # Scoped cleanup of this fixture only, including the intentionally leaked red server.
-        if remote_pidfd is not None:
+        # Every acquired resource gets its own cleanup attempt; preserve the execution failure.
+        primary_error = sys.exc_info()[1]
+        cleanup_errors = []
+
+        def cleanup(label, operation):
             try:
-                signal.pidfd_send_signal(remote_pidfd, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            os.close(remote_pidfd)
-        subprocess.run(['herdr', 'session', 'stop', session], capture_output=True, timeout=15, env=fixture_env)
-        try:
-            server.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            server.terminate();server.wait(timeout=5)
-        log.close()
-        subprocess.run(['herdr', 'session', 'delete', session], capture_output=True, timeout=15, env=fixture_env)
-        (args.output/'evidence.json').write_text(json.dumps(report, indent=2))
+                operation()
+            except Exception as error:
+                cleanup_errors.append(label + ': ' + type(error).__name__)
+
+        if remote_pidfd is not None:
+            def stop_remote():
+                try:
+                    signal.pidfd_send_signal(remote_pidfd, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            cleanup('remote signal', stop_remote)
+            cleanup('remote pidfd close', lambda: os.close(remote_pidfd))
+        if server is not None:
+            cleanup('fixture stop', lambda: subprocess.run(
+                ['herdr', 'session', 'stop', session], capture_output=True, timeout=15,
+                env=fixture_env, check=True))
+
+            def reap_server():
+                try:
+                    server.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    stop_owned_child(server)
+
+            cleanup('fixture child', reap_server)
+        if log is not None:
+            cleanup('fixture log', log.close)
+        if server is not None:
+            cleanup('fixture delete', lambda: subprocess.run(
+                ['herdr', 'session', 'delete', session], capture_output=True, timeout=15,
+                env=fixture_env, check=True))
+        if cleanup_errors:
+            report['passed'] = False
+            report['cleanup_errors'] = cleanup_errors
+        cleanup('evidence write', lambda: (args.output/'evidence.json').write_text(json.dumps(report, indent=2)))
+        if cleanup_errors:
+            if primary_error is not None:
+                primary_error.add_note('Fixture cleanup failed: ' + '; '.join(cleanup_errors))
+            else:
+                raise RuntimeError('Fixture cleanup failed: ' + '; '.join(cleanup_errors))
     print(json.dumps(report))
 
 

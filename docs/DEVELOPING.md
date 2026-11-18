@@ -38,6 +38,11 @@ older release and architecture records below describe their original verificatio
 
 The Gradle wrapper downloads Gradle 9.5.0. SDK paths belong in an ignored `local.properties` file or the normal `ANDROID_HOME`/`ANDROID_SDK_ROOT` environment variables; no SDK path is committed.
 
+AndroidX Baseline Profile Gradle plugin 1.5.0 and Protocol Buffers Gradle plugin
+0.10.1 use AGP's public DSL. The legacy `android.newDsl=false` override is no
+longer required. Baseline/Startup Profiles remain checked in; ordinary verification
+does not regenerate them or run device benchmarks.
+
 ## Open and build
 
 Open this directory in Android Studio, use its bundled JBR 25 (or another JDK 25) as the Gradle runtime, allow Gradle sync to finish, and choose the `app` run configuration. The checked-in daemon criteria keeps command-line and IDE builds on the same runtime while Android source compatibility remains Java 17. This also avoids the current lint parser's use of Java collection APIs that are unavailable when lint itself is hosted on JDK 17.
@@ -50,6 +55,57 @@ scripts/verify-android.sh
 
 See [CI and releasing](CI-AND-RELEASING.md) for focused UI checks, shared artifacts,
 CI timing and repeatable internal publishing.
+
+Snippet component tests use `IsolatedPreferencesRule("snippet-toolbar")` outside the
+Compose/Activity rule and provide its wrapped context through `LocalContext`. They
+never modify the installed app's toolbar preferences, including when a component
+uses `applicationContext`. That wrapped application context has a stable identity.
+Composition disposal finishes
+before the unique fixture is flushed and deleted, including after assertion failure.
+`IsolatedPreferencesRuleTest` checks that order and preservation using only owned,
+UUID-named preference files.
+
+Native Mosh fixtures use the shared-test `readOwnedInputWithTimeout` for blocking output. Its input owner closes the stream before joining a cancelled reader; read failures return to that owner before being thrown, preserving suppressed close errors under coroutine stack recovery. JVM probes and independent Android PFD tests cover the deadline and cancellation paths. Real SSH/Mosh/Codex acceptance remains a separate required scenario.
+
+Key imports persist a device-local incomplete marker before acquiring a document grant or reading key bytes. One process owner retains persisted read grants until every active import has finished; startup releases grants left by an interrupted process. Interrupted imports preserve saved data and request explicit file reselection or pasting instead of replaying a restored picker result. Check the key list first, because a commit can complete just before process death. Acknowledging the recovery dialog is persisted separately from active import ownership.
+
+`IdentityImportRecoveryTest` covers restart, concurrent ownership, provider failures and marker-write failures; `IdentityPickerRequestOwnerTest` covers retained picker targets and stale results. `IdentityImportRecoveryProcessTest` uses a non-exported debug service in its own private process and a generated preferences file to prove marker recovery and acknowledgement across actual Binder-observed process death. It never kills the main app, opens real keys, changes the catalog or exercises a real document grant.
+
+VT protocol regression tests distinguish erasing the viewport from resetting the terminal: ED2 preserves cursor position and scrolling margins, while RI clamps at physical row zero outside a nonzero top margin and clears pending wrap. `VtTerminalScreenControlTest` runs whole-buffer and one-byte transport variants, including origin mode, rows outside margins and alternate-screen reset controls. Existing complete 200-row Codex scrollback tests remain required. These parser tests do not establish physical tmux scrolling quality. Recovery preference acquisition is deferred into guarded store reads/writes; owned acquisition-failure tests cover startup recovery and refusing an unmarked import.
+
+The real-Codex host runner checks the generated public key before appending it and registers revocation before any append can partially succeed. Revocation matches the generated key type and public blob, preserving unrelated comments and refusing a preexisting copy of the same key. Every filter, permission and replacement failure is checked explicitly; the runner reports failed revocation while still attempting private-workspace cleanup. Owned host tests exercise partial writes and cleanup faults with fake ADB/SSH commands. Coordination with concurrent authorized-keys writers, supported-target changes and device-data isolation remain separate requirements before using this harness on the S10e.
+
+Voice recognition uses a fresh platform recognizer and an attempt-bound listener for each request. Retired attempts reject all later callbacks; cancellation and destruction invalidate ownership before calling the provider, and cleanup still attempts destruction if cancellation fails. Creation, availability and start/stop failures become existing UI failures. Normal stop still accepts the final transcript. The buffered editor captures the original target and language for microphone permission, consumes that request once, and ignores results after target changes, disabling or recreation. No old permission result automatically starts recording on a replacement target. Pure lifecycle/target tests and a controlled framework substitute exercise these paths; the component regression does not record audio or verify a real speech provider.
+
+Terminal paste rejects an embedded bracketed-paste ending marker (7-bit ESC/CSI or C1 CSI form) before encoding or calling the input sink. Rejection preserves the original draft, selection and persisted text; ordinary multiline Unicode, literal escaped notation and optional Enter retain their existing behavior. Buffered input and saved snippets already validate control characters; the controller guard also protects direct callers. The ViewModel reports the specific paste rejection for buffered input, snippet dispatch and attachment-path insertion. Attachment uploads keep their existing concurrent, ordered and partial-success semantics: rejecting a path insertion does not roll back files already transferred.
+
+`TerminalPasteSafetyTest` covers raw/bracketed mode and Enter on/off, including zero sink calls and no input-accepted side effects; `TerminalPasteNoticeTest` checks the existing UI validation boundary. The three prior encoding tests remain unchanged. An owned Bash/readline PTY probe demonstrates that equivalent unguarded wire framing can end protected pasting early; it is not proof of a buffered-editor bypass, whose control validation already existed. The native component regression exercises ordinary multiline confirmation, cancellation, preservation and restore rather than unsafe live-shell execution.
+
+The VT engine bounds resident cell content per primary/alternate screen: two UTF-16 units per cell remain available for base glyphs, with at most 1,048,576 additional units shared by grapheme extensions. The existing 4,096-unit individual-cell limit and width-preserving replacement/overflow-tail behavior remain. Plain primitive row counters move with row arrays; character growth and replacement use constant-time accounting, character shifts recount their affected row, and resize counts the retained rows. Ordinary base writes use a fast path without extension calculations when the pool is empty. No per-cell or per-line Compose state is added.
+
+`VtTerminalCellTextBudgetTest` and its mutation matrix cover erasure, replacement, wide continuations, insert/delete, scroll margins, resize, alternate-screen independence, one-byte UTF-8 boundaries and immutable-row reuse. The shared owned fixture also runs on Android. A separate 64 MiB JVM contract compares the same workload against frozen old and current engine classes. Host ASCII probes compare output hashes and row counts; they do not establish phone FPS or real terminal acceptance. This pool bounds resident cell content only: history, queued output and hyperlink metadata retain separate ownership and still require their own byte-budget review.
+
+
+
+
+
+
+`MoshConnectionTest` owns every connection and connect worker created by its fixture helpers.
+A JUnit rule releases blocked fake resizes, closes connections and waits up to two seconds
+per worker, including when an assertion fails or a prepared connection never starts.
+Cleanup failures remain test failures; workers are not made daemon threads to hide leaks.
+Two lifecycle regressions check pipe/thread cleanup and prepared-password wiping while
+preserving the original assertion failure.
+
+Saved-host chips, manual reconnect and duplicate dialogs preserve Mosh UDP settings, executable,
+locale and configured SSH fallback policy. Explicit `en_US.UTF-8` and `mosh-server` defaults compare
+equal to their unset forms when checking whether a saved password still matches. Other transport
+option changes require fresh authentication. Editing the visible UDP/executable fields retains
+the locale and policy; selecting a different saved host replaces those inherited options.
+An SSH submission or completed fallback to SSH carries no Mosh-only options. These checks preserve
+the existing fallback policy rather than introducing a new automatic-fallback rule. Room already
+stores these fields; the legacy settings codec and database schema are unchanged.
+`C.UTF-8` is a supported explicit locale override and is preserved rather than treated as unset.
 
 ### Local interaction diagnostics (debug)
 
@@ -94,6 +150,24 @@ status in `latest-status.json`; 64 completed submissions are retained. Interrupt
 is reported as failed and is not automatically billed/replayed. Inspect the service with
 `systemctl --user status terminal-spike-diagnostics.service`; disable it with
 `systemctl --user disable --now terminal-spike-diagnostics.service`.
+
+The receiver prepares each complete prompt in a private temporary file before starting
+the child, then immediately tracks the process and its log. A failed startup receipt
+does not abandon a running child: cleanup signals its owned process group with TERM,
+waits up to two seconds, then escalates to KILL with another two-second wait. If it
+still cannot reap the child, it retains that slot and log for the next receiver tick;
+it cannot start another analysis or prune that active receipt. These startup failures
+remain failed even when a partial report exists. No analysis is automatically replayed.
+
+`--once` collects once and waits for the one analysis selected by that pass, including
+its existing ten-minute deadline and TERM/KILL escalation. It does not start the next
+queued analysis while draining; `--no-codex --once` only receives reports. Ctrl+C,
+SIGTERM, and unexpected loop exits mark an owned analysis failed and run the same
+bounded process-group cleanup before restoring the previous SIGTERM handler. Failure
+to reap is an explicit shutdown error, not a successful exit; its receipt is preserved
+and the child is never silently replayed. These changes affect the repository script;
+an already installed pinned receiver is updated only by an explicit installation.
+
 The receiver and its analysis children use nice 19, a 50% CPU quota and a 2 GiB memory
 ceiling. The installed shell hook defaults this project's verification to one Gradle worker
 and one JVM processor; explicit `TERMINAL_SPIKE_GRADLE_WORKERS` and
@@ -121,6 +195,21 @@ If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, compare the installed A
 certificate with `:app:signingReport` and restore the matching debug key before rebuilding.
 Do not uninstall the app or clear its data to work around a signing mismatch. Debug
 keys and all other signing material must stay outside Git.
+
+Known debug certificates (public SHA-256 fingerprints, not secrets). Matching keystores live
+outside Git in `~/.config/terminal-spike/signing/` and the external signing repository's
+`debug-key-backups/`:
+
+| Fingerprint prefix | Keystore | Installed on |
+| --- | --- | --- |
+| `f71bc506…` | `~/.android/debug.keystore`, `s10e-legacy-debug.keystore` | S10e and the default build |
+| `946b2b10…` | `fold-legacy-debug.keystore` | Foldable `SM_F976B` |
+
+Read an installed certificate with `adb -s <serial> pull <base.apk path>` and
+`apksigner verify --print-certs`. When the target uses a different key, re-sign a private copy
+of the verified APK with that keystore (`apksigner sign --ks <keystore> ...`) in a scratch
+directory, then `adb -s <serial> install -r` it. This keeps app data and leaves the build output
+and the default key untouched. Never uninstall or clear data.
 
 The following release-manifest block and historical signing/emulator evidence describe the
 pre-bundling release. See ADR-005 for the single-APK verification record.
@@ -274,6 +363,18 @@ A controlled fixed-grid alternative demonstrates its tradeoff: a 40-row remote U
 ## Connections and settings
 
 The phone shell has exactly three primary destinations: **Connections**, **Terminal**, and **Settings**. Connections is the main page for saved hosts, SSH keys, and snippets. **Terminal** owns active sessions, and **Settings** contains appearance, terminal, keyboard, background, backup, security, Mosh, and About/licence controls.
+
+Remote tabs have no fixed application count limit. Reconnecting still requires an existing failed or disconnected remote session; foreground-service, transport and authentication failures remain explicit.
+
+Modifier tap transitions live with pending input encoding. Each retry of a state update uses the same incoming tap timestamp, and the UI owner commits the resulting timestamp after the state CAS succeeds. Background updates retain their own fields. Bounded SSH-key reading and its wiping accumulator live with identity import; their size, exception and cleanup contracts are unchanged.
+
+ViewModel teardown attempts every independent cleanup in its existing order, then rethrows the first failure with later failures suppressed. Identity-ID reservation runs inside the import job before reading the key, so the existing completion callback also releases its document grant if preparation fails or dispatch is cancelled.
+
+`TerminalSpikeScreen` mounts `SettingsToolsScreen` for Settings. It supplies the snippet editor
+and forwards the current navigation and persistence callbacks to `SettingsDestination`;
+`MoshExtensionSection.kt` owns the extension status and installation-help UI. The former
+`TerminalToolsSheet.kt` combined page has been removed. Connection and shortcut-preview tests
+mount the same `ConnectionsScreen` and `TerminalShortcutPreview` components used by the app.
 
 - Host profiles save a display name, host, port, and username. Connections lists every saved host and resolves the current authoritative saved authentication. A password can be saved separately only with explicit opt-in. **Forget** removes retained authentication.
 - Mosh profiles also save an optional UDP port/range and one executable name or path for `mosh-server`; command fragments and arguments are rejected. If the verified extension is unavailable, the profile remains saved but Mosh connect is disabled and SSH can be selected explicitly. Per-profile fallback can be Never, Ask, or Automatic; Automatic is an explicit opt-in that starts a clearly reported fresh SSH shell only for eligible Mosh transport failures, never a claim that the Mosh process resumed.
@@ -495,6 +596,11 @@ persistent Herdr server are preserved. PID identities and disconnected state are
 checked again before SIGTERM. Capture failures abort cleanup. No packet payloads
 or peer addresses are saved.
 
+Each successfully opened process descriptor is registered for cleanup immediately.
+Both pinned descriptors are released after validation or signalling, including when
+the child disappears during acquisition or another close fails. A vanished process
+returns false; permission and other operating-system errors still propagate.
+
 ```bash
 python3 scripts/cleanup-herdr-mosh.py --report build/diagnostics/mosh-cleanup-preview.json
 # Explicitly authorized cleanup:
@@ -524,13 +630,24 @@ IDs survive. `--expect-leak` records the old-build red case. The four close case
 are both pipes, input only, output only and explicit stop before pipe close. Keys
 are kept out of saved logs and evidence; device and APK identity are recorded.
 
+Device identity, install results and close acceptance use explicit runtime checks,
+including under optimized Python (`-O`/`-OO`). Setup owns the server log before
+spawning the fixture, and installed-app queries run inside its cleanup boundary.
+Cleanup independently attempts the owned pidfd signal/close, named fixture stop,
+owned child reap, log close and named fixture deletion. A stubborn child uses
+bounded TERM/KILL waits; cleanup errors fail the run and evidence, while an
+existing execution error remains primary. These host-side fault tests do not
+replace the four real-device close scenarios above.
+An exited `/proc` read may report ENOENT or ESRCH; either means the process is
+gone. Permission and other inspection errors remain failures.
+
 For resource-constrained native builds, `TERMINAL_SPIKE_NATIVE_JOBS=1` limits
 Make/CMake compilation alongside the existing single-worker JVM options.
 
 ## Known limitations
 
 - SSH supports password, private-key, and bounded keyboard-interactive authentication, typed host-key trust/replacement, configurable TERM/startup commands, keepalives, and bounded fresh-shell reconnect. Saved secrets are device-bound and remain accessible to anyone who can unlock both the device and app. Agent forwarding is not implemented.
-- Local profiles and snippets are device-local conveniences, not a credential vault. The Keystore-backed encryption protects the file at rest but cannot protect data from a compromised or unlocked device running the app.
+- Local profiles and snippets use app-private Room/DataStore storage and are not a credential vault. Saved passwords and private keys receive separate Keystore-backed encryption; that protection does not cover snippet text or protect credentials from a compromised or unlocked device running the app. Exported backups can include private keys and must be treated as recoverable by anyone who obtains the file; see [backup privacy](backup-format.md#stored-contents-and-privacy).
 - No optional cryptographic provider is bundled. SSH algorithm availability therefore depends on Android's installed JCA providers; the client does not re-enable obsolete RSA/SHA-1 algorithms.
 - Mosh is built in and requires a reachable `mosh-server` and its selected UDP port/range through the server and network firewall. SSH remains available independently.
 - The upstream Mosh transport retains authenticated UDP roaming and port-hopping behavior. The main app now publishes generation-scoped Android network hints to the active Mosh transport; real Wi-Fi/cellular/VPN transition acceptance remains open. IPv6 link-local hosts containing a zone identifier such as `%wlan0` are not supported; use a globally routable IPv6 address/name or IPv4.
@@ -546,12 +663,76 @@ Make/CMake compilation alongside the existing single-worker JVM options.
 
 ## In-app user guide
 
-Settings → User guide starts with an expandable quick reference for attachments, drafts,
-shortcut keys, terminal text, connection tabs and remote files. Four recorded tours remain
-available below it for typing, Snippets and Herdr workflows.
+Settings → User guide opens the twelve-lesson index. The first-install subset has four
+pages for typing, Snippets and Herdr workflows. **Setup & reference** opens the expandable
+instructions for attachments, drafts, shortcut keys, terminal text, connection tabs and remote files.
+
+Canonical recordings live in `store-assets/user-guide/source/`; only the current eleven
+posters and seven short loops live in Android resources. See the [recording workflow](../store-assets/user-guide/README.md)
+for offline regeneration. The original recording bytes remain available in the complete source archive.
 
 Keep gesture-only and secondary actions discoverable here when adding or changing them.
 `ui/guide/GuideQuickReference.kt` groups the instructions from `res/values/guide_strings.xml`;
 include the exact control, tap/hold gesture and any required setting or session type.
 Check the instructions against the actual action handlers. Keep the recorded tours consistent
 with their own workflows; reference text can be updated independently of their recordings.
+
+## Isolated packages for destructive old-phone runners
+
+The task-indicator and real-Codex tmux runners require debug APKs built with
+`-PterminalSpikeDeviceVerify=true`. This selects application ID
+`com.yanjiyu.terminalspike.deviceverify` and test ID
+`com.yanjiyu.terminalspike.deviceverify.test`; release builds keep the main application ID.
+Debug document-provider authorities follow the selected application ID, so the isolated fixture
+can coexist with the normal app without provider conflicts.
+
+```sh
+./gradlew -PterminalSpikeDeviceVerify=true :app:assembleDebug :app:assembleDebugAndroidTest
+python3 scripts/run-terminal-task-ui-tests.py --serial '<verified-old-phone-serial>' \
+  --output-dir build/deviceverify-task-ui
+```
+
+Both runners inspect the actual APK package identities and instrumentation target before either
+install, recheck both artifacts before each install, and recheck the selected device before each
+install or test. They support the authorized `SM-S911B` and the long-term `SM-G9708` with hardware
+serial `R28M227XA0E`; an available supported USB phone takes priority over wireless. They reject
+other models, including the foldable. The four task-indicator component cases run directly through instrumentation and do not require
+AndroidX test services or Orchestrator. The actual-Codex runner retains Orchestrator and may clear
+its isolated fixture package only.
+Merely disabling `clearPackageData` would not protect the normal app: fixtures can still change
+preferences, write catalog records, or disconnect sessions. Do not point these runners at normal
+main-app APKs. After a fixture build, rebuild without the property before distributing a normal
+main-app debug APK; the ordinary output paths are shared.
+
+The real-Codex runner holds a stable sidecar `flock` from temporary SSH authorization through
+revocation. Revocation compares the current authorization file to its filtered snapshot and retries
+observed external changes at most three times. Persistent conflicts fail explicitly while preserving
+the observed writer's file. This serializes cooperating runners; it does not make the comparison and
+replacement atomic against writers that ignore the sidecar lock. All actual Codex ordered-history,
+first-gesture, local pixel scroll, remote-wheel and reader-anchor assertions remain required.
+
+The tmux switcher uses one deletion confirmation owned by the current app session/dialog opening.
+Asynchronous catalog results must match the latest request; closing or reopening a dialog invalidates
+older results. This UI ownership does not revoke an already dispatched remote operation or establish
+transport reconnect generation ownership.
+
+## Default snippet replacement persistence
+
+Room schema 6 stores the device-local hidden-default set in `snippet_toolbar_state`. Replacing a
+built-in snippet writes its saved replacement and merges the original default ID in one Room
+transaction under the existing catalog mutation authority. A cancelled UI callback cannot leave
+only the replacement committed. Both Settings and the terminal toolbar consume the same catalog
+projection; neither hides a default in a callback after saving. Directly hiding a default uses
+that same repository owner, and deleting a saved replacement does not unhide its built-in source.
+
+The 5→6 migration and fresh database callback import `codex-replaced`/`replaced-defaults` once.
+They retain the old preference file and its `order`/`expanded` values. No saved snippet is removed
+or deduplicated by command text. The state remains device-local and is outside portable backups;
+see `docs/backup-format.md`. Do not use destructive migration fallback.
+
+Herdr metadata publication and UI invalidation now share a generation boundary in the controller.
+Projection and clock reads stay outside that boundary; final source, reader, pin and grid checks
+reject stale history results. Rejected context samples do not seed effort smoothing. Repository
+capture records source/generation together and advances captured-output reuse only after accepted
+publication. These are metadata consistency guarantees, not evidence of completed real Codex/tmux
+scroll acceptance.

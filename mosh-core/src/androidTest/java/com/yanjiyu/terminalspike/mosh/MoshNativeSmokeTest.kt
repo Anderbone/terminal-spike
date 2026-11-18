@@ -6,9 +6,11 @@ package com.yanjiyu.terminalspike.mosh
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import android.system.Os
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,6 +18,58 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class MoshNativeSmokeTest {
+    @Test
+    fun cancelledAdmissionStopsBeforeReadingTheKey() {
+        val listener = object : MoshNativeListener {
+            override fun isCancellationRequested() = true
+            override fun onConnected(connectivityGeneration: Long) = Unit
+        }
+        assertEquals(MoshNativeResult.CANCELLED, runWithKey(listener, byteArrayOf(0x41), expectUnreadKey = true))
+    }
+
+    @Test
+    fun uncancelledAdmissionStillValidatesTheOneShotKey() {
+        assertEquals(MoshNativeResult.KEY_READ_FAILED, runWithKey(NO_OP_LISTENER))
+    }
+
+    @Test
+    fun failedCancellationQueryDoesNotEscapeJniOrLeaveNativeControlOccupied() {
+        val listener = object : MoshNativeListener {
+            override fun isCancellationRequested(): Boolean = error("Controlled callback failure")
+            override fun onConnected(connectivityGeneration: Long) = Unit
+        }
+        assertEquals(MoshNativeResult.INTERNAL_ERROR, runWithKey(listener))
+        assertEquals(MoshNativeResult.KEY_READ_FAILED, runWithKey(NO_OP_LISTENER))
+    }
+
+    private fun runWithKey(
+        listener: MoshNativeListener,
+        payload: ByteArray = byteArrayOf(),
+        expectUnreadKey: Boolean = false,
+    ): Int {
+        val key = ParcelFileDescriptor.createPipe()
+        val input = ParcelFileDescriptor.createPipe()
+        val output = ParcelFileDescriptor.createPipe()
+        ParcelFileDescriptor.AutoCloseOutputStream(key[1]).use { it.write(payload) }
+        try {
+            return MoshNativeBridge.runSession(
+                UUID.randomUUID().toString(), "127.0.0.1", 60_001,
+                key[0].fd, input[0].fd, output[1].fd, 80, 24, listener,
+            ).also {
+                assertTrue(key[0].fileDescriptor.valid())
+                assertTrue(input[0].fileDescriptor.valid())
+                assertTrue(output[1].fileDescriptor.valid())
+                if (expectUnreadKey) {
+                    val remaining = ByteArray(payload.size)
+                    assertEquals(payload.size, Os.read(key[0].fileDescriptor, remaining, 0, remaining.size))
+                    assertArrayEquals(payload, remaining)
+                }
+            }
+        } finally {
+            listOf(key, input, output).forEach { pipe -> pipe.forEach { runCatching { it.close() } } }
+        }
+    }
+
     @Test
     fun nativeLicenceNoticesArePackagedWithTheTransport() {
         val context = ApplicationProvider.getApplicationContext<Context>()

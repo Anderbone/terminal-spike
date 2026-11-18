@@ -98,7 +98,7 @@ class HerdrTabTargetTest {
         }
     }
 
-    @Test fun newSpaceLongPressExcludesMenuExistingSpacesAndPaneOutput() {
+    @Test fun newSpaceActionExcludesMenuExistingSpacesAndPaneOutput() {
         val screen = listOf(
             TerminalLine.plain(" spaces       │ tab +"),
             TerminalLine.plain(" project      │ new menu"),

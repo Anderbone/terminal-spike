@@ -4,6 +4,11 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 
 class PendingInputModifiersTest {
+    @Test fun ctrlSpaceSendsNulAndLeavesFollowingCharactersUnmodified() {
+        assertArrayEquals(byteArrayOf(0), applyPendingInputModifiers(" ".toByteArray(), true, false, false))
+        assertArrayEquals(byteArrayOf(0, 120), applyPendingInputModifiers(" x".toByteArray(), true, false, false))
+    }
+
     @Test fun systemKeyboardCUsesPendingControl() {
         assertArrayEquals(byteArrayOf(3), applyPendingInputModifiers("c".toByteArray(), true, false, false))
     }

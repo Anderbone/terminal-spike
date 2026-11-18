@@ -7,6 +7,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProjectReaderTest {
+    @Test fun manySeparateHunksKeepEveryJumpBeforeItsDeletedAndAddedRows() {
+        val hunks = 8_000
+        val content = (1..hunks * 2).joinToString("\n", postfix = "\n") { "current $it" }
+        val patch = (1..hunks).joinToString("\n") { hunk ->
+            val line = hunk * 2 - 1
+            "@@ -$line +$line @@\n-old $line\n+current $line"
+        }
+        val document = projectDocument("many.kt", content, patch, false)
+        assertEquals(hunks, document.additions)
+        assertEquals(hunks, document.deletions)
+        assertEquals((0 until hunks).map { it * 3 }, document.changeStarts)
+        document.changeStarts.forEach { start ->
+            assertEquals(ProjectLineKind.DELETED, document.lines[start].kind)
+            assertEquals(ProjectLineKind.ADDED, document.lines[start + 1].kind)
+        }
+    }
+
     @Test fun realGitComparisonsKeepIndexWorkingTreeAndBranchBaselinesSeparate() {
         val root = Files.createTempDirectory("project-scopes").toFile()
         fun git(vararg args: String): String {

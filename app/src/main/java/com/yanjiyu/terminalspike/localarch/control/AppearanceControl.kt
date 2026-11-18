@@ -4,6 +4,7 @@ import com.yanjiyu.terminalspike.AppContainer
 import com.yanjiyu.terminalspike.core.data.settings.AppSettings
 import com.yanjiyu.terminalspike.core.model.CursorStyle
 import com.yanjiyu.terminalspike.core.model.CustomTerminalTheme
+import com.yanjiyu.terminalspike.core.model.InputKeyboardLayout
 import com.yanjiyu.terminalspike.core.model.TerminalProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import com.yanjiyu.terminalspike.terminal.model.TerminalTheme
@@ -63,6 +64,7 @@ internal class AppearanceControl(private val container: AppContainer) {
                 .setDynamicColorEnabled(patched.dynamicColorEnabled)
                 .setAccentPreset(patched.accentPreset)
                 .setInputButtonsOnRight(patched.inputButtonsOnRight)
+                .setInputKeyboardLayout(patched.inputKeyboardLayout)
                 .setVoiceInputDisabled(patched.voiceInputDisabled)
                 .clearButtonColors().putAllButtonColors(patched.buttonColorsMap)
         }
@@ -119,14 +121,14 @@ internal class AppearanceControl(private val container: AppContainer) {
 
 /** A safe-integer token of just the editable appearance fields; unrelated settings do not conflict. */
 internal fun appearanceRevision(settings: AppSettings): Long {
-    val bytes = "${settings.buttonColorsMap.toSortedMap()}\u0000${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}\u0000${settings.inputButtonsOnRight}\u0000${settings.hasVoiceInputDisabled() && !settings.voiceInputDisabled}".toByteArray()
+    val bytes = "${settings.buttonColorsMap.toSortedMap()}\u0000${settings.themeModeValue}\u0000${settings.dynamicColorEnabled}\u0000${settings.accentPreset}\u0000${settings.inputButtonsOnRight}\u0000${settings.hasVoiceInputDisabled() && !settings.voiceInputDisabled}\u0000${settings.inputKeyboardLayout}".toByteArray()
     return MessageDigest.getInstance("SHA-256").digest(bytes).take(6).fold(0L) { value, byte ->
         (value shl 8) or (byte.toLong() and 0xff)
     }
 }
 
 internal fun patchControlAppAppearance(current: AppSettings, p: JsonObject): AppSettings {
-    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset", "inputButtonsOnRight", "voiceInputEnabled", "buttonColors")
+    p.requireFields("revision", "themeMode", "dynamicColorEnabled", "accentPreset", "inputButtonsOnRight", "inputKeyboardLayout", "voiceInputEnabled", "buttonColors")
     p.requireRevision(appearanceRevision(current))
     require(p.keys.any { it != "revision" })
     return current.toBuilder().also { builder ->
@@ -147,6 +149,11 @@ internal fun patchControlAppAppearance(current: AppSettings, p: JsonObject): App
             else -> throw IllegalArgumentException("Unsupported app theme mode.")
         }) }
         p["inputButtonsOnRight"]?.let { builder.setInputButtonsOnRight(p.boolean("inputButtonsOnRight")) }
+        p["inputKeyboardLayout"]?.let {
+            val layout = p.string("inputKeyboardLayout")
+            require(layout.isEmpty() || InputKeyboardLayout.parse(layout) != null)
+            builder.setInputKeyboardLayout(layout)
+        }
         p["voiceInputEnabled"]?.let { builder.setVoiceInputDisabled(!p.boolean("voiceInputEnabled")) }
         p["dynamicColorEnabled"]?.let { builder.setDynamicColorEnabled(p.boolean("dynamicColorEnabled")) }
         p["accentPreset"]?.let {
@@ -221,7 +228,7 @@ private fun TerminalProfile.controlJson(defaultId: String): JsonObject = buildJs
     put("effect", "profile_updated")
 }
 
-private fun AppSettings.appearanceJson(): JsonObject = buildJsonObject {
+internal fun AppSettings.appearanceJson(): JsonObject = buildJsonObject {
     put("revision", appearanceRevision(this@appearanceJson))
     put("themeMode", when (themeMode) {
         AppSettings.ThemeMode.THEME_MODE_LIGHT -> "light"
@@ -230,6 +237,9 @@ private fun AppSettings.appearanceJson(): JsonObject = buildJsonObject {
     })
     put("buttonColors", buildJsonObject { buttonColorsMap.forEach { (id, color) -> put(id, color) } })
     put("inputButtonsOnRight", inputButtonsOnRight)
+    put("inputKeyboardLayout", inputKeyboardLayout)
+    put("effectiveInputKeyboardLayout", JsonArray((InputKeyboardLayout.parse(inputKeyboardLayout)
+        ?: InputKeyboardLayout.defaultTokens(inputButtonsOnRight)).map(::JsonPrimitive)))
     put("voiceInputEnabled", hasVoiceInputDisabled() && !voiceInputDisabled)
     put("dynamicColorEnabled", dynamicColorEnabled); put("accentPreset", accentPreset.ifEmpty { "mint" })
     put("effect", "app_theme_updated")

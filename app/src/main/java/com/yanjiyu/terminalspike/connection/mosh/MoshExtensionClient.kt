@@ -22,11 +22,13 @@ import com.yanjiyu.terminalspike.mosh.api.MoshStopReason
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -114,10 +116,34 @@ class AndroidMoshExtensionClient internal constructor(
 
     override suspend fun startSession(
         request: MoshSessionRequest,
-    ): MoshClientResult<MoshSessionHandle> = withContext(ioDispatcher) {
+    ): MoshClientResult<MoshSessionHandle> {
+        var startedHandle: MoshSessionHandle? = null
         try {
-            startSessionTransferred(request)
+            return withContext(ioDispatcher) {
+                try {
+                    startSessionTransferred(request).also { result ->
+                        if (result is MoshClientResult.Success) startedHandle = result.value
+                    }
+                } finally {
+                    // Do not retain the key while the caller waits to resume on its dispatcher.
+                    request.moshKeyRead.closeQuietly()
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            // Prompt cancellation can discard a successful result before ownership reaches caller.
+            startedHandle?.let { handle ->
+                handle.closeQuietly()
+                withContext(NonCancellable) {
+                    try {
+                        stopSession(UUID.fromString(handle.sessionId), MoshStopReason.ERROR_RECOVERY)
+                    } catch (cleanupFailure: Exception) {
+                        cancelled.addSuppressed(cleanupFailure)
+                    }
+                }
+            }
+            throw cancelled
         } finally {
+            // Ownership transfers on entry, including when IO dispatch never starts.
             request.moshKeyRead.closeQuietly()
         }
     }
@@ -312,7 +338,12 @@ class AndroidMoshExtensionClient internal constructor(
         if (!accepted) {
             return updateStatus(MoshExtensionStatus.Error(version, MoshExtensionError.BIND_REJECTED))
         }
-        val signal = withTimeoutOrNull(bindTimeoutMillis) { completion.await() }
+        val signal = try {
+            withTimeoutOrNull(bindTimeoutMillis) { completion.await() }
+        } catch (cancelled: CancellationException) {
+            platform.unbindQuietly(connection)
+            throw cancelled
+        }
         if (signal !is ConnectionSignal.Connected) {
             platform.unbindQuietly(connection)
             val error = (signal as? ConnectionSignal.Failed)?.error ?: MoshExtensionError.BIND_TIMEOUT

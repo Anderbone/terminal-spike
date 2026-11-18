@@ -83,7 +83,10 @@ are display text; canonical Git roots determine project identity. Discovery neve
 focuses a pane or sends agent input.
 
 The reader supports UTF-8 text up to 4 MiB, 30,000 displayed lines (including deleted
-lines), and 16,000 characters per current line. Repositories are limited to 25,000
+lines), and 16,000 characters per current or deleted line. Current lines, deleted
+rows and added-row markers are bounded while parsing, before retaining additional
+row objects or collection entries. Unsupported or overflowing diff coordinates
+fail with a bounded error instead of echoing remote input. Repositories are limited to 25,000
 listed files, with bounded exec output and 20-second read deadlines. Binary files,
 submodule directories and symbolic links are not code previews. File-mode changes are shown separately.
 An individual comment has a 4,000-character message and up to 16,000 selected
@@ -113,7 +116,9 @@ paste are explicit user actions.
 `ProjectReaderTest` exercises an actual disposable Git repository (unborn HEAD,
 staged/unstaged changes, untracked names containing shell metacharacters, deleted
 files, binary files, escaping symlinks and unchanged index bytes). Parser tests
-cover rename status and deletion coordinates. `ProjectControllerTest` covers
+cover rename status and deletion coordinates. `ProjectDocumentLimitsTest` checks
+exact row-limit boundaries, original line endings and controlled rejection of
+large current/deleted/added inputs in a separate 64 MiB JVM. `ProjectControllerTest` covers
 worktree/endpoint draft isolation, original-source preservation, cancellation,
 file hierarchy, multiple tabs, canonical-root deduplication and terminal-control
 filtering. `HerdrProjectLocationsTest` covers foreground-directory precedence,

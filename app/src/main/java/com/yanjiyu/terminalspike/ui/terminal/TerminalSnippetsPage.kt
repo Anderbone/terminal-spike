@@ -81,6 +81,11 @@ internal fun TerminalSnippetsPage(
     detectedAgentId: String = "",
     currentAgentEffort: String? = null,
     canSendAgentSnippets: Boolean = canSend,
+    hiddenDefaultSnippetIds: Set<Long> = emptySet(),
+    onReplaceDefault: suspend (Long, Snippet) -> Result<Unit> = { _, _ ->
+        Result.failure(IllegalStateException("Default snippet replacement is unavailable."))
+    },
+    onHideDefault: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
     val preferences = remember(context) {
@@ -88,21 +93,6 @@ internal fun TerminalSnippetsPage(
     }
     var savedOrder by remember {
         mutableStateOf(preferences.getString("order", "").orEmpty().split(',').mapNotNull(String::toLongOrNull))
-    }
-    var codexReplaced by remember {
-        mutableStateOf(preferences.getBoolean("codex-replaced", false))
-    }
-    var replacedDefaults by remember {
-        mutableStateOf(preferences.getStringSet("replaced-defaults", emptySet()).orEmpty().toSet())
-    }
-    fun removeDefault(id: Long) {
-        if (id == 0L) {
-            preferences.edit().putBoolean("codex-replaced", true).apply()
-            codexReplaced = true
-        } else {
-            replacedDefaults = replacedDefaults + id.toString()
-            preferences.edit().putStringSet("replaced-defaults", replacedDefaults).apply()
-        }
     }
     val defaultTextSnippets = remember {
         val now = System.currentTimeMillis()
@@ -131,8 +121,8 @@ internal fun TerminalSnippetsPage(
     }
     val order = snippetToolbarOrder(
         savedOrder,
-        snippets.map { it.id }.filter { it.toString() !in replacedDefaults } +
-            if (codexReplaced) emptyList() else listOf(0L),
+        snippets.map { it.id }.filter { it !in hiddenDefaultSnippetIds } +
+            if (0L in hiddenDefaultSnippetIds) emptyList() else listOf(0L),
     )
     val currentOrder by rememberUpdatedState(order)
     val bounds = remember { mutableMapOf<Long, Rect>() }
@@ -221,7 +211,7 @@ internal fun TerminalSnippetsPage(
                     },
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CodexEffortMenu(
+                    AgentEffortMenu(
                         contextKey = agentContextKey, agentId = detectedAgentId, effort = currentAgentEffort,
                         canSend = canSendAgentSnippets && !managing, onSend = onSend,
                     )
@@ -315,14 +305,11 @@ internal fun TerminalSnippetsPage(
             else editingSnippetId?.let(::editableSnippet)?.toEditorDraft() ?: SnippetEditorDraft(),
             onDismiss = { editorVisible = false; onEditorClosed() },
             onSave = { snippet ->
-                onSave(snippet).also { result ->
-                    if (result.isSuccess) {
-                        editingSnippetId?.takeIf { it == 0L || it in defaultTextSnippets }?.let(::removeDefault)
-                    }
-                }
+                val defaultId = editingSnippetId?.takeIf { it == 0L || it in defaultTextSnippets }
+                if (defaultId != null) onReplaceDefault(defaultId, snippet) else onSave(snippet)
             },
             onDelete = if (editingSnippetId == 0L || editingSnippetId in defaultTextSnippets) {
-                { editingSnippetId?.let(::removeDefault); Unit }
+                { editingSnippetId?.let(onHideDefault); Unit }
             } else onDelete,
         )
     }

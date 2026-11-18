@@ -4,7 +4,6 @@ import com.yanjiyu.terminalspike.connection.TmuxCommandRunner
 import com.yanjiyu.terminalspike.connection.quotePosixShellArgument
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.security.MessageDigest
 
 internal data class ProjectChange(val path: String, val status: String, val originalPath: String? = null)
 internal enum class ProjectDiffScope { ALL, UNSTAGED, STAGED, BRANCH }
@@ -17,17 +16,6 @@ internal data class ProjectSnapshot(
     val files: List<String>,
     val comparison: ProjectComparison = ProjectComparison(),
     val baseline: String? = head,
-)
-internal enum class ProjectLineKind { CONTEXT, ADDED, DELETED }
-internal data class ProjectLine(val number: Int, val text: String, val kind: ProjectLineKind)
-internal data class ProjectDocument(
-    val path: String,
-    val revision: String,
-    val lines: List<ProjectLine>,
-    val changeStarts: List<Int>,
-    val additions: Int,
-    val deletions: Int,
-    val metadata: List<String> = emptyList(),
 )
 
 /** The remote Git executable is authoritative. No checkout, index write, textconv or external diff. */
@@ -160,114 +148,6 @@ internal fun parseProjectStatus(output: String): List<ProjectChange> {
     return result
 }
 
-internal fun projectDocument(path: String, content: String, patch: String, allAdded: Boolean): ProjectDocument {
-    require(!patch.lineSequence().any { it.startsWith("Binary files ") }) { "Binary files cannot be shown as code." }
-    val current = sourceLines(content)
-    require(current.none { it.length > 16_000 }) { "This file contains a line longer than the 16,000 character reading limit." }
-    require(current.size <= MAX_PROJECT_LINES) { "This file exceeds the $MAX_PROJECT_LINES line limit." }
-    val added = mutableSetOf<Int>()
-    val removed = mutableMapOf<Int, MutableList<ProjectLine>>()
-    val hunk = Regex("^@@ -([0-9]+)(?:,([0-9]+))? \\+([0-9]+)(?:,([0-9]+))? @@.*$")
-    var oldLine = 0
-    var newLine = 0
-    var inHunk = false
-    val changeNumbers = mutableListOf<Int>()
-    for (line in patch.lineSequence()) {
-        val match = hunk.matchEntire(line)
-        if (match != null) {
-            oldLine = match.groupValues[1].toInt()
-            newLine = match.groupValues[3].toInt()
-            // A zero-length new range inserts deletions AFTER the stated new line.
-            if (match.groupValues[4] == "0") newLine += 1
-            changeNumbers += newLine
-            inHunk = true
-        } else if (inHunk) {
-            when {
-                line.startsWith("diff --git ") -> inHunk = false
-                line.startsWith('-') -> {
-                    removed.getOrPut(newLine) { mutableListOf() }
-                        .add(ProjectLine(oldLine++, line.drop(1), ProjectLineKind.DELETED))
-                }
-                line.startsWith('+') -> { added += newLine; newLine++ }
-                line.startsWith(' ') -> { oldLine++; newLine++ }
-            }
-        }
-    }
-    if (allAdded) {
-        added += 1..current.size
-        if (current.isNotEmpty()) changeNumbers += 1
-    }
-    val lines = buildList {
-        current.forEachIndexed { index, text ->
-            addAll(removed[index + 1].orEmpty())
-            add(ProjectLine(index + 1, text, if (index + 1 in added) ProjectLineKind.ADDED else ProjectLineKind.CONTEXT))
-        }
-        addAll(removed[current.size + 1].orEmpty())
-    }
-    require(lines.none { it.text.length > 16_000 }) { "This file contains a line longer than the 16,000 character reading limit." }
-    require(lines.size <= MAX_PROJECT_LINES) { "The full file and deleted code exceed the $MAX_PROJECT_LINES line limit." }
-    val starts = changeNumbers.mapNotNull { number ->
-        lines.indexOfFirst { it.number == number && it.kind != ProjectLineKind.DELETED }
-            .takeIf { it >= 0 }?.let { index ->
-                var start = index
-                while (start > 0 && lines[start - 1].kind == ProjectLineKind.DELETED) start--
-                start
-            } ?: lines.indexOfFirst { it.kind == ProjectLineKind.DELETED && it in removed[number].orEmpty() }
-                .takeIf { it >= 0 }
-    }.distinct().sorted()
-    return ProjectDocument(path, projectRevision(content + "\u0000" + patch), lines, starts,
-        lines.count { it.kind == ProjectLineKind.ADDED }, lines.count { it.kind == ProjectLineKind.DELETED },
-        patch.lineSequence().filter { it.startsWith("old mode ") || it.startsWith("new mode ") ||
-            it.startsWith("new file mode ") || it.startsWith("deleted file mode ") }.toList())
-}
-
-internal fun projectRevision(text: String): String = MessageDigest.getInstance("SHA-256")
-    .digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-
-private fun sourceLines(content: String): List<String> = if (content.isEmpty()) emptyList()
-    else content.split('\n').let { if (it.last().isEmpty()) it.dropLast(1) else it }
-
 internal const val MAX_PROJECT_BYTES = 4 * 1024 * 1024
 internal const val MAX_PROJECT_FILES = 25_000
 internal const val MAX_PROJECT_LINES = 30_000
-
-internal data class ProjectTreeEntry(val path: String, val label: String, val directory: Boolean, val depth: Int, val expanded: Boolean)
-
-/** Compress single-directory chains like VS Code, while preserving real directory boundaries. */
-internal fun projectTreeEntries(
-    files: List<String>,
-    expanded: Set<String> = emptySet(),
-    collapsed: Set<String> = emptySet(),
-    expandAll: Boolean = false,
-): List<ProjectTreeEntry> {
-    class Node(val path: String, val name: String, val directory: Boolean) {
-        val children = sortedMapOf<String, Node>()
-    }
-    val root = Node("", "", true)
-    files.forEach { path ->
-        val segments = path.split('/')
-        var parent = root
-        segments.forEachIndexed { index, name ->
-            val directory = index < segments.lastIndex
-            parent = parent.children.getOrPut((if (directory) "d:" else "f:") + name) {
-                Node(if (parent.path.isEmpty()) name else "${parent.path}/$name", name, directory)
-            }
-        }
-    }
-    return buildList {
-        fun visit(parent: Node, depth: Int) {
-            parent.children.values.sortedWith(compareByDescending<Node> { it.directory }.thenBy { it.name }).forEach { child ->
-                var node = child
-                var label = child.name
-                while (node.directory && node.children.size == 1 && node.children.values.single().directory) {
-                    node = node.children.values.single()
-                    label += "/${node.name}"
-                }
-                val open = node.directory && if (expandAll) node.path !in collapsed else node.path in expanded
-                add(ProjectTreeEntry(node.path, label, node.directory, depth, open))
-                if (open) visit(node, depth + 1)
-            }
-        }
-        visit(root, 0)
-    }
-}

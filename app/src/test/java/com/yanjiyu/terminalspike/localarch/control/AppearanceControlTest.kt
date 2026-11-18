@@ -102,6 +102,56 @@ class AppearanceControlTest {
         assertTrue(patchControlAppAppearance(edited, patch(edited, "{}")).buttonColorsMap.isEmpty())
     }
 
+    @Test fun inputBarLayoutRoundTripsSixButtonsOnEitherSideAndResetsToDefault() {
+        val current = AppSettings.newBuilder().setInputButtonsOnRight(true)
+            .setVoiceInputDisabled(true).putButtonColors("escape", "#FFCC00").build()
+        assertEquals(listOf("input", "enter", "toggle"), current.appearanceJson()["effectiveInputKeyboardLayout"]!!
+            .jsonArray.map { it.jsonPrimitive.content })
+        var edited = current
+        for (layout in listOf(
+            "enter,toggle,escape,shift_left,arrow_up,arrow_down,input",
+            "input,enter,toggle,escape,shift_left,arrow_up,arrow_down",
+            "enter,toggle,input,escape,shift_left,arrow_up,arrow_down",
+            "toggle,enter,input,toggle,enter",
+        )) {
+            val request = buildJsonObject { put("revision", appearanceRevision(edited)); put("inputKeyboardLayout", layout) }
+            val before = edited
+            edited = AppSettings.parseFrom(patchControlAppAppearance(edited, request).toByteArray())
+            assertEquals(layout, edited.appearanceJson().string("inputKeyboardLayout"))
+            assertEquals(layout.split(','), edited.appearanceJson()["effectiveInputKeyboardLayout"]!!.jsonArray.map { it.jsonPrimitive.content })
+            assertEquals(before.toBuilder().setInputKeyboardLayout(layout).build(), edited)
+            assertEquals("CONFLICT", assertThrows(ControlFailure::class.java) { patchControlAppAppearance(edited, request) }.code)
+        }
+        val reset = patchControlAppAppearance(edited, buildJsonObject {
+            put("revision", appearanceRevision(edited)); put("inputKeyboardLayout", ""); put("inputButtonsOnRight", false)
+        })
+        assertEquals("", reset.inputKeyboardLayout)
+        assertEquals(listOf("enter", "toggle", "input"), reset.appearanceJson()["effectiveInputKeyboardLayout"]!!
+            .jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(current.buttonColorsMap, reset.buttonColorsMap)
+        assertEquals(current.voiceInputDisabled, reset.voiceInputDisabled)
+    }
+
+    @Test fun invalidInputBarLayoutsRejectTheEntireAppearanceEdit() {
+        val current = AppSettings.newBuilder().setInputKeyboardLayout("toggle,input,escape").build()
+        for (value in listOf(
+            JsonNull, JsonPrimitive(123), JsonArray(listOf(JsonPrimitive("input"), JsonPrimitive("toggle"))),
+            JsonPrimitive("toggle,input,input"), JsonPrimitive("input,escape"), JsonPrimitive("toggle,escape"),
+            JsonPrimitive("toggle,input,unknown"), JsonPrimitive("toggle,input,tab,enter,escape,control,alt,shift"),
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                patchControlAppAppearance(current, buildJsonObject {
+                    put("revision", appearanceRevision(current)); put("themeMode", "dark"); put("inputKeyboardLayout", value)
+                })
+            }
+        }
+        val unrelated = patchControlAppAppearance(current, buildJsonObject {
+            put("revision", appearanceRevision(current)); put("themeMode", "dark")
+        })
+        assertEquals(current.inputKeyboardLayout, unrelated.inputKeyboardLayout)
+        assertNotEquals(appearanceRevision(current), appearanceRevision(current.toBuilder().setInputKeyboardLayout("toggle,escape,input").build()))
+    }
+
     private fun json(text: String) = Json.parseToJsonElement(text).jsonObject
     private fun profile() = TerminalProfile(
         id = ID, name = "Fixture", themeId = "current", fontId = "jetbrains_mono", fontSizeSp = 14f,

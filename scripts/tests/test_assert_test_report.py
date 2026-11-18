@@ -106,6 +106,111 @@ class AssertTestReportTest(unittest.TestCase):
         self.assertEqual("", result.stdout)
         self.assertEqual("ERROR report is missing\n", result.stderr)
 
+    def test_parent_totals_cannot_hide_a_child_failure(self) -> None:
+        result = self.run_report(
+            '<testsuites tests="1" failures="0" errors="0">'
+            '<testsuite tests="1" failures="1" errors="0" />'
+            '</testsuites>'
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn("fixture-secret", result.stderr)
+
+    def test_case_failures_errors_and_skips_must_match_declared_counts(self) -> None:
+        for outcome in ("failure", "error", "skipped"):
+            with self.subTest(outcome=outcome):
+                result = self.run_report(
+                    '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+                    '<testcase classname="fixture.Test" name="private-fixture">'
+                    f'<{outcome}>fixture-secret</{outcome}></testcase></testsuite>'
+                )
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotIn("fixture-secret", result.stdout + result.stderr)
+                self.assertNotIn("private-fixture", result.stdout + result.stderr)
+
+    def test_missing_case_records_cannot_be_hidden_by_positive_totals(self) -> None:
+        result = self.run_report(
+            '<testsuite tests="2" failures="0" errors="0">'
+            '<testcase classname="fixture.Test" name="only-one" /></testsuite>'
+        )
+        self.assertNotEqual(0, result.returncode)
+
+    def test_explicit_parent_totals_cannot_bypass_invalid_child_counts(self) -> None:
+        for count in ("-1", "bad"):
+            with self.subTest(count=count):
+                result = self.run_report(
+                    '<testsuites tests="1" failures="0" errors="0">'
+                    f'<testsuite tests="{count}" failures="0" errors="0" />'
+                    '</testsuites>'
+                )
+                self.assertNotEqual(0, result.returncode)
+
+    def test_nested_aggregate_counts_are_validated_recursively(self) -> None:
+        result = self.run_report(
+            '<testsuites><testsuites><testsuite tests="1" failures="1" errors="0">'
+            '<testcase classname="fixture.Test" name="failed"><failure /></testcase>'
+            '</testsuite></testsuites></testsuites>'
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("tests=1 failures=1 errors=0 skipped=0", result.stdout)
+
+    def test_consistent_detailed_and_summary_only_reports_remain_supported(self) -> None:
+        reports = (
+            '<testsuites tests="2" failures="0" errors="0" skipped="1">'
+            '<testsuite tests="1" failures="0" errors="0"><testcase name="passes" /></testsuite>'
+            '<testsuite tests="1" failures="0" errors="0" skipped="1">'
+            '<testcase name="skips"><skipped /></testcase></testsuite></testsuites>',
+            '<testsuites tests="2" failures="0" errors="0" skipped="1" />',
+        )
+        for xml in reports:
+            with self.subTest(xml=xml):
+                result = self.run_report(xml)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("tests=2 failures=0 errors=0 skipped=1", result.stdout)
+
+    def test_missing_optional_skip_total_is_derived_from_available_records(self) -> None:
+        result = self.run_report(
+            '<testsuite tests="1" failures="0" errors="0">'
+            '<testcase name="skips"><skipped /></testcase></testsuite>'
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("tests=1 failures=0 errors=0 skipped=1", result.stdout)
+
+    def test_nested_suites_and_direct_cases_share_one_aggregate(self) -> None:
+        result = self.run_report(
+            '<testsuite tests="2" failures="0" errors="0">'
+            '<testcase name="outer" />'
+            '<testsuite tests="1" failures="0" errors="0"><testcase name="inner" /></testsuite>'
+            '</testsuite>'
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("tests=2 failures=0 errors=0 skipped=0", result.stdout)
+
+    def test_aggregate_counts_must_match_even_when_every_case_passed(self) -> None:
+        result = self.run_report(
+            '<testsuites tests="2" failures="0" errors="0">'
+            '<testsuite tests="1" failures="0" errors="0" /></testsuites>'
+        )
+        self.assertNotEqual(0, result.returncode)
+
+    def test_summary_outcomes_cannot_exceed_total_tests(self) -> None:
+        for outcome in ("failures", "errors", "skipped"):
+            with self.subTest(outcome=outcome):
+                counts = dict(tests=1, failures=0, errors=0, skipped=0)
+                counts[outcome] = 2
+                attributes = " ".join(f'{name}="{value}"' for name, value in counts.items())
+                result = self.run_report(f"<testsuite {attributes} />")
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotIn("TEST_REPORT", result.stdout)
+                self.assertIn(f"{outcome} count exceeds tests", result.stderr)
+
+    def test_excessive_nesting_fails_without_a_traceback(self) -> None:
+        result = self.run_report(
+            "<testsuites>" * 2_000 +
+            '<testsuite tests="1" failures="0" errors="0" />' + "</testsuites>" * 2_000
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("ERROR report nesting is too deep\n", result.stderr)
+
     def test_rejects_unexpected_root(self) -> None:
         result = self.run_report('<report tests="1" failures="0" errors="0" />')
 

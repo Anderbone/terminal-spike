@@ -604,7 +604,12 @@ data class BackupPayloadCompatibilityReport(
     val skippedUnknownRecords: Int = 0,
     val skippedOptionalFields: Int = 0,
     val unresolvedReferences: List<BackupUnresolvedReference> = emptyList(),
-)
+    /** False means the wire record was omitted; snapshot defaults must not replace saved settings. */
+    val globalSettingsAvailable: Boolean = true,
+) {
+    internal val skippedRecordCount: Int
+        get() = skippedUnknownRecords + skippedUnknownRecordTypes + skippedUnknownCollections
+}
 
 data class BackupPayloadReadResult(
     val snapshot: BackupPayloadSnapshot,

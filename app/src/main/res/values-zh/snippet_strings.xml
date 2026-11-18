@@ -16,4 +16,5 @@
     <string name="snippet_move_later">向后移动</string>
     <string name="terminal_hide_pinned_snippets">隐藏命令片段</string>
     <string name="terminal_show_pinned_snippets">显示命令片段</string>
+    <string name="notice_agent_effort_prompt">请切换到对应的 Agent 并清空输入框，再调整推理强度。</string>
 </resources>

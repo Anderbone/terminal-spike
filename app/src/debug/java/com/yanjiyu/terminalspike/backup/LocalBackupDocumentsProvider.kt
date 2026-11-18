@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import com.yanjiyu.terminalspike.BuildConfig
 import com.yanjiyu.terminalspike.core.backup.BackupDocumentContract
 import java.io.File
 import java.io.FileNotFoundException
@@ -111,7 +112,7 @@ class LocalBackupDocumentsProvider : DocumentsProvider() {
     private fun storageDirectory(): File = requireNotNull(context).filesDir.resolve("backup-documents")
 
     companion object {
-        const val AUTHORITY = "com.yanjiyu.terminalspike.test.backup.documents"
+        const val AUTHORITY = BuildConfig.APPLICATION_ID + ".test.backup.documents"
         const val ROOT_DOCUMENT_ID = "root"
         const val BACKUP_MIME_TYPE = BackupDocumentContract.MIME_TYPE
         const val PRIVATE_KEY_MIME_TYPE = "application/octet-stream"

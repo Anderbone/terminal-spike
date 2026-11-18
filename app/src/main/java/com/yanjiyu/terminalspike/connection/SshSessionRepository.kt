@@ -4,8 +4,6 @@ import com.yanjiyu.terminalspike.core.security.InteractionDiagnostics
 import com.yanjiyu.terminalspike.core.security.InteractionTraceEvent
 
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
-import com.yanjiyu.terminalspike.core.model.ModelLimits
-import com.yanjiyu.terminalspike.core.model.MoshPortRange
 import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
 import com.yanjiyu.terminalspike.core.model.RecentSession
 import com.yanjiyu.terminalspike.core.model.RemoteClipboardMode
@@ -30,7 +28,6 @@ import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
 import com.yanjiyu.terminalspike.terminal.model.TerminalRemoteClipboardRequest
 import com.yanjiyu.terminalspike.terminal.model.TerminalRendererProfile
 import java.io.InputStream
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -58,173 +55,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-
-/**
- * Immutable, non-secret process-session metadata consumed by the UI and notification service.
- * Endpoint details deliberately stay behind [SshSessionRepository.connectionSeedFor] so observers
- * such as notification code can only see the caller-provided privacy-safe [workspaceName].
- */
-internal data class SshSessionSnapshot(
-    val id: Long,
-    val title: String,
-    val connectionState: ConnectionState,
-    val workspaceName: String = title,
-    val protocol: ConnectionProtocol = ConnectionProtocol.SSH,
-    val terminalTitle: String? = null,
-    val taskStatus: TerminalTaskStatus = TerminalTaskStatus(),
-    val lastActivityAtEpochMillis: Long = 0L,
-    val recentSessionId: String? = null,
-    /** Device-local opaque HMAC used only to suppress matching Recent presentation rows. */
-    val endpointIdentityToken: String? = null,
-    val sourceProfileId: Long? = null,
-    /** Null follows the app default; a non-null value is the saved host's explicit override. */
-    val terminalProfileId: String? = null,
-    /** Null follows the app default; a non-null value is the saved host's explicit override. */
-    val keyboardProfileId: String? = null,
-    val moshFallbackPolicy: MoshFallbackPolicy = MoshFallbackPolicy.NEVER,
-)
-
-internal data class TerminalProgramNotificationEvent(
-    val sessionId: Long,
-    val sessionTitle: String,
-    val message: String,
-    val task: HerdrAgentState? = null,
-) {
-    val notificationKey: String get() = task?.let {
-        val identity = "$sessionId/${it.paneId}/${it.terminalId}/${it.agentSession}/${it.replyId ?: it.sequence}"
-        java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte) }
-    } ?: sessionId.toString()
-}
-
-/** The non-secret endpoint/options needed to ask for authentication and start a fresh transport. */
-internal data class RemoteSessionConnectionSeed(
-    val host: String,
-    val port: Int,
-    val username: String,
-    val sourceProfileId: Long?,
-    val protocol: ConnectionProtocol,
-    val moshPort: Int? = null,
-    val moshPortRange: MoshPortRange? = null,
-    val moshServerCommand: String? = null,
-    val moshLocale: String? = null,
-)
-
-/**
- * A short-lived, secret-bearing transport request. It is never published in a flow or persisted.
- * The repository clears its mutable authentication arrays on every success, cancellation, or error
- * path. Stored-secret loader functions remain the credential store's scoped responsibility.
- */
-internal sealed interface RemoteSessionConnectionRequest {
-    val protocol: ConnectionProtocol
-    val sshConfig: SshConnectionConfig
-
-    data class Ssh(
-        override val sshConfig: SshConnectionConfig,
-    ) : RemoteSessionConnectionRequest {
-        override val protocol: ConnectionProtocol = ConnectionProtocol.SSH
-    }
-
-    data class Mosh(
-        val bootstrapRequest: MoshBootstrapRequest,
-    ) : RemoteSessionConnectionRequest {
-        override val protocol: ConnectionProtocol = ConnectionProtocol.MOSH
-        override val sshConfig: SshConnectionConfig get() = bootstrapRequest.ssh
-    }
-}
-
-internal data class RemoteSessionStartRequest(
-    val title: String,
-    val workspaceName: String,
-    val connection: RemoteSessionConnectionRequest,
-    val sourceProfileId: Long? = null,
-    val hostProfileId: String? = null,
-    /** Saved-host overrides remain attached to the process session across UI recreation. */
-    val terminalProfileId: String? = null,
-    val keyboardProfileId: String? = null,
-    val replacementSessionId: Long? = null,
-    val terminalConfiguration: RemoteSessionTerminalConfiguration =
-        RemoteSessionTerminalConfiguration(),
-    val reliabilityPolicy: RemoteSessionReliabilityPolicy = RemoteSessionReliabilityPolicy(),
-    val moshFallbackPolicy: MoshFallbackPolicy = MoshFallbackPolicy.NEVER,
-    /** Primarily a deterministic test/import seam; normal callers let the repository create it. */
-    val recentSessionId: String? = null,
-) {
-    init {
-        require(replacementSessionId == null || replacementSessionId > 0L)
-        require(
-            connection.protocol == ConnectionProtocol.MOSH ||
-                moshFallbackPolicy == MoshFallbackPolicy.NEVER,
-        )
-        recentSessionId?.let(::requireCanonicalSessionUuid)
-    }
-}
-
-/** Non-secret reliability policy captured with an application-owned remote session. */
-internal data class RemoteSessionReliabilityPolicy(
-    val reconnectEnabled: Boolean = false,
-    val reconnectMaxAttempts: Int = DEFAULT_RECONNECT_MAX_ATTEMPTS,
-    val initialRetryDelayMillis: Long = DEFAULT_RECONNECT_INITIAL_DELAY_MILLIS,
-    val maximumRetryDelayMillis: Long = DEFAULT_RECONNECT_MAXIMUM_DELAY_MILLIS,
-) {
-    init {
-        require(reconnectMaxAttempts in 0..MAX_RECONNECT_ATTEMPTS)
-        require(initialRetryDelayMillis > 0L)
-        require(maximumRetryDelayMillis >= initialRetryDelayMillis)
-    }
-}
-
-/** Pure retry decision used by the repository and deterministic JVM tests. */
-internal data class ReconnectPlan(
-    val policy: RemoteSessionReliabilityPolicy,
-) {
-    fun next(
-        completedAttempts: Int,
-        networkAvailable: Boolean,
-        intentionallyDisconnected: Boolean,
-    ): ReconnectStep {
-        if (intentionallyDisconnected) return ReconnectStep.Cancelled
-        if (!policy.reconnectEnabled || completedAttempts >= policy.reconnectMaxAttempts) {
-            return ReconnectStep.Exhausted
-        }
-        val attempt = completedAttempts + 1
-        if (!networkAvailable) return ReconnectStep.WaitForNetwork(attempt)
-        var delayMillis = policy.initialRetryDelayMillis
-        repeat((attempt - 1).coerceAtMost(MAX_RECONNECT_EXPONENT)) {
-            delayMillis = if (delayMillis >= policy.maximumRetryDelayMillis / 2L) {
-                policy.maximumRetryDelayMillis
-            } else {
-                delayMillis * 2L
-            }
-        }
-        return ReconnectStep.RetryAfter(
-            attempt = attempt,
-            delayMillis = delayMillis.coerceAtMost(policy.maximumRetryDelayMillis),
-        )
-    }
-}
-
-internal sealed interface ReconnectStep {
-    data class WaitForNetwork(val attempt: Int) : ReconnectStep
-
-    data class RetryAfter(val attempt: Int, val delayMillis: Long) : ReconnectStep
-
-    data object Exhausted : ReconnectStep
-
-    data object Cancelled : ReconnectStep
-}
-
-internal data class RemoteSessionTerminalConfiguration(
-    val scrollbackLines: Int = DEFAULT_REMOTE_SCROLLBACK_LINES,
-    val rendererProfile: TerminalRendererProfile = TerminalRendererProfile(),
-    val remoteClipboardMode: RemoteClipboardMode = RemoteClipboardMode.ASK,
-) {
-    init {
-        // TerminalBuffer stores the live screen as well as retained history and requires at least
-        // one line. A domain profile value of zero is normalized to one at the UI/runtime seam.
-        require(scrollbackLines in 1..ModelLimits.MAX_SCROLLBACK_LINES)
-    }
-}
 
 /**
  * A bounded, one-shot OSC 52 prompt emitted only while its originating transport is live.
@@ -272,72 +102,9 @@ internal class RemoteClipboardWriteRequestEvent internal constructor(
     }
 }
 
-internal enum class SessionNotificationVisibility {
-    VISIBLE,
-    LIMITED_BY_PERMISSION,
-}
-
-internal sealed interface SessionForegroundStartResult {
-    data class Started(
-        val notificationVisibility: SessionNotificationVisibility,
-    ) : SessionForegroundStartResult
-
-    data object Unavailable : SessionForegroundStartResult
-}
-
-internal fun interface SessionForegroundStarter {
-    fun startFromVisibleUserAction(): SessionForegroundStartResult
-}
-
 /** Compatibility seam for the original SSH-only repository tests and callers. */
 internal fun interface SshConnectionFactory {
     fun create(config: SshConnectionConfig): Connection
-}
-
-internal fun interface RemoteSessionConnectionFactory {
-    fun create(request: RemoteSessionConnectionRequest): Connection
-}
-
-internal fun interface RecentSessionWriter {
-    suspend fun upsert(session: RecentSession)
-}
-
-internal data class RecentEndpointIdentityStartupBackfill(
-    val candidatesScanned: Int,
-    val tokensStored: Int,
-    val batchesAttempted: Int,
-    val complete: Boolean,
-)
-
-internal sealed interface StartSshSessionResult {
-    data class Started(
-        val sessionId: Long,
-        val notificationVisibility: SessionNotificationVisibility,
-    ) : StartSshSessionResult
-
-    data object SessionLimitReached : StartSshSessionResult
-
-    data object ReplacementUnavailable : StartSshSessionResult
-
-    data object ForegroundServiceUnavailable : StartSshSessionResult
-
-    /** Startup was explicitly terminated while a foreground/transport step was in flight. */
-    data object Cancelled : StartSshSessionResult
-}
-
-/** Result of a tab double-tap duplicate request. No confirmation UI is involved. */
-internal sealed interface DuplicateSshSessionResult {
-    data class Started(
-        val sessionId: Long,
-        val notificationVisibility: SessionNotificationVisibility,
-    ) : DuplicateSshSessionResult
-
-    /** One-shot authentication was deliberately not retained and must be entered again. */
-    data object AuthenticationRequired : DuplicateSshSessionResult
-
-    data object SessionLimitReached : DuplicateSshSessionResult
-
-    data object Unavailable : DuplicateSshSessionResult
 }
 
 /**
@@ -429,10 +196,6 @@ internal class SshSessionRepository(
     fun startUserInitiatedSession(request: RemoteSessionStartRequest): StartSshSessionResult {
         val prepared = when (val preparation = prepareStart(request)) {
             is SessionPreparation.Ready -> preparation.pending
-            SessionPreparation.LimitReached -> {
-                request.connection.clearAuthenticationSecrets()
-                return StartSshSessionResult.SessionLimitReached
-            }
             SessionPreparation.ReplacementUnavailable -> {
                 request.connection.clearAuthenticationSecrets()
                 return StartSshSessionResult.ReplacementUnavailable
@@ -575,8 +338,6 @@ internal class SshSessionRepository(
                 sessionId = result.sessionId,
                 notificationVisibility = result.notificationVisibility,
             )
-            StartSshSessionResult.SessionLimitReached ->
-                DuplicateSshSessionResult.SessionLimitReached
             StartSshSessionResult.ReplacementUnavailable,
             StartSshSessionResult.ForegroundServiceUnavailable,
             StartSshSessionResult.Cancelled,
@@ -1616,6 +1377,7 @@ internal class SshSessionRepository(
                         moshPortRange = null,
                         moshServerCommand = null,
                         moshLocale = null,
+                        moshFallbackPolicy = MoshFallbackPolicy.NEVER,
                     )
                     runtime.reconnectRequestFactory = request.reconnectRequestFactoryOrNull()
                     runtime.sshFallbackRequestFactory = null
@@ -2106,46 +1868,8 @@ private fun RemoteSessionStartRequest.toConnectionSeed(): RemoteSessionConnectio
             moshPortRange = transport.bootstrapRequest.udpPortRange,
             moshServerCommand = transport.bootstrapRequest.serverCommand,
             moshLocale = transport.bootstrapRequest.locale,
+            moshFallbackPolicy = moshFallbackPolicy,
         )
-    }
-}
-
-private fun normalizeSessionLabel(value: String, protocol: ConnectionProtocol): String {
-    val normalized = value
-        .filterNot { character ->
-            character.isISOControl() || Character.getType(character) == Character.FORMAT.toInt()
-        }
-        .trim()
-        .replace(SESSION_WHITESPACE, " ")
-        .take(MAX_SESSION_LABEL_LENGTH)
-    if (normalized.isNotEmpty()) return normalized
-    return if (protocol == ConnectionProtocol.MOSH) "Mosh session" else "SSH session"
-}
-
-private fun sanitizeTerminalTitle(
-    raw: String?,
-    seed: RemoteSessionConnectionSeed,
-): String? {
-    val normalized = raw
-        ?.filterNot { character ->
-            (character.isISOControl() && character !in "\t\n\r") ||
-                Character.getType(character) == Character.FORMAT.toInt()
-        }
-        ?.trim()
-        ?.replace(SESSION_WHITESPACE, " ")
-        ?.take(MAX_TERMINAL_TITLE_LENGTH)
-        ?.takeIf(String::isNotEmpty)
-        ?: return null
-    val folded = normalized.lowercase(Locale.ROOT)
-    val sensitiveValues = listOf(seed.host, seed.username)
-        .map(String::trim)
-        .filter { it.length >= MIN_REDACTED_FRAGMENT_LENGTH }
-    return normalized.takeUnless { sensitiveValues.any { folded.contains(it.lowercase(Locale.ROOT)) } }
-}
-
-private fun requireCanonicalSessionUuid(value: String) {
-    require(runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)) {
-        "Recent-session ID must be a canonical UUID."
     }
 }
 
@@ -2443,39 +2167,32 @@ private class DefaultSshSessionTerminal(
     }
 
     private fun refreshInputContext(connection: Connection) {
-        val generationAtCapture = controller.herdrHistoryGeneration
+        val generationAtCapture = controller.captureHerdrHistoryState().generation
         val context = runCatching { connection.captureInputContext() }
-            .getOrDefault(TerminalInputContext())
+            .getOrDefault(TerminalInputContext(observationAvailable = false))
         synchronized(tmuxHistoryLock) {
-            if (!stopped && attachedConnection === connection &&
-                controller.herdrHistoryGeneration == generationAtCapture
-            ) controller.publishInputContext(context)
+            if (!stopped && attachedConnection === connection) {
+                controller.tryPublishInputContext(context, generationAtCapture)
+            }
         }
     }
 
     private fun refreshHerdrHistory(connection: Connection) {
-        if (synchronized(tmuxHistoryLock) { stopped || attachedConnection !== connection }) return
-        val (revision, previous, pinned) = synchronized(tmuxHistoryLock) {
-            val reading = controller.herdrHistoryReading
-            val pinned = reading && controller.herdrHistoryPinned
-            Triple(herdrOutputRevision, controller.herdrHistory.takeIf {
-                pinned || !reading && herdrOutputRevision == herdrCapturedOutputRevision
-            }, pinned)
+        val (revision, capturedRevision, state) = synchronized(tmuxHistoryLock) {
+            if (stopped || attachedConnection !== connection) return
+            Triple(herdrOutputRevision, herdrCapturedOutputRevision, controller.captureHerdrHistoryState())
         }
-        val sourceAtCapture = controller.herdrHistory
-        val generationAtCapture = controller.herdrHistoryGeneration
+        val pinned = state.reading && state.pinned
+        val previous = state.source.takeIf { pinned || !state.reading && revision == capturedRevision }
         val result = runCatching {
             connection.readHerdrHistory(previous, pinned)
         }.getOrElse { HerdrHistoryRead.Retry() }
         synchronized(tmuxHistoryLock) {
-            if (!stopped && attachedConnection === connection &&
-                controller.herdrHistoryGeneration == generationAtCapture
-            ) {
-                // Herdr's pane revision is metadata, not a terminal-content revision.
-                // Reuse idle live rows only without new output. A latest overlay must
-                // poll: output below a scrolled remote viewport may emit no Mosh frame.
-                if (result is HerdrHistoryRead.Available && !pinned) herdrCapturedOutputRevision = revision
-                controller.publishHerdrHistoryRead(result, sourceAtCapture, generationAtCapture)
+            if (!stopped && attachedConnection === connection) {
+                val accepted = controller.tryPublishHerdrHistoryRead(result, state.source, state.generation)
+                // Advance reuse only for an actually accepted live read. Navigation
+                // can invalidate it after the transport check but before publication.
+                if (accepted && result is HerdrHistoryRead.Available && !pinned) herdrCapturedOutputRevision = revision
             }
         }
     }
@@ -2483,6 +2200,7 @@ private class DefaultSshSessionTerminal(
     private fun refreshTmuxIdentity(connection: Connection) {
         if (synchronized(tmuxHistoryLock) { stopped || attachedConnection !== connection }) return
         if (connection.isHerdrSession) {
+            controller.prefetchHerdrProjects(connection)
             synchronized(tmuxHistoryLock) {
                 if (stopped || attachedConnection !== connection) return
                 if (herdrHistoryRefresh == null) {
@@ -2855,8 +2573,6 @@ private data class PendingSessionStart(
 private sealed interface SessionPreparation {
     data class Ready(val pending: PendingSessionStart) : SessionPreparation
 
-    data object LimitReached : SessionPreparation
-
     data object ReplacementUnavailable : SessionPreparation
 
     data object RuntimeUnavailable : SessionPreparation
@@ -2926,19 +2642,9 @@ private data object NoOpRecentSessionWriter : RecentSessionWriter {
     override suspend fun upsert(session: RecentSession) = Unit
 }
 
-private val SESSION_WHITESPACE = Regex("\\s+")
-private const val MAX_SESSION_LABEL_LENGTH = 96
-private const val MAX_TERMINAL_TITLE_LENGTH = 128
-private const val MIN_REDACTED_FRAGMENT_LENGTH = 2
-private const val DEFAULT_REMOTE_SCROLLBACK_LINES = 20_000
-private const val DEFAULT_RECONNECT_MAX_ATTEMPTS = 5
-private const val MAX_RECONNECT_ATTEMPTS = 100
-private const val DEFAULT_RECONNECT_INITIAL_DELAY_MILLIS = 1_000L
-private const val DEFAULT_RECONNECT_MAXIMUM_DELAY_MILLIS = 30_000L
 private const val DEFAULT_RECONNECT_STABLE_WINDOW_MILLIS = 30_000L
 private const val TMUX_METADATA_REFRESH_QUIET_MILLIS = 120L
 private const val TMUX_METADATA_REFRESH_MAX_WAIT_MILLIS = 1_000L
-private const val MAX_RECONNECT_EXPONENT = 62
 private const val FRESH_AUTHENTICATION_REQUIRED_MESSAGE =
     "Connection lost. Reconnect manually to start a new shell."
 private const val RECONNECT_EXHAUSTED_MESSAGE =

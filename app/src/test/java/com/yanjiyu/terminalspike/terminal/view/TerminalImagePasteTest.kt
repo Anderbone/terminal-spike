@@ -20,6 +20,65 @@ class TerminalImagePasteTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun nestedTransportsBorrowTheInputAndOnlyThePipelineClosesTheProviderStream() = runBlocking {
+        val closes = AtomicInteger()
+        val finished = AtomicInteger()
+        val inserted = mutableListOf<String>()
+        val source = object : ByteArrayInputStream(byteArrayOf(7, 8, 9)) {
+            override fun close() { closes.incrementAndGet() }
+        }
+
+        val count = transferTerminalAttachments(
+            listOf(TerminalImagePasteSource("image/png", { source }, { finished.incrementAndGet() })),
+            transfer = { _, borrowed ->
+                // The session repository and its SFTP channel both use their borrowed input.
+                borrowed.use { outer ->
+                    outer.use { inner -> assertArrayEquals(byteArrayOf(7, 8, 9), inner.readBytes()) }
+                }
+                assertEquals(0, closes.get())
+                "/cache/image.png"
+            },
+            insert = { inserted.add(it) },
+        )
+
+        assertEquals(1, count)
+        assertEquals(listOf("/cache/image.png"), inserted)
+        assertEquals(1, closes.get())
+        assertEquals(1, finished.get())
+    }
+
+    @Test
+    fun cancelledTransferClosesItsProviderOnceEvenWhenTheTransportAlsoClosesInput() = runBlocking {
+        withTimeout(10_000) {
+            val started = CompletableDeferred<Unit>()
+            val closes = AtomicInteger()
+            val finished = AtomicInteger()
+            val batch = launch {
+                transferTerminalAttachments(
+                    listOf(TerminalImagePasteSource("image/png", {
+                        object : ByteArrayInputStream(byteArrayOf(7)) {
+                            override fun close() { closes.incrementAndGet() }
+                        }
+                    }, { finished.incrementAndGet() })),
+                    transfer = { _, input ->
+                        input.use {
+                            assertEquals(7, it.read())
+                            started.complete(Unit)
+                            awaitCancellation()
+                        }
+                    },
+                    insert = { fail("Cancelled upload must not be inserted"); false },
+                )
+            }
+            started.await()
+            batch.cancelAndJoin()
+
+            assertEquals(1, closes.get())
+            assertEquals(1, finished.get())
+        }
+    }
+
+    @Test
     fun arbitraryTypesKeepTheirExtensionsWithoutTrustingProviderPaths() {
         listOf("photo.heic", "photo.avif", "drawing.svg", "movie.mkv", "paper.pdf", "archive.zip").forEach {
             assertTrue(terminalAttachmentFileName("application/octet-stream", it).endsWith(".${it.substringAfterLast('.')}"))

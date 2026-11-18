@@ -303,9 +303,6 @@ internal fun ConnectionsScreen(
                     ConnectionsHeader(
                         selectedTab = displayedTab,
                         searchQuery = state.searchQuery,
-                        hostSort = state.hostSort,
-                        hostFilters = state.hostFilters,
-                        hostGroups = (state.loadState as? ConnectionsLoadState.Ready)?.hostGroups.orEmpty(),
                         catalogReady = state.loadState is ConnectionsLoadState.Ready,
                         onNavigateBack = onNavigateBack,
                         callbacks = callbacks.copy(
@@ -680,21 +677,8 @@ private fun unavailableEditorOperation(): Result<Unit> = Result.failure(
     IllegalStateException("The catalog editor operation is unavailable."),
 )
 
-internal data class CatalogCounts(
-    val hosts: Int,
-    val keys: Int,
-    val snippets: Int,
-)
-
-private val ConnectionsLoadState.catalogCounts: CatalogCounts
-    get() = when (this) {
-        ConnectionsLoadState.Loading, is ConnectionsLoadState.Error -> CatalogCounts(0, 0, 0)
-        is ConnectionsLoadState.Ready -> CatalogCounts(hosts.size, keys.size, snippets.size)
-    }
-
 internal const val ConnectionsScreenTestTag = "connections-screen"
 internal const val ConnectionsHeaderTestTag = "connections-header"
-internal const val ConnectionsTabsTestTag = "connections-tabs"
 internal const val ConnectionsCompactListTestTag = "connections-compact-list"
 internal const val ConnectionsExpandedListTestTag = "connections-expanded-list"
 internal const val ConnectionsExpandedDetailTestTag = "connections-expanded-detail"

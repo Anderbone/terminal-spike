@@ -7,7 +7,9 @@ set -euo pipefail
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 extension_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 generated_dir="$extension_dir/src/main/cpp/generated"
-work_dir=$(mktemp -d /tmp/terminal-spike-mosh-protobuf.XXXXXX)
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-${XDG_CACHE_HOME:-$HOME/.cache}/terminal-spike/tmp}}"
+mkdir -p "$TMPDIR"
+work_dir=$(mktemp -d "$TMPDIR/terminal-spike-mosh-protobuf.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
 
 "$script_dir/verify-sources.sh"

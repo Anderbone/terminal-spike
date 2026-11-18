@@ -8,17 +8,16 @@ import com.yanjiyu.terminalspike.mosh.api.MoshAddressFamily
 import com.yanjiyu.terminalspike.mosh.api.MoshSessionState
 import com.yanjiyu.terminalspike.mosh.api.MoshStopReason
 import com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine
+import com.yanjiyu.terminalspike.testing.withSuspendingFixtureCleanup
 import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.util.UUID
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import org.junit.Assert.assertTrue
@@ -79,45 +78,49 @@ class MoshDirectRealEndToEndTest {
         )
         val extension = AndroidMoshConnectionExtension(client)
         val sessionId = UUID.randomUUID()
-        val terminalEnded = async(start = CoroutineStart.UNDISPATCHED) {
-            extension.sessionEvents(sessionId).first { event ->
-                event.state == MoshSessionState.ERROR || event.state == MoshSessionState.DISCONNECTED
-            }
-        }
-        val terminalEvent = async(start = CoroutineStart.UNDISPATCHED) {
-            withTimeout(CONNECT_TIMEOUT_MILLIS) {
+        withSuspendingFixtureCleanup { cleanup ->
+            val terminalEnded = async(start = CoroutineStart.UNDISPATCHED) {
                 extension.sessionEvents(sessionId).first { event ->
-                    event.state == MoshSessionState.CONNECTED ||
-                        event.state == MoshSessionState.ERROR ||
-                        event.state == MoshSessionState.DISCONNECTED
+                    event.state == MoshSessionState.ERROR || event.state == MoshSessionState.DISCONNECTED
                 }
             }
-        }
-        val startResult = extension.startSession(
-            spec = MoshSessionStartSpec(
-                sessionId = sessionId,
-                addressFamily = when (address) {
-                    is Inet4Address -> MoshAddressFamily.IPV4
-                    is Inet6Address -> MoshAddressFamily.IPV6
-                    else -> error("Unsupported fixture address family.")
-                },
-                addressBytes = address.address,
-                udpPort = requireNotNull(port),
-                initialColumns = 80,
-                initialRows = 24,
-                locale = "en_US.UTF-8",
-                optionFlags = 0,
-            ),
-            sessionKey = key.encodeToByteArray(),
-        )
-        val transport = when (startResult) {
-            is MoshTransportStartResult.Success -> startResult.value
-            is MoshTransportStartResult.Failure -> {
-                throw AssertionError("Mosh start failed: ${startResult.reason}")
+            cleanup.onClose { terminalEnded.cancel() }
+            val terminalEvent = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(CONNECT_TIMEOUT_MILLIS) {
+                    extension.sessionEvents(sessionId).first { event ->
+                        event.state == MoshSessionState.CONNECTED ||
+                            event.state == MoshSessionState.ERROR ||
+                            event.state == MoshSessionState.DISCONNECTED
+                    }
+                }
             }
-        }
+            cleanup.onClose { terminalEvent.cancel() }
+            cleanup.onClose { extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED) }
+            val startResult = extension.startSession(
+                spec = MoshSessionStartSpec(
+                    sessionId = sessionId,
+                    addressFamily = when (address) {
+                        is Inet4Address -> MoshAddressFamily.IPV4
+                        is Inet6Address -> MoshAddressFamily.IPV6
+                        else -> error("Unsupported fixture address family.")
+                    },
+                    addressBytes = address.address,
+                    udpPort = requireNotNull(port),
+                    initialColumns = 80,
+                    initialRows = 24,
+                    locale = "en_US.UTF-8",
+                    optionFlags = 0,
+                ),
+                sessionKey = key.encodeToByteArray(),
+            )
+            val transport = when (startResult) {
+                is MoshTransportStartResult.Success -> startResult.value
+                is MoshTransportStartResult.Failure -> {
+                    throw AssertionError("Mosh start failed: ${startResult.reason}")
+                }
+            }
 
-        try {
+            cleanup.onClose { transport.close() }
             val event = terminalEvent.await()
             assertTrue(
                 "Mosh ended before connecting: state=${event.state}, error=${event.errorCode}",
@@ -135,16 +138,13 @@ class MoshDirectRealEndToEndTest {
                         extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED)
                         // stopSession deliberately forgets further callbacks. Observe native
                         // completion through its output EOF while our pipes stay open instead.
-                        val outputEnded = async(Dispatchers.IO) {
+                        readOwnedInputWithTimeout(transport.terminalOutput, 5_000) { input ->
                             val buffer = ByteArray(8 * 1024)
-                            while (transport.terminalOutput.read(buffer) >= 0) Unit
-                        }
-                        try {
-                            withTimeout(5_000) { outputEnded.await() }
-                        } finally {
-                            // Closing the pipe releases a blocking Android read on timeout.
-                            transport.terminalOutput.close()
-                            outputEnded.cancel()
+                            try {
+                                while (input.read(buffer) >= 0) Unit
+                            } finally {
+                                buffer.fill(0)
+                            }
                         }
                     }
                     else -> transport.close()
@@ -163,11 +163,11 @@ class MoshDirectRealEndToEndTest {
             val collected = ByteArrayOutputStream()
             val terminal = VtTerminalEngine(columns = 80, rows = 24)
             var completedSynchronizedFrame = false
-            withContext(Dispatchers.IO) {
-                withTimeout(OUTPUT_TIMEOUT_MILLIS) {
-                    val buffer = ByteArray(8 * 1024)
+            readOwnedInputWithTimeout(transport.terminalOutput, OUTPUT_TIMEOUT_MILLIS) { input ->
+                val buffer = ByteArray(8 * 1024)
+                try {
                     while (true) {
-                        val count = transport.terminalOutput.read(buffer)
+                        val count = input.read(buffer)
                         check(count >= 0) { "Mosh terminal output closed before the marker arrived." }
                         check(collected.size() + count <= MAX_CAPTURE_BYTES) {
                             "Mosh fixture output exceeded its bounded capture."
@@ -178,14 +178,11 @@ class MoshDirectRealEndToEndTest {
                         val rendered = frame.screen.joinToString("\n") { line -> line.text }
                         if (MARKER in rendered && !frame.synchronizedOutput) break
                     }
+                } finally {
                     buffer.fill(0)
                 }
             }
             assertTrue("Native framebuffer boundaries must survive the PFD pipe", completedSynchronizedFrame)
-        } finally {
-            terminalEnded.cancel()
-            transport.close()
-            extension.stopSession(sessionId, MoshStopReason.USER_REQUESTED)
         }
     }
 

@@ -34,11 +34,11 @@ class HostVerificationFailed(RuntimeError):
     pass
 
 
-def command(args, cwd=None, timeout=120):
+def command(args, cwd=None, timeout=120, *, strip_output=True):
     result = subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=timeout)
     if result.returncode:
         raise RuntimeError(f"{args[0]} failed: {result.stderr.strip()[-2000:]}")
-    return result.stdout.strip()
+    return result.stdout.strip() if strip_output else result.stdout
 
 
 def gh(*args):
@@ -89,9 +89,30 @@ def validate_changes(paths, version_before, version_after):
     for path in paths:
         if (path.startswith(PROTECTED) or path.endswith((".apk", ".aab", ".keystore", ".jks")) or
                 Path(path).is_absolute() or ".." in Path(path).parts):
-            raise RuntimeError(f"Repair requires review of protected path: {path}")
+            raise RuntimeError(f"Repair requires review of protected path: {path!r}")
     if version_before != version_after:
         raise RuntimeError("Automatic CI repairs cannot change the application version")
+
+
+def changed_paths(directory):
+    # NUL framing disables Git's display quoting and preserves whitespace in names.
+    output = command(["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                     directory, strip_output=False)
+    if not output:
+        return []
+    if not output.endswith("\0"):
+        raise RuntimeError("Git returned incomplete change records; preserve the worktree for review")
+    paths = []
+    for record in output[:-1].split("\0"):
+        if len(record) < 4 or record[2] != " ":
+            raise RuntimeError("Git returned an unexpected change record; preserve the worktree for review")
+        status = record[:2]
+        if status != "??" and status[0] != " ":
+            raise RuntimeError("Agent staged changes or left a conflict; preserve the index for manual review")
+        if status not in {"??", " M", " D", " T", " A"}:
+            raise RuntimeError("Git returned an unsupported change status; preserve the worktree for review")
+        paths.append(record[3:])
+    return paths
 
 
 def app_version(workspace):
@@ -338,7 +359,7 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
             report = self.agent(directory, evidence, chain["attempts"])
             if command(["git", "rev-parse", "HEAD"], directory) != chain["sha"]:
                 raise RuntimeError("Agent committed unexpectedly; preserving work for review")
-            paths = command(["git", "ls-files", "-m", "-d", "-o", "--exclude-standard"], directory).splitlines()
+            paths = changed_paths(directory)
             chain["agent_pid"] = None
             chain["report_path"] = str(directory / "build/ci-autofix-report.md")
             chain["report_summary"] = report[:2000]
@@ -358,7 +379,7 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                     report = self.agent(directory, evidence, chain['attempts'])
                     if command(['git', 'rev-parse', 'HEAD'], directory) != chain['sha']:
                         raise RuntimeError('Agent committed unexpectedly; no patch published')
-                    paths = command(['git', 'ls-files', '-m', '-d', '-o', '--exclude-standard'], directory).splitlines()
+                    paths = changed_paths(directory)
                     validate_changes(paths, version, app_version(directory))
                     chain.update(agent_pid=None, report_summary=report[:2000])
             chain.update(phase="preparing", activity="本地验证已通过，正在准备修复提交")

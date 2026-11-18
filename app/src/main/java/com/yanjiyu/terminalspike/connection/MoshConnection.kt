@@ -81,7 +81,7 @@ internal class MoshConnection(
 
     override fun captureInputContext(): TerminalInputContext {
         val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return TerminalInputContext()
-        val captured = attempt.sshSideChannel?.captureInputContext() ?: TerminalInputContext()
+        val captured = attempt.sshSideChannel?.captureInputContext() ?: TerminalInputContext(observationAvailable = false)
         return synchronized(lock) {
             captured.takeIf { activeAttempt === attempt && attempt.running } ?: TerminalInputContext()
         }
@@ -99,7 +99,7 @@ internal class MoshConnection(
         }
     }
 
-    override fun recentHerdrProjects(): List<String>? {
+    override fun recentHerdrProjects(): List<RecentHerdrProject>? {
         val attempt = synchronized(lock) { activeAttempt?.takeIf { it.running } } ?: return null
         val projects = attempt.sshSideChannel?.recentHerdrProjects()
         return synchronized(lock) { projects.takeIf { activeAttempt === attempt && attempt.running } }
@@ -865,12 +865,42 @@ internal class AndroidMoshConnectionExtension(
     override suspend fun startSession(
         spec: MoshSessionStartSpec,
         sessionKey: ByteArray,
-    ): MoshTransportStartResult = withContext(ioDispatcher) {
+    ): MoshTransportStartResult {
+        var startedTransport: MoshTerminalTransport? = null
+        try {
+            return withContext(ioDispatcher) {
+                startSessionTransferred(spec, sessionKey).also { result ->
+                    if (result is MoshTransportStartResult.Success) startedTransport = result.value
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            // The client has delivered its handle, but this adapter may not deliver its transport.
+            startedTransport?.let { transport ->
+                transport.closeQuietly()
+                withContext(NonCancellable) {
+                    try {
+                        client.stopSession(spec.sessionId, MoshStopReason.ERROR_RECOVERY)
+                    } catch (cleanupFailure: Exception) {
+                        cancelled.addSuppressed(cleanupFailure)
+                    }
+                }
+            }
+            throw cancelled
+        } finally {
+            // Ownership transfers before dispatch, even when the caller is already cancelled.
+            sessionKey.fill(0)
+        }
+    }
+
+    private suspend fun startSessionTransferred(
+        spec: MoshSessionStartSpec,
+        sessionKey: ByteArray,
+    ): MoshTransportStartResult {
         var keyRead: ParcelFileDescriptor? = null
         var keyWrite: ParcelFileDescriptor? = null
-        try {
+        return try {
             if (sessionKey.size != MOSH_SESSION_KEY_BYTES || !sessionKey.all(::isMoshKeyByte)) {
-                return@withContext MoshTransportStartResult.Failure(MoshClientFailure.INVALID_REQUEST)
+                return MoshTransportStartResult.Failure(MoshClientFailure.INVALID_REQUEST)
             }
             val pipe = ParcelFileDescriptor.createPipe()
             val readEnd = pipe[0]

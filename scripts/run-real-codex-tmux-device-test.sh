@@ -25,7 +25,7 @@ Usage: scripts/run-real-codex-tmux-device-test.sh --serial <old-phone-serial>
        [--host-username <name>] [--output-dir <path>] [--manual-tmux | --manual-mosh]
 
 Runs the actual-Codex and real mouse-application app-selected-tmux acceptance
-only on model SM-S911B. It
+only on authorized SM-S911B or hardware-verified SM-G9708 using an isolated app. It
 temporarily authorizes one generated SSH key for the current host account and
 removes that exact key on every exit. The trusted-LAN acknowledgement is required.
 EOF
@@ -83,7 +83,7 @@ if [[ -z "$adb_bin" ]]; then
     adb_bin="${sdk_root:+$sdk_root/platform-tools/adb}"
 fi
 [[ -n "$adb_bin" && -x "$adb_bin" ]] || { echo "Android platform-tools not found." >&2; exit 3; }
-for required_tool in base64 codex node python3 ssh ssh-keygen timeout; do
+for required_tool in base64 codex flock node python3 ssh ssh-keygen timeout; do
     command -v "$required_tool" >/dev/null || {
         echo "Required tool is missing: $required_tool" >&2
         exit 3
@@ -110,42 +110,66 @@ authorized_keys="${TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE:-$HOME/.ssh/authorized_ke
 }
 mkdir -p "$(dirname "$authorized_keys")"
 chmod 0700 "$(dirname "$authorized_keys")"
+[[ ! -L "$authorized_keys" && ! -L "$authorized_keys.terminal-spike.lock" ]] || {
+    echo "Refusing symbolic links for SSH authorization files." >&2; exit 3;
+}
+# Cooperating runners share this stable inode across replacement of authorized_keys.
+# Hold the lock through revocation. Non-cooperating writers cannot be made atomic.
+exec {authorization_lock_fd}>"$authorized_keys.terminal-spike.lock"
+chmod 0600 "$authorized_keys.terminal-spike.lock"
+flock -w 30 "$authorization_lock_fd" || { echo "SSH authorization is in use." >&2; exit 3; }
 if [[ -s "$authorized_keys" && "$(tail -c 1 "$authorized_keys" | wc -l)" -ne 1 ]]; then
     echo "Refusing an authorized_keys file without a terminating newline." >&2
     exit 3
 fi
 
 verify_old_phone() {
-    local devices matching_line state model
-    devices="$("$adb_bin" devices -l)"
-    matching_line="$(awk -v wanted="$serial" '$1 == wanted { print; count += 1 } END { if (count != 1) exit 1 }' <<<"$devices")" || {
-        echo "The requested ADB target is not uniquely present: $serial" >&2
-        return 1
-    }
-    [[ "$matching_line" == *$'\tdevice '* || "$matching_line" == *" device "* ]] || return 1
-    [[ "$matching_line" == *"model:SM_S911B"* ]] || {
-        echo "Refusing ADB inventory target that is not model SM_S911B." >&2
-        return 1
-    }
-    state="$("$adb_bin" -s "$serial" get-state 2>/dev/null || true)"
-    [[ "$state" == device ]] || return 1
-    model="$("$adb_bin" -s "$serial" shell getprop ro.product.model | tr -d '\r')"
-    [[ "$model" == SM-S911B ]] || {
-        echo "Refusing target model '$model'; expected 'SM-S911B'." >&2
-        return 1
-    }
+    python3 "$project_dir/scripts/device_test_safety.py" device --adb "$adb_bin" --serial "$serial" >/dev/null
+}
+
+verify_isolated_apks() {
+    python3 "$project_dir/scripts/device_test_safety.py" apks --adb "$adb_bin" \
+        --app-apk "$app_apk" --test-apk "$test_apk"
 }
 
 remove_authorized_key() {
     [[ "$authorized_key_added" == true ]] || return 0
-    local filtered
-    filtered="$(mktemp "$(dirname "$authorized_keys")/.authorized_keys.terminal-spike.XXXXXX")"
-    if [[ -f "$authorized_keys" ]]; then
-        awk -v marker="$auth_marker" 'index($0, marker) == 0' "$authorized_keys" >"$filtered"
-    fi
-    chmod 0600 "$filtered"
-    mv -f -- "$filtered" "$authorized_keys"
-    authorized_key_added=false
+    local filtered snapshot attempt
+    for attempt in 1 2 3; do
+        filtered="$(mktemp "$(dirname "$authorized_keys")/.authorized_keys.terminal-spike.XXXXXX")" || return 1
+        snapshot="$(mktemp "$(dirname "$authorized_keys")/.authorized_keys.terminal-spike.XXXXXX")" || {
+            rm -f -- "$filtered"; return 1;
+        }
+        if ! cp -- "$authorized_keys" "$snapshot"; then
+            rm -f -- "$filtered" "$snapshot"; return 1;
+        fi
+        # Match the generated key, including an append interrupted before its comment.
+        # A different key's comment can contain our marker without belonging to us.
+        if [[ -f "$authorized_keys" ]]; then
+            if ! awk -v key_type="$generated_key_type" -v key_blob="$generated_key_blob" \
+                '!($1 == key_type && $2 == key_blob)' "$snapshot" >"$filtered"; then
+                rm -f -- "$filtered" "$snapshot" || true
+                return 1
+            fi
+        fi
+        # This function is called in an || list: Bash disables errexit in its body.
+        # Check every fallible step explicitly before claiming successful revocation.
+        # Retry observed external edits rather than replacing them with a stale filter.
+        # There remains a check/replace window for writers that ignore our sidecar lock.
+        if ! cmp -s -- "$authorized_keys" "$snapshot"; then
+            rm -f -- "$filtered" "$snapshot" || return 1
+            continue
+        fi
+        if ! chmod 0600 "$filtered" || ! mv -f -- "$filtered" "$authorized_keys"; then
+            rm -f -- "$filtered" "$snapshot" || true
+            return 1
+        fi
+        rm -f -- "$snapshot" || return 1
+        authorized_key_added=false
+        return 0
+    done
+    echo "SSH authorization changed repeatedly during revocation." >&2
+    return 1
 }
 
 cleanup() {
@@ -175,10 +199,12 @@ trap 'exit 143' TERM
 
 verify_old_phone
 cd "$project_dir"
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:stageRuntimeTestUtilities
+./gradlew -PterminalSpikeDeviceVerify=true :app:assembleDebug :app:assembleDebugAndroidTest :app:stageRuntimeTestUtilities
 for artifact in "$app_apk" "$test_apk" "$orchestrator_apk" "$test_services_apk"; do
     [[ -f "$artifact" ]] || { echo "Required APK is missing: $artifact" >&2; exit 3; }
 done
+
+verify_isolated_apks
 
 mkdir -p "$output_dir"
 output_dir="$(realpath "$output_dir")"
@@ -192,9 +218,24 @@ chmod 0700 "$private_workspace"
 ssh-keygen -q -t ed25519 -N '' -C "$auth_marker" -f "$private_workspace/id_ed25519"
 public_key="$(<"$private_workspace/id_ed25519.pub")"
 [[ "$public_key" == *" $auth_marker" ]] || { echo "Generated key marker is missing." >&2; exit 3; }
-printf '%s\n' "$public_key" >>"$authorized_keys"
+read -r generated_key_type generated_key_blob generated_key_comment generated_key_extra <<<"$public_key"
+[[ "$generated_key_type" == ssh-ed25519 && "$generated_key_blob" =~ ^[A-Za-z0-9+/]+={0,2}$ && \
+    "$generated_key_comment" == "$auth_marker" && -z "$generated_key_extra" ]] || {
+    echo "Generated public key has an unexpected format." >&2
+    exit 3
+}
+: >>"$authorized_keys"
 chmod 0600 "$authorized_keys"
+# Refuse a preexisting copy: cleanup must never revoke an entry we did not add.
+if ! awk -v key_type="$generated_key_type" -v key_blob="$generated_key_blob" \
+    '{ for (i = 1; i < NF; i++) if ($i == key_type && $(i + 1) == key_blob) exit 1 }' \
+    "$authorized_keys"; then
+    echo "Generated key is already present or authorized_keys could not be checked." >&2
+    exit 3
+fi
+# Register cleanup before the append, which can fail after writing a complete key.
 authorized_key_added=true
+printf '%s\n' "$public_key" >>"$authorized_keys"
 
 ssh -F /dev/null -p "$host_port" -i "$private_workspace/id_ed25519" \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
@@ -208,9 +249,10 @@ ssh -F /dev/null -p "$host_port" -i "$private_workspace/id_ed25519" \
 install_apk() {
     local apk="$1"
     local force_queryable="${2:-false}"
-    local -a options=(-r)
-    [[ "$force_queryable" == true ]] && options=(--force-queryable -r)
+    local -a options=(-r -t)
+    [[ "$force_queryable" == true ]] && options=(--force-queryable -r -t)
     verify_old_phone
+    verify_isolated_apks
     "$adb_bin" -s "$serial" install "${options[@]}" "$apk" >/dev/null
 }
 install_apk "$app_apk"
@@ -245,7 +287,7 @@ if [[ "$manual_tmux" == true ]]; then
     required_tests=("$tmux_test")
     expected_count=1
 fi
-instrumentation_target="com.yanjiyu.terminalspike.test/com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
+instrumentation_target="com.yanjiyu.terminalspike.deviceverify.test/com.yanjiyu.terminalspike.TerminalSpikeTestRunner"
 orchestrator_target="androidx.test.orchestrator/.AndroidTestOrchestrator"
 arguments=(
     -e class "$test_filter"

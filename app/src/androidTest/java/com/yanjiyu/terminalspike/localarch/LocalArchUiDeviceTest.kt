@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.annotation.StringRes
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -12,13 +13,13 @@ import androidx.test.espresso.UiController
 import androidx.test.espresso.ViewAction
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.platform.app.InstrumentationRegistry
+import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.MainActivity
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import com.yanjiyu.terminalspike.connection.ConnectionState
 import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
 import com.yanjiyu.terminalspike.ui.NewTerminalSessionTestTag
 import com.yanjiyu.terminalspike.ui.TerminalSpikeViewModel
-import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
@@ -28,6 +29,8 @@ import org.junit.Test
 /** Opt-in full UI gate. Requires an isolated verification APK so it cannot reset a user's Arch. */
 class LocalArchUiDeviceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    private fun string(@StringRes id: Int): String = compose.activity.getString(id)
 
     @Test fun installsFromNewSessionAndUsesTheExistingTerminalUi() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -41,16 +44,16 @@ class LocalArchUiDeviceTest {
         if (restarting) assertTrue("First-run UI gate must run before restart gate", repository.environment.state.value.installed)
         else assertFalse("First-run gate requires an uninstalled isolated UI environment", repository.environment.state.value.installed)
         report("Open New session → Local Arch Linux")
-        compose.onNodeWithContentDescription("Open terminal").performClick()
+        compose.onNodeWithContentDescription(string(R.string.navigation_open_terminal)).performClick()
         openLocal()
         if (!restarting) {
             compose.onNodeWithTag("local-arch-install").assertIsDisplayed()
-            compose.onNodeWithText("Not installed").assertIsDisplayed()
-            compose.onNodeWithText("Install Arch Linux").performClick()
+            compose.onNodeWithText(string(R.string.local_arch_not_installed)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.local_arch_install)).performClick()
             compose.onNodeWithTag("local-arch-install").assertDoesNotExist()
             compose.onNodeWithTag("local-arch-progress").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Open settings").performClick()
-            compose.onNodeWithContentDescription(SettingsCategoryListContentDescription).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+            compose.onNodeWithContentDescription(string(R.string.settings_category_list_description)).assertIsDisplayed()
             compose.activityRule.scenario.recreate()
             compose.waitForIdle()
             compose.onNodeWithTag("local-arch-progress").assertIsDisplayed()
@@ -64,7 +67,7 @@ class LocalArchUiDeviceTest {
             assertNull(repository.environment.state.value.error)
             assertNull(repository.runtime.value.error)
             assertTrue(repository.environment.state.value.starterToolsInstalled)
-            compose.onNodeWithText("Open local shell").performClick()
+            compose.onNodeWithText(string(R.string.local_arch_open)).performClick()
             report("Starter tools installed; opened shell explicitly without automatic navigation")
         }
         compose.waitUntil(10 * 60_000) {
@@ -125,32 +128,32 @@ class LocalArchUiDeviceTest {
     }
 
     private fun verifySettingsReset(repository: LocalSessionRepository, delete: Boolean) {
-        compose.onNodeWithContentDescription("Open settings").performClick()
-        compose.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("Advanced options"))
-        compose.onNodeWithText("Advanced options").performClick()
-        compose.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Local Arch Linux"))
-        compose.onNodeWithText("Local Arch Linux").performClick()
-        compose.onNodeWithText("Installed").assertIsDisplayed()
-        compose.onNodeWithText("Reset Arch environment").performScrollTo().performClick()
-        compose.onNode(hasText("Reset Arch environment") and hasClickAction() and hasAnyAncestor(isDialog())).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        compose.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_advanced)))
+        compose.onNodeWithText(string(R.string.settings_category_advanced)).performClick()
+        compose.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText(string(R.string.local_arch_title)))
+        compose.onNodeWithText(string(R.string.local_arch_title)).performClick()
+        compose.onNodeWithText(string(R.string.local_arch_installed)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.local_arch_reset)).performScrollTo().performClick()
+        compose.onNode(hasText(string(R.string.local_arch_reset)) and hasClickAction() and hasAnyAncestor(isDialog())).assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextInput("DELETE")
-        compose.onNode(hasText("Reset Arch environment") and hasClickAction() and hasAnyAncestor(isDialog())).assertIsNotEnabled()
+        compose.onNode(hasText(string(R.string.local_arch_reset)) and hasClickAction() and hasAnyAncestor(isDialog())).assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNode(hasSetTextAction()).performTextInput("DELETE ARCH")
-        compose.onNode(hasText("Reset Arch environment") and hasClickAction() and hasAnyAncestor(isDialog())).assertIsEnabled()
+        compose.onNode(hasText(string(R.string.local_arch_reset)) and hasClickAction() and hasAnyAncestor(isDialog())).assertIsEnabled()
         if (delete) {
-            compose.onNode(hasText("Reset Arch environment") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+            compose.onNode(hasText(string(R.string.local_arch_reset)) and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
             compose.waitUntil(30_000) {
                 (!repository.environment.state.value.busy && !repository.environment.state.value.installed) ||
                     repository.environment.state.value.error != null || repository.runtime.value.error != null
             }
             assertNull(repository.environment.state.value.error)
             assertNull(repository.runtime.value.error)
-            compose.onNodeWithText("Not installed").assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.local_arch_not_installed)).assertIsDisplayed()
             report("Confirmed reset removed the isolated Arch environment through Settings")
         } else {
-            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText(string(R.string.cancel)).performClick()
             assertTrue(repository.environment.state.value.installed)
             report("Settings show installation state; destructive reset requires the exact phrase and cancellation preserves files")
         }

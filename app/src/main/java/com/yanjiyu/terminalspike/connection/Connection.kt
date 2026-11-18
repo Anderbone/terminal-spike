@@ -16,8 +16,9 @@ interface Connection : TerminalInputSink {
 
     val isHerdrSession: Boolean get() = false
 
-    /** Explicit user actions only; invoke through the existing SSH side channel off the UI thread. */
-    fun recentHerdrProjects(): List<String>? = null
+    /** Read-only prefetch through the existing SSH side channel, off the UI thread. */
+    fun recentHerdrProjects(): List<RecentHerdrProject>? = null
+    /** Explicit user action only; revalidates the selection off the UI thread. */
     fun openHerdrProject(path: String): Boolean = false
 
     fun focusHerdrTask(paneId: String, terminalId: String, agentSession: String?): Boolean = false

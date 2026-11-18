@@ -32,6 +32,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
+import com.yanjiyu.terminalspike.testing.FixtureCleanup
 import com.yanjiyu.terminalspike.terminal.TerminalController
 import com.yanjiyu.terminalspike.terminal.TerminalInputSink
 import com.yanjiyu.terminalspike.terminal.engine.VtTerminalEngine
@@ -186,14 +187,15 @@ class TerminalImeTransitionTest {
         val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val scales = listOf("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
         val original = scales.associateWith { device.executeShellCommand("settings get global $it").trim() }
-        try {
+        FixtureCleanup().use { cleanup ->
+            original.forEach { (setting, value) ->
+                cleanup.onClose {
+                    if (value == "null") device.executeShellCommand("settings delete global $setting")
+                    else device.executeShellCommand("settings put global $setting $value")
+                }
+            }
             scales.forEach { device.executeShellCommand("settings put global $it 1") }
             block()
-        } finally {
-            original.forEach { (setting, value) ->
-                if (value == "null") device.executeShellCommand("settings delete global $setting")
-                else device.executeShellCommand("settings put global $setting $value")
-            }
         }
     }
 
@@ -238,13 +240,23 @@ class TerminalImeTransitionTest {
             WindowCompat.setDecorFitsSystemWindows(activity.window, false)
             activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
-        val metrics = Collections.synchronizedList(mutableListOf<Long>())
-        val thread = HandlerThread("IME test frame metrics").apply { start() }
-        val listener = android.view.Window.OnFrameMetricsAvailableListener { _, frame, _ ->
-            metrics.add(frame.getMetric(FrameMetrics.TOTAL_DURATION))
-        }
-        composeRule.runOnIdle { activity.window.addOnFrameMetricsAvailableListener(listener, Handler(thread.looper)) }
-        try {
+        FixtureCleanup().use { cleanup ->
+            val metrics = Collections.synchronizedList(mutableListOf<Long>())
+            cleanup.onClose {
+                val result = JSONObject().put("frame_total_ns", JSONArray(synchronized(metrics) { metrics.toList() }))
+                    .put("resize_samples_current_target_rows", JSONArray(samples.map { JSONArray(listOf(it.first, it.second, it.third)) }))
+                File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ime-frame-metrics.json").writeText(result.toString())
+            }
+            val thread = HandlerThread("IME test frame metrics")
+            cleanup.onClose { thread.quitSafely() }
+            thread.start()
+            val listener = android.view.Window.OnFrameMetricsAvailableListener { _, frame, _ ->
+                metrics.add(frame.getMetric(FrameMetrics.TOTAL_DURATION))
+            }
+            cleanup.onClose {
+                composeRule.runOnIdle { activity.window.removeOnFrameMetricsAvailableListener(listener) }
+            }
+            composeRule.runOnIdle { activity.window.addOnFrameMetricsAvailableListener(listener, Handler(thread.looper)) }
             for (cycle in 0..1) {
                 val start = samples.size
                 composeRule.runOnIdle { view.requestTerminalInputFocus(showKeyboard = true) }
@@ -266,12 +278,6 @@ class TerminalImeTransitionTest {
                     assertEquals((controller.viewport.viewportHeightPx / controller.viewport.lineHeightPx).toInt(), controller.terminalRows)
                 }
             }
-        } finally {
-            composeRule.runOnIdle { activity.window.removeOnFrameMetricsAvailableListener(listener) }
-            thread.quitSafely()
-            val result = JSONObject().put("frame_total_ns", JSONArray(synchronized(metrics) { metrics.toList() }))
-                .put("resize_samples_current_target_rows", JSONArray(samples.map { JSONArray(listOf(it.first, it.second, it.third)) }))
-            File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ime-frame-metrics.json").writeText(result.toString())
         }
     }
 }

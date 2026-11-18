@@ -1,11 +1,20 @@
+---
 status: done
 created_at: 2026-08-08T10:42:15.487Z
 updated_at: 2026-08-08T11:50:29.310Z
 done_at: 2026-08-08T11:50:29.310Z
 independent: yes
 dependencies: none
+archived: true
+---
 
-# Current-state audit
+# Historical baseline audit — 2026-08-08
+
+This records the initial baseline and its dated follow-up. Defects, missing features and phase
+assessments below describe that baseline. For maintained architecture and workflow contracts, use
+[ARCHITECTURE](ARCHITECTURE.md), [ADR-005](ADR-005-BUNDLED-MOSH.md),
+[DEVELOPING](DEVELOPING.md) and [CI and releasing](CI-AND-RELEASING.md).
+Device commands must follow [AGENTS.md](../AGENTS.md) and freshly verified targets.
 
 ## Open Questions
 
@@ -22,7 +31,7 @@ dependencies: none
 
 ## Toolchain and dependency baseline
 
-| Item | Current value |
+| Item | Recorded value |
 |---|---|
 | Application ID / namespace | `com.yanjiyu.terminalspike` |
 | App name | Terminal Spike |
@@ -42,7 +51,7 @@ dependencies: none
 
 All declared versions are stable. Existing direct dependencies and JSch notices are recorded. The concurrent input patch adds Compose Foundation through the BOM and updates the dependency/notices documents, but that change requires the current full gate before it is accepted.
 
-The shell initially had no `java`/`JAVA_HOME`. The repository-compatible JDK is `/home/jiyu/.cache/terminal-spike-tools/jdk`; all successful baseline Gradle runs used it without writing an SDK/JDK path into Git.
+The shell initially had no `java`/`JAVA_HOME`. Successful baseline Gradle runs selected a repository-compatible local JDK. Configure its machine-specific location through `JAVA_HOME`; keep SDK/JDK paths out of Git.
 
 ## Initial build and test baseline
 
@@ -257,7 +266,7 @@ Missing coverage tracks the product gaps: UUID/database migrations, security fai
 
 ## Phase assessment
 
-| Phase | Current assessment |
+| Phase | Recorded assessment |
 |---|---|
 | 1 Baseline/audit | In progress; initial gates/audits complete, required docs and current-worktree/device revalidation underway |
 | 2 Data/security | Useful encrypted baseline; target models/repository and several high-risk defects outstanding |

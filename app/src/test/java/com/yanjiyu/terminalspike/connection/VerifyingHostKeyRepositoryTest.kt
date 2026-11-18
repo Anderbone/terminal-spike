@@ -405,7 +405,11 @@ class VerifyingHostKeyRepositoryTest {
     private fun repository(
         store: KnownHostStore,
         onPrompt: (HostIdentityPrompt) -> Unit,
-    ) = VerifyingHostKeyRepository(store, "example.test", onPrompt)
+    ) = VerifyingHostKeyRepository(
+        store = FileKnownHostTrustStore(store),
+        endpoint = KnownHostEndpoint.create("example.test", 22),
+        onPrompt = onPrompt,
+    )
 
     private fun verifyAsync(
         repository: VerifyingHostKeyRepository,

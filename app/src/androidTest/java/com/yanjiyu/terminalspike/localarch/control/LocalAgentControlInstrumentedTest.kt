@@ -210,11 +210,20 @@ class LocalAgentControlInstrumentedTest {
                 markCommitted()
             }
             val initial = result("appearance.get")
+            assertEquals(originalSettings.inputKeyboardLayout, initial.string("inputKeyboardLayout"))
             val changed = result("appearance.update", buildJsonObject {
                 put("revision", initial.long("revision")); put("themeMode", if (initial.string("themeMode") == "dark") "light" else "dark")
                 put("accentPreset", "violet"); put("dynamicColorEnabled", false)
+                put("inputKeyboardLayout", "enter,toggle,escape,shift_left,arrow_up,arrow_down,input")
             })
             appearanceWrittenRevision = changed.long("revision")
+            assertEquals("enter,toggle,escape,shift_left,arrow_up,arrow_down,input", container.settings.settings.first().inputKeyboardLayout)
+            assertEquals(changed, result("appearance.get"))
+            val invalidLayout = call("appearance.update", buildJsonObject {
+                put("revision", changed.long("revision")); put("inputKeyboardLayout", "input,escape")
+            })
+            assertEquals("INVALID_ARGUMENT", invalidLayout["error"]!!.jsonObject.string("code"))
+            assertEquals(changed, result("appearance.get"))
             assertEquals("violet", container.settings.settings.first().accentPreset)
             assertEquals(originalSettings.appLockMode, container.settings.settings.first().appLockMode)
             assertEquals(originalSettings.keepaliveIntervalSeconds, container.settings.settings.first().keepaliveIntervalSeconds)
@@ -271,6 +280,7 @@ class LocalAgentControlInstrumentedTest {
                     if (appearanceRevision(builder.build()) == appearanceWrittenRevision) {
                         builder.setThemeMode(originalSettings.themeMode).setAccentPreset(originalSettings.accentPreset)
                             .setDynamicColorEnabled(originalSettings.dynamicColorEnabled)
+                            .setInputKeyboardLayout(originalSettings.inputKeyboardLayout)
                     }
                 }
                 markCommitted()

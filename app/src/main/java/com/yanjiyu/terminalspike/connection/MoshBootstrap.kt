@@ -105,20 +105,34 @@ internal class MoshBootstrapResult(
 
     fun captureInputContext(): TerminalInputContext {
         val choice = herdrChoice ?: return tmuxTasks.inputContext(synchronized(this) { discoveredTmuxClient?.paneId })
-        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return TerminalInputContext()
-        return captureHerdrInputContext(runner, choice)
+        val sideChannel = sshSideChannel ?: return TerminalInputContext(observationAvailable = false)
+        return runCatching {
+            // Mosh output can remain live after its bootstrap SSH transport expires.
+            // Acquire a verified live session before the entire read-only observation.
+            sideChannel.withLiveProjectSession { session ->
+                captureHerdrInputContext(session.tmuxHistoryCommandRunner(), choice)
+            }
+        }.getOrDefault(TerminalInputContext(observationAvailable = false))
     }
 
-    fun recentHerdrProjects(): List<String>? {
+    fun recentHerdrProjects(): List<RecentHerdrProject>? {
         val choice = herdrChoice ?: return null
-        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return null
-        return recentHerdrProjects(runner, choice)
+        val sideChannel = sshSideChannel ?: return null
+        return runCatching {
+            sideChannel.withLiveProjectSession { session ->
+                recentHerdrProjects(session.tmuxHistoryCommandRunner(), choice)
+            }
+        }.getOrNull()
     }
 
     fun openHerdrProject(path: String): Boolean {
         val choice = herdrChoice ?: return false
-        val runner = sshSideChannel?.tmuxHistoryCommandRunner() ?: return false
-        return openHerdrProject(runner, choice, path)
+        val sideChannel = sshSideChannel ?: return false
+        return runCatching {
+            sideChannel.withLiveProjectSession { session ->
+                openHerdrProject(session.tmuxHistoryCommandRunner(), choice, path)
+            }
+        }.getOrDefault(false)
     }
 
     fun captureHerdrSidebarLayout(): HerdrSidebarLayout? {
@@ -438,7 +452,7 @@ internal class MoshBootstrapExecutor(
             val result = session.numericAddress.toBootstrapResult(
                 port = parsed.port,
                 key = parsed.key,
-                sshSideChannel = MoshImageUploadSession(session, request.ssh, sessionFactory),
+                sshSideChannel = MoshSshSideChannel(session, request.ssh, sessionFactory),
                 initialTmuxSessionId = (tmuxChoice as? TmuxStartupChoice.Attach)?.sessionId,
                 startedInTmux = tmuxChoice != null,
                 tmuxExecutable = tmuxChoice?.executable,
@@ -659,6 +673,9 @@ internal interface MoshSshExecSession : AutoCloseable, RemoteImageUploadConnecti
 
     fun openExec(command: String): MoshExecChannel
 
+    /** Acquire transport before project work; a workspace creation must never be replayed. */
+    fun <T> withLiveProjectSession(operation: (MoshSshExecSession) -> T): T = operation(this)
+
     override fun uploadPastedImage(fileName: String, source: InputStream): String =
         error("This Mosh SSH session does not provide image upload.")
 }
@@ -701,11 +718,11 @@ internal class JschMoshSshExecSessionFactory(
                 )
             }
             return JschMoshSshExecSession(opened, address)
-        } catch (error: MoshBootstrapException) {
-            authenticated?.close()
-            throw error
         } catch (error: Exception) {
             authenticated?.close()
+            if (error is CancellationException || error is InterruptedException ||
+                error is MoshBootstrapException
+            ) throw error
             throw MoshBootstrapException(
                 MoshBootstrapFailure.SSH,
                 sshFailureMessage(repository, error),

@@ -17,6 +17,7 @@ import androidx.room.RoomDatabase
         RecentSessionEntity::class,
         KnownHostEntity::class,
         SnippetEntity::class,
+        SnippetToolbarStateEntity::class,
         LegacyMigrationStateEntity::class,
     ],
     version = AppDatabase.SCHEMA_VERSION,
@@ -51,6 +52,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun snippetDao(): SnippetDao
 
+    abstract fun snippetToolbarStateDao(): SnippetToolbarStateDao
+
     abstract fun backupSnapshotDao(): BackupSnapshotDao
 
     abstract fun backupImportDao(): BackupImportDao
@@ -59,6 +62,6 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "terminal-spike.db"
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
     }
 }

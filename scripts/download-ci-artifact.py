@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 import re
 import signal
 import subprocess
+import tempfile
 import time
 import zipfile
 
@@ -74,14 +75,55 @@ def unpack(data, artifact, destination):
             # Never extract through an existing workspace symlink.
             if not target.resolve().is_relative_to(destination.resolve()):
                 raise ArtifactFailure("Artifact path escapes its destination")
-        destination.mkdir(parents=True, exist_ok=True)
-        archive.extractall(destination)
+        # Decode and CRC-check every member before changing destination contents.
+        # Sibling staging keeps each final file replacement on the same filesystem.
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".terminal-spike-artifact-", dir=destination.parent) as temporary:
+            staging = Path(temporary)
+            try:
+                archive.extractall(staging)
+            except zipfile.BadZipFile as error:
+                raise ArtifactFailure("Artifact ZIP failed integrity validation") from error
+            destination.mkdir(parents=True, exist_ok=True)
+            for source in staging.rglob("*"):
+                target = destination / source.relative_to(staging)
+                if not target.resolve().is_relative_to(destination.resolve()):
+                    raise ArtifactFailure("Artifact path escapes its destination")
+                if source.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source.replace(target)
+
+
+def list_artifacts(endpoint):
+    artifacts = []
+    seen = set()
+    total = None
+    page = 1
+    while True:
+        listing = metadata(endpoint if page == 1 else f"{endpoint}&page={page}")
+        count = listing.get("total_count")
+        if type(count) is not int or count < 0 or (total is not None and count != total):
+            raise ArtifactFailure("Artifact listing count is invalid or changed during pagination")
+        total = count
+        batch = listing["artifacts"]
+        for artifact in batch:
+            if artifact["id"] in seen:
+                raise ArtifactFailure("Artifact listing repeated an ID during pagination")
+            seen.add(artifact["id"])
+            artifacts.append(artifact)
+        if len(artifacts) > total or (not batch and len(artifacts) < total):
+            raise ArtifactFailure("Artifact listing is incomplete or inconsistent")
+        if len(artifacts) == total:
+            return artifacts
+        page += 1
 
 
 def download(repo, run, selector, destination, *, pattern=False, expected_sha=None):
     prefix = f"repos/{repo}/actions"
-    listing = metadata(f"{prefix}/runs/{run}/artifacts?per_page=100")
-    artifacts = [a for a in listing["artifacts"] if
+    listing = list_artifacts(f"{prefix}/runs/{run}/artifacts?per_page=100")
+    artifacts = [a for a in listing if
                  (fnmatch.fnmatchcase(a["name"], selector) if pattern else a["name"] == selector)]
     if not artifacts or (not pattern and len(artifacts) != 1):
         raise ArtifactFailure("Required artifact membership is missing or ambiguous")

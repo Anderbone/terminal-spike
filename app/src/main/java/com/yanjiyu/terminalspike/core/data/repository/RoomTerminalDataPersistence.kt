@@ -1,5 +1,8 @@
 package com.yanjiyu.terminalspike.core.data.repository
 
+import androidx.room.withTransaction
+import com.yanjiyu.terminalspike.core.data.db.HiddenDefaultSnippetIds
+import com.yanjiyu.terminalspike.core.data.db.SnippetToolbarStateEntity
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
 import com.yanjiyu.terminalspike.core.data.credential.ClearAllSavedCredentialsResult
@@ -38,6 +41,8 @@ internal class RoomTerminalDataPersistence(
     private val clock: CredentialEpochClock = CredentialEpochClock.SYSTEM,
     /** Test seam proving the credential transaction rolls back when host metadata cannot commit. */
     private val beforeHostCredentialMetadataWrite: suspend () -> Unit = {},
+    /** Fault seam inside the snippet/visibility transaction, after the snippet row was written. */
+    private val afterSnippetWrite: suspend () -> Unit = {},
 ) : TerminalDataPersistence {
     private val hostMutations = RoomTerminalToolsMutations(
         database = database,
@@ -85,6 +90,7 @@ internal class RoomTerminalDataPersistence(
             credentials = credentials.observeAll().first(),
             identities = identities.observeAll().first(),
             snippets = snippets.observeAll().first(),
+            hiddenDefaultSnippetIds = hiddenDefaultSnippetIds(),
             defaultTerminalProfileId = defaultTerminal.id,
             defaultKeyboardProfile = defaultKeyboard,
             terminalProfiles = terminalProfileSnapshot,
@@ -156,12 +162,35 @@ internal class RoomTerminalDataPersistence(
     override suspend fun deleteIdentity(identityId: String): Boolean =
         identities.delete(identityId).metadataDeleted
 
-    override suspend fun upsertSnippet(snippet: com.yanjiyu.terminalspike.core.model.Snippet) {
-        if (snippets.get(snippet.id) == null) {
-            snippets.insert(snippet)
-        } else {
-            check(snippets.update(snippet)) { "Snippet disappeared during update." }
+    override suspend fun upsertSnippet(
+        snippet: com.yanjiyu.terminalspike.core.model.Snippet,
+        replacedDefaultId: Long?,
+    ) {
+        database.withTransaction {
+            if (snippets.get(snippet.id) == null) {
+                snippets.insert(snippet)
+            } else {
+                check(snippets.update(snippet)) { "Snippet disappeared during update." }
+            }
+            afterSnippetWrite()
+            if (replacedDefaultId != null) hideDefaultSnippetInTransaction(replacedDefaultId)
         }
+    }
+
+    override suspend fun hideDefaultSnippet(defaultId: Long) {
+        database.withTransaction { hideDefaultSnippetInTransaction(defaultId) }
+    }
+
+    private suspend fun hiddenDefaultSnippetIds(): Set<Long> =
+        database.snippetToolbarStateDao().findState()?.let {
+            HiddenDefaultSnippetIds.decode(it.hiddenDefaultIds)
+        }.orEmpty()
+
+    private suspend fun hideDefaultSnippetInTransaction(defaultId: Long) {
+        val hidden = hiddenDefaultSnippetIds() + defaultId
+        database.snippetToolbarStateDao().putState(
+            SnippetToolbarStateEntity(hiddenDefaultIds = HiddenDefaultSnippetIds.encode(hidden)),
+        )
     }
 
     override suspend fun deleteSnippet(snippetId: String): Boolean = snippets.delete(snippetId)

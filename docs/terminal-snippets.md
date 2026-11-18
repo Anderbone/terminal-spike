@@ -9,10 +9,23 @@ be reordered but cannot be edited or executed in this mode. Tap **Done** or pres
 to return to normal use; double-tapping no longer opens the editor. The order,
 including **New Codex**, is remembered on this device across app restarts. Accessibility
 actions in management mode also allow moving a button earlier or later. **Add snippet** is a separate,
-contrasting button at the top right. **Add snippet** opens the same encrypted snippet
+contrasting button at the top right. **Add snippet** opens the same snippet
 editor used by the catalog. **New Codex** immediately runs the built-in sequence below in the active terminal,
 without opening an editor or saving a snippet. It is disabled when terminal input is unavailable.
 Saved snippets keep their existing confirmation policy.
+
+Snippet names and commands are stored in the app-private database. They do not receive the
+separate Keystore encryption used for saved passwords and private keys. Do not store passwords
+or access tokens in snippets.
+
+The Settings snippet editor waits for the saved catalog to acknowledge persistence before it
+closes. While saving, its fields, Save, Cancel, and outside/Back dismissal are disabled. A rejected
+or failed save keeps the draft available for retry. A built-in default is hidden only after its
+replacement saves successfully; starting a save alone does not hide it.
+
+`SettingsToolsScreen.kt` owns this Settings list and its editor. The main Connections catalog
+uses `ConnectionsScreen`; terminal shortcut previews use `TerminalShortcutPreview`. The retired
+combined tools page is no longer a second implementation of those screens.
 
 When snippets are placed above the keyboard, **Hide snippets** and **Show snippets**
 remember your choice on this device, including after returning to the main menu or

@@ -355,6 +355,12 @@ class TerminalControllerWorkflowTest {
             output("\u001B[?${mode}l")
             assertFalse(controller.sendMouseClick(4, 7))
         }
+        // Accessory clicks target the live cursor even after real output created scrollback.
+        output("\u001B[?1000;1006h" + "line\r\n".repeat(40) + "\u001B[8;5H")
+        assertTrue(controller.clickMouseAtCursor())
+        assertArrayEquals("\u001B[<0;5;8M\u001B[<0;5;8m".toByteArray(), sink.received.last())
+        assertTrue(controller.clickMouseAtCursor(secondary = true))
+        assertArrayEquals("\u001B[<2;5;8M\u001B[<2;5;8m".toByteArray(), sink.received.last())
         output("\u001B[?1006l\u001B[?1000h")
         assertTrue(controller.sendMouseClick(0, 0))
         assertArrayEquals(byteArrayOf(27, 91, 77, 32, 33, 33, 27, 91, 77, 35, 33, 33), sink.received.last())

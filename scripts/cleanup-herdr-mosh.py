@@ -6,6 +6,7 @@ the existing Tailscale debug capture permission; incomplete capture fails closed
 """
 import argparse
 import collections
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -176,30 +177,30 @@ def select_candidates(records, incoming, min_age, keep_newest):
 
 
 def terminate(record):
-    # Pin PID identities before validation, preventing PID-reuse signal races.
-    descriptors = []
-    try:
-        descriptors = [os.pidfd_open(record['pid']), os.pidfd_open(record['child'])]
-        current = processes()
-        parent, child = current.get(record['pid']), current.get(record['child'])
-        if not parent or not child or parent['name'] != 'mosh-server' or child['name'] != 'herdr':
+    # Register each pinned identity immediately; later acquisition or cleanup can fail.
+    with ExitStack() as handles:
+        try:
+            parent_fd = os.pidfd_open(record['pid'])
+            handles.callback(os.close, parent_fd)
+            child_fd = os.pidfd_open(record['child'])
+            handles.callback(os.close, child_fd)
+            current = processes()
+            parent, child = current.get(record['pid']), current.get(record['child'])
+            if not parent or not child or parent['name'] != 'mosh-server' or child['name'] != 'herdr':
+                return False
+            if parent['start'] != record['start'] or child['start'] != record['child_start']:
+                return False
+            if child['parent'] != record['pid'] or any(p['parent'] == record['child'] for p in current.values()):
+                return False
+            if [pid for pid, p in current.items() if p['parent'] == record['pid']] != [record['child']]:
+                return False
+            if record['pid'] not in disconnected_pids():
+                return False
+            # Mosh's normal SIGTERM path shuts down its PTY frontend. No server/pane signals.
+            signal.pidfd_send_signal(parent_fd, signal.SIGTERM)
+            return True
+        except ProcessLookupError:
             return False
-        if parent['start'] != record['start'] or child['start'] != record['child_start']:
-            return False
-        if child['parent'] != record['pid'] or any(p['parent'] == record['child'] for p in current.values()):
-            return False
-        if [pid for pid, p in current.items() if p['parent'] == record['pid']] != [record['child']]:
-            return False
-        if record['pid'] not in disconnected_pids():
-            return False
-        # Mosh's normal SIGTERM path shuts down its PTY frontend. No server/pane signals.
-        signal.pidfd_send_signal(descriptors[0], signal.SIGTERM)
-        return True
-    except ProcessLookupError:
-        return False
-    finally:
-        for descriptor in descriptors:
-            os.close(descriptor)
 
 
 def main():

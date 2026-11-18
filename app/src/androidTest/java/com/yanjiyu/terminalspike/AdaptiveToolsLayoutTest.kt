@@ -18,47 +18,57 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.connection.mosh.MoshExtensionStatus
-import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
-import com.yanjiyu.terminalspike.ui.AppDestination
-import com.yanjiyu.terminalspike.ui.CompactToolTabsTestTag
-import com.yanjiyu.terminalspike.ui.ExpandedToolDetailTestTag
-import com.yanjiyu.terminalspike.ui.ExpandedToolSectionListTestTag
-import com.yanjiyu.terminalspike.ui.LocalToolsScreen
-import com.yanjiyu.terminalspike.ui.toUiState
+import com.yanjiyu.terminalspike.ui.CompactPrimaryNavigationTestTag
+import com.yanjiyu.terminalspike.ui.ExpandedPrimaryNavigationTestTag
+import com.yanjiyu.terminalspike.ui.SettingsToolsScreen
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsCompactListTestTag
+import com.yanjiyu.terminalspike.ui.connections.ConnectionsExpandedDetailTestTag
 import com.yanjiyu.terminalspike.ui.settings.AdvancedSettingsListTestTag
+import com.yanjiyu.terminalspike.ui.settings.ExpandedSettingsCategoryListTestTag
+import com.yanjiyu.terminalspike.ui.settings.ExpandedSettingsDetailTestTag
+import com.yanjiyu.terminalspike.ui.toUiState
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 
 class AdaptiveToolsLayoutTest {
-    @get:Rule
     val composeRule = createComposeRule()
+    private val order = IsolatedPreferencesRule("connection_order")
+
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(order).around(composeRule)
 
     @Test
-    fun compactConnectionsUsesScrollableTabsAndSingleDetailPane() {
+    fun compactConnectionsUsesProductionCatalogAndSingleDetailPane() {
         composeRule.setContent {
-            SizedToolsScreen(width = 599, destination = AppDestination.CONNECTIONS)
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 1f)) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(599.dp, 760.dp)) { ConnectionCatalogFixture(order) }
+                }
+            }
         }
 
-        composeRule.onNodeWithTag(CompactToolTabsTestTag).assertIsDisplayed()
-        composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertDoesNotExist()
-        composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertDoesNotExist()
-        composeRule.onNodeWithText("Hosts").assertIsDisplayed()
+        composeRule.onNodeWithTag(ConnectionsCompactListTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ConnectionsExpandedDetailTestTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(ExpandedSettingsCategoryListTestTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(ExpandedSettingsDetailTestTag).assertDoesNotExist()
+        composeRule.onNodeWithText("Production").assertIsDisplayed()
     }
 
     @Test
     fun expandedSettingsUsesMasterDetailAndSurvivesLargeText() {
         composeRule.setContent {
-            SizedToolsScreen(
+            SizedSettingsScreen(
                 width = 600,
-                destination = AppDestination.SETTINGS,
                 fontScale = 2f,
             )
         }
 
-        composeRule.onNodeWithTag(CompactToolTabsTestTag).assertDoesNotExist()
-        composeRule.onNodeWithTag(ExpandedToolSectionListTestTag).assertIsDisplayed()
-        composeRule.onNodeWithTag(ExpandedToolDetailTestTag).assertIsDisplayed()
-        val categories = composeRule.onNodeWithTag(ExpandedToolSectionListTestTag)
+        composeRule.onNodeWithTag(CompactPrimaryNavigationTestTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(ExpandedPrimaryNavigationTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedSettingsCategoryListTestTag).assertIsDisplayed()
+        composeRule.onNodeWithTag(ExpandedSettingsDetailTestTag).assertIsDisplayed()
+        val categories = composeRule.onNodeWithTag(ExpandedSettingsCategoryListTestTag)
         categories.performScrollToNode(hasText("Advanced options"))
         composeRule.onNodeWithText("Advanced options").performClick()
         composeRule.onNodeWithTag(AdvancedSettingsListTestTag).performScrollToNode(hasText("Mosh"))
@@ -71,41 +81,24 @@ class AdaptiveToolsLayoutTest {
 }
 
 @Composable
-private fun SizedToolsScreen(
+private fun SizedSettingsScreen(
     width: Int,
-    destination: AppDestination,
     fontScale: Float = 1f,
 ) {
     CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
         MaterialTheme {
             Box(Modifier.requiredSize(width.dp, 760.dp)) {
-                LocalToolsScreen(
-                    destination = destination,
-                    profiles = emptyList(),
-                    identities = emptyList(),
+                SettingsToolsScreen(
                     knownHosts = emptyList(),
                     snippets = emptyList(),
-                    extraKeys = TerminalExtraKey.DEFAULT_ORDER,
                     moshExtension = MoshExtensionStatus.Absent.toUiState(),
                     onNavigateBack = {},
                     onOpenWorkspace = {},
-                    onOpenConnections = {},
+                    onOpenTerminal = {},
                     onOpenSettings = {},
-                    onUseProfile = {},
-                    onSaveProfile = { _, _, _, _, _ -> },
-                    onDeleteProfile = {},
-                    onImportIdentity = {},
-                    onReimportIdentity = {},
-                    onDeleteIdentity = {},
                     onForgetKnownHost = { _, _ -> },
-                    onSaveSnippet = { _, _, _, _ -> },
+                    onSaveSnippet = { _, _, _, _ -> Result.success(Unit) },
                     onDeleteSnippet = {},
-                    onSendSnippet = {},
-                    onSetKeyVisible = { _, _ -> },
-                    onReplaceKey = { _, _ -> },
-                    onMoveKey = { _, _ -> },
-                    onResetKeys = {},
-                    onSaveKeys = {},
                     onRefreshMoshExtension = {},
                     onOpenRendererLab = {},
                 )

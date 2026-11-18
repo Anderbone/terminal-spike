@@ -36,8 +36,6 @@
     <string name="navigation_open_connections">Open connections</string>
     <string name="navigation_open_terminal">Open terminal</string>
     <string name="navigation_open_settings">Open settings</string>
-    <string name="navigation_back_from">Back from %1$s</string>
-    <string name="navigation_destination_screen">%1$s screen</string>
     <string name="workspace_screen_description">Workspace screen</string>
     <string name="workspace_status_on_device">On-device</string>
     <string name="workspace_status_loading">Loading…</string>
@@ -90,7 +88,6 @@
     <string name="terminal_input_raw_page">Raw terminal keys %1$d of %2$d</string>
     <string name="terminal_buffered_input_description">Buffered terminal input</string>
     <string name="terminal_buffered_input_placeholder">Type a command…</string>
-    <string name="terminal_send">Send</string>
     <string name="terminal_restore_last_sent_input">Restore last sent input</string>
     <string name="terminal_multiline_paste_title">Paste multiple lines?</string>
     <string name="terminal_multiline_paste_message">This will paste the complete multiline draft into the current terminal. No extra Enter key will be added.</string>
@@ -299,26 +296,7 @@
     <string name="connections_search_keys">Search keys</string>
     <string name="connections_search_snippets">Search snippets</string>
     <string name="connections_clear_search">Clear search</string>
-    <string name="connections_hide_host_controls">Hide host filters and sorting</string>
-    <string name="connections_show_host_controls">Show host filters and sorting</string>
-    <string name="connections_sort_hosts_by">Sort hosts by %1$s</string>
-    <string name="connections_sort_value">Sort: %1$s</string>
-    <string name="connections_sort_name">Name</string>
-    <string name="connections_sort_favourites">Favourites</string>
-    <string name="connections_sort_recent">Recent</string>
-    <string name="connections_sort_group">Group</string>
-    <string name="connections_favourites">Favourites</string>
-    <string name="connections_filter_group">Filter host group, %1$s</string>
-    <string name="connections_all_groups">All groups</string>
-    <string name="connections_clear_filters">Clear</string>
-    <string name="connections_tab_hosts">Hosts</string>
-    <string name="connections_tab_keys">Keys</string>
     <string name="connections_tab_snippets">Snippets</string>
-    <plurals name="connections_tab_item_count_description">
-        <item quantity="one">%1$s, %2$d item</item>
-        <item quantity="other">%1$s, %2$d items</item>
-    </plurals>
-    <string name="connections_tab_item_count">%1$s  %2$d</string>
     <string name="connections_loading_description">Loading connections</string>
     <string name="connections_loading">Loading your connections…</string>
     <string name="connections_unavailable_title">Connections unavailable</string>
@@ -410,8 +388,6 @@
     <string name="connections_key_origin_generated">Generated</string>
     <string name="connections_snippet_insert_terminal">Insert into terminal</string>
     <string name="connections_snippet_run_immediately">Run immediately</string>
-    <string name="connections_snippet_enter_appended">Enter appended</string>
-    <string name="connections_snippet_confirms_multiline">Confirms multiline</string>
     <string name="connections_delete_title">Delete %1$s?</string>
     <string name="connections_delete_host_detail">This removes the saved host. Any active terminal session stays connected.</string>
     <string name="connections_delete_host">Delete host</string>

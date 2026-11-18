@@ -1,10 +1,13 @@
 import argparse
+import base64
+import errno
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.parse
 from unittest.mock import patch
 
 
@@ -302,6 +305,150 @@ class PlayPublishingTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "readback differs"):
                 PLAY.promote(self.args)
         self.assertEqual("started", json.loads((self.state.parent / "promotion-receipt.json").read_text())["state"])
+
+
+class PlayAccessTokenTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="owned-play-auth-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.credential = self.root / "account.json"
+        self.account = {"client_email": "owned@example.invalid", "private_key": "owned dummy text, not a cryptographic key"}
+        self.credential.write_text(json.dumps(self.account))
+        self.real_temporary_directory = tempfile.TemporaryDirectory
+        self.created = []
+        self.key_paths = []
+
+    def authenticate(self, environment, *, allow_legacy=False, sign_error=None, request_error=None,
+                     directory_error=None):
+        def directory(*args, **kwargs):
+            if directory_error:
+                raise directory_error
+            if str(kwargs.get("dir")) == "/tmp":
+                if not allow_legacy:
+                    raise OSError(errno.ENOSPC, "owned simulated /tmp quota")
+                # Positive cleanup controls exercise old behavior only inside our owned tree.
+                kwargs["dir"] = self.root / "legacy-owned-tmp"
+                kwargs["dir"].mkdir(exist_ok=True)
+            result = self.real_temporary_directory(*args, **kwargs)
+            self.created.append(Path(result.name))
+            return result
+
+        signature = b"\xfb\x00\xf1-owned-signature"
+
+        def sign(arguments, **kwargs):
+            self.assertEqual(["openssl", "dgst", "-sha256", "-sign"], arguments[:-1])
+            key = Path(arguments[-1])
+            self.key_paths.append(key)
+            self.assertEqual(self.created[-1], key.parent)
+            self.assertEqual(self.account["private_key"], key.read_text())
+            self.assertEqual(0o600, key.stat().st_mode & 0o777)
+            self.assertEqual(0o700, key.parent.stat().st_mode & 0o777)
+            self.assertNotIn(self.account["private_key"], " ".join(arguments))
+            message = kwargs["input"]
+            header, claims = [json.loads(base64.urlsafe_b64decode(value + b"=" * (-len(value) % 4)))
+                              for value in message.split(b".")]
+            self.assertEqual({"alg": "RS256", "typ": "JWT"}, header)
+            self.assertEqual({"iss": self.account["client_email"],
+                              "scope": "https://www.googleapis.com/auth/androidpublisher",
+                              "aud": PLAY.TOKEN_URL, "iat": 1234, "exp": 4834}, claims)
+            if sign_error:
+                raise sign_error
+            return signature
+
+        def exchange(method, url, data, **kwargs):
+            self.assertEqual(("POST", PLAY.TOKEN_URL), (method, url))
+            self.assertEqual("application/x-www-form-urlencoded", kwargs["content_type"])
+            self.assertTrue(self.created)
+            self.assertTrue(all(not path.exists() for path in self.created))
+            payload = urllib.parse.parse_qs(data.decode(), strict_parsing=True)
+            self.assertEqual({"grant_type", "assertion"}, set(payload))
+            self.assertEqual(["urn:ietf:params:oauth:grant-type:jwt-bearer"], payload["grant_type"])
+            encoded = payload["assertion"][0].split(".")
+            self.assertEqual(sign_mock.call_args.kwargs["input"], ".".join(encoded[:2]).encode())
+            self.assertEqual(signature, base64.urlsafe_b64decode(encoded[2] + "=" * (-len(encoded[2]) % 4)))
+            if request_error:
+                raise request_error
+            return {"access_token": "owned-token"}
+
+        with patch.dict(PLAY.os.environ, environment, clear=True), \
+             patch.object(PLAY.Path, "home", return_value=self.root / "owned-home") as home, \
+             patch.object(PLAY.time, "time", return_value=1234), \
+             patch.object(PLAY.tempfile, "TemporaryDirectory", side_effect=directory) as workspace, \
+             patch.object(PLAY, "command", side_effect=sign) as sign_mock, \
+             patch.object(PLAY, "request", side_effect=exchange) as request_mock:
+            self.workspace = workspace
+            self.sign = sign_mock
+            self.exchange = request_mock
+            result = PLAY.access_token(self.credential)
+            if environment.get("TMPDIR") or environment.get("RUNNER_TEMP") or environment.get("XDG_CACHE_HOME"):
+                home.assert_not_called()
+            return result
+
+    def test_disk_temp_policy_survives_a_quota_limited_system_tmp(self):
+        cases = [
+            ({"TMPDIR": str(self.root / "explicit temp"), "RUNNER_TEMP": str(self.root / "runner"),
+              "XDG_CACHE_HOME": str(self.root / "cache")}, self.root / "explicit temp"),
+            ({"TMPDIR": "", "RUNNER_TEMP": str(self.root / "runner"),
+              "XDG_CACHE_HOME": str(self.root / "cache")}, self.root / "runner"),
+            ({"TMPDIR": "", "RUNNER_TEMP": "", "XDG_CACHE_HOME": str(self.root / "cache")},
+             self.root / "cache/terminal-spike/tmp"),
+            ({}, self.root / "owned-home/.cache/terminal-spike/tmp"),
+            ({"TMPDIR": "", "RUNNER_TEMP": "", "XDG_CACHE_HOME": ""},
+             self.root / "owned-home/.cache/terminal-spike/tmp"),
+        ]
+        for environment, expected in cases:
+            with self.subTest(environment=environment):
+                self.assertEqual("owned-token", self.authenticate(environment))
+                self.assertEqual(expected, self.created[-1].parent)
+                self.assertFalse(self.created[-1].exists())
+
+    def test_invalid_explicit_temp_root_fails_before_signing_or_http(self):
+        blocked = self.root / "not-a-directory"
+        blocked.write_text("pre-existing sentinel")
+        with self.assertRaises(FileExistsError):
+            self.authenticate({"TMPDIR": str(blocked)})
+        self.sign.assert_not_called()
+        self.exchange.assert_not_called()
+        self.workspace.assert_not_called()
+        self.assertEqual("pre-existing sentinel", blocked.read_text())
+
+    def test_signing_failure_removes_only_its_owned_key_and_skips_http(self):
+        failure = RuntimeError("owned signer failure")
+        with self.assertRaises(RuntimeError) as caught:
+            self.authenticate({"TMPDIR": str(self.root)}, allow_legacy=True, sign_error=failure)
+        self.assertIs(failure, caught.exception)
+        self.exchange.assert_not_called()
+        self.assertEqual(1, len(self.key_paths))
+        self.assertTrue(all(not p.exists() for p in self.created))
+        self.assertTrue(self.credential.exists())
+
+    def test_http_failure_happens_after_private_workspace_is_removed(self):
+        failure = RuntimeError("owned HTTP failure")
+        with self.assertRaises(RuntimeError) as caught:
+            self.authenticate({"TMPDIR": str(self.root)}, allow_legacy=True, request_error=failure)
+        self.assertIs(failure, caught.exception)
+        self.sign.assert_called_once()
+        self.exchange.assert_called_once()
+        self.assertTrue(all(not p.exists() for p in self.created))
+        self.assertTrue(self.credential.exists())
+
+    def test_workspace_creation_failure_never_signs_or_requests_a_token(self):
+        failure = OSError(errno.ENOSPC, "owned disk-full failure")
+        with self.assertRaises(OSError) as caught:
+            self.authenticate({"TMPDIR": str(self.root)}, directory_error=failure)
+        self.assertIs(failure, caught.exception)
+        self.sign.assert_not_called()
+        self.exchange.assert_not_called()
+        self.assertEqual([], self.created)
+
+    def test_invalid_credentials_are_rejected_before_creating_private_files(self):
+        self.credential.write_text("not JSON")
+        with self.assertRaises(json.JSONDecodeError):
+            self.authenticate({"TMPDIR": str(self.root)})
+        self.workspace.assert_not_called()
+        self.sign.assert_not_called()
+        self.exchange.assert_not_called()
 
 
 if __name__ == "__main__":

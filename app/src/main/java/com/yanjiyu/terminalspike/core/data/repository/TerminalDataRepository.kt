@@ -52,6 +52,7 @@ internal data class TerminalDataRecords(
     val keyboardProfiles: List<KeyboardProfile> = listOf(defaultKeyboardProfile),
     val unavailableSecretIds: Set<String> = emptySet(),
     val migrationWarningCodes: List<String> = emptyList(),
+    val hiddenDefaultSnippetIds: Set<Long> = emptySet(),
 )
 
 internal data class ImportedPrivateKeyMetadata(
@@ -131,7 +132,9 @@ internal interface TerminalDataPersistence {
 
     suspend fun deleteIdentity(identityId: String): Boolean
 
-    suspend fun upsertSnippet(snippet: Snippet)
+    suspend fun upsertSnippet(snippet: Snippet, replacedDefaultId: Long? = null)
+
+    suspend fun hideDefaultSnippet(defaultId: Long)
 
     suspend fun deleteSnippet(snippetId: String): Boolean
 
@@ -323,6 +326,8 @@ internal class TerminalDataRepository(
             moshPort = existing?.moshPort ?: profile.moshPort,
             moshPortRange = existing?.moshPortRange ?: profile.moshPortRange,
             moshServerCommand = existing?.moshServerCommand ?: profile.moshServerCommand,
+            moshLocale = if (existing == null) profile.moshLocale else existing.moshLocale,
+            moshFallbackPolicy = existing?.moshFallbackPolicy ?: profile.moshFallbackPolicy,
             createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
             updatedAtEpochMillis = maxOf(now, existing?.updatedAtEpochMillis ?: now),
         )
@@ -405,6 +410,8 @@ internal class TerminalDataRepository(
                 moshPort = existing?.moshPort ?: profile.moshPort,
                 moshPortRange = existing?.moshPortRange ?: profile.moshPortRange,
                 moshServerCommand = existing?.moshServerCommand ?: profile.moshServerCommand,
+                moshLocale = if (existing == null) profile.moshLocale else existing.moshLocale,
+                moshFallbackPolicy = existing?.moshFallbackPolicy ?: profile.moshFallbackPolicy,
                 createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
                 updatedAtEpochMillis = maxOf(now, existing?.updatedAtEpochMillis ?: now),
             )
@@ -686,7 +693,8 @@ internal class TerminalDataRepository(
         }
     }
 
-    suspend fun saveSnippet(snippet: CommandSnippet): UserSettings = authorizedMutation {
+    suspend fun saveSnippet(snippet: CommandSnippet, replacedDefaultId: Long? = null): UserSettings = authorizedMutation {
+        requireDefaultSnippetOrigin(replacedDefaultId)
         val current = requireNotNull(records)
         val uuid = ids.resolveOrReserve(TerminalRecordKind.SNIPPET, snippet.id)
         val existing = current.snippets.firstOrNull { it.id == uuid }
@@ -707,6 +715,7 @@ internal class TerminalDataRepository(
                 createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
                 updatedAtEpochMillis = maxOf(now, existing?.updatedAtEpochMillis ?: now),
             ),
+            replacedDefaultId = replacedDefaultId,
         )
     }
 
@@ -717,7 +726,8 @@ internal class TerminalDataRepository(
         }
     }
 
-    suspend fun saveSnippet(snippet: Snippet): UserSettings = authorizedMutation {
+    suspend fun saveSnippet(snippet: Snippet, replacedDefaultId: Long? = null): UserSettings = authorizedMutation {
+        requireDefaultSnippetOrigin(replacedDefaultId)
         val current = requireNotNull(records)
         val existing = current.snippets.firstOrNull { it.id == snippet.id }
         persistence.upsertSnippet(
@@ -729,6 +739,7 @@ internal class TerminalDataRepository(
                     existing?.updatedAtEpochMillis ?: 0L,
                 ),
             ),
+            replacedDefaultId = replacedDefaultId,
         )
     }
 
@@ -737,6 +748,17 @@ internal class TerminalDataRepository(
         check(persistence.deleteSnippet(persistentId)) {
             "Snippet disappeared before its acknowledged deletion."
         }
+    }
+
+    suspend fun hideDefaultSnippet(defaultId: Long): UserSettings = authorizedMutation {
+        requireDefaultSnippetOrigin(defaultId)
+        persistence.hideDefaultSnippet(defaultId)
+    }
+
+    private fun requireDefaultSnippetOrigin(defaultId: Long?) {
+        require(defaultId == null || com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.all.any {
+            it.id == defaultId
+        }) { "Unknown default snippet ID." }
     }
 
     suspend fun saveExtraKeys(keys: List<TerminalExtraKey>): UserSettings = authorizedMutation {
@@ -1087,6 +1109,8 @@ private fun TerminalDataRecords.toLegacySettings(ids: EphemeralTerminalIdRegistr
             moshPort = host.moshPort,
             moshPortRange = host.moshPortRange,
             moshServerCommand = host.moshServerCommand,
+            moshLocale = host.moshLocale,
+            moshFallbackPolicy = host.moshFallbackPolicy,
         )
     }
     val presentationIdentities = identities.map { identity ->

@@ -34,6 +34,13 @@ patch, protected-file edits, a dirty worktree, an unexpected branch update, or a
 agent error stops the chain and preserves the evidence for review. A stopped open PR
 requires human attention; timer restarts do not silently reset its budget.
 
+Both the first repair and each local retry collect changes from NUL-delimited Git
+porcelain status. Names containing spaces, Unicode, quotes, tabs or newlines reach
+the path guard intact; Git's display quoting cannot hide a protected prefix or
+artifact suffix. Unexpected staged changes or conflicts stop the chain before host
+verification and preserve the index for manual review. Diagnostics escape control
+characters in rejected names. The protected path list and version checks still apply.
+
 The controller never merges or releases, changes application versions, includes
 concurrent developer changes, or operates on physical phones. CI fixes do not
 authorize weakened assertions, removed scenarios, increased timeouts, or skipped

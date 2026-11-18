@@ -9,6 +9,8 @@ import com.yanjiyu.terminalspike.connection.SshConnectionConfig
 import com.yanjiyu.terminalspike.connection.TmuxSessionPrompt
 import com.yanjiyu.terminalspike.connection.SessionNotificationVisibility
 import com.yanjiyu.terminalspike.connection.MoshFallbackFailure
+import com.yanjiyu.terminalspike.connection.RemoteSessionConnectionSeed
+import com.yanjiyu.terminalspike.connection.DEFAULT_MOSH_LOCALE
 import com.yanjiyu.terminalspike.core.data.repository.CatalogSecretAvailability
 import com.yanjiyu.terminalspike.core.data.repository.CatalogHostProfile
 import com.yanjiyu.terminalspike.core.data.repository.CatalogSshCredential
@@ -53,6 +55,72 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalSpikeUiStateTest {
+    @Test
+    fun runtimeMoshSeedRetainsAllOptionsAndNormalizesOnlyPinnedDefaults() {
+        val original = RemoteSessionConnectionSeed(
+            host = "mobile.example", port = 22, username = "operator", sourceProfileId = 7,
+            protocol = ConnectionProtocol.MOSH,
+            moshPortRange = MoshPortRange(60_010, 60_020),
+            moshServerCommand = "/opt/mosh-server",
+            moshLocale = "en_GB.UTF-8",
+            moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC,
+        )
+
+        val seed = original.toUiConnectionSeed()
+
+        assertEquals(7L, seed.sourceProfileId)
+        assertEquals(RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+            moshPortRange = MoshPortRange(60_010, 60_020), moshServerCommand = "/opt/mosh-server",
+            moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC), seed.connectionOptions)
+        val defaults = original.copy(moshLocale = DEFAULT_MOSH_LOCALE,
+            moshServerCommand = DEFAULT_MOSH_SERVER_EXECUTABLE).toUiConnectionSeed().connectionOptions
+        assertNull(defaults.moshLocale)
+        assertNull(defaults.moshServerCommand)
+        assertEquals(MoshFallbackPolicy.AUTOMATIC, defaults.moshFallbackPolicy)
+        assertEquals(original.moshPortRange, defaults.moshPortRange)
+    }
+
+    @Test
+    fun savedPasswordMatchingIncludesEveryMoshOptionButAcceptsPinnedDefaults() {
+        val profile = SavedSshProfile(7, "Mosh", "mobile.example", 22, "operator",
+            hasSavedPassword = true, protocol = ConnectionProtocol.MOSH,
+            connectionCompatibility = SavedHostConnectionCompatibility.MOSH_PASSWORD,
+            moshFallbackPolicy = MoshFallbackPolicy.ASK)
+        val options = RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+            moshLocale = DEFAULT_MOSH_LOCALE, moshServerCommand = DEFAULT_MOSH_SERVER_EXECUTABLE,
+            moshFallbackPolicy = MoshFallbackPolicy.ASK)
+        val seed = SshConnectionSeed("mobile.example", 22, "operator", sourceProfileId = 7,
+            connectionOptions = options)
+
+        assertTrue(seed.matches(profile))
+        for (different in listOf(
+            options.copy(moshLocale = "en_GB.UTF-8"),
+            options.copy(moshLocale = "C.UTF-8"),
+            options.copy(moshFallbackPolicy = MoshFallbackPolicy.NEVER),
+            options.copy(moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC),
+            options.copy(moshPort = 60_011),
+            options.copy(moshPortRange = MoshPortRange(60_010, 60_020)),
+            options.copy(moshServerCommand = "/opt/mosh-server"),
+            RemoteConnectionOptions.SSH,
+        )) assertFalse(seed.copy(connectionOptions = different).matches(profile))
+    }
+
+    @Test
+    fun advancedMoshParsingPreservesInheritedOptionsAndReplacesOnlyEditedFields() {
+        val original = RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+            moshPortRange = MoshPortRange(60_010, 60_020), moshServerCommand = "/opt/mosh-server",
+            moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC)
+
+        val parsed = parseMoshConnectionOptions("60030", DEFAULT_MOSH_SERVER_EXECUTABLE, original)
+
+        assertNull(parsed.error)
+        assertEquals(original.copy(moshPort = 60_030, moshPortRange = null,
+            moshServerCommand = null), parsed.options)
+        assertNull(parseMoshConnectionOptions("70000", "mosh-server", original).options)
+        assertNull(parseMoshConnectionOptions("", "mosh-server --unreviewed", original).options)
+        assertFalse(original.matches(null))
+    }
+
     @Test
     fun freshActiveConnectionFailureBecomesVisibleNotice() {
         val failed = ConnectionState.Failed("SSH authentication failed.")

@@ -15,6 +15,9 @@ class ReleaseAppUpdateSmokeTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.fixture = self.root / "integration-tests/openssh"
         self.fixture.mkdir(parents=True)
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        shutil.copy2(SOURCE_ROOT / "scripts/terminal_test_markers.py", scripts / "terminal_test_markers.py")
         shutil.copy2(
             SOURCE_ROOT / "integration-tests/openssh/release-app-install-update-smoke.sh",
             self.fixture / "release-app-install-update-smoke.sh",

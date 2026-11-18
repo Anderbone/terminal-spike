@@ -1,5 +1,9 @@
 # Plan 014: Retry expired sensitive-clipboard clears after foreground recovery
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Follow this plan step by step. Preserve exact-token
 > ownership: Terminal Spike must never clear a newer clip or a clip written by
 > another app. Run every verification command before updating `plans/README.md`.
@@ -9,7 +13,7 @@
 > This worktree already contains intentional uncommitted work. Compare the
 > symbols below with live source; do not reset or discard anything.
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: M
@@ -34,7 +38,7 @@ or lacks focus is attempted once, fails, and is forgotten. The clip can then
 remain indefinitely even though the process is alive and later returns to the
 foreground.
 
-## Current state
+## Original state
 
 - `TerminalClipboardClearScheduler.kt:51-59` calls `clearIfCurrent()` once and
   drops the job without inspecting its Boolean result.
@@ -67,7 +71,7 @@ foreground.
 - changing Android's clipboard privacy restrictions
 - changing clipboard content or OSC 52 approval policy
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -75,12 +79,12 @@ foreground.
 | Focused emulator | `scripts/run-android-emulator-tests.sh --api 35 --suite full --test-filter com.yanjiyu.terminalspike.terminal.view.TerminalClipboardWriterTest` | exact named methods pass |
 | Full gate | `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest` | `BUILD SUCCESSFUL` |
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty-tree work. Use a focused branch/commit only if the
 operator asks; do not push or open a PR automatically.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Make temporary unavailability an explicit scheduler state
 
@@ -137,7 +141,7 @@ on either connected phone for this plan.
 `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest`
 → `BUILD SUCCESSFUL` with no test or lint failures.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] An expiry during background/focus loss remains pending in-process.
 - [x] Returning through a current resumed, focused Activity clears the exact clip.
@@ -154,7 +158,7 @@ on either connected phone for this plan.
   recreation, transient focus loss, and same-text newer/foreign clip safety.
 - Preserve all existing clipboard and OSC 52 tests unchanged.
 
-## STOP conditions
+## Historical stop conditions
 
 - Android requires clipboard access that cannot be made from a current resumed,
   focused Activity without weakening platform privacy checks.

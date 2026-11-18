@@ -17,6 +17,8 @@ import sys
 import tempfile
 import time
 
+from owned_process import stop_owned_child
+
 
 APP_PACKAGE = "com.yanjiyu.terminalspike"
 EXPECTED_AVD = "terminal-spike-release-test"
@@ -32,6 +34,14 @@ KEYTOOL_CERTIFICATE_PATTERN = re.compile(r"SHA256:\s*([0-9A-Fa-f:]+)")
 
 class ReleaseSmokeFailure(RuntimeError):
     pass
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class ReleaseSmokeRunner:
@@ -52,9 +62,9 @@ class ReleaseSmokeRunner:
         self.avdmanager_bin = android_tools_dir / "avdmanager"
         self.emulator_bin = self.sdk_root / "emulator/emulator"
         self.apksigner_bin = self.resolve_build_tool("apksigner")
-        java_home = Path(os.environ.get("JAVA_HOME", ""))
-        self.keytool_bin = java_home / "bin/keytool" if java_home else Path("keytool")
-        self.jarsigner_bin = java_home / "bin/jarsigner" if java_home else Path("jarsigner")
+        java_home = os.environ.get("JAVA_HOME")
+        self.keytool_bin = Path(java_home) / "bin/keytool" if java_home else Path("keytool")
+        self.jarsigner_bin = Path(java_home) / "bin/jarsigner" if java_home else Path("jarsigner")
         self.serial = f"emulator-{arguments.port}"
         self.output_dir = arguments.output_dir.resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -64,8 +74,6 @@ class ReleaseSmokeRunner:
         self.avd_home: Path | None = None
         self.emulator_process: subprocess.Popen[bytes] | None = None
         self.fixture_may_be_running = False
-        self.release_apk = self.project / "app/build/outputs/apk/release/app-release.apk"
-        self.release_aab = self.project / "app/build/outputs/bundle/release/app-release.aab"
 
     def resolve_build_tool(self, name: str) -> Path:
         override = os.environ.get(name.upper())
@@ -197,6 +205,36 @@ class ReleaseSmokeRunner:
         self.log("acceptance_key", "pass", ephemeral="true")
         return keystore, alias, password
 
+    def configure_private_build(self, environment: dict[str, str]) -> tuple[Path, Path, Path]:
+        assert self.workspace is not None
+        output_root = self.workspace / "build"
+        environment["TERMINAL_SPIKE_ACCEPTANCE_BUILD_ROOT"] = str(output_root)
+        init_script = self.workspace / "private-output.init.gradle.kts"
+        init_script.write_text(
+            """val privateBuildRoot = System.getenv("TERMINAL_SPIKE_ACCEPTANCE_BUILD_ROOT")
+    ?.let { java.io.File(it) } ?: error("Acceptance build output root is missing")
+gradle.beforeProject {
+    val relativePath = if (path == ":") "root" else "projects/" + path.drop(1).replace(':', '/')
+    layout.buildDirectory.set(privateBuildRoot.resolve(relativePath))
+}
+gradle.projectsEvaluated {
+    rootProject.allprojects.forEach { project ->
+        check(project.layout.buildDirectory.get().asFile.canonicalFile.toPath()
+            .startsWith(privateBuildRoot.canonicalFile.toPath())) {
+            "Acceptance build output escaped the private workspace"
+        }
+    }
+}
+""",
+            encoding="utf-8",
+        )
+        app_output = output_root / "projects/app/outputs"
+        return (
+            init_script,
+            app_output / "apk/release/app-release.apk",
+            app_output / "bundle/release/app-release.aab",
+        )
+
     def build_and_verify(self, keystore: Path, alias: str, password: str) -> tuple[Path, Path]:
         environment = os.environ.copy()
         environment.update(
@@ -227,10 +265,13 @@ class ReleaseSmokeRunner:
             for name in names:
                 artifact = source / name
                 if (artifact.is_symlink() or not artifact.is_file() or not artifact.stat().st_size
-                        or hashlib.sha256(artifact.read_bytes()).hexdigest() != manifest["sha256"][name]):
+                        or sha256_file(artifact) != manifest["sha256"][name]):
                     raise ReleaseSmokeFailure("verified release artifact checksum mismatch")
             shutil.copy2(source / "app-release-unsigned.apk", private_apk)
             shutil.copy2(source / "app-release.aab", private_aab)
+            for name, copied in (("app-release-unsigned.apk", private_apk), ("app-release.aab", private_aab)):
+                if sha256_file(copied) != manifest["sha256"][name]:
+                    raise ReleaseSmokeFailure("verified release artifact changed while copying")
             self.command(
                 [self.apksigner_bin, "sign", "--ks", keystore, "--ks-key-alias", alias,
                  "--ks-pass", "env:TERMINAL_SPIKE_RELEASE_STORE_PASSWORD",
@@ -245,6 +286,7 @@ class ReleaseSmokeRunner:
             )
             self.log("release_artifacts", "pass", source="verified-build", revision=revision)
         else:
+            init_script, built_apk, built_aab = self.configure_private_build(environment)
             result = self.command(
                 [
                     self.project / "gradlew",
@@ -252,6 +294,8 @@ class ReleaseSmokeRunner:
                     "--no-daemon",
                     "--no-configuration-cache",
                     "--max-workers=2",
+                    "--init-script",
+                    init_script,
                     ":app:assembleRelease",
                     ":app:bundleRelease",
                     ":app:verifyReleasePackaging",
@@ -264,10 +308,10 @@ class ReleaseSmokeRunner:
                 result.stdout + result.stderr,
                 encoding="utf-8",
             )
-            if not self.release_apk.is_file() or not self.release_aab.is_file():
+            if not built_apk.is_file() or not built_aab.is_file():
                 raise ReleaseSmokeFailure("signed release APK or AAB is missing")
-            shutil.copy2(self.release_apk, private_apk)
-            shutil.copy2(self.release_aab, private_aab)
+            shutil.copy2(built_apk, private_apk)
+            shutil.copy2(built_aab, private_aab)
         key_output = self.command(
             [
                 self.keytool_bin,
@@ -504,41 +548,43 @@ class ReleaseSmokeRunner:
             ssh_before="pass",
         )
 
+    def stop_owned_emulator(self) -> None:
+        process = self.emulator_process
+        if process is None:
+            return
+        try:
+            stop_owned_child(process)
+        finally:
+            if process.poll() is not None:
+                self.emulator_process = None
+
     def cleanup(self) -> None:
-        self.command(
-            [
-                "docker",
-                "compose",
-                "--project-directory",
-                self.fixture,
-                "-f",
-                self.fixture / "compose.yaml",
-                "down",
-                "--volumes",
-                "--remove-orphans",
-            ],
-            label="fixture cleanup",
-            check=False,
-        )
-        if self.emulator_process is not None:
-            self.adb("emu", "kill", label="emulator cleanup", check=False)
+        errors: list[str] = []
+
+        def attempt(label: str, operation) -> None:
             try:
-                self.emulator_process.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self.emulator_process.terminate()
-                try:
-                    self.emulator_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self.emulator_process.kill()
-                    self.emulator_process.wait(timeout=5)
-        for generated in (
-            self.project / "app/build/outputs/apk/release",
-            self.project / "app/build/outputs/bundle/release",
-        ):
-            if generated.is_dir():
-                shutil.rmtree(generated)
+                operation()
+            except Exception:
+                errors.append(label)
+
+        if self.fixture_may_be_running:
+            def stop_fixture() -> None:
+                self.command(
+                    ["docker", "compose", "--project-directory", self.fixture, "-f",
+                     self.fixture / "compose.yaml", "down", "--volumes", "--remove-orphans"],
+                    label="fixture cleanup",
+                )
+                self.fixture_may_be_running = False
+
+            attempt("fixture", stop_fixture)
+        attempt("owned emulator process", self.stop_owned_emulator)
         if self.workspace is not None and self.workspace.is_dir():
-            shutil.rmtree(self.workspace)
+            if self.emulator_process is not None and self.emulator_process.poll() is None:
+                errors.append("workspace retained for live child")
+            else:
+                attempt("private workspace", lambda: shutil.rmtree(self.workspace))
+        if errors:
+            raise ReleaseSmokeFailure("release smoke cleanup failed: " + ", ".join(sorted(errors)))
 
     def run(self) -> None:
         self.preflight()
@@ -546,7 +592,6 @@ class ReleaseSmokeRunner:
         private_apk, _private_aab = self.build_and_verify(keystore, alias, password)
         self.prepare_emulator()
         self.run_smoke(private_apk)
-        self.log("complete", "pass", migration="same-version-reinstall", signing="ephemeral")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -570,9 +615,9 @@ def main() -> int:
             "signing=ephemeral outputs=status-only migration=same-version-reinstall"
         )
         return 0
-    java_home = Path(os.environ.get("JAVA_HOME", ""))
-    if java_home and (java_home / "bin/java").is_file():
-        os.environ["PATH"] = f"{java_home / 'bin'}:{os.environ.get('PATH', '')}"
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home and (Path(java_home) / "bin/java").is_file():
+        os.environ["PATH"] = f"{Path(java_home) / 'bin'}:{os.environ.get('PATH', '')}"
     runner = ReleaseSmokeRunner(arguments)
     interrupted = False
 
@@ -586,6 +631,7 @@ def main() -> int:
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
     }
     failure: Exception | None = None
+    cleanup_failed = False
     try:
         runner.run()
     except KeyboardInterrupt:
@@ -596,14 +642,18 @@ def main() -> int:
         try:
             runner.cleanup()
         except Exception as cleanup_error:
+            cleanup_failed = True
             failure = cleanup_error if failure is None else ReleaseSmokeFailure(
                 f"{failure}; cleanup also failed"
             )
         for signum, handler in previous.items():
             signal.signal(signum, handler)
     if failure is not None:
+        reason = "cleanup" if cleanup_failed else ("interrupted" if interrupted else "execution")
+        runner.log("complete", "fail", reason=reason)
         print(f"ERROR {failure}", file=sys.stderr)
         return 130 if interrupted else 1
+    runner.log("complete", "pass", migration="same-version-reinstall", signing="ephemeral")
     return 0
 
 

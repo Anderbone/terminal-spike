@@ -51,11 +51,18 @@ sealed class BackupArchiveException(message: String, cause: Throwable? = null) :
  *
  * These blocking methods belong on an IO dispatcher. Neither method closes caller-owned streams.
  */
-class BackupArchiveCodec(
+class BackupArchiveCodec internal constructor(
     private val stagingFactory: BackupStagingAreaFactory,
-    private val envelopeCrypto: BackupEnvelopeCrypto = BackupEnvelopeCrypto(),
-    private val payloadCodec: BackupPayloadCodec = BackupPayloadCodec(),
+    private val envelopeCrypto: BackupEnvelopeCrypto,
+    private val payloadCodec: BackupPayloadCodec,
+    private val readPayload: (InputStream, BackupMode) -> BackupPayloadReadResult,
 ) {
+    constructor(
+        stagingFactory: BackupStagingAreaFactory,
+        envelopeCrypto: BackupEnvelopeCrypto = BackupEnvelopeCrypto(),
+        payloadCodec: BackupPayloadCodec = BackupPayloadCodec(),
+    ) : this(stagingFactory, envelopeCrypto, payloadCodec, payloadCodec::read)
+
     /**
      * Writes exactly one archive and consumes both [passphrase] and every portable secret in
      * [snapshot], including validation, provider-write, and cancellation failures.
@@ -158,6 +165,7 @@ class BackupArchiveCodec(
         passphrase: CharArray,
     ): BackupArchiveReadResult {
         var staging: BackupStagingArea? = null
+        var payload: BackupPayloadReadResult? = null
         try {
             val reader = envelopeCrypto.open(input)
             staging = try {
@@ -174,19 +182,36 @@ class BackupArchiveCodec(
             } catch (error: Throwable) {
                 throw BackupArchiveException.Staging(error)
             }
-            val payload = try {
+            try {
                 staging.openInput().use { authenticatedPlaintext ->
-                    payloadCodec.read(authenticatedPlaintext, reader.header.mode)
+                    payload = readPayload(authenticatedPlaintext, reader.header.mode)
                 }
             } catch (error: BackupPayloadException) {
                 throw error
             } catch (error: Throwable) {
                 throw BackupArchiveException.Staging(error)
             }
-            return BackupArchiveReadResult(reader.header, payload)
+            // Finish all fallible resource cleanup before transferring the decoded secrets.
+            val completedStaging = staging
+            staging = null
+            try {
+                completedStaging.close()
+            } catch (error: Throwable) {
+                throw BackupArchiveException.Staging(error)
+            }
+            val result = BackupArchiveReadResult(reader.header, checkNotNull(payload))
+            payload = null
+            return result
+        } catch (error: Throwable) {
+            payload?.snapshot?.close()
+            try {
+                staging?.close()
+            } catch (cleanupFailure: Throwable) {
+                if (cleanupFailure !== error) error.addSuppressed(cleanupFailure)
+            }
+            throw error
         } finally {
             passphrase.fill('\u0000')
-            staging?.close()
         }
     }
 

@@ -38,6 +38,38 @@ class TerminalTextExtractionTest {
         assertEquals("中文", workspace.text.substring(workspace.selectionStart, workspace.selectionEnd))
     }
 
+    @Test
+    fun characterBudgetCountsHardWrapNewlinesAtTheExactLimit() {
+        fun capture(length: Int): TerminalTextExtraction? {
+            val source = source(mutableListOf(TerminalLine.plain("x".repeat(length)), TerminalLine.plain("")))
+            val selection = TerminalSelectionModel()
+            assertTrue(selection.beginWord(source, 0, 0))
+            return TerminalTextExtraction.capture(source, selection)
+        }
+
+        val exact = requireNotNull(capture(65_535))
+        assertEquals(65_536, exact.text.length)
+        assertTrue(exact.text.endsWith('\n'))
+        assertEquals(65_535, exact.selectionEnd)
+        assertNull(capture(65_536))
+    }
+
+    @Test
+    fun softWrappedContextCanFillTheBudgetWithoutAnExtraNewline() {
+        val source = source(mutableListOf(
+            TerminalLine.plain("x".repeat(65_536), softWrappedToNext = true),
+            TerminalLine.plain(""),
+        ))
+        val selection = TerminalSelectionModel()
+        assertTrue(selection.beginWord(source, 0, 0))
+
+        val result = requireNotNull(TerminalTextExtraction.capture(source, selection))
+
+        assertEquals("x".repeat(65_536), result.text)
+        assertEquals(0, result.selectionStart)
+        assertEquals(65_536, result.selectionEnd)
+    }
+
     private fun source(lines: MutableList<TerminalLine>) = object : TerminalSelectionSource {
         override val selectionLineCount get() = lines.size
         override fun selectionLineAt(index: Int) = lines.getOrNull(index)?.let {

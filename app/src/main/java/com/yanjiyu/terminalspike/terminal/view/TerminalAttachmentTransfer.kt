@@ -58,6 +58,9 @@ internal suspend fun transferTerminalAttachments(
                                 context.ensureActive()
                                 return `in`.read(bytes, offset, length)
                             }
+
+                            // The outer use owns the provider stream; nested transports only borrow it.
+                            override fun close() = Unit
                         }
                         transfer(name, cancellable)
                     }

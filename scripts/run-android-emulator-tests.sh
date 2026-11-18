@@ -182,8 +182,8 @@ cleanup() {
             <"$private_focus" >"$output_dir/focus-api${api}-${suite}.txt" || true
     fi
     if [[ -n "$emulator_pid" ]]; then
-        # A stalled console or emulator must not keep a completed test job alive.
-        timeout --kill-after=1 5 "$adb_bin" -s "$serial" emu kill >/dev/null 2>&1 || true
+        # The serial may belong to another AVD if our launch failed. Stop only our own
+        # child process, with a bounded graceful shutdown before forced termination.
         kill "$emulator_pid" >/dev/null 2>&1 || true
         for ((shutdown_attempt = 0; shutdown_attempt < 5; shutdown_attempt++)); do
             kill -0 "$emulator_pid" 2>/dev/null || break
@@ -199,6 +199,21 @@ cleanup() {
     fi
 }
 trap cleanup EXIT INT TERM
+
+# A serial is not proof of launch ownership, even when the other AVD has the
+# same suite name. Reject existing targets in any state and give this launch a
+# unique identity so a target appearing after this check cannot be adopted.
+if ! device_inventory="$("$adb_bin" devices)"; then
+    echo "Could not read ADB inventory before emulator launch." >&2
+    exit 4
+fi
+while read -r observed_serial _; do
+    if [[ "$observed_serial" == "$serial" ]]; then
+        echo "Emulator target already exists: $serial. Choose another console port." >&2
+        exit 4
+    fi
+done <<<"$device_inventory"
+avd_name="${avd_name}-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 
 sdk_install_log="$avd_workspace/sdk-install.txt"
 if ! python3 "$project_dir/scripts/install-android-sdk.py" --system-image "$android_tools_dir" "$system_image" >"$sdk_install_log" 2>&1; then

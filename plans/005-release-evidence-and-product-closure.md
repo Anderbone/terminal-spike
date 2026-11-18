@@ -1,5 +1,9 @@
 # Plan 005: Establish green release evidence and close product, accessibility, asset, and documentation gates
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Start only when Plans 001–004 are DONE and the
 > shared source tree is frozen. This is both a final implementation sweep for
 > explicitly deferred product requirements and the release acceptance gate.
@@ -21,7 +25,7 @@
 > record the **final frozen** manifest, and require that exact manifest to remain
 > unchanged through every final build, test, artifact inspection, and device run.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: L
@@ -76,7 +80,7 @@ finish release-scope assets/settings, measure before optimizing the renderer,
 add reproducible integration fixtures, then run one immutable source-to-artifact
 test/install matrix and reconcile documentation to only that evidence.
 
-## Current state
+## Original state
 
 - Latest local source gate: app JVM `971/0/0/0`, Mosh API `11/0/0/0`, and
   extension `8/0/0/0` tests/failures/errors/skipped. After adding the clean-install backup
@@ -167,7 +171,7 @@ test/install matrix and reconcile documentation to only that evidence.
   remaining manual, hosted, network, signing/store, and public-Mosh gates explicitly instead of
   fabricating conclusions for unavailable evidence.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 Use the repository-compatible JDK and one Gradle worker for reproducibility:
 
@@ -281,7 +285,7 @@ acting. Clean-install tests remain limited to disposable emulators/test users.
 - inventing a historical backup format if no documented pre-release contract
   exists; use the STOP condition below
 
-## Git workflow
+## Historical Git workflow
 
 - Freeze the source manifest before gates and re-hash it after each artifact run;
   no source may change between final build and device evidence.
@@ -290,7 +294,7 @@ acting. Clean-install tests remain limited to disposable emulators/test users.
 - Do not push, publish, or sign with production credentials unless explicitly
   authorized.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Establish a trustworthy test baseline
 
@@ -831,7 +835,7 @@ pending entries rather than synthesized passes.
   code and test credentials are absent from the main release APK.
 - Store only privacy-safe summaries in Git; raw traces/device dumps stay ignored.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] After the remaining Plan 005 source edits, the final frozen JVM,
       lintDebug/lintRelease, debug/release, Android-test assembly, Mosh API/extension,
@@ -879,7 +883,7 @@ clearance for an asset actually bundled by this plan, a required connected phone
 that is present but cannot be updated, or a failing executable gate does make it
 `BLOCKED` with one exact reason.
 
-## STOP conditions
+## Historical stop conditions
 
 Stop and report if:
 

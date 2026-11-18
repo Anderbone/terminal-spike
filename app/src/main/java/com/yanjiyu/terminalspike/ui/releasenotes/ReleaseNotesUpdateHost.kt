@@ -14,7 +14,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yanjiyu.terminalspike.core.data.settings.AppSettingsRepository
-import java.io.IOException
+import com.yanjiyu.terminalspike.core.data.repository.SettingsMutationCoordinator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,6 +24,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun ReleaseNotesUpdateHost(
     repository: AppSettingsRepository,
+    mutations: SettingsMutationCoordinator,
     ready: Boolean,
     canShow: Boolean,
 ) {
@@ -44,8 +46,10 @@ internal fun ReleaseNotesUpdateHost(
                     val info = context.packageManager.getPackageInfo(context.packageName, 0)
                     initialReleaseNotesRevision(info.firstInstallTime, info.lastUpdateTime, latestRevision)
                 }
-                repository.initializeReleaseNotes(baseline)
-            } catch (_: IOException) {
+                mutations.mutate { write { repository.initializeReleaseNotes(baseline) } }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 // Optional education must not block launch; the next launch can retry.
                 initializationFailed = true
             }
@@ -71,8 +75,10 @@ internal fun ReleaseNotesUpdateHost(
                 saveFailed = false
                 scope.launch {
                     try {
-                        repository.acknowledgeReleaseNotes(latestRevision)
-                    } catch (_: IOException) {
+                        mutations.mutate { write { repository.acknowledgeReleaseNotes(latestRevision) } }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
                         saveFailed = true
                     } finally {
                         saving = false

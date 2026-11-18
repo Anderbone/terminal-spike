@@ -1579,6 +1579,7 @@ internal fun SnippetEditorDialog(
                     Checkbox(
                         checked = draft.appendEnter,
                         onCheckedChange = { draft = draft.copy(appendEnter = it) },
+                        enabled = !saving,
                     )
                     Text(stringResource(R.string.snippet_editor_append_enter))
                 }
@@ -1586,6 +1587,7 @@ internal fun SnippetEditorDialog(
                     Checkbox(
                         checked = draft.isFavourite,
                         onCheckedChange = { draft = draft.copy(isFavourite = it) },
+                        enabled = !saving,
                     )
                     Text(stringResource(R.string.snippet_editor_favourite))
                 }
@@ -1852,12 +1854,14 @@ internal fun RenameKeyDialog(
                     onValueChange = { name = it.take(96) },
                     label = { Text(stringResource(R.string.key_editor_friendly_name)) },
                     singleLine = true,
+                    enabled = !saving,
                 )
                 OutlinedTextField(
                     value = comment,
                     onValueChange = { comment = it.take(256) },
                     label = { Text(stringResource(R.string.key_editor_comment_optional)) },
                     singleLine = true,
+                    enabled = !saving,
                 )
                 error?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
             }

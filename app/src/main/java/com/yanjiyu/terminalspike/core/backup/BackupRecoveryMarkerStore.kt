@@ -61,11 +61,18 @@ sealed class BackupRecoveryMarkerException(
  * format, encrypted directly with a non-exportable Android Keystore AES-256-GCM key. No recovery
  * passphrase, plaintext temporary file, or Android Keystore key is written to disk.
  */
-class AndroidBackupRecoveryMarkerStore(
+class AndroidBackupRecoveryMarkerStore internal constructor(
     context: Context,
-    private val payloads: BackupPayloadCodec = BackupPayloadCodec(),
-    private val keyAlias: String = DEFAULT_KEY_ALIAS,
+    private val payloads: BackupPayloadCodec,
+    private val keyAlias: String,
+    private val mutex: Mutex,
 ) : BackupRecoveryMarkerStore {
+    constructor(
+        context: Context,
+        payloads: BackupPayloadCodec = BackupPayloadCodec(),
+        keyAlias: String = DEFAULT_KEY_ALIAS,
+    ) : this(context, payloads, keyAlias, Mutex())
+
     private val file = AtomicFile(
         context.applicationContext.noBackupFilesDir
             .resolve(RECOVERY_DIRECTORY)
@@ -73,7 +80,6 @@ class AndroidBackupRecoveryMarkerStore(
     )
     // AtomicFile.openRead() promotes this legacy backup to the base file after an interrupted write.
     private val legacyBackupFile = File("${file.baseFile.path}.bak")
-    private val mutex = Mutex()
 
     init {
         require(keyAlias.length in 1..MAX_ALIAS_LENGTH && keyAlias.none(Char::isISOControl)) {
@@ -81,35 +87,38 @@ class AndroidBackupRecoveryMarkerStore(
         }
     }
 
-    override suspend fun writeAndWipe(snapshot: BackupPayloadSnapshot) = mutex.withLock {
-        var output: java.io.FileOutputStream? = null
-        try {
-            if (hasPendingRecovery()) throw BackupRecoveryMarkerException.AlreadyPending()
-            require(snapshot.mode == BackupMode.FULL) {
-                "A destructive import recovery marker must include portable credentials."
+    override suspend fun writeAndWipe(snapshot: BackupPayloadSnapshot) = try {
+        mutex.withLock {
+            var output: java.io.FileOutputStream? = null
+            try {
+                if (hasPendingRecovery()) throw BackupRecoveryMarkerException.AlreadyPending()
+                require(snapshot.mode == BackupMode.FULL) {
+                    "A destructive import recovery marker must include portable credentials."
+                }
+                file.baseFile.parentFile?.mkdirs()
+                require(file.baseFile.parentFile?.isDirectory == true) {
+                    "Private recovery storage is unavailable."
+                }
+                val cipher = encryptionCipher()
+                val header = encodeHeader(requireNotNull(cipher.iv))
+                val activeOutput = file.startWrite()
+                output = activeOutput
+                activeOutput.write(header)
+                cipher.updateAAD(header)
+                CipherOutputStream(NonClosingOutputStream(activeOutput), cipher).use { encrypted ->
+                    payloads.writeAndWipeSecrets(snapshot, encrypted)
+                }
+                activeOutput.fd.sync()
+                file.finishWrite(activeOutput)
+                output = null
+            } catch (error: Throwable) {
+                output?.let(file::failWrite)
+                throw error
             }
-            file.baseFile.parentFile?.mkdirs()
-            require(file.baseFile.parentFile?.isDirectory == true) {
-                "Private recovery storage is unavailable."
-            }
-            val cipher = encryptionCipher()
-            val header = encodeHeader(requireNotNull(cipher.iv))
-            val activeOutput = file.startWrite()
-            output = activeOutput
-            activeOutput.write(header)
-            cipher.updateAAD(header)
-            CipherOutputStream(NonClosingOutputStream(activeOutput), cipher).use { encrypted ->
-                payloads.writeAndWipeSecrets(snapshot, encrypted)
-            }
-            activeOutput.fd.sync()
-            file.finishWrite(activeOutput)
-            output = null
-        } catch (error: Throwable) {
-            output?.let(file::failWrite)
-            throw error
-        } finally {
-            snapshot.close()
         }
+    } finally {
+        // Cancellation can happen while waiting for the mutex, before its block is entered.
+        snapshot.close()
     }
 
     override suspend fun read(): BackupPayloadSnapshot? = mutex.withLock {

@@ -286,7 +286,9 @@ private fun CustomThemeLivePreview(theme: TerminalTheme) {
 internal fun parseOpaqueArgb(value: String): Int? {
     val candidate = value.trim()
     if (candidate.length != MAX_HEX_COLOUR_LENGTH || candidate.firstOrNull() != '#') return null
-    val rgb = candidate.drop(1).toIntOrNull(16) ?: return null
+    val digits = candidate.drop(1)
+    if (digits.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) return null
+    val rgb = digits.toInt(16)
     return OPAQUE_ALPHA or rgb
 }
 

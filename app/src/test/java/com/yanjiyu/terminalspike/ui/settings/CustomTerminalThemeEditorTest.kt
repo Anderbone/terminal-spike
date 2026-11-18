@@ -15,6 +15,25 @@ class CustomTerminalThemeEditorTest {
     }
 
     @Test
+    fun signedNumbersAreNotSixDigitHexColours() {
+        assertNull(parseOpaqueArgb("#+12345"))
+        assertNull(parseOpaqueArgb("#-00001"))
+    }
+
+    @Test
+    fun nonAsciiNumeralsAreNotHexColourDigits() {
+        assertNull(parseOpaqueArgb("#１２３４５６"))
+        assertNull(parseOpaqueArgb("#١٢٣٤٥٦"))
+    }
+
+    @Test
+    fun validColourBoundariesAndOuterWhitespaceRemainSupported() {
+        assertEquals(0xff000000.toInt(), parseOpaqueArgb("#000000"))
+        assertEquals(0xffffffff.toInt(), parseOpaqueArgb("#ffffff"))
+        assertEquals(0xff12abef.toInt(), parseOpaqueArgb("  #12AbEf  "))
+    }
+
+    @Test
     fun previewMappingPreservesEveryColourAndBoldBrightChoice() {
         val draft = CustomTerminalThemeDraft(
             name = "Ocean",

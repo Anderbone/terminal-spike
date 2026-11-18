@@ -1,9 +1,8 @@
 import importlib.util
 from pathlib import Path
 import struct
-import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 SPEC = importlib.util.spec_from_file_location('cleanup', Path(__file__).resolve().parents[1]/'cleanup-herdr-mosh.py')
 M = importlib.util.module_from_spec(SPEC)
@@ -58,6 +57,109 @@ class CleanupTest(unittest.TestCase):
                  patch.object(M, 'processes', return_value=current), \
                  patch.object(M, 'disconnected_pids', return_value=set() if change=='active' else {10}):
                 self.assertFalse(M.terminate(record));send.assert_not_called()
+
+    def test_missing_parent_never_opens_a_child_or_signals(self):
+        with patch.object(M.os, 'pidfd_open', side_effect=ProcessLookupError()) as opened, \
+             patch.object(M.os, 'close') as close, \
+             patch.object(M, 'processes') as processes, \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            self.assertFalse(M.terminate(dict(pid=10, child=11)))
+        opened.assert_called_once_with(10)
+        close.assert_not_called()
+        processes.assert_not_called()
+        send.assert_not_called()
+
+    def test_child_disappearing_during_open_closes_the_acquired_parent(self):
+        with patch.object(M.os, 'pidfd_open', side_effect=[20, ProcessLookupError()]) as opened, \
+             patch.object(M.os, 'close') as close, \
+             patch.object(M, 'processes') as processes, \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            self.assertFalse(M.terminate(dict(pid=10, child=11)))
+        self.assertEqual([call(10), call(11)], opened.call_args_list)
+        close.assert_called_once_with(20)
+        processes.assert_not_called()
+        send.assert_not_called()
+
+    def test_child_open_permission_failure_propagates_after_closing_parent(self):
+        failure = PermissionError('fixture access denied')
+        with patch.object(M.os, 'pidfd_open', side_effect=[20, failure]), \
+             patch.object(M.os, 'close') as close, \
+             patch.object(M, 'processes') as processes, \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            with self.assertRaises(PermissionError) as raised:
+                M.terminate(dict(pid=10, child=11))
+        self.assertIs(failure, raised.exception)
+        close.assert_called_once_with(20)
+        processes.assert_not_called()
+        send.assert_not_called()
+
+    def test_validated_signal_closes_both_descriptors_exactly_once(self):
+        record = dict(pid=10, child=11, start=100, child_start=101)
+        table = {10:dict(name='mosh-server', start=100, parent=1),
+                 11:dict(name='herdr', start=101, parent=10)}
+        with patch.object(M.os, 'pidfd_open', side_effect=[20, 21]), \
+             patch.object(M.os, 'close') as close, \
+             patch.object(M, 'processes', return_value=table), \
+             patch.object(M, 'disconnected_pids', return_value={10}), \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            self.assertTrue(M.terminate(record))
+        send.assert_called_once_with(20, M.signal.SIGTERM)
+        self.assertCountEqual([call(20), call(21)], close.call_args_list)
+
+    def test_failed_revalidation_releases_both_descriptors_without_signalling(self):
+        record = dict(pid=10, child=11, start=100, child_start=101)
+        for table in ({}, {10:dict(name='unrelated', start=100, parent=1),
+                              11:dict(name='herdr', start=101, parent=10)}):
+            with self.subTest(table=table), \
+                 patch.object(M.os, 'pidfd_open', side_effect=[20, 21]), \
+                 patch.object(M.os, 'close') as close, \
+                 patch.object(M, 'processes', return_value=table), \
+                 patch.object(M.signal, 'pidfd_send_signal') as send:
+                self.assertFalse(M.terminate(record))
+                send.assert_not_called()
+                self.assertCountEqual([call(20), call(21)], close.call_args_list)
+        failure = OSError('fixture procfs failure')
+        with patch.object(M.os, 'pidfd_open', side_effect=[20, 21]), \
+             patch.object(M.os, 'close') as close, \
+             patch.object(M, 'processes', side_effect=failure), \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            with self.assertRaises(OSError) as raised:
+                M.terminate(record)
+        self.assertIs(failure, raised.exception)
+        send.assert_not_called()
+        self.assertCountEqual([call(20), call(21)], close.call_args_list)
+
+    def test_signal_races_and_errors_release_both_pinned_identities(self):
+        record = dict(pid=10, child=11, start=100, child_start=101)
+        table = {10:dict(name='mosh-server', start=100, parent=1),
+                 11:dict(name='herdr', start=101, parent=10)}
+        for failure in (ProcessLookupError(), PermissionError('fixture signal denied')):
+            with self.subTest(failure=type(failure).__name__), \
+                 patch.object(M.os, 'pidfd_open', side_effect=[20, 21]), \
+                 patch.object(M.os, 'close') as close, \
+                 patch.object(M, 'processes', return_value=table), \
+                 patch.object(M, 'disconnected_pids', return_value={10}), \
+                 patch.object(M.signal, 'pidfd_send_signal', side_effect=failure) as send:
+                if isinstance(failure, ProcessLookupError):
+                    self.assertFalse(M.terminate(record))
+                else:
+                    with self.assertRaises(PermissionError) as raised:
+                        M.terminate(record)
+                    self.assertIs(failure, raised.exception)
+                send.assert_called_once_with(20, M.signal.SIGTERM)
+                self.assertCountEqual([call(20), call(21)], close.call_args_list)
+
+    def test_one_close_failure_does_not_leak_the_other_descriptor(self):
+        failure = OSError('fixture close failure')
+        with patch.object(M.os, 'pidfd_open', side_effect=[20, 21]), \
+             patch.object(M.os, 'close', side_effect=[failure, None]) as close, \
+             patch.object(M, 'processes', return_value={}), \
+             patch.object(M.signal, 'pidfd_send_signal') as send:
+            with self.assertRaises(OSError) as raised:
+                M.terminate(dict(pid=10, child=11))
+        self.assertIs(failure, raised.exception)
+        self.assertCountEqual([call(20), call(21)], close.call_args_list)
+        send.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

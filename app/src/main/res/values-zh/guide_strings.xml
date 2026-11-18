@@ -13,7 +13,7 @@
     <string name="guide_tip_edit_title">编辑命令片段</string>
     <string name="guide_tip_edit_caption">点按 ✎，再点按保存的片段进行编辑。</string>
     <string name="guide_tip_recent_title">最近项目</string>
-    <string name="guide_tip_recent_caption">在 Herdr 中长按“新建工作区”以选择最近项目。</string>
+    <string name="guide_tip_recent_caption">在 Herdr 中点按“新建工作区”选择最近项目，长按则直接新建默认工作区。</string>
     <string name="guide_tip_close_tab_title">关闭标签页</string>
     <string name="guide_tip_close_tab_caption">在 Herdr 中双击编号标签页即可关闭。</string>
     <string name="guide_tip_close_space_title">关闭空间</string>
@@ -70,12 +70,9 @@
     <string name="guide_files_download">选择项目后点按“下载”，在支持的 Android 版本保存到下载目录；或选“另存到…”指定手机文件夹。下载文件夹时包含其内容。</string>
     <string name="guide_files_refresh">外部更改后，下拉文件列表刷新。使用“上一级”返回父目录。</string>
     <string name="guide_start">开始指南</string>
-    <string name="guide_skip">跳过</string>
     <string name="guide_close">关闭</string>
     <string name="guide_next">下一步</string>
     <string name="guide_previous">返回</string>
-    <string name="guide_done">开始使用</string>
-    <string name="guide_finish">完成</string>
     <string name="guide_page_description">第 %1$d 页，共 %2$d 页：%3$s</string>
     <string name="guide_pause">暂停演示</string>
     <string name="guide_play">播放演示</string>
@@ -93,8 +90,9 @@
     <string name="guide_herdr_git">Git 箭头和工作树标记需要 Herdr 或现有状态提供方的 Git 元数据。没有标记不代表仓库干净。勾号表示明确报告的干净工作树，不代表所有提交已推送。从 Codex 终端标题自动命名任务也需要兼容的开发版 Herdr 服务端。</string>
     <string name="guide_herdr_apply">运行 herdr config check，再在目标会话的 Herdr 菜单中重新加载配置并检查诊断。不支持的选项请移除。确认任务选择和菜单正常，折叠与展开时布局符合预期。撤销时恢复备份并重新加载。</string>
     <string name="guide_herdr_reattach">安装新的 Herdr 可执行文件后，在 Herdr 菜单中分离，再重新连接同一会话。仅重连 Mosh 可能保留旧客户端。服务端、空间和任务可继续运行，不要为应用布局更改而停止服务端。</string>
+    <string name="guide_herdr_scroll">平滑滚动：只有当 Codex、pi 和 Claude Code 把内容输出到 Herdr 的终端历史时，才能使用 Android 的像素级滚动和惯性。Claude Code 的全屏界面自己保存历史，所以滑动时会一行一行跳。推荐在运行 Herdr 的电脑上加入下方 shell 片段，让 Claude 只在 Herdr 内以 inline 方式启动。它只影响新 Herdr 窗格中启动的 Claude，正在运行的会话不受影响。若要切换正在进行的对话，在其中输入 /tui default（/tui fullscreen 可恢复全屏）。pi 请使用 pi --tui-mode regular。</string>
     <string name="guide_herdr_agent_intro">需要协助设置？复制下方说明给有权限访问所连接电脑的智能体。说明要求更改配置并保留运行中的任务。</string>
-    <string name="guide_herdr_agent_prompt">请在我的 SSH/Mosh 连接使用的电脑上配置适合 Terminal Spike 的 Herdr。确认主机、实际可执行文件、版本和配置路径，遵守 HERDR_CONFIG_PATH 与 XDG_CONFIG_HOME。备份配置并合并支持的 [ui] 键：mouse_capture=true、mobile_width_threshold=64、status_indicators=\"dots\"。建议用 pane_gaps=false、pane_outer_borders=false、pane_scrollbars=false 实现紧凑窗格。仅在构建支持时启用 grouped_sidebar=true。说明分组任务列表、编号顶栏标签、紧凑标签和自动任务命名需要兼容的开发版 Herdr，单靠 Android APK 或宽度设置无法提供。保留现有 Git 状态提供方，不要在缺少元数据时虚构干净状态。保留其他设置、快捷键、连接和运行任务，不重复 TOML 表。不替换程序、不修改源码、不停服务、不杀窗格、不重建工作区。用 herdr config check 验证，重新加载目标会话并检查诊断，说明是否需要分离再连接。报告最小差异、回退步骤和实际检查，不含机密。</string>
+    <string name="guide_herdr_agent_prompt">请在我的 SSH/Mosh 连接使用的电脑上配置适合 Terminal Spike 的 Herdr。确认主机、实际可执行文件、版本和配置路径，遵守 HERDR_CONFIG_PATH 与 XDG_CONFIG_HOME。备份配置并合并支持的 [ui] 键：mouse_capture=true、mobile_width_threshold=64、status_indicators=\"dots\"。建议用 pane_gaps=false、pane_outer_borders=false、pane_scrollbars=false 实现紧凑窗格。仅在构建支持时启用 grouped_sidebar=true。说明分组任务列表、编号顶栏标签、紧凑标签和自动任务命名需要兼容的开发版 Herdr，单靠 Android APK 或宽度设置无法提供。保留现有 Git 状态提供方，不要在缺少元数据时虚构干净状态。保留其他设置、快捷键、连接和运行任务，不重复 TOML 表。不替换程序、不修改源码、不停服务、不杀窗格、不重建工作区。用 herdr config check 验证，重新加载目标会话并检查诊断，说明是否需要分离再连接。为让 Claude Code 平滑滚动，添加一段 shell 启动片段，仅在设置了 HERDR_ENV 时导出 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1；不要修改全局 Claude 设置，也不要重启正在运行的 Claude 会话。报告最小差异、回退步骤和实际检查，不含机密。</string>
     <string name="guide_copy_settings">复制设置</string>
     <string name="guide_copy_agent_instructions">复制给智能体的说明</string>
     <string name="guide_copied">已复制</string>

@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -22,6 +23,8 @@ class RealCodexTmuxDeviceRunnerTest(unittest.TestCase):
             "sanitize-real-codex-instrumentation.py",
             "sanitize-real-codex-tmux-log.py",
             "assert-test-report.py",
+            "junit_report.py",
+            "device_test_safety.py",
         ):
             shutil.copy2(SOURCE_ROOT / "scripts" / name, scripts / name)
             (scripts / name).chmod(0o755)
@@ -58,6 +61,13 @@ fi
 """,
         )
         self.write_tool(self.bin / "node", ":\n")
+        self.write_tool(self.bin / "aapt", r'''if [[ "$2" == badging ]]; then
+  if [[ "$3" == *androidTest* ]]; then suffix=.test; else suffix=; fi
+  printf "package: name='com.yanjiyu.terminalspike.deviceverify%s'\n" "$suffix"
+else
+  printf '  E: instrumentation (line=1)\n    A: android:name="com.yanjiyu.terminalspike.TerminalSpikeTestRunner"\n    A: android:targetPackage="com.yanjiyu.terminalspike.deviceverify"\n'
+fi
+''')
         self.write_tool(self.bin / "ssh", "printf 'ssh verified\\n' >> \"$FAKE_COMMAND_LOG\"\n")
         self.write_tool(
             self.bin / "adb",
@@ -68,6 +78,7 @@ case "$*" in
       "$FAKE_SERIAL" "${FAKE_INVENTORY_MODEL:-SM_S911B}"
     ;;
   *" get-state") printf 'device\n' ;;
+  *"shell getprop ro.serialno") printf '%s\n' "${FAKE_HARDWARE_SERIAL:-R28M227XA0E}" ;;
   *"shell getprop ro.product.model") printf '%s\n' "${FAKE_PROP_MODEL:-SM-S911B}" ;;
   *" install "*) [[ "${FAKE_INSTALL_FAIL:-0}" != 1 ]] ;;
   *"toybox nc -z"*) [[ "${FAKE_REACHABLE:-1}" == 1 ]] ;;
@@ -227,6 +238,191 @@ esac
             with self.subTest(extra=extra):
                 self.assertNotEqual(0, self.run_runner(*extra).returncode)
                 self.assert_private_state_clean()
+
+    def test_authorization_chmod_failure_does_not_leave_a_temporary_key(self) -> None:
+        real_chmod = shutil.which("chmod")
+        self.assertIsNotNone(real_chmod)
+        self.write_tool(
+            self.bin / "chmod",
+            'if [[ "$#" -eq 2 && "$1" == 0600 && "$2" == "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE" ]]; then exit 23; fi\n'
+            + f'exec "{real_chmod}" "$@"\n',
+        )
+        result = self.run_runner()
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assert_private_state_clean()
+        self.assertFalse(any(line.startswith("ssh ") for line in self.commands()))
+
+    def test_partial_append_without_the_comment_still_revokes_the_complete_key(self) -> None:
+        env = self.env.copy()
+        env["BASH_FUNC_printf%%"] = r"""() {
+if [[ "$#" -eq 2 && "$2" == ssh-ed25519*" terminal-spike-codex-e2e-"* ]]; then
+  builtin printf '%s' "${2% *}"
+  return 23
+fi
+builtin printf "$@"
+}"""
+        result = self.run_runner(env=env)
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assert_private_state_clean()
+        self.assertFalse(any(line.startswith("ssh ") for line in self.commands()))
+
+    def test_an_unrelated_key_comment_containing_the_marker_is_preserved(self) -> None:
+        self.write_tool(self.bin / "ssh", r"""
+marker="$(tail -n 1 "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE" | awk '{print $3}')"
+printf 'ssh-ed25519 AAAAOTHER unrelated-%s-comment\n' "$marker" >> "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE"
+""")
+        result = self.run_runner()
+        self.assertEqual(0, result.returncode, result.stderr)
+        lines = self.authorized_keys.read_text().splitlines()
+        self.assertEqual(2, len(lines))
+        self.assertEqual(self.original_authorized_keys.rstrip("\n"), lines[0])
+        self.assertTrue(lines[1].startswith("ssh-ed25519 AAAAOTHER unrelated-terminal-spike-codex-e2e-"))
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-real-codex.*")))
+
+    def test_a_preexisting_generated_key_is_refused_without_revoking_the_original(self) -> None:
+        self.write_tool(self.bin / "ssh-keygen", r"""
+comment=''
+keyfile=''
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -C) comment="$2"; shift 2 ;;
+    -f) keyfile="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'owned fake private material\n' > "$keyfile"
+printf 'ssh-ed25519 AAAATEST %s\n' "$comment" > "$keyfile.pub"
+""")
+        result = self.run_runner()
+        self.assertNotEqual(0, result.returncode)
+        self.assert_private_state_clean()
+        self.assertFalse(any(line.startswith("ssh ") for line in self.commands()))
+
+    def test_revocation_failures_are_reported_and_private_files_are_removed(self) -> None:
+        for operation in ("mktemp", "awk", "chmod", "mv"):
+            with self.subTest(operation=operation):
+                real_tool = shutil.which(operation)
+                self.assertIsNotNone(real_tool)
+                condition = (
+                    "[[ \"$*\" == *'marker='* || \"$*\" == *'!($1 == key_type && $2 == key_blob)'* ]]"
+                    if operation == "awk"
+                    else '[[ "$*" == *".authorized_keys.terminal-spike."* ]]'
+                )
+                self.write_tool(
+                    self.bin / operation,
+                    f'if {condition}; then exit 23; fi\nexec "{real_tool}" "$@"\n',
+                )
+                try:
+                    result = self.run_runner()
+                    self.assertEqual(70, result.returncode, result.stderr)
+                    self.assertIn("Failed to revoke", result.stderr)
+                    self.assertEqual([], list(self.tmp.glob("terminal-spike-real-codex.*")))
+                    self.assertEqual([], list(self.ssh_dir.glob(".authorized_keys.terminal-spike.*")))
+                    self.assertTrue(self.authorized_keys.read_text().startswith(self.original_authorized_keys))
+                finally:
+                    (self.bin / operation).unlink(missing_ok=True)
+                    self.authorized_keys.write_text(self.original_authorized_keys)
+                    for residue in self.ssh_dir.glob(".authorized_keys.terminal-spike.*"):
+                        residue.unlink()
+
+    def test_s10e_requires_the_authorized_hardware_before_install(self) -> None:
+        env = self.env.copy()
+        env.update(FAKE_INVENTORY_MODEL="SM_G9708", FAKE_PROP_MODEL="SM-G9708")
+        result = self.run_runner(env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assert_private_state_clean()
+        self.log.unlink()
+        env["FAKE_HARDWARE_SERIAL"] = "UNAUTHORIZED"
+        result = self.run_runner(env=env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(any(" install " in line or line.startswith("gradle ") for line in self.commands()))
+        self.assert_private_state_clean()
+
+    def test_two_runners_serialize_authorization_until_revocation(self) -> None:
+        real_flock = shutil.which("flock")
+        self.write_tool(self.bin / "flock", f'''printf 'lock-attempt\\n' >> "$FAKE_COMMAND_LOG"
+exec "{real_flock}" "$@"
+''')
+        self.write_tool(self.bin / "ssh", r'''touch "$FAKE_COMMAND_LOG.entered"
+while [[ ! -e "$FAKE_COMMAND_LOG.release" ]]; do sleep 0.01; done
+''')
+        command = [str(self.runner), "--serial", self.serial, "--host-address", "192.168.5.10", "--trusted-lan", "--output-dir"]
+        processes = []
+        def wait_for(predicate):
+            deadline = time.monotonic() + 8
+            while not predicate():
+                if time.monotonic() >= deadline:
+                    self.fail("fake runner interleaving did not reach its checkpoint")
+                time.sleep(0.01)
+        try:
+            processes.append(subprocess.Popen(command + [str(self.output)], cwd=self.root, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+            wait_for(lambda: Path(str(self.log) + ".entered").exists())
+            processes.append(subprocess.Popen(command + [str(self.root / "second-results")], cwd=self.root, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+            wait_for(lambda: self.commands().count("lock-attempt") == 2)
+            self.assertEqual(1, sum(line.startswith("gradle ") for line in self.commands()))
+            self.assertEqual(2, len(self.authorized_keys.read_text().splitlines()))
+            Path(str(self.log) + ".release").touch()
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=15)
+                self.assertEqual(0, process.returncode, stderr)
+                self.assertIn("REAL_CODEX_TMUX_RESULT", stdout)
+            self.assertEqual(2, sum(line.startswith("gradle ") for line in self.commands()))
+            self.assert_private_state_clean()
+        finally:
+            Path(str(self.log) + ".release").touch()
+            for process in processes:
+                if process.poll() is None:
+                    process.terminate()
+                process.communicate(timeout=10)
+
+    def test_external_append_during_filter_is_reloaded_and_preserved(self) -> None:
+        real_awk = shutil.which("awk")
+        self.write_tool(self.bin / "awk", f'''"{real_awk}" "$@"
+if [[ "$*" == *'!($1 == key_type && $2 == key_blob)'* && ! -e "$FAKE_COMMAND_LOG.appended" ]]; then
+  touch "$FAKE_COMMAND_LOG.appended"
+  printf 'ssh-ed25519 AAAACONCURRENT concurrent-key\\n' >> "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE"
+fi
+''')
+        result = self.run_runner()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(self.original_authorized_keys + "ssh-ed25519 AAAACONCURRENT concurrent-key\n", self.authorized_keys.read_text())
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-real-codex.*")))
+
+    def test_external_file_replacement_during_filter_is_reloaded(self) -> None:
+        real_awk = shutil.which("awk")
+        self.write_tool(self.bin / "awk", f'''"{real_awk}" "$@"
+if [[ "$*" == *'!($1 == key_type && $2 == key_blob)'* && ! -e "$FAKE_COMMAND_LOG.replaced" ]]; then
+  touch "$FAKE_COMMAND_LOG.replaced"
+  cp "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE" "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE.external"
+  printf 'ssh-ed25519 AAAAREPLACED replacement-key\\n' >> "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE.external"
+  mv "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE.external" "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE"
+fi
+''')
+        result = self.run_runner()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(self.original_authorized_keys + "ssh-ed25519 AAAAREPLACED replacement-key\n", self.authorized_keys.read_text())
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-real-codex.*")))
+
+    def test_continuously_changing_authorization_fails_without_overwriting_writer(self) -> None:
+        real_awk = shutil.which("awk")
+        self.write_tool(self.bin / "awk", f'''"{real_awk}" "$@"
+if [[ "$*" == *'!($1 == key_type && $2 == key_blob)'* ]]; then
+  printf 'ssh-ed25519 AAAACONCURRENT concurrent-key\\n' >> "$TERMINAL_SPIKE_AUTHORIZED_KEYS_FILE"
+fi
+''')
+        result = self.run_runner()
+        self.assertEqual(70, result.returncode, result.stderr)
+        self.assertEqual(3, self.authorized_keys.read_text().count("AAAACONCURRENT"))
+        self.assertIn("changed repeatedly", result.stderr)
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-real-codex.*")))
+        self.assertEqual([], list(self.ssh_dir.glob(".authorized_keys.terminal-spike.*")))
+
+    def test_main_app_artifact_refused_before_authorization_or_install(self) -> None:
+        self.write_tool(self.bin / "aapt", "printf \"package: name='com.yanjiyu.terminalspike'\\n\"\n")
+        result = self.run_runner()
+        self.assertNotEqual(0, result.returncode)
+        self.assert_private_state_clean()
+        self.assertFalse(any(" install " in line or line.startswith("ssh ") for line in self.commands()))
 
     def test_requires_newline_terminated_authorized_keys(self) -> None:
         self.authorized_keys.write_text("existing-without-newline", encoding="utf-8")

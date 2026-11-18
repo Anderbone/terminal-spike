@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.ui.connections
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -147,6 +148,281 @@ class NearbySshDiscoveryTest {
         assertTrue(boundary.stopDiscoveryCount > 0)
         controller.close()
     }
+
+    @Test
+    fun timedOutDiscoveryIgnoresEveryLateCallback() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            advanceTimeBy(101)
+            runCurrent()
+            val terminal = controller.state.value
+            assertEquals(
+                NearbySshDiscoveryState.Unavailable(NearbySshPickerMode.IN_APP, NearbySshDiscoveryFailure.TIMED_OUT),
+                terminal,
+            )
+
+            boundary.discoveryListener.onDiscoveryStopped()
+            assertEquals(terminal, controller.state.value)
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            assertEquals(terminal, controller.state.value)
+            boundary.discoveryListener.onServiceLost(CANDIDATE.id)
+            assertEquals(terminal, controller.state.value)
+            boundary.discoveryListener.onFailure(NearbySshBoundaryFailure.PERMISSION_DENIED)
+            assertEquals(terminal, controller.state.value)
+        }
+    }
+
+    @Test
+    fun timeoutResultsRemainStableAndCanStillBeSelected() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            advanceTimeBy(101)
+            runCurrent()
+            val results = NearbySshDiscoveryState.Results(listOf(CANDIDATE))
+            assertEquals(results, controller.state.value)
+
+            boundary.discoveryListener.onServiceFound(CANDIDATE.copy(id = "late", displayName = "Late server"))
+            assertEquals(results, controller.state.value)
+            boundary.discoveryListener.onServiceLost(CANDIDATE.id)
+            assertEquals(results, controller.state.value)
+            boundary.discoveryListener.onFailure(NearbySshBoundaryFailure.START_FAILED)
+            assertEquals(results, controller.state.value)
+            boundary.discoveryListener.onDiscoveryStopped()
+            assertEquals(results, controller.state.value)
+
+            controller.select(CANDIDATE.id)
+            boundary.requireResolutionListener().onResolved(RESOLVED)
+            assertEquals(SELECTED, controller.state.value)
+        }
+    }
+
+    @Test
+    fun failedDiscoveryDoesNotResolveItsOldCandidates() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            boundary.discoveryListener.onFailure(NearbySshBoundaryFailure.PERMISSION_DENIED)
+            val failure = controller.state.value
+            assertEquals(
+                NearbySshDiscoveryState.Unavailable(NearbySshPickerMode.IN_APP, NearbySshDiscoveryFailure.PERMISSION_DENIED),
+                failure,
+            )
+
+            controller.select(CANDIDATE.id)
+            assertNull(boundary.resolutionListener)
+            assertEquals(failure, controller.state.value)
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            boundary.discoveryListener.onDiscoveryStopped()
+            assertEquals(failure, controller.state.value)
+        }
+    }
+
+    @Test
+    fun timedOutResolutionRejectsLateSuccessAndFailure() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val resolution = boundary.requireResolutionListener()
+            advanceTimeBy(101)
+            runCurrent()
+            val timeout = controller.state.value
+            assertEquals(
+                NearbySshDiscoveryState.Unavailable(NearbySshPickerMode.IN_APP, NearbySshDiscoveryFailure.TIMED_OUT),
+                timeout,
+            )
+
+            resolution.onResolved(RESOLVED)
+            assertEquals(timeout, controller.state.value)
+            resolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            assertEquals(timeout, controller.state.value)
+        }
+    }
+
+    @Test
+    fun successfulResolutionRejectsLateCallbacksAndRepeatedSelection() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val resolution = boundary.requireResolutionListener()
+            resolution.onResolved(RESOLVED)
+            assertEquals(SELECTED, controller.state.value)
+
+            resolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            assertEquals(SELECTED, controller.state.value)
+            resolution.onResolved(RESOLVED.copy(hostname = "different.local"))
+            assertEquals(SELECTED, controller.state.value)
+            controller.select(CANDIDATE.id)
+            assertEquals(1, boundary.resolveCount)
+            assertEquals(SELECTED, controller.state.value)
+        }
+    }
+
+    @Test
+    fun failedResolutionRejectsLateSuccessAndRepeatedSelection() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val resolution = boundary.requireResolutionListener()
+            resolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            val failure = controller.state.value
+            assertEquals(
+                NearbySshDiscoveryState.Unavailable(NearbySshPickerMode.IN_APP, NearbySshDiscoveryFailure.RESOLVE_FAILED),
+                failure,
+            )
+
+            resolution.onResolved(RESOLVED)
+            assertEquals(failure, controller.state.value)
+            controller.select(CANDIDATE.id)
+            assertEquals(1, boundary.resolveCount)
+            assertEquals(failure, controller.state.value)
+        }
+    }
+
+    @Test
+    fun stoppedDiscoveryRetainsSelectableResultsWithoutAcceptingNewCallbacks() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            boundary.discoveryListener.onDiscoveryStopped()
+            val results = NearbySshDiscoveryState.Results(listOf(CANDIDATE))
+            assertEquals(results, controller.state.value)
+
+            boundary.discoveryListener.onServiceFound(CANDIDATE.copy(id = "late"))
+            assertEquals(results, controller.state.value)
+            boundary.discoveryListener.onServiceLost(CANDIDATE.id)
+            assertEquals(results, controller.state.value)
+            controller.select(CANDIDATE.id)
+            boundary.requireResolutionListener().onResolved(RESOLVED)
+            assertEquals(SELECTED, controller.state.value)
+        }
+    }
+
+    @Test
+    fun restartingDiscoveryStopsItsPreviousResolution() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val oldResolution = boundary.requireResolutionListener()
+            val stoppedBefore = boundary.stopResolutionCount
+
+            controller.start()
+            assertEquals(stoppedBefore + 1, boundary.stopResolutionCount)
+            val searching = NearbySshDiscoveryState.Searching(NearbySshPickerMode.IN_APP)
+            assertEquals(searching, controller.state.value)
+            oldResolution.onResolved(RESOLVED)
+            oldResolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            assertEquals(searching, controller.state.value)
+        }
+    }
+
+    @Test
+    fun duplicateSelectionDoesNotReplaceAnInFlightResolution() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val resolution = boundary.requireResolutionListener()
+            controller.select(CANDIDATE.id)
+            assertEquals(1, boundary.resolveCount)
+            resolution.onResolved(RESOLVED)
+            assertEquals(SELECTED, controller.state.value)
+        }
+    }
+
+    @Test
+    fun cancelAndCloseKeepLateCallbacksInert() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            controller.select(CANDIDATE.id)
+            val resolution = boundary.requireResolutionListener()
+            controller.cancel()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            resolution.onResolved(RESOLVED)
+            assertEquals(NearbySshDiscoveryState.Idle, controller.state.value)
+
+            controller.close()
+            controller.start()
+            controller.select(CANDIDATE.id)
+            resolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            assertEquals(NearbySshDiscoveryState.Idle, controller.state.value)
+            assertEquals(1, boundary.resolveCount)
+        }
+    }
+
+    @Test
+    fun timeoutRetiresDiscoveryBeforeBoundaryStopCanDeliverMoreServices() = runTest {
+        withDiscovery { boundary, controller ->
+            controller.start()
+            boundary.onStopDiscovery = { boundary.discoveryListener.onServiceFound(CANDIDATE) }
+            advanceTimeBy(101)
+            runCurrent()
+
+            assertEquals(
+                NearbySshDiscoveryState.Unavailable(NearbySshPickerMode.IN_APP, NearbySshDiscoveryFailure.TIMED_OUT),
+                controller.state.value,
+            )
+            assertNull(boundary.resolutionListener)
+        }
+    }
+
+    @Test
+    fun dismissedSystemPickerRejectsItsLateSelection() = runTest {
+        withDiscovery(NearbySshPickerMode.SYSTEM) { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onDiscoveryStopped()
+            val dismissed = NearbySshDiscoveryState.Unavailable(
+                NearbySshPickerMode.SYSTEM,
+                NearbySshDiscoveryFailure.NO_SELECTION,
+            )
+            assertEquals(dismissed, controller.state.value)
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            assertEquals(dismissed, controller.state.value)
+            assertNull(boundary.resolutionListener)
+        }
+    }
+
+    @Test
+    fun systemPickerAutomaticallyResolvesOnceAndKeepsItsSelectedEndpoint() = runTest {
+        withDiscovery(NearbySshPickerMode.SYSTEM) { boundary, controller ->
+            controller.start()
+            boundary.discoveryListener.onServiceFound(CANDIDATE)
+            assertEquals(1, boundary.resolveCount)
+            val resolution = boundary.requireResolutionListener()
+            resolution.onResolved(RESOLVED)
+            assertEquals(SELECTED, controller.state.value)
+            resolution.onFailure(NearbySshBoundaryFailure.RESOLVE_FAILED)
+            assertEquals(SELECTED, controller.state.value)
+        }
+    }
+
+    private fun TestScope.withDiscovery(
+        mode: NearbySshPickerMode = NearbySshPickerMode.IN_APP,
+        test: (FakeNearbySshBoundary, DefaultNearbySshDiscoveryController) -> Unit,
+    ) {
+        val boundary = FakeNearbySshBoundary(mode)
+        val controller = DefaultNearbySshDiscoveryController(
+            boundary,
+            StandardTestDispatcher(testScheduler),
+            timeoutMillis = 100,
+        )
+        try {
+            test(boundary, controller)
+        } finally {
+            controller.close()
+        }
+    }
+
+    private companion object {
+        val CANDIDATE = NearbySshServiceCandidate("office", "Office server")
+        val RESOLVED = ResolvedNearbySshService("Office server", "office.local.", emptyList(), 22)
+        val SELECTED = NearbySshDiscoveryState.Selected(NearbySshEndpoint("Office server", "office.local", 22))
+    }
 }
 
 private class FakeNearbySshBoundary(
@@ -155,6 +431,9 @@ private class FakeNearbySshBoundary(
     lateinit var discoveryListener: NearbySshDiscoveryBoundary.DiscoveryListener
     var resolutionListener: NearbySshDiscoveryBoundary.ResolutionListener? = null
     var stopDiscoveryCount = 0
+    var onStopDiscovery: (() -> Unit)? = null
+    var stopResolutionCount = 0
+    var resolveCount = 0
 
     override fun start(listener: NearbySshDiscoveryBoundary.DiscoveryListener) {
         discoveryListener = listener
@@ -162,16 +441,20 @@ private class FakeNearbySshBoundary(
 
     override fun stopDiscovery() {
         stopDiscoveryCount += 1
+        onStopDiscovery?.also { onStopDiscovery = null }?.invoke()
     }
 
     override fun resolve(
         candidateId: String,
         listener: NearbySshDiscoveryBoundary.ResolutionListener,
     ) {
+        resolveCount += 1
         resolutionListener = listener
     }
 
-    override fun stopResolution() = Unit
+    override fun stopResolution() {
+        stopResolutionCount += 1
+    }
 
     override fun close() = Unit
 

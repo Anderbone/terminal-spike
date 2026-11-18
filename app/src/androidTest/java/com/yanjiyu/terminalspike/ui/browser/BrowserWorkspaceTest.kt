@@ -99,6 +99,32 @@ class BrowserWorkspaceTest {
         server.close(); executor.shutdownNow()
     }
 
+    @Test fun hiddenBrowserKeepsNavigationAndRequestRestrictions() {
+        val tab = open()
+        compose.onNodeWithTag("terminal-session-tab-1").performClick()
+        compose.onNodeWithTag("browser-test-terminal").assertIsDisplayed()
+        compose.runOnIdle {
+            val view = requireNotNull(tab.view)
+            val client = view.webViewClient
+            fun request(url: String) = object : android.webkit.WebResourceRequest {
+                override fun getUrl() = android.net.Uri.parse(url)
+                override fun isForMainFrame() = true
+                override fun isRedirect() = false
+                override fun hasGesture() = false
+                override fun getMethod() = "GET"
+                override fun getRequestHeaders() = emptyMap<String, String>()
+            }
+            val entered = request(tab.address)
+            val otherHttp = request("http://127.0.0.1:1/outside")
+            assertFalse(client.shouldOverrideUrlLoading(view, entered))
+            assertNull(client.shouldInterceptRequest(view, entered))
+            assertTrue(client.shouldOverrideUrlLoading(view, otherHttp))
+            assertNotNull(client.shouldInterceptRequest(view, otherHttp))
+            assertTrue(client.shouldOverrideUrlLoading(view, request("intent://outside/")))
+            assertFalse(client.shouldOverrideUrlLoading(view, request("https://other.example/")))
+        }
+    }
+
     @Test fun browserRetainsLiveEditorWhenReturningToTerminal() {
         val tab = open()
         val originalView = tab.view

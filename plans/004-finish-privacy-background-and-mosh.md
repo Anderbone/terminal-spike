@@ -1,5 +1,9 @@
 # Plan 004: Finish privacy, background-session, recent-identity, and Mosh transition policies
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Execute only after Plans 001 and 002. This plan
 > crosses persistence, Android services, and the optional Mosh boundary; keep its
 > types non-secret and lifecycle-owned. Preserve the separate extension APK and
@@ -10,7 +14,7 @@
 > `git status --short` as this plan's post-dependency baseline, then
 > run `git diff --stat ff8435bc100f381f6925202259017e7834f7233d..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/SessionForegroundService.kt app/src/main/java/com/yanjiyu/terminalspike/connection app/src/main/java/com/yanjiyu/terminalspike/core app/src/main/java/com/yanjiyu/terminalspike/ui app/src/main/proto app/schemas`. Stop on semantic drift in recent-session schema, notification actions, credential aggregates, or the Mosh client API.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: L
@@ -61,7 +65,7 @@ though the versioned API already supports them.
 This plan finishes those contracts without persisting raw quick-connect
 endpoints or weakening the application-owned session lifecycle.
 
-## Current state
+## Original state
 
 - `core/model/RecentSession.kt:3-35` intentionally stores display-safe history
   and only reaches raw endpoint data through nullable `hostProfileId`.
@@ -96,7 +100,7 @@ endpoints or weakening the application-owned session lifecycle.
 - Plan 001 supplies the shared authoritative mutation gate; use it for bulk
   credential and recent-identity migration writes.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 ```bash
 export JAVA_HOME=/home/jiyu/.cache/terminal-spike-tools/jdk
@@ -187,14 +191,14 @@ fi
   distribution policy
 - analytics, network logging, SSID/BSSID/address persistence
 
-## Git workflow
+## Historical Git workflow
 
 - Preserve the current dirty tree and all schema history.
 - If authorized to commit, use focused messages such as
   `fix: deduplicate recent endpoints privately`.
 - Never commit Keystore material, endpoint fixtures, APKs, or device dumps.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Persist a privacy-safe endpoint identity for Recent rows
 
@@ -415,7 +419,7 @@ notice.
 - Extend Mosh connection/client tests and controlled Binder instrumentation; do
   not require a real server until Plan 005 acceptance.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Repeated same-endpoint quick/saved/deleted-host sessions show and retain
       one Recent connection without storing raw endpoint metadata.
@@ -438,7 +442,7 @@ notice.
       on every authorized phone with foreground proof, or no-device skip is
       explicitly reported.
 
-## STOP conditions
+## Historical stop conditions
 
 Stop and report if:
 

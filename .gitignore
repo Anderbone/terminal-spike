@@ -10,3 +10,4 @@ captures/
 *.aab
 __pycache__/
 *.py[cod]
+/store-assets/user-guide/.guide-captures-*/

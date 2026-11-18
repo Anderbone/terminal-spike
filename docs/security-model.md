@@ -1,6 +1,6 @@
 status: active
 created_at: 2026-08-08T10:42:15.487Z
-updated_at: 2026-08-10
+updated_at: 2026-11-16
 done_at: none
 independent: no
 dependencies: docs/architecture.md
@@ -9,7 +9,10 @@ dependencies: docs/architecture.md
 
 ## Open Questions
 
-- None for local implementation. Final Mosh-extension distribution needs the specialist GPL/Play-signing review described in `docs/mosh-extension-protocol.md`.
+- No new architecture decision is proposed here. [ADR-005](ADR-005-BUNDLED-MOSH.md)
+  supersedes the former separate-extension model with one APK and private Mosh processes.
+  Remaining runtime acceptance limits are recorded below; licence and source-distribution
+  requirements are maintained in [LICENSING.md](../LICENSING.md).
 
 ## Security goals
 
@@ -17,7 +20,8 @@ dependencies: docs/architecture.md
 - Passwords, private keys, saved passphrases, and Mosh session keys are encrypted or absent in app-private storage and narrowly scoped in memory. Portable backup files are a user-controlled exception and must be kept private.
 - Terminal contents, snippets, credentials, and complete connection strings do not enter ordinary logs, notifications, analytics, crash upload, or hidden network requests.
 - A lost/corrupt/invalidated device key produces an explicit recoverable state; it never silently erases user data.
-- Main-app compromise is not expanded by an unverified extension package, and the extension never receives saved SSH authentication material.
+- The app binds only its own private Mosh broker. Broker and worker processes receive no saved
+  SSH authentication material; they share the app UID and are not a separate storage sandbox.
 - Backup confidentiality and authenticity do not depend on exporting Android Keystore material.
 
 ## Trust boundaries
@@ -26,8 +30,10 @@ dependencies: docs/architecture.md
 2. Non-exportable Android Keystore keys used by the main app.
 3. Remote SSH server and all terminal output, which are untrusted.
 4. Android IME and clipboard, which are user-selected system components but may retain entered data.
-5. Storage Access Framework providers, which receive only user-selected encrypted backup/custom-font/transcript files.
-6. Optional Mosh extension APK, which is a separate UID/process and remains untrusted until package, signature, permission, and API checks pass.
+5. Storage Access Framework providers, which receive user-selected imports and exports, including
+   credential-bearing portable backups, custom fonts, attachments and transcripts.
+6. Built-in Mosh broker and worker processes, which are private services in the same APK/UID.
+   Process separation isolates native session globals and lifecycle, not app-private storage.
 7. Android notifications/recents/screenshots, which can expose UI to the lock screen or physical observers unless privacy controls apply.
 8. The user-installed Android speech recognition service. Voice input requests offline processing,
    holds interim/final text only in the terminal composer, and never opens an app-owned network
@@ -53,6 +59,11 @@ Decryption occurs on an I/O dispatcher immediately before transport or backup us
 Credential metadata contains only kind, display-safe reference information, creation/update timestamps, protection/provenance flags, and public key material/fingerprint where applicable. Hosts reference a credential UUID; they do not duplicate secrets.
 
 ### Failure and recovery
+
+Interrupted key imports do not replay saved document work. A device-local recovery marker stores only two booleans, committed before an import acquires a persistable read grant or reads key bytes. Existing saved keys and metadata remain intact; a transaction may already have committed before interruption, so recovery asks the user to check the key list before selecting a file or pasting again. Picker results without an owner in the current ViewModel are rejected.
+
+Key import currently owns the app's persisted document read grants. A process-wide coordinator retains them until all live imports finish and releases grants left by an earlier process on startup; another feature must establish separate ownership before retaining its own grants. Grant-release failures preserve a retry marker, and cleanup or acknowledgement write failures may repeat the recovery prompt after restart. Provider exception details and document URIs are excluded from recovery logs and marker storage.
+
 
 - Missing ciphertext, invalid GCM tag, invalidated/unavailable Keystore key, and malformed version are distinct typed errors.
 - The store does not delete ciphertext or Keystore aliases on a read failure.
@@ -101,7 +112,7 @@ codes and never include caller-provided detail, endpoint text, exception message
 Debug diagnostics are capped at 2,048 characters and pass through `SensitiveLogRedactor`; redaction
 is defense in depth, so production callers must still avoid supplying decrypted secret material.
 
-Release builds disable verbose JSch/native protocol logs, transcript logs, automatic crash upload, analytics identifiers, telemetry, advertising, cloud sync, and account requests. About includes a concise local-first statement and the exact backup/extension exceptions.
+Release builds disable verbose JSch/native protocol logs, transcript logs, automatic crash upload, analytics identifiers, telemetry, advertising, cloud sync, and account requests. About describes the local-first product; portable backups must be treated as access to their included credentials.
 
 ## Terminal-originated capabilities
 
@@ -118,21 +129,35 @@ Remote terminal output is untrusted input.
 
 The app exposes one complete, authenticated portable backup without a passphrase prompt. It contains portable saved passwords, private keys, saved passphrases, settings, profiles, snippets, and referenced fonts. Its app-defined portability material detects corruption but is not a confidentiality boundary, so possession of the file must be treated as access to those credentials. Android Keystore masters, live sockets, temporary prompts, Mosh keys, logs, and transcripts are never exported. The exact format and transaction behavior are in `docs/backup-format.md`.
 
-## Mosh extension security
+## Built-in Mosh security
 
-The implemented local/debug boundary is defensive on both sides:
+The current boundary follows [ADR-005](ADR-005-BUNDLED-MOSH.md). Existing class and API names
+still use “extension”; no separately installed extension is selected.
 
-- The main app binds one explicit package/component protected by a signature permission. It validates the service declaration, permission owner/protection, installed signing certificate/lineage, API range, model version, capabilities, and session limit before use.
-- The extension verifies the Binder caller UID resolves to the exact main-app package with a matching signature on every entry point. Its broker and ten private worker processes are separate from the main application's UID/process.
+- The main app binds its own explicit broker component. Discovery requires the service to be
+  enabled, not exported, in the app UID and in `:mosh_broker`; API range, model version,
+  capabilities and transport capacity are negotiated before use.
+- The broker checks the Binder caller UID equals its own UID, resolves to the exact main-app
+  package and has a matching signature on every public entry point. The broker and ten private
+  worker services run in separate processes under that same UID. This is not cross-app binding
+  or a separate signing/permission boundary.
 - The main app performs DNS/TCP, strict SSH host verification, password/private-key authentication, and one bounded `mosh-server` bootstrap. Only session ID, numeric endpoint, UDP port, ephemeral Mosh key, dimensions, locale, and reviewed option flags cross the boundary; the public request model has no hostname credential, password, private key, passphrase, or saved credential ID field.
 - The ephemeral 22-character key crosses a one-shot PFD. The extension requires exactly 22 bytes plus EOF, avoids environment variables and persistence, and clears mutable printable/decoded key buffers after native initialization. Bootstrap and failure cleanup close descriptors and wipe main-app mutable key material.
 - Terminal bytes use separate PFD pipes with bounded backpressure, not repeated high-frequency Binder transactions. Binder carries only bounded control and redacted state events.
 - Each worker process owns one native session, disables core dumps, validates every request, and tears down on caller death, Binder death, pipe closure, cancellation, or service destruction. A lost session cannot be restored because the key is intentionally not retained; retry requires a new strict SSH bootstrap.
 - The application-owned session repository publishes changed, non-identifying Android connectivity generations only to currently connected Mosh transports. The extension receives bounded family/metered hints, not account, location, endpoint credential, or device identifiers. Core authenticated Mosh UDP roaming remains in the native transport. Link-local IPv6 zone identifiers are rejected by current host validation and are not silently stripped.
 
-The Settings status surface reports absent, disabled, untrusted, incompatible, available, and operational-error states without binding an unverified package. SSH remains an explicit fallback and no failure silently changes the requested protocol.
+The Settings status surface reports unavailable, disabled, invalid, incompatible, available and
+operational-error states for the built-in transport. SSH fallback follows the configured
+`NEVER`, `ASK` or `AUTOMATIC` policy. Only an explicitly configured `AUTOMATIC` policy can start
+one fresh SSH fallback after a classified Mosh failure, and only when authentication can be
+safely reloaded. Manual reconnect and duplicate dialogs preserve that policy with the other Mosh
+options; the default remains `NEVER`. Host-key verification and authentication are not bypassed.
 
-APK/process separation is an engineering security boundary, not a claim that GPL obligations are resolved. ADR-003 permits local/debug evaluation only; public Mosh distribution remains blocked pending the recorded GPL, installation-information, store/signing-model, and trademark review. Production signing authority has not been supplied and no production-signing claim is made.
+ADR-005 records the explicit architecture and licensing decision for the bundled GPL components.
+Component licences, notices, exact native source archives and build inputs remain required; see
+[LICENSING.md](../LICENSING.md) and [DEPENDENCIES.md](DEPENDENCIES.md). This security document
+does not establish a release's signing, publication state or legal compliance.
 
 ## Device/UI controls
 
@@ -151,9 +176,15 @@ APK/process separation is an engineering security boundary, not a claim that GPL
 - Legacy migration collision, interruption, idempotency, and rollback tests.
 - Same/different-algorithm host mismatch, trust-once, trust-save, explicit replacement, and concurrent trust tests.
 - Redaction fixtures for every secret type and release-log inspection.
-- Backup wrong-passphrase/tamper/truncation/newer-schema/transaction rollback tests.
-- Extension missing/wrong signer/wrong caller/API mismatch/death/FD cleanup tests.
-- Release APK scan for test keys, PEM blocks, credential fixtures, debug screens, protocol logs, analytics/ads/account/network SDKs, and native Mosh objects.
+- Backup integrity/tamper/truncation/newer-schema/transaction rollback tests; the current portable
+  format has no user passphrase confidentiality boundary.
+- Built-in broker discovery, private-service/same-UID caller, API mismatch, death and FD cleanup
+  tests. Former separate-package signer tests are historical evidence only.
+- Release APK checks reject test keys, PEM blocks, credential fixtures, debug screens and
+  prohibited SDKs, and require the pinned dual-ABI Mosh libraries and their notices.
+
+The following controlled-device evidence is historical; it is not a fresh verification of the
+current workspace or public release. ADR-005 separately records the bundled-build acceptance.
 
 The API, trust-decision, bootstrap/parser, PFD, redaction, application-owned lifecycle,
 network-hint, and native-build paths have host/unit or focused instrumentation coverage. The latest
@@ -161,8 +192,8 @@ controlled-server runs on the exact model-checked old `SM-S911B` completed passw
 bootstrap, real UDP terminal I/O, four simultaneous sessions with independent resize/close,
 isolated-worker death with slot reuse, and broker death with automatic rebind and fresh traffic.
 The worker-death run also proved that an extension failure wins the bounded PFD-EOF/Binder-event
-race instead of being reported as a clean disconnect. The full current old-phone application suite
-passed 317 tests with zero failures/errors and 14 expected opt-in skips; current policy forbids
+race instead of being reported as a clean disconnect. That old-phone application suite
+passed 317 tests with zero failures/errors and 14 expected opt-in skips; project policy forbids
 tests on the connected fold. A separate external API 35 gate proved ownership-checked exact-PID
 death, clean service/notification teardown, retained host/recent metadata, zero persisted
 session-only secret credentials, honest empty-session restart, password re-prompt, and real SSH
@@ -170,4 +201,4 @@ afterward. Its deep-idle, restricted-standby, and Data Saver mutations were rest
 Security acceptance remains open for observed network transitions/roaming, OEM notification/battery
 modes, the user's external Mosh server, and the final manual device matrix. The current CI-equivalent
 release-like run used a fresh ephemeral acceptance identity that was removed with its signed
-outputs; production signing and public Mosh distribution remain separate external gates.
+outputs. These historical runs do not establish the signing or publication state of a later build.

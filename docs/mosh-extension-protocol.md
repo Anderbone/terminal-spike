@@ -1,16 +1,28 @@
-status: implemented-acceptance-pending
-
-> The separate-APK packaging described in historical sections is superseded by
-> [ADR-005](ADR-005-BUNDLED-MOSH.md): one app now includes the private Mosh broker and workers.
+status: historical-separate-apk-design
 created_at: 2026-08-08T10:42:15.487Z
-updated_at: 2026-08-10
+updated_at: 2026-11-16
 done_at: none
 independent: no
 dependencies: docs/architecture.md, docs/security-model.md
 
-# Mosh extension protocol and distribution boundary
+# Mosh protocol and historical separate-APK design
 
-## Open Questions
+## Current packaging
+
+[ADR-005](ADR-005-BUNDLED-MOSH.md) supersedes the separate-APK decision below. The main
+application now includes `mosh-core`; the broker and ten workers are private services in separate
+processes under the app UID. The app binds only its own broker and never selects the legacy
+extension. The bounded `mosh-api` AIDL/PFD interface remains an internal process interface.
+See [security-model.md](security-model.md) for the current trust boundary and
+[LICENSING.md](../LICENSING.md) for the repository's licence and source-distribution requirements.
+
+The remainder preserves the **2026-08 separate-APK design and its historical verification**.
+Its package identities, signature-permission model, two-package signing questions, release gates
+and test counts do not describe the current product. ADR-005 records the later explicit bundling
+decision and its acceptance; this historical record does not reopen that decision or establish
+the publication state of any later build.
+
+## Historical open questions
 
 - Question: Do the main app and GPL extension constitute legally separate works given the AIDL control semantics and terminal byte stream?
   Recommended answer: obtain specialist open-source counsel review before distributing either package together or linking their store listings; APK/process separation is necessary architecture evidence but not a licensing conclusion.
@@ -24,7 +36,7 @@ dependencies: docs/architecture.md, docs/security-model.md
 
 These are external distribution decisions. They do not justify bundling native Mosh code in the main APK or weakening the technical boundary.
 
-## Current implementation state
+## Historical implementation state
 
 The local/debug architecture in ADR-003 is implemented rather than simulated:
 

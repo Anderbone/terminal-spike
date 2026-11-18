@@ -12,11 +12,11 @@ performance tests. Do not copy another terminal application's source.
 Use stable dependencies and record their source, purpose, licence and notice obligations. Keep
 SDK paths, secrets, signing material, APKs, build output and machine-specific files out of Git.
 
-Before submitting a change, use the README's toolchain and run:
+Before submitting a change, use the [developer guide's toolchain](docs/DEVELOPING.md) and run:
 
 ```bash
 mosh-core/scripts/verify-sources.sh
-./gradlew --dependency-verification=strict test lint assembleDebug assembleRelease
+scripts/verify-android.sh
 ```
 
 Native changes must preserve both supported ABIs, source checksums, generated-source provenance

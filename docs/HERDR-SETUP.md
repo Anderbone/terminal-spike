@@ -255,3 +255,47 @@ session/socket 的配置并检查诊断；
 实际验证结果和回滚方法，
 不输出密钥或密码。
 ```
+
+
+## Smooth scrolling
+
+Terminal Spike uses Android's native pixel viewport and inertial fling for
+Codex, pi and Claude Code panes when Herdr exposes real terminal history.
+A pane with no history remains under the running application's scroll controls;
+wrapping its visible screen does not create missing history.
+
+- **pi:** start with `pi --tui-mode regular`, or choose `regular` in `/settings`.
+  Merge `"tuiMode": "regular"` into `~/.pi/agent/settings.json` to make this the
+  default. Existing full-screen sessions can change mode through `/settings`.
+- **Claude Code (recommended):** on the computer running Herdr, make Claude
+  start inline only inside Herdr panes. Herdr sets `HERDR_ENV` in its panes:
+
+  ```fish
+  # ~/.config/fish/conf.d/herdr-claude-inline.fish
+  if set -q HERDR_ENV
+      set -gx CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN 1
+  end
+  ```
+
+  ```sh
+  # bash/zsh: ~/.bashrc or ~/.zshrc
+  [ -n "$HERDR_ENV" ] && export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1
+  ```
+
+  Claude sessions started in new Herdr panes then write to Herdr's history and
+  scroll smoothly; Claude outside Herdr and already-running sessions are unchanged.
+- **Claude Code (running conversation):** run `/tui default` to switch the current conversation to the
+  classic renderer. Use this command rather than editing the global `tui` setting
+  while Claude is running: a live settings edit was followed by a blank existing
+  Herdr pane during local validation. The command relaunches with the conversation
+  intact when the current session supports switching. See [Claude Code's renderer documentation](https://code.claude.com/docs/en/fullscreen).
+
+Back up settings before editing, preserve other keys, and check project settings
+or launch flags if a user-level default is overridden. Changing a settings file
+alone does not switch every already-running full-screen process. No deletion of
+sessions, app data or credentials is required. To restore full-screen rendering,
+select `fullscreen` in pi, or run `/tui fullscreen` in Claude Code.
+
+Full-screen pi currently receives page gestures when no native history is
+available; Claude's full-screen renderer owns its scroll input. Those fallbacks
+provide navigation, but do not promise pixel scrolling or Android inertia.

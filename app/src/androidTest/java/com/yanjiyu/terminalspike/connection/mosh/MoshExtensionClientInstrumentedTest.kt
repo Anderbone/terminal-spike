@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.ServiceConnection
 import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.yanjiyu.terminalspike.QueuedCallerDispatcher
 import com.yanjiyu.terminalspike.mosh.api.IMoshCallback
 import com.yanjiyu.terminalspike.mosh.api.IMoshPlugin
 import com.yanjiyu.terminalspike.mosh.api.MoshAddressFamily
@@ -21,12 +22,17 @@ import com.yanjiyu.terminalspike.mosh.api.MoshStopReason
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -39,6 +45,94 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MoshExtensionClientInstrumentedTest {
+    @Test
+    fun cancelledBeforeIoStillClosesTheTransferredKeyDescriptor() = runBlocking {
+        val service = FakeMoshPlugin()
+        val platform = FakeMoshPlatform(service)
+        val client = AndroidMoshExtensionClient(platform, Dispatchers.Default, 1_000)
+        val keyPipe = ParcelFileDescriptor.createPipe()
+        try {
+            val start = launch(start = CoroutineStart.UNDISPATCHED) {
+                coroutineContext.cancel()
+                client.startSession(request(UUID.randomUUID(), keyPipe[0]))
+            }
+            start.join()
+
+            assertTrue(start.isCancelled)
+            assertFalse(keyPipe[0].fileDescriptor.valid())
+            assertEquals(0, platform.bindCount.get())
+        } finally {
+            keyPipe.forEach { runCatching { it.close() } }
+            client.shutdown()
+            service.close()
+        }
+    }
+
+    @Test
+    fun cancellingAnAcceptedPendingBindingUnbindsItAndAllowsAnotherConnect() = runBlocking {
+        val service = FakeMoshPlugin()
+        val platform = FakeMoshPlatform(service).apply { completeBindings = false }
+        val client = AndroidMoshExtensionClient(platform, Dispatchers.Default, 5_000)
+        val connecting = launch { client.connect() }
+        try {
+            withTimeout(5_000) { platform.bindingStarted.await() }
+            connecting.cancelAndJoin()
+
+            assertEquals(1, platform.unbindCount.get())
+            assertEquals(0, service.registerCount.get())
+            platform.completeBindings = true
+            assertTrue(client.connect() is MoshExtensionStatus.Available)
+            assertEquals(2, platform.bindCount.get())
+        } finally {
+            connecting.cancelAndJoin()
+            client.shutdown()
+            service.close()
+        }
+    }
+
+    @Test
+    fun cancellationAtReturnClosesTheUndeliveredHandleAndStopsOnlyItsSession() = runBlocking {
+        val service = FakeMoshPlugin()
+        val client = AndroidMoshExtensionClient(FakeMoshPlatform(service), Dispatchers.Default, 1_000)
+        val caller = QueuedCallerDispatcher()
+        val sessionId = UUID.randomUUID()
+        val keyPipe = ParcelFileDescriptor.createPipe()
+        val otherId = UUID.randomUUID()
+        val otherKeyPipe = ParcelFileDescriptor.createPipe()
+        val otherHandle = (client.startSession(request(otherId, otherKeyPipe[0])) as MoshClientResult.Success).value
+        val start = launch(caller, start = CoroutineStart.UNDISPATCHED) {
+            client.startSession(request(sessionId, keyPipe[0]))
+        }
+        try {
+            // IO has produced the valid handle; only resumption of the caller is held.
+            withTimeout(5_000) { caller.firstDispatch.await() }
+            val handle = requireNotNull(service.lastReturnedHandle)
+            assertTrue(handle.terminalInputWrite.fileDescriptor.valid())
+            assertTrue(handle.terminalOutputRead.fileDescriptor.valid())
+            assertFalse(keyPipe[0].fileDescriptor.valid())
+            start.cancel()
+            caller.finish(start)
+
+            assertTrue(start.isCancelled)
+            assertFalse(handle.terminalInputWrite.fileDescriptor.valid())
+            assertFalse(handle.terminalOutputRead.fileDescriptor.valid())
+            assertEquals(listOf(sessionId.toString() to MoshStopReason.ERROR_RECOVERY), service.stops.toList())
+            assertTrue(client.resizeSession(sessionId, 100, 30) is MoshClientResult.Failure)
+            assertTrue(client.resizeSession(otherId, 100, 30) is MoshClientResult.Success)
+            assertTrue(otherHandle.terminalInputWrite.fileDescriptor.valid())
+            assertTrue(otherHandle.terminalOutputRead.fileDescriptor.valid())
+        } finally {
+            start.cancel()
+            caller.finish(start)
+            keyPipe.forEach { runCatching { it.close() } }
+            otherKeyPipe.forEach { runCatching { it.close() } }
+            otherHandle.terminalInputWrite.close()
+            otherHandle.terminalOutputRead.close()
+            client.shutdown()
+            service.close()
+        }
+    }
+
     @Test
     fun concurrentConnectUsesOneExplicitBindingAndOneCallback() = runBlocking {
         val service = FakeMoshPlugin()
@@ -201,7 +295,10 @@ class MoshExtensionClientInstrumentedTest {
     ) : MoshExtensionPlatform {
         var discovery: MoshDiscoveryDecision = MoshDiscoveryDecision.Trusted(VERSION)
         var allowBind: Boolean = true
+        var completeBindings: Boolean = true
         val bindCount = AtomicInteger()
+        val unbindCount = AtomicInteger()
+        val bindingStarted = CompletableDeferred<Unit>()
         private val connections = CopyOnWriteArrayList<ServiceConnection>()
 
         override fun discover(): MoshDiscoveryDecision = discovery
@@ -210,11 +307,15 @@ class MoshExtensionClientInstrumentedTest {
             bindCount.incrementAndGet()
             if (!allowBind) return false
             connections += connection
-            connection.onServiceConnected(MoshExtensionContract.component, service.asBinder())
+            bindingStarted.complete(Unit)
+            if (completeBindings) {
+                connection.onServiceConnected(MoshExtensionContract.component, service.asBinder())
+            }
             return true
         }
 
         override fun unbind(connection: ServiceConnection) {
+            unbindCount.incrementAndGet()
             connections -= connection
         }
 
@@ -227,6 +328,7 @@ class MoshExtensionClientInstrumentedTest {
 
     private class FakeMoshPlugin : IMoshPlugin.Stub() {
         val registerCount = AtomicInteger()
+        val stops = CopyOnWriteArrayList<Pair<String, Int>>()
         var returnMismatchedSession: Boolean = false
         var lastReturnedHandle: MoshSessionHandle? = null
         private var callback: IMoshCallback? = null
@@ -261,7 +363,9 @@ class MoshExtensionClientInstrumentedTest {
 
         override fun updateNetworkHint(sessionId: String, hint: MoshNetworkHint) = Unit
 
-        override fun stopSession(sessionId: String, reason: Int) = Unit
+        override fun stopSession(sessionId: String, reason: Int) {
+            stops += sessionId to reason
+        }
 
         override fun registerCallback(callback: IMoshCallback) {
             registerCount.incrementAndGet()

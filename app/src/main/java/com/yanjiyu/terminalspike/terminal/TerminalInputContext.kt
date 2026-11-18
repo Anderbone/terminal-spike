@@ -9,6 +9,8 @@ data class TerminalInputContext(
     /** Confirmed from the focused pane's live UI, never from launch defaults or a requested change. */
     val reasoningEffort: String? = null,
     val agentProcessId: Long? = null,
+    /** False means inspection failed, not that the foreground agent exited. */
+    val observationAvailable: Boolean = true,
 )
 
 /** Confirmed fullscreen Pi pane bounds; navigation chrome must retain mouse routing. */

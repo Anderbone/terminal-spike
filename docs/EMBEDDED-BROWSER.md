@@ -63,7 +63,9 @@ Project home returns to the configured address and selected worktree.
 
 The live editor is retained in memory while returning to the terminal and across
 Activity recreation. Up to three host browsers are retained, using application
-context and detaching UI callbacks when hidden. Opening another worktree on the
+context and detaching UI callbacks when hidden. `BrowserNavigationClient` keeps
+the same navigation and HTTP-origin restrictions installed while a page is hidden;
+only its UI callbacks are removed. Opening another worktree on the
 same host replaces that host's browser. Process death, renderer death, or eviction
 can reload a page: save important edits using the remote editor. Address/layout
 preferences and ordinary persistent website cookies survive process restarts.
@@ -100,7 +102,8 @@ encoding, HTTP-origin restrictions, rejection of privileged schemes and embedded
 credentials, and desktop user-agent conversion. `BrowserWorkspaceTest` uses a real
 WebView and local HTTP server to verify DOM storage, live unsaved editor retention,
 navigation, layout switching, a separate ordinary-browser address bar, independent
-server addresses, equal-height shared tab chrome, and live editor
+server addresses, equal-height shared tab chrome, the retained client's navigation
+and HTTP-request restrictions while hidden, and live editor
 retention when switching between terminal and browser tabs. `BrowserLoginTest` exercises wrong-password
 rejection, successful login, ciphertext-only persistence through browser/controller
 recreation, automatic re-login and explicit forgetting on a real Android WebView.

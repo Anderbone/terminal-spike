@@ -72,6 +72,7 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
             '  if [[ "${!index}" == "--name" ]]; then next=$((index + 1)); name="${!next}"; fi\n'
             '  if [[ "${!index}" == "--package" ]]; then next=$((index + 1)); package="${!next}"; fi\n'
             'done\n'
+            'printf "%s\\n" "$name" >"$FAKE_STATE_DIR/avd"\n'
             'target=${package#system-images;}\ntarget=${target%%;*}\n'
             'printf "target=%s\\n" "${FAKE_AVD_TARGET:-$target}" >"$ANDROID_AVD_HOME/$name.ini"\n'
             'mkdir -p "$ANDROID_AVD_HOME/$name.avd"\n'
@@ -86,9 +87,10 @@ class AndroidEmulatorRunnerTest(unittest.TestCase):
             sdk / "platform-tools/adb",
             r'''printf "adb %s\n" "$*" >> "$FAKE_SDK_LOG"
 case "$*" in
+  "devices") [[ "${FAKE_INVENTORY_FAIL:-0}" != "1" ]] || exit 1; printf 'List of devices attached\n%s\n' "${FAKE_DEVICES:-}" ;;
   *"shell getprop sys.boot_completed") printf '%s\n' "${FAKE_BOOTED:-1}" ;;
   *"shell getprop ro.kernel.qemu") printf '%s\n' "${FAKE_QEMU:-1}" ;;
-  *"emu avd name") printf '%s\nOK\n' "$FAKE_AVD" ;;
+  *"emu avd name") printf '%s\nOK\n' "${FAKE_AVD:-$(cat "$FAKE_STATE_DIR/avd")}" ;;
   *"emu kill") [[ "${FAKE_STUCK_SHUTDOWN:-0}" != "1" ]] || sleep 300 ;;
   *"shell pm path android") [[ "${FAKE_PM_READY:-1}" == "1" ]] && printf 'package:/system/framework/framework-res.apk\n' ;;
   *" install "*) [[ "${FAKE_INSTALL_FAIL:-0}" != "1" ]] ;;
@@ -157,10 +159,6 @@ esac
 
     def run_runner(self, *arguments: str, env: dict[str, str] | None = None):
         selected_env = (env or self.env).copy()
-        if "FAKE_AVD" not in selected_env and "--api" in arguments and "--suite" in arguments:
-            api = arguments[arguments.index("--api") + 1]
-            suite = arguments[arguments.index("--suite") + 1]
-            selected_env["FAKE_AVD"] = f"terminal-spike-api{api}-{suite}"
         return subprocess.run(
             [
                 str(self.runner),
@@ -305,7 +303,8 @@ esac
         self.assertNotIn("GuestAngle", emulator[0])
         adb = [line for line in self.commands() if line.startswith("adb ")]
         self.assertTrue(adb)
-        self.assertTrue(all(line.startswith("adb -s emulator-5554 ") for line in adb))
+        self.assertEqual(["adb devices"], [line for line in adb if line == "adb devices"])
+        self.assertTrue(all(line == "adb devices" or line.startswith("adb -s emulator-5554 ") for line in adb))
         instrumentation = [line for line in adb if "ShellMain am instrument" in line]
         self.assertEqual(1, len(instrumentation))
         self.assertIn("targetInstrumentation", instrumentation[0])
@@ -449,6 +448,76 @@ esac
         self.assertNotEqual(0, result.returncode)
         self.assertIn("Refusing non-emulator", result.stderr)
         self.assertFalse(any(" install " in f" {line} " for line in self.commands()))
+
+    def test_preexisting_target_is_rejected_even_when_offline_or_unauthorized(self) -> None:
+        for state in ("device", "offline", "unauthorized"):
+            with self.subTest(state=state):
+                self.log.unlink(missing_ok=True)
+                env = self.env.copy()
+                env["FAKE_DEVICES"] = f"emulator-5554\t{state}"
+                result = self.run_runner("--api", "35", "--suite", "full", env=env)
+                self.assertEqual(4, result.returncode, result.stderr)
+                self.assertIn("already exists", result.stderr)
+                self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
+                self.assertEqual(["adb devices"], [line for line in self.commands() if line.startswith("adb ")])
+                self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+
+    def test_inventory_failure_stops_before_launch_or_device_mutation(self) -> None:
+        env = self.env.copy()
+        env["FAKE_INVENTORY_FAIL"] = "1"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(4, result.returncode, result.stderr)
+        self.assertIn("inventory", result.stderr)
+        self.assertFalse(any(line.startswith("emulator ") for line in self.commands()))
+        self.assertEqual(["adb devices"], [line for line in self.commands() if line.startswith("adb ")])
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+
+    def test_same_named_foreign_avd_appearing_after_inventory_is_not_adopted(self) -> None:
+        env = self.env.copy()
+        env["FAKE_AVD"] = "terminal-spike-api35-full"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(4, result.returncode, result.stderr)
+        self.assertIn("AVD identity", result.stderr)
+        self.assertFalse(any(" install " in f" {line} " or "settings put" in line for line in self.commands()))
+        self.assertFalse(any(line.endswith(" emu kill") for line in self.commands()))
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+
+    def test_unrelated_existing_serial_does_not_block_the_owned_target(self) -> None:
+        env = self.env.copy()
+        env["FAKE_DEVICES"] = "emulator-5556\tdevice"
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(any("-s emulator-5556" in line for line in self.commands()))
+
+    def test_wrong_avd_cleanup_stops_only_the_process_started_by_this_runner(self) -> None:
+        self.write_tool(
+            self.root / "sdk/emulator/emulator",
+            'printf "%s\\n" "$$" >"$FAKE_STATE_DIR/emulator.pid"\nexec tail -f /dev/null\n',
+        )
+        env = self.env.copy()
+        env["FAKE_AVD"] = "unrelated-running-avd"
+
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+
+        self.assertEqual(4, result.returncode, result.stderr)
+        self.assertFalse(any(line.endswith(" emu kill") for line in self.commands()))
+        self.assertFalse(any(" install " in f" {line} " for line in self.commands()))
+        pid = int((self.state / "emulator.pid").read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
+
+    def test_failed_emulator_launch_does_not_close_an_existing_console_target(self) -> None:
+        self.write_tool(self.root / "sdk/emulator/emulator", "exit 1\n")
+        env = self.env.copy()
+        env["FAKE_AVD"] = "unrelated-running-avd"
+
+        result = self.run_runner("--api", "35", "--suite", "full", env=env)
+
+        self.assertEqual(4, result.returncode, result.stderr)
+        self.assertFalse(any(line.endswith(" emu kill") for line in self.commands()))
+        self.assertFalse(any(" install " in f" {line} " for line in self.commands()))
+        self.assertEqual([], list(self.tmp.glob("terminal-spike-avd.*")))
 
     def test_install_failure_is_bounded_and_never_starts_instrumentation(self) -> None:
         env = self.env.copy()

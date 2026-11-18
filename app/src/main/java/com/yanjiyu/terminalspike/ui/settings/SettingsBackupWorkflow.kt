@@ -22,6 +22,7 @@ import com.yanjiyu.terminalspike.core.backup.BackupPayloadFormat
 import com.yanjiyu.terminalspike.core.backup.BackupTransferCoordinator
 import com.yanjiyu.terminalspike.core.backup.PreparedBackupImport
 import com.yanjiyu.terminalspike.core.backup.PreparedBackupImportPlan
+import com.yanjiyu.terminalspike.core.backup.readOwnedResult
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -231,7 +232,7 @@ internal class AndroidSettingsBackupGateway(
         val uri = Uri.parse(source.encodedUri)
         val input = resolver.openInputStream(uri)
             ?: throw IOException("The selected backup document could not be opened.")
-        return CoreSettingsUnlockedBackup(input.use { transfers.unlock(it, passphrase) })
+        return input.readOwnedResult { CoreSettingsUnlockedBackup(transfers.unlock(it, passphrase)) }
     }
 
     override suspend fun prepare(
@@ -308,7 +309,7 @@ internal class SettingsBackupWorkflow(
         if (!canStartNewFlow()) return
         cancelPendingExport()
         releaseOwnedImport()
-        _state.value = readyState().copy(step = BackupWorkflowStep.EXPORT_SETUP)
+        publishState(readyState().copy(step = BackupWorkflowStep.EXPORT_SETUP))
         requestExportDocument(
             mode = BackupMode.FULL,
             includeCustomFonts = true,
@@ -333,20 +334,24 @@ internal class SettingsBackupWorkflow(
         val minimum = minimumExportPassphraseCharacters(mode)
         if (passphrase.size < minimum) {
             passphrase.fill('\u0000')
-            _state.value = _state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_SHORT)
+            publishState(_state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_SHORT))
             return
         }
         if (passphrase.size > BackupEnvelopeFormat.MAX_PASSPHRASE_CHARS) {
             passphrase.fill('\u0000')
-            _state.value = _state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_LONG)
+            publishState(_state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_LONG))
             return
         }
         val createdAt = clock()
         synchronized(ownershipLock) {
+            if (closed.get()) {
+                passphrase.fill('\u0000')
+                return
+            }
             pendingExport?.wipe()
             pendingExport = PendingExport(mode, includeCustomFonts, createdAt, passphrase)
         }
-        _state.value = readyState().copy(step = BackupWorkflowStep.WAITING_FOR_EXPORT_DOCUMENT)
+        publishState(readyState().copy(step = BackupWorkflowStep.WAITING_FOR_EXPORT_DOCUMENT))
         if (
             requests.trySend(
                 BackupDocumentRequest.Create(BackupDocumentContract.suggestedFileName(createdAt)),
@@ -363,13 +368,13 @@ internal class SettingsBackupWorkflow(
         } ?: return
         if (destination == null) {
             export.wipe()
-            _state.value = readyState()
+            publishState(readyState())
             return
         }
         scope.launch(ioDispatcher, start = CoroutineStart.UNDISPATCHED) {
             try {
                 operationMutex.withLock {
-                    _state.value = readyState().copy(step = BackupWorkflowStep.EXPORTING)
+                    if (!publishState(readyState().copy(step = BackupWorkflowStep.EXPORTING))) return@withLock
                     val result = gateway.exportWithOptions(
                         destination = destination,
                         mode = export.mode,
@@ -377,10 +382,12 @@ internal class SettingsBackupWorkflow(
                         includeCustomFonts = export.includeCustomFonts,
                         passphrase = export.passphrase,
                     )
-                    _state.value = readyState().copy(
-                        step = BackupWorkflowStep.COMPLETED,
-                        completionKind = BackupCompletionKind.EXPORT,
-                        exportResult = result,
+                    publishState(
+                        readyState().copy(
+                            step = BackupWorkflowStep.COMPLETED,
+                            completionKind = BackupCompletionKind.EXPORT,
+                            exportResult = result,
+                        ),
                     )
                 }
             } catch (error: CancellationException) {
@@ -401,27 +408,33 @@ internal class SettingsBackupWorkflow(
             fail(BackupWorkflowError.RECOVERY_REQUIRED)
             return
         }
-        _state.value = readyState().copy(step = BackupWorkflowStep.WAITING_FOR_RESTORE_DOCUMENT)
+        publishState(readyState().copy(step = BackupWorkflowStep.WAITING_FOR_RESTORE_DOCUMENT))
         if (requests.trySend(BackupDocumentRequest.Open).isFailure) {
             fail(BackupWorkflowError.DOCUMENT_UNAVAILABLE)
         }
     }
 
     fun onRestoreDocumentResult(source: BackupDocumentReference?) {
+        if (closed.get()) return
         if (source == null) {
-            _state.value = readyState()
+            publishState(readyState())
             return
         }
         scope.launch(ioDispatcher) {
             try {
                 operationMutex.withLock {
-                    _state.value = readyState().copy(step = BackupWorkflowStep.INSPECTING)
+                    if (!publishState(readyState().copy(step = BackupWorkflowStep.INSPECTING))) return@withLock
                     val header = gateway.inspect(source)
-                    synchronized(ownershipLock) { pendingImportDocument = source }
-                    _state.value = readyState().copy(
-                        step = BackupWorkflowStep.PASSPHRASE_REQUIRED,
-                        header = header,
-                    )
+                    synchronized(ownershipLock) {
+                        if (closed.get()) return@withLock
+                        pendingImportDocument = source
+                        publishState(
+                            readyState().copy(
+                                step = BackupWorkflowStep.PASSPHRASE_REQUIRED,
+                                header = header,
+                            ),
+                        )
+                    }
                 }
                 unlockSelectedBackup(newPortableBackupKey())
             } catch (error: CancellationException) {
@@ -442,33 +455,36 @@ internal class SettingsBackupWorkflow(
         }
         if (passphrase.isEmpty()) {
             passphrase.fill('\u0000')
-            _state.value = _state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_SHORT)
+            publishState(_state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_SHORT))
             return
         }
         if (passphrase.size > BackupEnvelopeFormat.MAX_PASSPHRASE_CHARS) {
             passphrase.fill('\u0000')
-            _state.value = _state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_LONG)
+            publishState(_state.value.copy(error = BackupWorkflowError.PASSPHRASE_TOO_LONG))
             return
         }
         scope.launch(ioDispatcher, start = CoroutineStart.UNDISPATCHED) {
             try {
                 operationMutex.withLock {
-                    _state.value = _state.value.copy(
-                        step = BackupWorkflowStep.UNLOCKING,
-                        error = null,
-                    )
+                    if (!publishState(_state.value.copy(step = BackupWorkflowStep.UNLOCKING, error = null))) return@withLock
                     val unlocked = gateway.unlock(source, passphrase)
                     synchronized(ownershipLock) {
+                        if (closed.get()) {
+                            unlocked.close()
+                            return@withLock
+                        }
                         pendingImportDocument = null
                         unlockedImport?.close()
                         unlockedImport = unlocked
+                        publishState(
+                            readyState().copy(
+                                step = BackupWorkflowStep.AUTHENTICATED_PREVIEW,
+                                header = unlocked.preview.header,
+                                archive = unlocked.preview,
+                                selectedStrategy = BackupImportStrategy.REPLACE_CORRESPONDING,
+                            ),
+                        )
                     }
-                    _state.value = readyState().copy(
-                        step = BackupWorkflowStep.AUTHENTICATED_PREVIEW,
-                        header = unlocked.preview.header,
-                        archive = unlocked.preview,
-                        selectedStrategy = BackupImportStrategy.REPLACE_CORRESPONDING,
-                    )
                 }
                 prepareImportPreview()
             } catch (error: CancellationException) {
@@ -484,29 +500,36 @@ internal class SettingsBackupWorkflow(
     fun selectImportStrategy(strategy: BackupImportStrategy) {
         val current = _state.value
         if (current.step != BackupWorkflowStep.AUTHENTICATED_PREVIEW) return
-        _state.value = current.copy(selectedStrategy = strategy, error = null)
+        publishState(current.copy(selectedStrategy = strategy, error = null))
     }
 
     fun prepareImportPreview() {
         val current = _state.value
         if (current.step != BackupWorkflowStep.AUTHENTICATED_PREVIEW) return
         val unlocked = synchronized(ownershipLock) {
+            if (closed.get()) return
             unlockedImport.also { unlockedImport = null }
         } ?: return
         scope.launch(ioDispatcher, start = CoroutineStart.UNDISPATCHED) {
             try {
                 operationMutex.withLock {
-                    _state.value = current.copy(step = BackupWorkflowStep.PLANNING, error = null)
+                    if (!publishState(current.copy(step = BackupWorkflowStep.PLANNING, error = null))) return@withLock
                     val prepared = gateway.prepare(unlocked, current.selectedStrategy)
                     synchronized(ownershipLock) {
+                        if (closed.get()) {
+                            prepared.close()
+                            return@withLock
+                        }
                         preparedImport?.close()
                         preparedImport = prepared
+                        publishState(
+                            current.copy(
+                                step = BackupWorkflowStep.IMPORT_REVIEW,
+                                plan = prepared.preview,
+                                error = null,
+                            ),
+                        )
                     }
-                    _state.value = current.copy(
-                        step = BackupWorkflowStep.IMPORT_REVIEW,
-                        plan = prepared.preview,
-                        error = null,
-                    )
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -522,17 +545,20 @@ internal class SettingsBackupWorkflow(
         val current = _state.value
         if (current.step != BackupWorkflowStep.IMPORT_REVIEW) return
         val prepared = synchronized(ownershipLock) {
+            if (closed.get()) return
             preparedImport.also { preparedImport = null }
         } ?: return
         scope.launch(ioDispatcher, start = CoroutineStart.UNDISPATCHED) {
             try {
                 operationMutex.withLock {
-                    _state.value = current.copy(step = BackupWorkflowStep.APPLYING, error = null)
+                    if (!publishState(current.copy(step = BackupWorkflowStep.APPLYING, error = null))) return@withLock
                     val result = gateway.apply(prepared)
-                    _state.value = readyState().copy(
-                        step = BackupWorkflowStep.COMPLETED,
-                        completionKind = BackupCompletionKind.IMPORT,
-                        importResult = result,
+                    publishState(
+                        readyState().copy(
+                            step = BackupWorkflowStep.COMPLETED,
+                            completionKind = BackupCompletionKind.IMPORT,
+                            importResult = result,
+                        ),
                     )
                 }
             } catch (error: CancellationException) {
@@ -546,23 +572,25 @@ internal class SettingsBackupWorkflow(
     }
 
     fun recoverPendingImport() {
-        if (_state.value.busy || !safeHasPendingRecovery()) return
+        if (closed.get() || _state.value.busy || !safeHasPendingRecovery()) return
         releaseOwnedImport()
         scope.launch(ioDispatcher) {
             try {
                 operationMutex.withLock {
-                    _state.value = readyState().copy(
-                        step = BackupWorkflowStep.RECOVERING,
-                        recoveryAvailable = true,
-                    )
+                    if (!publishState(
+                            readyState().copy(step = BackupWorkflowStep.RECOVERING, recoveryAvailable = true),
+                        )
+                    ) return@withLock
                     val result = gateway.recoverPending()
                     if (result == null) {
-                        _state.value = readyState()
+                        publishState(readyState())
                     } else {
-                        _state.value = readyState().copy(
-                            step = BackupWorkflowStep.COMPLETED,
-                            completionKind = BackupCompletionKind.RECOVERY,
-                            importResult = result,
+                        publishState(
+                            readyState().copy(
+                                step = BackupWorkflowStep.COMPLETED,
+                                completionKind = BackupCompletionKind.RECOVERY,
+                                importResult = result,
+                            ),
                         )
                     }
                 }
@@ -575,11 +603,11 @@ internal class SettingsBackupWorkflow(
     }
 
     fun dismiss() {
-        if (_state.value.busy) return
+        if (closed.get() || _state.value.busy) return
         cancelPendingExport()
         releaseOwnedImport()
         synchronized(ownershipLock) { pendingImportDocument = null }
-        _state.value = readyState()
+        publishState(readyState())
     }
 
     override fun close() {
@@ -588,6 +616,15 @@ internal class SettingsBackupWorkflow(
         cancelPendingExport()
         releaseOwnedImport()
         synchronized(ownershipLock) { pendingImportDocument = null }
+    }
+
+    private fun publishState(next: BackupWorkflowUiState): Boolean = synchronized(ownershipLock) {
+        if (closed.get()) {
+            false
+        } else {
+            _state.value = next
+            true
+        }
     }
 
     private fun canStartNewFlow(): Boolean = !closed.get() && !_state.value.busy
@@ -599,10 +636,12 @@ internal class SettingsBackupWorkflow(
     private fun safeHasPendingRecovery(): Boolean = runCatching(gateway::hasPendingRecovery).getOrDefault(false)
 
     private fun fail(error: BackupWorkflowError) {
-        _state.value = BackupWorkflowUiState(
-            step = BackupWorkflowStep.FAILED,
-            recoveryAvailable = safeHasPendingRecovery(),
-            error = error,
+        publishState(
+            BackupWorkflowUiState(
+                step = BackupWorkflowStep.FAILED,
+                recoveryAvailable = safeHasPendingRecovery(),
+                error = error,
+            ),
         )
     }
 

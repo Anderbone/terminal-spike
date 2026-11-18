@@ -1,6 +1,7 @@
 package com.yanjiyu.terminalspike.terminal.selection
 
 import com.yanjiyu.terminalspike.terminal.model.TerminalHyperlink
+import com.yanjiyu.terminalspike.terminal.model.isSafeTerminalControlText
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
 import com.yanjiyu.terminalspike.terminal.model.TerminalStyle
@@ -38,18 +39,12 @@ fun interface TerminalLinkActionCallback {
 
 /** External-open allowlist. Remote terminal output never bypasses this check. */
 object TerminalLinkPolicy {
+    // Plain OAuth URLs can be longer than the separately bounded OSC 8 metadata.
+    const val MAX_OPEN_URI_LENGTH = 8_192
+
     fun canOpen(uri: String): Boolean {
-        if (uri.isEmpty() || uri.length > TerminalHyperlink.MAX_URI_LENGTH) return false
-        if (
-            uri.any { character ->
-                character.isISOControl() ||
-                    character.isWhitespace() ||
-                    character == '\uFFFD' ||
-                    Character.getType(character) == Character.FORMAT.toInt()
-            }
-        ) {
-            return false
-        }
+        if (uri.isEmpty() || uri.length > MAX_OPEN_URI_LENGTH) return false
+        if (uri.any(Char::isWhitespace) || !isSafeTerminalControlText(uri)) return false
         val parsed = runCatching { URI(uri) }.getOrNull() ?: return false
         val scheme = parsed.scheme?.lowercase(Locale.ROOT) ?: return false
         return scheme in ALLOWED_SCHEMES && !parsed.host.isNullOrBlank()
@@ -156,7 +151,7 @@ object TerminalLinkResolver {
 
     /** TUIs repaint wrapped links at explicit coordinates, so VT autowrap is absent.
      * Join matching underlined tokens, or plain tokens reaching the known physical right edge.
-     * Plain continuations must start at column zero; ordinary short lines remain separate.
+     * Plain continuations may retain the URL's indentation; ordinary short lines remain separate.
      * This is bounded hit testing, not work performed by the renderer.
      */
     private fun findPaintedPlainTextUrl(
@@ -193,7 +188,7 @@ object TerminalLinkResolver {
                         prefix.substringAfterLast('│').substringAfterLast('┃')
                             .substringAfterLast('║').substringAfterLast('|').isBlank()
                     } ?: break
-                    if ((!underlinedOnly && TerminalLineGeometry.columnAtOffset(next.line, continuation.start) != 0) ||
+                    if ((!underlinedOnly && next.line.text.substring(0, continuation.start).isNotBlank()) ||
                         continuation.style != initial.style ||
                         continuation.text.hasSupportedSchemeAt(0) ||
                         TerminalLineGeometry.columnAtOffset(next.line, continuation.start) >
@@ -208,7 +203,9 @@ object TerminalLinkResolver {
                     last = next
                     token = continuation
                 }
-                if (currentRow == startRow || combinedHit !in text.indices || text.length > MAX_PLAIN_URL_SCAN) continue
+                if (currentRow == startRow || combinedHit !in text.indices || text.length > MAX_PLAIN_URL_SCAN ||
+                    slices.size == MAX_PAINTED_LINK_ROWS
+                ) continue
                 val match = plainTextUrlAt(text, combinedHit) ?: continue
                 val endSlice = slices.lastOrNull { it.combinedStart < match.endOffset } ?: continue
                 val end = WrappedLinePosition(endSlice.selectable, endSlice.tokenStart + match.endOffset - endSlice.combinedStart)
@@ -383,6 +380,8 @@ object TerminalLinkResolver {
             }
             end += 1
         }
+        // Never return a valid-looking prefix when a login URL exceeds the scan budget.
+        if (end - start == MAX_PLAIN_URL_SCAN && end < text.length && !isUrlBoundary(text[end])) return null
         while (end > start && text[end - 1] in TRAILING_PUNCTUATION) end -= 1
         if (end <= start || pivot !in start until end) return null
         val candidate = text.subSequence(start, end).toString()
@@ -488,8 +487,8 @@ object TerminalLinkResolver {
             it.startsWith(this, ignoreCase = true)
         }
 
-    private const val MAX_PAINTED_LINK_ROWS = 16
-    private const val MAX_PLAIN_URL_SCAN = 1_024
+    private const val MAX_PAINTED_LINK_ROWS = 256
+    private const val MAX_PLAIN_URL_SCAN = TerminalLinkPolicy.MAX_OPEN_URI_LENGTH
     private const val MAX_WRAPPED_LINK_ROWS = 4_096
     private const val URL_BOUNDARIES = "\"'<>[]{}，。；：！？、（）【】《》“”‘’"
     private const val TRAILING_PUNCTUATION = ".,;:!?]}"

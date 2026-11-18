@@ -39,7 +39,7 @@ class SftpRealEndToEndTest {
                 "terminal-spike-test-only".encodeToByteArray(),
             ),
         )
-        val connection = JschSshConnection(KnownHostManager { knownHosts }, config)
+        val connection = JschSshConnection(fileKnownHostManager { knownHosts }, config)
         val connected = CompletableDeferred<Unit>()
         val connectJob = launch(Dispatchers.IO) {
             connection.connect(
@@ -77,7 +77,7 @@ class SftpRealEndToEndTest {
             }
             assertTrue(uploadedPath.startsWith("/home/terminal/.cache/terminal-spike/pasted-images/"))
 
-            val verifier = SftpClient(KnownHostManager { knownHosts })
+            val verifier = SftpClient(fileKnownHostManager { knownHosts })
             try {
                 verifier.connect(
                     config = SshConnectionConfig(
@@ -171,7 +171,7 @@ class SftpRealEndToEndTest {
         assumeTrue(arguments.getString("terminalSpikeRunRealSftp") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val knownHosts = context.cacheDir.resolve("real-sftp-known-hosts").apply { delete() }
-        val client = SftpClient(KnownHostManager { knownHosts })
+        val client = SftpClient(fileKnownHostManager { knownHosts })
         val payload = "Terminal Spike SFTP end-to-end".encodeToByteArray()
         var promptReceived = false
         try {

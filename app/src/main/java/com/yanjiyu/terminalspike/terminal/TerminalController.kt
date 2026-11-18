@@ -79,10 +79,26 @@ class TerminalController(
 
     private val codexEffortObservation = CodexEffortObservation()
 
+    private val herdrPublicationLock = Any()
+
     internal fun publishInputContext(context: TerminalInputContext) {
-        mutableInputContext.value = codexEffortObservation.observe(context)
-        if (context.identity.isNotEmpty() && herdrHistory?.let { context.identity != "herdr/${it.identity}" } == true) {
-            invalidateHerdrHistory()
+        publishInputContextForGeneration(context, expectedGeneration = null)
+    }
+
+    internal fun tryPublishInputContext(context: TerminalInputContext, expectedGeneration: Long): Boolean =
+        publishInputContextForGeneration(context, expectedGeneration)
+
+    private fun publishInputContextForGeneration(context: TerminalInputContext, expectedGeneration: Long?): Boolean {
+        // Read the clock outside the publication boundary. Rejected samples must not
+        // update the effort observation's previous value or confirmation timestamp.
+        val observedAt = codexEffortObservation.captureTime()
+        return synchronized(herdrPublicationLock) {
+            if (expectedGeneration != null && expectedGeneration != herdrHistoryGeneration) return@synchronized false
+            mutableInputContext.value = codexEffortObservation.observe(context, observedAt)
+            if (context.identity.isNotEmpty() && herdrHistory?.let { context.identity != "herdr/${it.identity}" } == true) {
+                invalidateHerdrHistory()
+            }
+            true
         }
     }
 
@@ -134,11 +150,23 @@ class TerminalController(
 
     @Volatile
     var herdrHistoryReading: Boolean = false
+        set(value) { synchronized(herdrPublicationLock) { field = value } }
     @Volatile
     var herdrHistoryPinned: Boolean = false
+        set(value) { synchronized(herdrPublicationLock) { field = value } }
 
     private val mutableHerdrProjectPicker = MutableStateFlow<Connection?>(null)
     internal val herdrProjectPicker = mutableHerdrProjectPicker.asStateFlow()
+
+    @Volatile
+    private var herdrProjectsCache: HerdrRecentProjectsCache? = null
+
+    internal fun herdrProjectsFor(source: Connection): HerdrRecentProjectsCache? =
+        herdrProjectsCache.takeIf { inputSink === source }
+
+    internal fun prefetchHerdrProjects(source: Connection) {
+        if (source.isHerdrSession) herdrProjectsFor(source)?.refresh()
+    }
 
     internal fun dismissHerdrProjectPicker() { mutableHerdrProjectPicker.value = null }
 
@@ -152,13 +180,18 @@ class TerminalController(
         dismissHerdrProjectPicker()
     }
 
-    internal fun showHerdrProjectPickerAt(column: Int, row: Int): Boolean {
+    internal fun isHerdrNewWorkspaceCell(column: Int, row: Int): Boolean {
         val screen = terminalScreen ?: return false
         val connection = inputSink as? Connection ?: return false
-        if (!herdrSessionActive || !connection.isHerdrSession || !viewport.autoFollow ||
-            !HerdrNavigationChrome.isNewSpaceCell(screen, terminalColumns, terminalRows, column, row)
-        ) return false
-        mutableHerdrProjectPicker.value = connection
+        return herdrSessionActive && connection.isHerdrSession && viewport.autoFollow &&
+            HerdrNavigationChrome.isNewSpaceCell(screen, terminalColumns, terminalRows, column, row)
+    }
+
+    internal fun showHerdrProjectPickerAt(column: Int, row: Int): Boolean {
+        if (!isHerdrNewWorkspaceCell(column, row)) return false
+        val source = inputSink as? Connection ?: return false
+        herdrProjectsFor(source)?.refresh(force = true)
+        mutableHerdrProjectPicker.value = source
         return true
     }
 
@@ -224,17 +257,44 @@ class TerminalController(
     internal var herdrHistoryGeneration: Long = 0L
         private set
 
+    internal data class HerdrHistoryCaptureState(
+        val generation: Long,
+        val source: HerdrPaneHistory?,
+        val reading: Boolean,
+        val pinned: Boolean,
+    )
+
+    internal fun captureHerdrHistoryState(): HerdrHistoryCaptureState = synchronized(herdrPublicationLock) {
+        HerdrHistoryCaptureState(herdrHistoryGeneration, herdrHistory, herdrHistoryReading, herdrHistoryPinned)
+    }
+
+    /** Publishes local reader ownership only if navigation has not invalidated its capture. */
+    internal fun tryPublishHerdrReaderState(
+        expectedGeneration: Long,
+        reading: Boolean,
+        pinned: Boolean,
+    ): Boolean = synchronized(herdrPublicationLock) {
+        if (expectedGeneration != herdrHistoryGeneration) return@synchronized false
+        herdrHistoryReading = reading
+        herdrHistoryPinned = pinned
+        true
+    }
+
     private fun invalidateHerdrHistory() {
-        herdrHistoryGeneration++
-        herdrHistoryReading = false
-        herdrHistoryPinned = false
-        publishHerdrHistory(null)
+        synchronized(herdrPublicationLock) {
+            herdrHistoryGeneration++
+            herdrHistoryReading = false
+            herdrHistoryPinned = false
+            publishHerdrHistory(null)
+        }
     }
 
     internal fun publishHerdrHistory(snapshot: HerdrPaneHistory?) {
-        if (herdrHistory === snapshot) return
-        herdrHistory = snapshot
-        frameScheduler.postFrame { notifyContentChanged() }
+        synchronized(herdrPublicationLock) {
+            if (herdrHistory === snapshot) return
+            herdrHistory = snapshot
+            frameScheduler.postFrame { notifyContentChanged() }
+        }
     }
 
     internal fun publishHerdrHistoryRead(
@@ -242,31 +302,55 @@ class TerminalController(
         sourceAtCapture: HerdrPaneHistory?,
         generationAtCapture: Long = herdrHistoryGeneration,
     ) {
-        if (generationAtCapture != herdrHistoryGeneration) return
-        when (result) {
-            is HerdrHistoryRead.Available -> {
-                val current = herdrHistory
-                val screen = terminalScreen
-                // A shared Herdr server can report another client's grid. Keep
-                // this client's valid snapshot until a compatible read arrives;
-                // never stretch the other grid or discard a working reader for it.
-                if (current != null && current.identity == result.history.identity &&
-                    projectHerdrHistory(result.history, screen, terminalColumns, terminalRows) == null &&
-                    (projectHerdrHistory(current, screen, terminalColumns, terminalRows) != null ||
-                        herdrHistoryReading && sourceAtCapture != null && current.samePane(sourceAtCapture))
-                ) return
-                publishHerdrHistory(result.history)
+        tryPublishHerdrHistoryRead(result, sourceAtCapture, generationAtCapture)
+    }
+
+    internal fun tryPublishHerdrHistoryRead(
+        result: HerdrHistoryRead,
+        sourceAtCapture: HerdrPaneHistory?,
+        generationAtCapture: Long,
+    ): Boolean {
+        val state: HerdrHistoryCaptureState
+        val screen: List<TerminalLine>?
+        val columns: Int
+        val rows: Int
+        synchronized(herdrPublicationLock) {
+            if (generationAtCapture != herdrHistoryGeneration) return false
+            state = captureHerdrHistoryState()
+            screen = terminalScreen
+            columns = terminalColumns
+            rows = terminalRows
+        }
+        // Projection reads the live chrome and can inspect many cells. Keep it out
+        // of the UI's invalidation boundary, then validate its exact source again.
+        val current = state.source
+        val retainCompatibleReader = result is HerdrHistoryRead.Available && current != null &&
+            current.identity == result.history.identity &&
+            projectHerdrHistory(result.history, screen, columns, rows) == null &&
+            (projectHerdrHistory(current, screen, columns, rows) != null ||
+                state.reading && sourceAtCapture != null && current.samePane(sourceAtCapture))
+        return synchronized(herdrPublicationLock) {
+            if (generationAtCapture != herdrHistoryGeneration || herdrHistory !== state.source ||
+                herdrHistoryReading != state.reading || herdrHistoryPinned != state.pinned || terminalScreen !== screen ||
+                terminalColumns != columns || terminalRows != rows
+            ) return@synchronized false
+            // A newer source/grid/reader wins. The next scheduled poll retries;
+            // never apply a projection computed against a replaced snapshot.
+            if (retainCompatibleReader) return@synchronized false
+            when (result) {
+                is HerdrHistoryRead.Available -> publishHerdrHistory(result.history)
+                HerdrHistoryRead.Unavailable -> publishHerdrHistory(null)
+                is HerdrHistoryRead.Retry -> {
+                    val retained = herdrHistory ?: return@synchronized true
+                    val target = result.target
+                    val contextIdentity = inputContext.value.identity
+                    val retain = if (target != null) target.matches(retained) else
+                        (contextIdentity.isEmpty() && herdrHistoryReading && herdrHistoryPinned && retained === sourceAtCapture) ||
+                            contextIdentity == "herdr/${retained.identity}"
+                    if (!retain) publishHerdrHistory(null)
+                }
             }
-            HerdrHistoryRead.Unavailable -> publishHerdrHistory(null)
-            is HerdrHistoryRead.Retry -> {
-                val current = herdrHistory ?: return
-                val target = result.target
-                val contextIdentity = inputContext.value.identity
-                val retain = if (target != null) target.matches(current) else
-                    (contextIdentity.isEmpty() && herdrHistoryReading && herdrHistoryPinned && current === sourceAtCapture) ||
-                        contextIdentity == "herdr/${current.identity}"
-                if (!retain) publishHerdrHistory(null)
-            }
+            true
         }
     }
     @Volatile
@@ -391,8 +475,9 @@ class TerminalController(
             applyDirectSendPolicy = false,
         )
 
-    fun sendPaste(text: String, appendEnter: Boolean = false): Boolean =
-        trySendUserInput(
+    fun sendPaste(text: String, appendEnter: Boolean = false): Boolean {
+        if (text.containsBracketedPasteEnd()) return false
+        return trySendUserInput(
             bytes = encodeTerminalPaste(
                 text = text,
                 bracketedPaste = terminalModes.bracketedPaste,
@@ -400,6 +485,7 @@ class TerminalController(
             ),
             applyDirectSendPolicy = false,
         )
+    }
 
     /** Reviews are multiline input: require bracketed paste so a shell cannot execute each line. */
     fun sendReviewPaste(text: String): Boolean {
@@ -437,6 +523,10 @@ class TerminalController(
             applyDirectSendPolicy = true,
         )
     }
+
+    /** Accessory clicks use the live VT cursor, never its scrollback-adjusted display row. */
+    fun clickMouseAtCursor(secondary: Boolean = false): Boolean =
+        sendMouseClick(terminalCursor.column, terminalCursor.row, secondary)
 
     /** A tap targets the live grid only; old scrollback must never click an unseen control. */
     fun sendMouseClick(column: Int, row: Int, secondary: Boolean = false): Boolean {
@@ -628,7 +718,10 @@ class TerminalController(
         trustTmuxStreamScrollback: Boolean = true,
     ) {
         dismissHerdrProjectPicker()
+        herdrProjectsCache?.close()
         inputSink = sink
+        herdrProjectsCache = (sink as? Connection)?.let { HerdrRecentProjectsCache(it::recentHerdrProjects) }
+        (sink as? Connection)?.let(::prefetchHerdrProjects)
         terminalSizeListener = onResize
         inputAcceptedListener = onInputAccepted
         tmuxSessionProvider = isTmuxSession
@@ -642,6 +735,8 @@ class TerminalController(
     fun resetInputSink() {
         liveScreenHasFixedFooter = false
         dismissHerdrProjectPicker()
+        herdrProjectsCache?.close()
+        herdrProjectsCache = null
         herdrSessionActive = false
         publishHerdrSidebarLayout(null)
         publishHerdrHistory(null)
@@ -1665,21 +1760,3 @@ internal fun selectKeypadSequence(
     normal: ByteArray,
     application: ByteArray,
 ): ByteArray = if (applicationKeypad) application else normal
-
-internal fun encodeTerminalPaste(
-    text: String,
-    bracketedPaste: Boolean,
-    appendEnter: Boolean = false,
-): ByteArray {
-    val bytes = text.toByteArray(Charsets.UTF_8)
-    val paste = if (bracketedPaste) {
-        BRACKETED_PASTE_START + bytes + BRACKETED_PASTE_END
-    } else {
-        bytes
-    }
-    return if (appendEnter) paste + PASTE_ENTER else paste
-}
-
-private val BRACKETED_PASTE_START = byteArrayOf(0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e)
-private val BRACKETED_PASTE_END = byteArrayOf(0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e)
-private val PASTE_ENTER = byteArrayOf(0x0d)

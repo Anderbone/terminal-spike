@@ -18,7 +18,11 @@ import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
+import com.yanjiyu.terminalspike.core.model.MoshFallbackPolicy
+import com.yanjiyu.terminalspike.core.model.MoshPortRange
 import com.yanjiyu.terminalspike.settings.SavedSshProfile
+import com.yanjiyu.terminalspike.settings.SavedHostConnectionCompatibility
+import com.yanjiyu.terminalspike.connection.DEFAULT_MOSH_LOCALE
 import com.yanjiyu.terminalspike.ui.MoshExtensionUiKind
 import com.yanjiyu.terminalspike.ui.MoshExtensionUiState
 import com.yanjiyu.terminalspike.ui.UiText
@@ -36,6 +40,143 @@ import org.hamcrest.Matchers.equalTo
 class SshReconnectDialogTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
+
+    @Test
+    fun savedMoshDefaultsStillUseSavedPasswordForAnExplicitDefaultSeed() {
+        val profile = SavedSshProfile(7, "Roaming", "mobile.example", 22, "operator",
+            hasSavedPassword = true, protocol = ConnectionProtocol.MOSH,
+            connectionCompatibility = SavedHostConnectionCompatibility.MOSH_PASSWORD)
+        var submission: DialogSubmission? = null
+        setDialog(
+            seed = SshConnectionSeed("mobile.example", 22, "operator", sourceProfileId = 7,
+                connectionOptions = RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+                    moshLocale = DEFAULT_MOSH_LOCALE, moshServerCommand = "mosh-server")),
+            purpose = SshConnectPurpose.DUPLICATE,
+            profile = profile,
+            moshExtension = availableMoshUiState(),
+            onConnect = { submission = it },
+        )
+
+        composeRule.onNodeWithText("Password saved on device").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Duplicate").assertIsEnabled().performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(7L, submission?.selectedProfileId)
+            assertEquals("", submission?.password)
+            assertEquals(RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH), submission?.connectionOptions)
+        }
+    }
+
+    @Test
+    fun savedMoshChipRetainsCustomOptionsAndChangingScopeNeedsFreshPassword() {
+        val profile = SavedSshProfile(7, "Roaming", "mobile.example", 22, "operator",
+            hasSavedPassword = true, protocol = ConnectionProtocol.MOSH,
+            connectionCompatibility = SavedHostConnectionCompatibility.MOSH_PASSWORD,
+            moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.ASK)
+        var submission: DialogSubmission? = null
+        setDialog(
+            seed = SshConnectionSeed("other.example", 22, "operator"),
+            purpose = SshConnectPurpose.NEW,
+            profile = profile,
+            moshExtension = availableMoshUiState(),
+            onConnect = { submission = it },
+        )
+
+        composeRule.onNodeWithText("Roaming").performClick()
+        composeRule.onNodeWithText("Password saved on device").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Connect").assertIsEnabled()
+        setTextWithoutOpeningIme("UDP port or range (optional)", "60011")
+        composeRule.onNodeWithText("Password saved on device").assertDoesNotExist()
+        composeRule.onNodeWithText("Connect").assertIsNotEnabled()
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
+        onView(withTagValue(equalTo(SshConnectPasswordTestTag))).perform(replaceText("fresh credential"))
+        closeSoftKeyboard()
+        composeRule.onNodeWithText("Connect").assertIsEnabled().performClick()
+
+        composeRule.runOnIdle {
+            assertEquals("mobile.example", submission?.host)
+            assertNull(submission?.selectedProfileId)
+            assertEquals(RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+                moshPort = 60_011, moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.ASK),
+                submission?.connectionOptions)
+        }
+    }
+
+    @Test
+    fun switchingProtocolsKeepsMoshOptionsButSubmitsNoMoshPolicyToSsh() {
+        val options = RemoteConnectionOptions(protocol = ConnectionProtocol.MOSH,
+            moshPort = 60_011, moshServerCommand = "/opt/mosh-server",
+            moshLocale = "en_GB.UTF-8", moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC)
+        var submission: DialogSubmission? = null
+        setDialog(
+            seed = SshConnectionSeed("mobile.example", 22, "operator", connectionOptions = options),
+            purpose = SshConnectPurpose.NEW,
+            moshExtension = availableMoshUiState(),
+            onConnect = { submission = it },
+        )
+        composeRule.onNodeWithText("SSH").performClick()
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
+        onView(withTagValue(equalTo(SshConnectPasswordTestTag))).perform(replaceText("fresh SSH credential"))
+        closeSoftKeyboard()
+        composeRule.onNodeWithText("Connect").assertIsEnabled().performClick()
+        composeRule.runOnIdle { assertEquals(RemoteConnectionOptions.SSH, submission?.connectionOptions) }
+
+        composeRule.onNodeWithText("Mosh").performScrollTo().performClick()
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
+        onView(withTagValue(equalTo(SshConnectPasswordTestTag))).perform(replaceText("fresh Mosh credential"))
+        closeSoftKeyboard()
+        composeRule.onNodeWithText("Connect").assertIsEnabled().performClick()
+        composeRule.runOnIdle { assertEquals(options, submission?.connectionOptions) }
+    }
+
+    @Test
+    fun reconnectRetainsCustomMoshLocaleWhenRequestingFreshAuthentication() {
+        val options = RemoteConnectionOptions(
+            protocol = ConnectionProtocol.MOSH,
+            moshPortRange = MoshPortRange(60_010, 60_020),
+            moshServerCommand = "/usr/local/bin/mosh-server",
+            moshLocale = "en_GB.UTF-8",
+        )
+        var submission: DialogSubmission? = null
+        setDialog(
+            seed = SshConnectionSeed("mobile.example", 22, "operator", connectionOptions = options),
+            purpose = SshConnectPurpose.RECONNECT,
+            moshExtension = availableMoshUiState(),
+            onConnect = { submission = it },
+        )
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
+        onView(withTagValue(equalTo(SshConnectPasswordTestTag))).perform(replaceText("fresh credential"))
+        closeSoftKeyboard()
+        composeRule.onNodeWithText("Reconnect").assertIsEnabled().performClick()
+
+        composeRule.runOnIdle { assertEquals(options, submission?.connectionOptions) }
+    }
+
+    @Test
+    fun duplicateMoshRetainsFallbackPolicyAfterAdvancedFieldEdits() {
+        val options = RemoteConnectionOptions(
+            protocol = ConnectionProtocol.MOSH,
+            moshFallbackPolicy = MoshFallbackPolicy.AUTOMATIC,
+        )
+        var submission: DialogSubmission? = null
+        setDialog(
+            seed = SshConnectionSeed("mobile.example", 22, "operator", connectionOptions = options),
+            purpose = SshConnectPurpose.DUPLICATE,
+            moshExtension = availableMoshUiState(),
+            onConnect = { submission = it },
+        )
+        setTextWithoutOpeningIme("UDP port or range (optional)", "60011")
+        setTextWithoutOpeningIme("Server executable", "/opt/mosh-server")
+        composeRule.onNodeWithTag(SshConnectPasswordTestTag).performScrollTo()
+        onView(withTagValue(equalTo(SshConnectPasswordTestTag))).perform(replaceText("fresh credential"))
+        closeSoftKeyboard()
+        composeRule.onNodeWithText("Duplicate").assertIsEnabled().performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(options.copy(moshPort = 60_011, moshServerCommand = "/opt/mosh-server"),
+                submission?.connectionOptions)
+        }
+    }
 
     @Test
     fun unsavedReconnectPrefillsEndpointButRequiresFreshAuthentication() {

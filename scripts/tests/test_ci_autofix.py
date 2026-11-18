@@ -298,11 +298,11 @@ class CiAutofixTest(unittest.TestCase):
             native_command = MODULE.command
             creations = []
 
-            def invoke(args, cwd=None, timeout=120):
+            def invoke(args, cwd=None, timeout=120, **kwargs):
                 if args[:3] == ["gh", "pr", "create"]:
                     creations.append(args)
                     return f"https://github.com/{MODULE.REPO}/pull/3"
-                return native_command(args, cwd, timeout)
+                return native_command(args, cwd, timeout, **kwargs)
 
             def agent(workspace, evidence, attempt):
                 (workspace / "app/Fix.kt").write_text(f"// focused fix {attempt}\n")
@@ -335,6 +335,222 @@ class CiAutofixTest(unittest.TestCase):
             files = native_command(["git", "diff", "--name-only", initial, chain["sha"]], checkout)
             self.assertEqual("app/Fix.kt", files)
             self.assertEqual(chain["sha"], native_command(["git", "rev-parse", f"refs/heads/{branch}"], remote))
+
+
+class CiAutofixPathBoundaryTest(unittest.TestCase):
+    """Run both actual repair collectors with local Git, never a real agent or publisher."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="CI raw path boundary ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.native_command = MODULE.command
+        self.git("init", "-b", "main")
+        self.git("config", "user.name", "CI path fixture")
+        self.git("config", "user.email", "ci-path@example.invalid")
+        self.git("config", "core.hooksPath", "/dev/null")
+        self.git("config", "commit.gpgsign", "false")
+        self.git("config", "core.quotePath", "true")
+        self.write(".gitignore", "build/\nstate/\n")
+        self.write("app/build.gradle.kts", 'versionCode = 39\nversionName = "0.0.24"\n')
+        self.write("app/existing.kt", "// baseline\n")
+        self.write("AGENTS.md", "fixture protected instructions\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "fixture baseline")
+        self.head = self.git("rev-parse", "HEAD")
+        self.loop = MODULE.Loop(self.root, self.root / "state")
+        branch = MODULE.PREFIX + "101"
+        self.chain = {"branch": branch, "sha": self.head, "base_sha": self.head, "origin_run": 101,
+                      "attempts": 0, "started": MODULE.time.time(), "pr": None}
+        self.loop.state["active"] = branch
+        self.loop.state["chains"][branch] = self.chain
+        self.run = dict(id=101, run_attempt=1, status="completed", conclusion="failure",
+                        html_url="https://example.invalid/fixture", head_branch="main",
+                        head_sha=self.head, event="push")
+        self.commands = []
+        self.path_batches = []
+        self.host_calls = []
+
+    def git(self, *args):
+        return self.native_command(["git", *args], self.root)
+
+    def write(self, relative, content="// fixture change\n"):
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return path
+
+    def exercise(self, edit, *, retry=False):
+        self.loop.state["handled"].clear()
+        self.chain.update(stopped=False, attempts=0)
+        native_validate = MODULE.validate_changes
+        def validate(paths, before, after):
+            self.path_batches.append(list(paths))
+            native_validate(paths, before, after)
+            if not retry or len(self.path_batches) > 1:
+                raise RuntimeError("fixture: validation completed; stop before host/publication")
+        def commands(args, cwd=None, timeout=120, **kwargs):
+            self.commands.append(args)
+            if args[:2] in (["git", "add"], ["git", "commit"], ["git", "push"]) or args[0] == "gh":
+                raise AssertionError("fixture forbids controller Git writes and external calls")
+            return self.native_command(args, cwd, timeout, **kwargs)
+        def host(*args, **kwargs):
+            self.host_calls.append(args)
+            raise MODULE.HostVerificationFailed("fixture: first focused check failed")
+        with patch.object(self.loop, "workspace", return_value=self.root), \
+             patch.object(self.loop, "evidence", return_value=self.root / "build/evidence"), \
+             patch.object(self.loop, "agent", side_effect=edit) as agent, \
+             patch.object(self.loop, "host_check", side_effect=host), \
+             patch.object(MODULE, "validate_changes", side_effect=validate), \
+             patch.object(MODULE, "command", side_effect=commands), \
+             patch.object(MODULE, "gh") as gh, patch("builtins.print"):
+            self.loop.repair(self.run, self.chain)
+        self.assertEqual(2 if retry else 1, agent.call_count)
+        gh.assert_not_called()
+        self.assertEqual(self.head, self.git("rev-parse", "HEAD"))
+        self.assertTrue(self.chain["stopped"])
+        return self.chain["result"]
+
+    def assert_no_controller_writes(self):
+        self.assertFalse(any(args[:2] in (["git", "add"], ["git", "commit"], ["git", "push"])
+                             or args[0] == "gh" for args in self.commands))
+
+    def test_untracked_protected_names_with_controls_unicode_or_quotes_are_rejected(self):
+        names = (".github/workflows/line\nbreak.yml", "store-assets/中文.txt",
+                 "scripts/ci-autofix\tfixture.py", "AGENTS.md\nextra", "LICENSE\"extra",
+                 ".github/workflows/\x1b[31mfixture.yml", ".github/\u202efixture.txt")
+        for name in names:
+            with self.subTest(name=name):
+                self.commands.clear(); self.path_batches.clear(); self.host_calls.clear()
+                for prior in names:
+                    (self.root / prior).unlink(missing_ok=True)
+                def edit(*args):
+                    self.write(name)
+                    return "fixture report"
+                result = self.exercise(edit)
+                self.assertIn("protected path", result)
+                self.assertEqual([[name]], self.path_batches)
+                self.assertEqual([], self.host_calls)
+                self.assert_no_controller_writes()
+                (self.root / name).unlink()
+                self.chain.update(stopped=False, attempts=0)
+                self.loop.state["handled"].clear()
+
+    def test_binary_and_signing_suffixes_are_checked_after_raw_name_decoding(self):
+        names = ("app/line\nname.apk", "app/秘密.keystore", "app/quote\"name.aab", "app/tab\tname.jks")
+        for name in names:
+            with self.subTest(name=name):
+                self.commands.clear(); self.path_batches.clear(); self.host_calls.clear()
+                for prior in names:
+                    (self.root / prior).unlink(missing_ok=True)
+                result = self.exercise(lambda *args: (self.write(name), "fixture report")[1])
+                self.assertIn("protected path", result)
+                self.assertEqual([[name]], self.path_batches)
+                self.assert_no_controller_writes()
+                (self.root / name).unlink()
+                self.chain.update(stopped=False, attempts=0)
+                self.loop.state["handled"].clear()
+
+    def test_permitted_names_are_preserved_without_stripping_splitting_or_git_quotes(self):
+        names = [" leading.kt", "trailing.kt ", "app/模块.kt", "app/quote\"name.kt",
+                 "app/tab\tname.kt", "app/back\\slash.kt", "app/multi\nline.kt"]
+        def edit(*args):
+            for name in names:
+                self.write(name)
+            return "fixture report"
+        result = self.exercise(edit)
+        self.assertIn("fixture: validation completed", result)
+        self.assertEqual(1, len(self.path_batches))
+        self.assertCountEqual(names, self.path_batches[0])
+        self.assert_no_controller_writes()
+
+    def test_modified_and_deleted_tracked_paths_are_still_collected(self):
+        self.write("app/deleted.kt", "// tracked\n")
+        self.git("add", "app/deleted.kt")
+        self.git("commit", "-qm", "fixture tracked deletion")
+        self.head = self.git("rev-parse", "HEAD")
+        self.chain["sha"] = self.head
+        def edit(*args):
+            self.write("app/existing.kt", "// modified\n")
+            (self.root / "app/deleted.kt").unlink()
+            return "fixture report"
+        result = self.exercise(edit)
+        self.assertIn("fixture: validation completed", result)
+        self.assertEqual(1, len(self.path_batches))
+        self.assertCountEqual(["app/existing.kt", "app/deleted.kt"], self.path_batches[0])
+        self.assert_no_controller_writes()
+
+    def test_an_unstaged_rename_preserves_both_delete_and_new_path(self):
+        renamed = "app/renamed\nfile.kt"
+        def edit(*args):
+            (self.root / "app/existing.kt").rename(self.root / renamed)
+            return "fixture report"
+        result = self.exercise(edit)
+        self.assertIn("fixture: validation completed", result)
+        self.assertCountEqual(["app/existing.kt", renamed], self.path_batches[0])
+        self.assert_no_controller_writes()
+
+    def test_staged_protected_changes_cannot_hide_behind_an_allowed_unstaged_patch(self):
+        def edit(*args):
+            self.write("AGENTS.md", "changed protected fixture\n")
+            self.git("add", "AGENTS.md")
+            self.write("app/allowed.kt")
+            return "fixture report"
+        result = self.exercise(edit)
+        self.assertIn("staged", result)
+        self.assertEqual([], self.path_batches)
+        self.assertEqual([], self.host_calls)
+        self.assertEqual("AGENTS.md", self.git("diff", "--cached", "--name-only"))
+        self.assertEqual("changed protected fixture\n", (self.root / "AGENTS.md").read_text())
+        self.assert_no_controller_writes()
+
+    def test_staging_only_permitted_changes_also_stops_for_manual_review(self):
+        def edit(*args):
+            self.write("app/allowed.kt")
+            self.git("add", "app/allowed.kt")
+            return "fixture report"
+        result = self.exercise(edit)
+        self.assertIn("staged", result)
+        self.assertEqual([], self.path_batches)
+        self.assertEqual("app/allowed.kt", self.git("diff", "--cached", "--name-only"))
+        self.assert_no_controller_writes()
+
+    def test_second_attempt_rechecks_raw_protected_paths_before_another_host_gate(self):
+        name = ".github/workflows/late\nfixture.yml"
+        def edit(workspace, evidence, attempt):
+            self.write("app/allowed.kt", f"// attempt {attempt}\n")
+            if attempt == 2:
+                self.write(name)
+            return "fixture report"
+        result = self.exercise(edit, retry=True)
+        self.assertIn("protected path", result)
+        self.assertEqual(1, len(self.host_calls))
+        self.assertEqual(2, len(self.path_batches))
+        self.assertIn(name, self.path_batches[1])
+        self.assert_no_controller_writes()
+
+    def test_second_attempt_rechecks_staging_without_resetting_the_index(self):
+        def edit(workspace, evidence, attempt):
+            self.write("app/allowed.kt", f"// attempt {attempt}\n")
+            if attempt == 2:
+                self.write("AGENTS.md", "staged on retry\n")
+                self.git("add", "AGENTS.md")
+            return "fixture report"
+        result = self.exercise(edit, retry=True)
+        self.assertIn("staged", result)
+        self.assertEqual(1, len(self.host_calls))
+        self.assertEqual(1, len(self.path_batches))
+        self.assertEqual("AGENTS.md", self.git("diff", "--cached", "--name-only"))
+        self.assert_no_controller_writes()
+
+    def test_rejected_filename_cannot_inject_terminal_controls_into_the_status(self):
+        path = ".github/workflows/\x1b[31mfixture\nname.yml"
+        with self.assertRaises(RuntimeError) as raised:
+            MODULE.validate_changes([path], [], [])
+        message = str(raised.exception)
+        self.assertIn("protected path", message)
+        self.assertNotIn("\x1b", message)
+        self.assertNotIn("\n", message)
 
 
 if __name__ == "__main__":

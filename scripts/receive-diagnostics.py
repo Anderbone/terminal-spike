@@ -189,7 +189,11 @@ class Receiver:
         except (subprocess.SubprocessError, OSError):
             pass
 
-    def advance(self) -> None:
+    def advance(self, *, allow_start: bool = True) -> None:
+        if self.active and self.active[2]["state"] == "analysis_failed":
+            self._stop_failed_analysis()
+            if self.active:
+                return
         if self.active:
             process, path, metadata, log, started = self.active
             age = time.monotonic() - started
@@ -207,6 +211,9 @@ class Receiver:
             atomic_write(self.root / "latest-status.json", json.dumps(metadata, ensure_ascii=False, indent=2).encode())
             self.active = None
             print(f"Analysis {metadata['id']}: {state}", flush=True)
+        if not allow_start:
+            self.prune_completed()
+            return
         for path in sorted(self.root.glob("*.json")):
             if not REPORT_NAME.fullmatch(path.stem + ".txt"):
                 continue
@@ -222,16 +229,53 @@ class Receiver:
 
     def prune_completed(self) -> None:
         completed = []
+        active_id = self.active[2]["id"] if self.active else None
         for path in self.root.glob("*.json"):
             if REPORT_NAME.fullmatch(path.stem + ".txt"):
                 metadata = json.loads(path.read_text())
-                if metadata.get("state") in {"analyzed", "analysis_failed"}:
+                if path.stem != active_id and metadata.get("state") in {"analyzed", "analysis_failed"}:
                     completed.append((metadata["received_at"], path.stem))
         for _, identifier in sorted(completed, reverse=True)[64:]:
             for suffix in [".txt", ".json", ".summary.json", ".analysis.md", ".analysis-stderr.log"]:
                 (self.root / (identifier + suffix)).unlink(missing_ok=True)
 
+    def _stop_failed_analysis(self) -> None:
+        """Keep the slot and log until the already spawned process is actually reaped."""
+        if self.active is None:
+            return
+        process, _, _, log, _ = self.active
+        if process.poll() is None:
+            for action in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(process.pid, action)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=2)
+                    break
+                except subprocess.TimeoutExpired:
+                    if action == signal.SIGKILL:
+                        return
+        try:
+            log.close()
+        finally:
+            self.active = None
+
+    def close(self) -> None:
+        """Cancel an interrupted analysis without releasing ownership before reap."""
+        if self.active is None:
+            return
+        _, path, metadata, _, _ = self.active
+        try:
+            self.set_state(path, metadata, "analysis_failed")
+        finally:
+            self._stop_failed_analysis()
+        if self.active is not None:
+            raise RuntimeError("Could not reap the interrupted analysis process")
+
     def start_analysis(self, path: Path, metadata: dict) -> None:
+        if self.active is not None:
+            raise RuntimeError("An analysis process is still owned by this receiver")
         report = self.root / f"{metadata['id']}.analysis.md"
         prompt = f"""分析 Terminal Spike 的一次手机终端卡顿诊断，只读调查。用户明确禁止修改代码、提交、推送、发布、安装或运行设备测试。
 诊断文件：{self.root / (metadata['id'] + '.txt')}
@@ -251,18 +295,26 @@ Mosh 的 RECEIVED 是本地 terminalOutput 管道读取，可能包含本地预�
                      "--color", "never", "--output-last-message", str(report), "-"]
         self.set_state(path, metadata, "starting")
         environment = dict(os.environ, TMPDIR=str(self.temporary))
-        log = (self.root / f"{metadata['id']}.analysis-stderr.log").open("wb")
+        log = None
         try:
-            process = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log,
-                                       env=environment, start_new_session=True)
-            process.stdin.write(prompt.encode())
-            process.stdin.close()
-            metadata["pid"] = process.pid
+            log = (self.root / f"{metadata['id']}.analysis-stderr.log").open("wb")
+            # Prepare input before spawning: no pipe write/flush can block or fail after launch.
+            with tempfile.TemporaryFile(dir=self.temporary) as source:
+                source.write(prompt.encode())
+                source.seek(0)
+                process = subprocess.Popen(arguments, stdin=source, stdout=subprocess.DEVNULL, stderr=log,
+                                           env=environment, start_new_session=True)
+                metadata["pid"] = process.pid
+                self.active = process, path, metadata, log, time.monotonic()
             self.set_state(path, metadata, "analysis_started")
-            self.active = process, path, metadata, log, time.monotonic()
         except (OSError, subprocess.SubprocessError):
-            log.close()
-            self.set_state(path, metadata, "analysis_failed")
+            try:
+                self.set_state(path, metadata, "analysis_failed")
+            finally:
+                if self.active:
+                    self._stop_failed_analysis()
+                elif log is not None:
+                    log.close()
 
 
 def main() -> None:
@@ -276,15 +328,31 @@ def main() -> None:
     args = parser.parse_args()
     os.umask(0o077)
     receiver = Receiver(args.repo, args.adb, args.codex, not args.no_codex)
-    while True:
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def terminate(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, terminate)
+    draining = False
+    try:
+        while True:
+            try:
+                if not draining:
+                    receiver.collect()
+                receiver.advance(allow_start=not draining)
+            except (subprocess.SubprocessError, OSError) as error:
+                print(f"Receiver unavailable: {type(error).__name__}", flush=True)
+            if args.once:
+                if receiver.active is None:
+                    return
+                draining = True
+            time.sleep(max(1, args.interval))
+    finally:
         try:
-            receiver.collect()
-            receiver.advance()
-        except (subprocess.SubprocessError, OSError) as error:
-            print(f"Receiver unavailable: {type(error).__name__}", flush=True)
-        if args.once:
-            return
-        time.sleep(max(1, args.interval))
+            receiver.close()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

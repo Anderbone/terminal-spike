@@ -8,6 +8,14 @@ dependency checks, JDK toolchain rules and release packaging checks remain enabl
 Do not use `clean` or disable incremental compilation for routine verification.
 Logs and timings are in ignored `build/verification/`.
 
+The standalone JUnit report gate and release-candidate evidence generator share
+`scripts/junit_report.py`. Both validate nested suite totals against available
+child suites and case outcomes, including omitted optional skip totals. Passing
+headers cannot hide failed or missing case records. Consistent summary-only reports
+remain supported; the evidence generator still requires positive, non-failing totals
+that match the candidate's declared counts. XML parse errors and excessive nesting
+produce fixed diagnostics without printing case names, output or stack traces.
+
 For UI changes, also run the affected instrumentation classes before pushing:
 
 ```bash
@@ -15,6 +23,20 @@ scripts/verify-android.sh
 scripts/run-android-emulator-tests.sh --api 35 --suite full \
   --test-filter com.yanjiyu.terminalspike.MainScreenSmokeTest
 ```
+
+Emulator-runner cleanup terminates only the child process started by that invocation, with bounded TERM/KILL shutdown. It does not send a console kill by ADB serial: an early launch failure or AVD-identity mismatch may leave that serial pointing at another running emulator. Failure reports and private-workspace cleanup retain their existing behavior.
+
+Before system-image installation or launch, the runner reads ADB inventory and rejects an existing target serial in any state, including offline or unauthorized. Inventory errors fail the run. Each actual launch adds a UUID to its private AVD name; dry-run output retains the logical API/suite name. A process claiming the console port after inventory must still match that unique AVD identity before settings, installs or tests can run. Unrelated serials remain available to their owners. This check establishes target identity rather than reserving the TCP port.
+
+The lifecycle runner uses the same owned-child shutdown rule. Pressure restoration, fixture shutdown, process termination, log redaction and workspace cleanup are attempted independently, and cleanup failures are reported by operation name. If its child cannot be stopped, the workspace is retained. Hermetic lifecycle unit fixtures use a fresh process group; a fixture timeout kills that whole owned group, preserves the timeout failure and does not increase the existing 15-second default.
+
+Release-update and lifecycle markers share `scripts/terminal_test_markers.py`. Input sends an octal-encoded `printf` format plus a newline, so command echo does not contain the plaintext marker. Verification requires the complete marker line in the native terminal accessibility node, allowing right-side cell padding; input drafts, command echoes and marker substrings are rejected. Local shell/Android input probes test that encoding boundary; actual SSH acceptance still requires the real-server scenario.
+
+The release-update wrapper leaves existing project APK/AAB outputs in place. Its optional build path uses a private Gradle init script to put project build directories beneath its own workspace and rejects an escaping output directory before tasks execute. Reusable Gradle/native caches remain available. The verified-artifact path signs private copies without rebuilding and rechecks their hashes before invoking either signer, rejecting inputs changed during copying. JAVA_HOME unset or empty uses keytool/jarsigner from PATH; an explicit JAVA_HOME remains authoritative.
+
+Verified APK/AAB checksum passes read at most 1 MiB at a time, checking both source artifacts and private copies before signing. Read errors close the stream and fail verification; this bounds hashing memory without weakening the manifest, revision or post-copy checks.
+
+Release-smoke cleanup stops the OpenSSH fixture only after that invocation requested it, reaps only its own emulator child, and removes only its private workspace. Python lifecycle and release callers share scripts/owned_process.py for bounded child shutdown. Cleanup attempts remain independent; a live child retains its workspace. The final complete/pass status is written only after cleanup succeeds; cleanup failure produces complete/fail and a failing exit code. Preflight rejection never removes existing project release artifacts or shuts down a fixture.
 
 Select classes relevant to the actual change; use API 26 as well for platform or
 keyboard behavior spanning supported Android versions. A filtered run is diagnostic
@@ -69,6 +91,13 @@ their features; never run tests on the foldable.
   first build's unsigned APK/AAB, signs copies with its temporary key, verifies both
   signatures and runs the existing release/update SSH acceptance. It does not compile
   the release a second time. Production credentials never enter this workflow.
+- Unsigned-release staging rejects tracked changes and non-ignored untracked files.
+  It validates both inputs before creating a destination, copies into an owned sibling
+  temporary directory, then rechecks cleanliness and HEAD before replacing the staged
+  files. Missing inputs, copy failures and failed source rechecks preserve the previous
+  stage. The manifest is replaced last; this is not a whole-directory transaction or
+  a repository lock, and consumers must still verify its revision and both hashes.
+  CI stages under ignored `build/ci-release`; an external destination is also supported.
 - The persistent self-hosted verification runner reuses its local Gradle User Home.
   `setup-gradle` still validates the wrapper but does not synchronize a remote cache;
   the November 13 run downloaded about 22 GB before a cache authentication failure.
@@ -76,6 +105,10 @@ their features; never run tests on the foldable.
   the visible Getting started guide before connecting. Lifecycle authentication
   selects the native password field by its accessible label; saved-data, process-death
   and remote-output assertions remain required.
+- Sanitized runtime reports are also copied to the runner's private evidence directory,
+  outside workspace cleanup. Run, attempt and report names must each be a single safe
+  path component; `.` and `..` are rejected before any directory is created. Ordinary
+  dotted names remain valid. This copy does not replace the exact test-result gates.
 - Verification logs and test reports are retained for seven days. Use the Gradle
   setup summary and `FROM-CACHE`/`UP-TO-DATE` counts to assess caching. Compare job
   durations and total billed minutes over several similar runs before claiming a
@@ -140,6 +173,13 @@ separate Mosh extension. It needs Python 3, OpenSSL, the configured Android/JDK 
 Git and the existing external signing files/service-account JSON. No new Python
 package is required. Default signing directory: `../app_sign`; override with
 `--signing-dir` and, when needed, `--credential` pointing outside the repository.
+
+OAuth signing scratch space follows the shared disk-backed temp policy: nonempty
+`TMPDIR`, then `RUNNER_TEMP`, then `${XDG_CACHE_HOME:-~/.cache}/terminal-spike/tmp`.
+The selected root is created if missing; an unusable explicit root fails before
+signing or token exchange. The per-request directory remains mode 0700 and the
+key file 0600, and both are removed before the token request, including on signer
+failure. This does not change credentials, JWT claims or Play publication state.
 
 ```bash
 # Inspect all visible consumed bundle/track codes and the internal track.
@@ -268,11 +308,23 @@ Only recognized transient download errors retry once. Lifecycle failures retain
 the redacted installer output in `sdk-install.txt`.
 
 CI downloads use the local `download-ci-artifact` action and authenticated GitHub
-REST API. Run ID, source SHA, artifact ID and SHA-256 must match before extraction.
+REST API. The downloader reads every page of the run artifact list before
+matching an exact name or pattern. Exact names must be unique across all pages;
+patterns include matches from every page. A changing total count, repeated ID or
+incomplete listing fails before any ZIP request. Run ID, source SHA, artifact ID
+and SHA-256 must match before extraction.
 An artifact ZIP request retries once for a known transport error, or for a 404 only
 when metadata confirms the same unexpired artifact still exists. Digest errors,
 missing membership and exhausted retries fail the job. No APK is rebuilt to
 recover an artifact transfer.
+
+ZIP members are decoded and CRC-checked in an owned sibling staging directory
+before destination contents change. Decode failures and interruptions remove that
+staging directory and preserve existing destination files. Publication merges the
+validated tree using atomic replacement of each file and preserves unrelated files.
+It requires a writable destination parent; publication of the whole tree is not a
+single transaction. A publication failure remains fatal and can leave a subset of
+complete files, never a successfully reported partial download.
 
 Before uploads, sanitized runtime evidence is retained separately under
 `~/.local/state/terminal-spike-ci-evidence/<run>/<attempt>/<artifact>/` on the
@@ -281,3 +333,39 @@ service failures; it contains the same sanitized outputs intended for upload.
 Failed instrumentation produces JUnit test identities/stacks and still exits
 nonzero. Per-API aggregation reports its own exact shard outcomes, and one failed
 aggregate no longer cancels the other API's diagnostic gate.
+
+JUnit conversion recognizes both the ordinary `Tests run: ..., Failures: ...` failure
+summary and the runner variant with `Tests found`. Each run's summary must agree
+with its completed records before explicit `--sharded` aggregation; counts from two
+incomplete shards cannot compensate for each other. Completed assertion failures
+do not acquire a fictitious crash, while real crash markers, missing records,
+duplicate identities and inconsistent summaries retain a completion error. Terminal
+characters forbidden in XML are rendered as visible `\uXXXX` escapes in the XML;
+the input log and the caller's redaction responsibilities are unchanged.
+
+`assert-test-report.py` preserves valid summary-only reports. When child suites or
+test cases are present, it recursively checks their counts against declared totals,
+including skipped tests. A parent cannot hide a failed case with zero failure
+totals. Malformed-report diagnostics disclose fixed count/structure errors, never
+the report's case names, messages or captured output.
+
+### Publication operation ownership and recovery
+
+`publish-play-internal.py` serializes cooperating `publish` and `promote` processes using the
+stable `build/play-release/.publisher.lock` file. Each operation writes a UUID-owned
+`build/play-release/operation-<uuid>.json` journal before allowing upload or track mutations,
+as well as the canonical publish/promotion receipt. These JSON files are atomically replaced
+and flushed to disk. Any journal with `state: started` blocks another publication operation,
+even if the canonical receipt was removed. Never delete a receipt or operation journal merely
+to retry: inspect its saved edit, bundle code/hash and current Play tracks, then resolve that
+specific operation before proceeding. Keep the journal with the existing release evidence.
+
+Source, HEAD, origin/main, prepared manifest/artifact, release notes and applicable upload
+receipt are checked again after authentication and before the final commit. Receipt ownership
+is checked before mutation and completion. An observed change stops publication and retains
+started evidence for recovery. A lost canonical receipt cannot silently transfer ownership to a
+new edit. This does not make checks atomic against writers that ignore the operation lock.
+`prepare` is not locked; changes it makes are detected by later source/artifact guards.
+Store-asset upload has a guard after its helper returns, rather than before every individual
+listing/image API call, and can leave an uncommitted edit when a subsequent guard fails.
+These guards do not replace the mandatory four-track readback and final publication verification.

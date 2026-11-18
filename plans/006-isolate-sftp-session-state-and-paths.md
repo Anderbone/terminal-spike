@@ -1,5 +1,9 @@
 # Plan 006: Isolate SFTP session state and preserve remote path identity
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Follow this plan in order. Preserve all unrelated
 > worktree changes. Do not weaken existing SSH trust or SFTP E2E assertions.
 > Update the plan status in `plans/README.md` only after every done criterion is
@@ -10,7 +14,7 @@
 > Compare the current-state excerpts below with the live files. Stop on a
 > semantic mismatch instead of applying this plan mechanically.
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: M
@@ -28,7 +32,7 @@ backslashes into separators, so a destructive operation can target a different
 remote object than the row the user selected. Both are release correctness
 defects with small, well-contained fixes.
 
-## Current state
+## Original state
 
 - `SftpSessionController.kt:60-87` replaces/clears the client but does not cancel
   the prior `operation`; the old job writes `_state` unconditionally.
@@ -42,7 +46,7 @@ defects with small, well-contained fixes.
   factories, and state assertions in `SftpSessionControllerTest.kt`; path
   contracts live in `SftpPathTest.kt`.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -66,13 +70,13 @@ defects with small, well-contained fixes.
 - changing SFTP UI layout or adding dependencies
 - changing generic remote-shell path behavior outside the SFTP boundary
 
-## Git workflow
+## Historical Git workflow
 
 - Work on the current branch unless the operator requests a branch.
 - Do not reset, clean, commit, push, or overwrite unrelated dirty files.
 - If committing is later authorized, use `fix: isolate SFTP operations and paths`.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Introduce a narrow testable SFTP session boundary
 
@@ -138,7 +142,7 @@ gate without weakening the unit proof.
 - Assert literal backslashes survive every pure path helper involved in list,
   rename, delete, copy, and download addressing.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [ ] No superseded SFTP job or callback can publish UI state.
 - [ ] `CancellationException` is rethrown rather than shown as an SFTP failure.
@@ -147,7 +151,7 @@ gate without weakening the unit proof.
 - [ ] Full local gate and `git diff --check` pass.
 - [ ] No out-of-scope files changed, except `plans/README.md` status.
 
-## STOP conditions
+## Historical stop conditions
 
 - The live controller no longer has the cited factory/state ownership shape.
 - Correct isolation requires changing SSH trust semantics or exposing secrets.

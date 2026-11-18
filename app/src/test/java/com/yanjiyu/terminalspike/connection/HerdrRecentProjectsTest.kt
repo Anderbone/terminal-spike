@@ -11,10 +11,10 @@ class HerdrRecentProjectsTest {
         {"cwd":"/projects/second/"}
     ]}}}"""
 
-    @Test fun filtersEveryOpenPaneDirectoryWithoutChangingZoxideRanking() {
+    @Test fun filtersEveryOpenPaneDirectoryAndSortsUnknownDatesDeterministically() {
         val open = herdrOpenProjectPaths(output(snapshot))
         val recent = output("/projects/open\n/projects/new two\n/projects/current/\n/projects/new-one\n/projects/second\n/projects/new two/\nrelative\n/bad\u0000name\n")
-        assertEquals(listOf("/projects/new two", "/projects/new-one"), filterHerdrRecentProjects(recent, open))
+        assertEquals(listOf(RecentHerdrProject("/projects/new two"), RecentHerdrProject("/projects/new-one")), filterHerdrRecentProjects(recent, open))
     }
 
     @Test fun failedSnapshotDoesNotShowAlreadyOpenProjectsAsCandidates() {
@@ -31,7 +31,7 @@ class HerdrRecentProjectsTest {
             commands += it
             if (commands.size == 1) output(snapshot) else output("")
         }
-        assertEquals(emptyList<String>(), recentHerdrProjects(runner, choice))
+        assertEquals(emptyList<RecentHerdrProject>(), recentHerdrProjects(runner, choice))
         assertEquals("'/opt/herdr bin' '--session' 'selected session' 'api' 'snapshot'", commands.first())
         assertTrue(commands.last().contains("query --list"))
         var calls = 0
@@ -50,7 +50,12 @@ class HerdrRecentProjectsTest {
         assertTrue(openHerdrProject(runner, choice, path))
         val create = listOf(choice.executable, "--session", choice.sessionName, "workspace", "create", "--cwd", path, "--focus")
             .joinToString(" ", transform = ::quotePosixShellArgument)
-        assertEquals("/bin/sh -c " + quotePosixShellArgument("test -d ${quotePosixShellArgument(path)} && exec $create"), commands.last())
+        // The exact quoted create happens once, before recording a successful visit.
+        val script = commands.last()
+        assertTrue(script.startsWith("/bin/sh -c "))
+        assertTrue(script.contains(quotePosixShellArgument(create).removeSurrounding("'")))
+        assertTrue(script.contains(" add -- "))
+        assertFalse(script.contains("&& exec"))
         commands.clear()
         assertFalse(openHerdrProject(runner, choice, "/projects/open"))
         assertEquals(1, commands.size)

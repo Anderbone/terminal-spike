@@ -945,3 +945,12 @@ abstract class LegacyMigrationDao {
         return LegacyMigrationInsertResult.INSERTED
     }
 }
+
+@Dao
+interface SnippetToolbarStateDao {
+    @Query("SELECT * FROM snippet_toolbar_state WHERE singleton_id = 0")
+    suspend fun findState(): SnippetToolbarStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putState(state: SnippetToolbarStateEntity)
+}

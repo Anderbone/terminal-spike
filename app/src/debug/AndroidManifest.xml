@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <service
+            android:name=".debug.IdentityImportRecoveryProbeService"
+            android:exported="false"
+            android:process=":identity_import_recovery_probe" />
         <activity android:name=".GuideCaptureActivity" android:exported="true"
             android:permission="android.permission.DUMP" />
         <activity
@@ -12,7 +16,7 @@
             android:windowSoftInputMode="adjustResize" />
         <provider
             android:name=".backup.LocalBackupDocumentsProvider"
-            android:authorities="com.yanjiyu.terminalspike.test.backup.documents"
+            android:authorities="${applicationId}.test.backup.documents"
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS" />
@@ -20,7 +24,7 @@
              root discovery race Orchestrator's process teardown and data clearing. -->
         <provider
             android:name=".backup.PrivateKeyPickerDocumentsProvider"
-            android:authorities="com.yanjiyu.terminalspike.test.keypicker.documents"
+            android:authorities="${applicationId}.test.keypicker.documents"
             android:enabled="false"
             android:exported="true"
             android:grantUriPermissions="true"

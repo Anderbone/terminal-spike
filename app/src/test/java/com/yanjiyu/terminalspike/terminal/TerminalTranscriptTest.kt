@@ -57,7 +57,7 @@ class TerminalTranscriptTest {
 
     @Test
     fun findIsLiteralCaseSelectableWhitespaceSafeAndBounded() {
-        val snapshot = TerminalTranscriptSnapshot.fromLines(
+        val snapshot = terminalTranscriptSnapshot(
             lines = listOf(TerminalLine.plain("Alpha alpha  "), TerminalLine.plain("ALPHA")),
             revision = 7L,
         )
@@ -84,7 +84,7 @@ class TerminalTranscriptTest {
 
     @Test
     fun findCrossesSoftWrapWithUnicodeCellRangesButNotHardLineBreaks() {
-        val snapshot = TerminalTranscriptSnapshot.fromLines(
+        val snapshot = terminalTranscriptSnapshot(
             listOf(
                 TerminalLine.plain("deploy ", softWrappedToNext = true),
                 TerminalLine.plain("🚀 READY"),
@@ -107,7 +107,7 @@ class TerminalTranscriptTest {
 
     @Test
     fun findRejectsOversizedQueryAndBoundsScannedCharacters() {
-        val snapshot = TerminalTranscriptSnapshot.fromLines(
+        val snapshot = terminalTranscriptSnapshot(
             listOf(TerminalLine.plain("alpha"), TerminalLine.plain("target")),
             revision = 3L,
         )

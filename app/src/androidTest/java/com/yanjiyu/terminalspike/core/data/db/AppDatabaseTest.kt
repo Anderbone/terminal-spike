@@ -47,9 +47,10 @@ class AppDatabaseTest {
     }
 
     @Test
-    fun createsTheElevenVersionTwoProductTables() {
+    fun createsExactlyTheCurrentProductTables() {
         val expected = setOf(
             "terminal_profiles",
+            "custom_terminal_themes",
             "keyboard_profiles",
             "keyboard_profile_keys",
             "encrypted_secrets",
@@ -59,6 +60,7 @@ class AppDatabaseTest {
             "recent_sessions",
             "known_hosts",
             "snippets",
+            "snippet_toolbar_state",
             "legacy_migration_state",
         )
         val actual = buildSet {
@@ -69,7 +71,10 @@ class AppDatabaseTest {
                 }
         }
 
-        assertEquals(expected, actual.intersect(expected))
+        val productTables = actual.filterNot {
+            it.startsWith("sqlite_") || it == "android_metadata" || it == "room_master_table"
+        }.toSet()
+        assertEquals(expected, productTables)
         assertEquals(AppDatabase.SCHEMA_VERSION, database.openHelper.writableDatabase.version)
     }
 

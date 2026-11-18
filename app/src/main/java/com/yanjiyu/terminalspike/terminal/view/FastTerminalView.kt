@@ -561,9 +561,10 @@ class FastTerminalView @JvmOverloads constructor(
             if (runStartX >= rightEdge) break
             applyStyle(run)
             val estimatedCharacters = ceil((rightEdge - runStartX) / cellWidthPx).toInt() + 2
-            var end = minOf(run.text.length, estimatedCharacters)
-            if (end in 1 until run.text.length && Character.isHighSurrogate(run.text[end - 1])) end -= 1
-            val measuredTextWidth = if (end > 0) textPaint.measureText(run.text, 0, end) else 0f
+            val text = run.rendering?.text ?: run.text
+            var end = run.rendering?.endForColumns(estimatedCharacters) ?: minOf(text.length, estimatedCharacters)
+            if (end in 1 until text.length && Character.isHighSurrogate(text[end - 1])) end -= 1
+            val measuredTextWidth = if (end > 0) textPaint.measureText(text, 0, end) else 0f
             val runWidth = TerminalRunRenderGeometry.width(
                 run = run,
                 cellWidth = cellWidthPx,
@@ -582,7 +583,7 @@ class FastTerminalView @JvmOverloads constructor(
                 if (run.columnWidth >= 0) {
                     canvas.save()
                     canvas.clipRect(runStartX, rowTop, runRightX, rowTop + lineHeightPx)
-                    canvas.drawText(run.text, 0, end, runStartX, baseline, textPaint)
+                    drawRunText(canvas, run, text, end, runStartX, baseline, rowTop)
                     drawLegacySymbolFallback(
                         canvas = canvas,
                         run = run,
@@ -594,7 +595,7 @@ class FastTerminalView @JvmOverloads constructor(
                     )
                     canvas.restore()
                 } else {
-                    canvas.drawText(run.text, 0, end, runStartX, baseline, textPaint)
+                    drawRunText(canvas, run, text, end, runStartX, baseline, rowTop)
                     drawLegacySymbolFallback(
                         canvas = canvas,
                         run = run,
@@ -607,9 +608,48 @@ class FastTerminalView @JvmOverloads constructor(
                 }
             }
             fallbackX = runRightX
-            if (end < run.text.length) break
+            if (end < text.length) break
         }
         textPaint.alpha = OPAQUE_TEXT_ALPHA
+    }
+
+    private fun drawRunText(
+        canvas: Canvas,
+        run: TerminalRun,
+        text: String,
+        end: Int,
+        runStartX: Float,
+        baseline: Float,
+        rowTop: Float,
+    ) {
+        val rendering = run.rendering
+        if (rendering == null || !rendering.hasGridCells) {
+            canvas.drawText(text, 0, end, runStartX, baseline, textPaint)
+            return
+        }
+        // Wide/supplementary/replacement glyph advances need not match the terminal grid. Place
+        // those clusters explicitly, retaining contiguous narrow text and its contextual shaping.
+        var start = 0
+        for (index in 0 until rendering.cellCount) {
+            val cellStart = rendering.cellStartOffset(index)
+            if (cellStart >= end) break
+            if (!rendering.cellNeedsGridPlacement(index)) continue
+            if (start < cellStart) {
+                canvas.drawText(text, start, cellStart,
+                    runStartX + rendering.columnAtOffset(start) * cellWidthPx, baseline, textPaint)
+            }
+            val cellEnd = minOf(end, rendering.cellEndOffset(index))
+            val left = runStartX + rendering.cellStartColumn(index) * cellWidthPx
+            canvas.save()
+            canvas.clipRect(left, rowTop, left + rendering.cellWidth(index) * cellWidthPx, rowTop + lineHeightPx)
+            canvas.drawText(text, cellStart, cellEnd, left, baseline, textPaint)
+            canvas.restore()
+            start = cellEnd
+        }
+        if (start < end) {
+            canvas.drawText(text, start, end,
+                runStartX + rendering.columnAtOffset(start) * cellWidthPx, baseline, textPaint)
+        }
     }
 
     private fun applyStyle(run: TerminalRun) {
@@ -644,20 +684,21 @@ class FastTerminalView @JvmOverloads constructor(
         } ?: return
         val previousTypeface = textPaint.typeface
         textPaint.typeface = symbolTypeface
+        val text = run.rendering?.text ?: run.text
         var index = 0
         var cellOffset = 0
         while (index < end) {
-            val codePoint = run.text.codePointAt(index)
+            val codePoint = text.codePointAt(index)
             val characterCount = Character.charCount(codePoint)
             val cellCount = TerminalCellWidth.of(codePoint).coerceAtLeast(0)
             if (isNerdSymbolCodePoint(codePoint) && cellCount > 0) {
-                val left = runStartX + cellOffset * cellWidthPx
+                val left = runStartX + (run.rendering?.columnAtOffset(index) ?: cellOffset) * cellWidthPx
                 val right = left + cellCount * cellWidthPx
                 fillPaint.color = background
                 canvas.drawRect(left, rowTop, right, rowTop + lineHeightPx, fillPaint)
                 canvas.save()
                 canvas.clipRect(left, rowTop, right, rowTop + lineHeightPx)
-                canvas.drawText(run.text, index, index + characterCount, left, baseline, textPaint)
+                canvas.drawText(text, index, index + characterCount, left, baseline, textPaint)
                 canvas.restore()
             }
             cellOffset += cellCount
@@ -1057,7 +1098,8 @@ class FastTerminalView @JvmOverloads constructor(
         info.className = android.widget.EditText::class.java.name
         info.isEditable = directInputEnabled
         info.isMultiLine = true
-        info.isScrollable = controller.viewport.maximumScrollY > 0f
+        val accessibleViewport = accessibilityViewport(controller)
+        info.isScrollable = accessibleViewport.maximumScrollY > 0f
         info.text = selection.selectedText(selectionSource() ?: controller) ?: accessibleVisibleText(controller)
         info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK)
         info.addAction(
@@ -1076,10 +1118,10 @@ class FastTerminalView @JvmOverloads constructor(
             ))
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLEAR_SELECTION)
         }
-        if (controller.viewport.scrollY > 0f) {
+        if (accessibleViewport.scrollY > 0f) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
         }
-        if (controller.viewport.scrollY < controller.viewport.maximumScrollY) {
+        if (accessibleViewport.scrollY < accessibleViewport.maximumScrollY) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
         }
         activeLink?.let { link ->
@@ -1119,14 +1161,8 @@ class FastTerminalView @JvmOverloads constructor(
                 cleared
             }
             AccessibilityNodeInfo.ACTION_LONG_CLICK -> performLongClick()
-            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> {
-                pageScroll(-1)
-                true
-            }
-            AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> {
-                pageScroll(1)
-                true
-            }
+            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> pageAccessibilityViewport(-1)
+            AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> pageAccessibilityViewport(1)
             R.id.terminal_action_open_link -> requestActiveLinkAction(TerminalLinkAction.OPEN)
             R.id.terminal_action_copy_link -> requestActiveLinkAction(TerminalLinkAction.COPY)
             else -> super.performAccessibilityAction(action, arguments)
@@ -1374,6 +1410,7 @@ class FastTerminalView @JvmOverloads constructor(
         ) {
             val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
             val liveRow = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
+            if (controller.showHerdrProjectPickerAt(terminalColumnAt(x), liveRow)) return true
             if (controller.isMouseTrackingEnabled()) {
                 controller.sendMouseClick(column = terminalColumnAt(x), row = liveRow)
                 return true
@@ -1413,8 +1450,12 @@ class FastTerminalView @JvmOverloads constructor(
         val column = terminalColumnAt(x)
         val contentRow = floor((y - verticalPaddingPx + controller.viewport.scrollY) / lineHeightPx).toInt()
         val row = contentRow - (controller.lineCount() - controller.terminalRows).coerceAtLeast(0)
-        val handled = controller.showHerdrProjectPickerAt(column, row) ||
-            (controller.isHerdrContextMenuCell(column, row) && controller.sendMouseClick(column, row, secondary = true))
+        val handled = if (controller.isHerdrNewWorkspaceCell(column, row)) {
+            // Holding New keeps Herdr's original primary-click action; tapping opens our picker.
+            controller.sendMouseClick(column, row)
+        } else {
+            controller.isHerdrContextMenuCell(column, row) && controller.sendMouseClick(column, row, secondary = true)
+        }
         if (!handled) return false
         selection.clear()
         activeLink = null
@@ -1488,22 +1529,6 @@ class FastTerminalView @JvmOverloads constructor(
             }
         }
         selectionActionMode?.finish()
-        return true
-    }
-
-    /** Long-pressing a detected URL opens a focused Open/Copy menu instead of word selection. */
-    private fun showLinkActionsAt(x: Float, y: Float): Boolean {
-        val controller = terminalController ?: return false
-        val link = linkAt(x, y) ?: return false
-        selectionActionMode?.finish()
-        selectionActionMode = null
-        if (!selection.selectLink(controller, link)) return false
-        activeLink = link
-        hideSoftwareKeyboard()
-        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-        showSelectionActionMode()
-        invalidate()
-        sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED)
         return true
     }
 
@@ -1780,15 +1805,70 @@ class FastTerminalView @JvmOverloads constructor(
         return true
     }
 
+    private fun accessibilityReaderSnapshot(controller: TerminalController): HerdrPaneHistory? =
+        herdrScroll.reader.snapshot.takeIf { controller.herdrHistoryReading }
+
+    private fun accessibilityViewport(controller: TerminalController): TerminalViewport = when {
+        selectionSnapshot != null -> selectionViewport
+        accessibilityReaderSnapshot(controller) != null -> herdrScroll.reader.viewport
+        else -> controller.viewport
+    }
+
+    private fun pageAccessibilityViewport(direction: Int): Boolean {
+        val controller = terminalController ?: return false
+        val capture = controller.captureHerdrHistoryState()
+        val readerOwned = capture.reading && herdrScroll.reader.snapshot != null
+        val viewport = when {
+            selectionSnapshot != null -> selectionViewport
+            readerOwned -> herdrScroll.reader.viewport
+            else -> controller.viewport
+        }
+        val distance = direction * viewport.viewportHeightPx.toFloat()
+        when {
+            selectionSnapshot != null -> {
+                selectionViewport.scrollBy(distance)
+                selectionActionMode?.invalidateContentRect()
+                invalidate()
+            }
+            readerOwned -> {
+                herdrScroll.cancelTouch()
+                herdrScroll.reader.scrollBy(distance)
+                val reading = herdrScroll.reader.snapshot != null
+                // Background navigation can invalidate after the ownership capture. Both flags
+                // publish under the same generation lock; rejection leaves that invalidation intact.
+                controller.tryPublishHerdrReaderState(capture.generation, reading,
+                    reading && !herdrScroll.reader.holdingLatest)
+                invalidate()
+            }
+            else -> scrollViewportBy(distance)
+        }
+        return true
+    }
+
     private fun accessibleVisibleText(controller: TerminalController): String {
+        accessibilityReaderSnapshot(controller)?.let { pane ->
+            return composeTerminalAccessibilityText(
+                liveLineCount = controller.lineCount(),
+                liveLineAt = controller::lineAt,
+                liveScrollY = controller.viewport.scrollY,
+                columns = controller.terminalColumns,
+                lineHeight = lineHeightPx,
+                viewportHeight = (height - verticalPaddingPx).coerceAtLeast(0f),
+                pane = TerminalAccessibilityPane(pane.x, pane.y, pane.columns, pane.rows,
+                    herdrScroll.reader.viewport.scrollY, pane.lines),
+                maxCharacters = MAX_ACCESSIBLE_CHARACTERS,
+            )
+        }
         val visible = controller.viewport.visibleRows(0)
         val result = StringBuilder()
         for (row in visible.first until visible.lastExclusive) {
             val line = controller.lineAt(row) ?: continue
             val remaining = MAX_ACCESSIBLE_CHARACTERS - result.length
             if (remaining <= 0) break
-            val end = minOf(line.text.length, remaining)
+            var end = minOf(line.text.length, remaining)
+            if (end in 1 until line.text.length && Character.isHighSurrogate(line.text[end - 1])) end--
             result.append(line.text, 0, end)
+            if (end < line.text.length) break
             if (result.length >= MAX_ACCESSIBLE_CHARACTERS) break
             if (row + 1 < visible.lastExclusive && !line.softWrappedToNext) result.append('\n')
         }

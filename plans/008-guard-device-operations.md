@@ -1,5 +1,9 @@
 # Plan 008: Guard every physical-device install and test by serial and model
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: This plan fixes repository tooling that currently
 > permits forbidden-device operations. Do not run the unsafe legacy commands
 > while implementing it. Tests must use a fake `adb`; do not test the script by
@@ -8,7 +12,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- scripts/install-wireless.sh README.md AGENTS.md plans/005-release-evidence-and-product-closure.md`
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: S
@@ -24,7 +28,7 @@ tests or incremental installs on the Wi-Fi `SM_F976B`. The current helper and
 README still accept generic wireless targets or unscoped Gradle/ADB commands,
 so following checked-in instructions can affect the wrong personal device.
 
-## Current state
+## Original state
 
 - `scripts/install-wireless.sh:31-40` verifies only that a target is connected
   and that its serial looks wireless; it does not inspect `ro.product.model`.
@@ -36,7 +40,7 @@ so following checked-in instructions can affect the wrong personal device.
   `SM_F976B`, and permits one final main-APK install/launch on the fold only
   after the whole requested feature is finished or the user explicitly asks.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -61,11 +65,11 @@ so following checked-in instructions can affect the wrong personal device.
 - Mosh-extension publication or installation on the fold
 - accepting arbitrary models through an override flag
 
-## Git workflow
+## Historical Git workflow
 
 Preserve the dirty tree. Do not commit or push unless explicitly requested.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Replace the generic operation with explicit modes
 
@@ -133,7 +137,7 @@ ordering so model verification immediately precedes each destructive/external
 operation. Include paths containing spaces and a serial containing the wireless
 service punctuation used by ADB.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [ ] The fold cannot receive a test or incremental/non-final install through
   checked-in device tooling.
@@ -143,7 +147,7 @@ service punctuation used by ADB.
 - [ ] README and Plan 005 contain no unscoped physical-device commands.
 - [ ] Hermetic script tests and the full local gate pass.
 
-## STOP conditions
+## Historical stop conditions
 
 - A requested mode would broaden the current device authorization policy.
 - Testing would require touching a real phone instead of fake ADB.

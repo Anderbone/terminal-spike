@@ -95,6 +95,7 @@ class UiPolishTest {
         composeRule.setContent {
             TerminalSpikeTheme(updateSystemBarIcons = false) {
                 ActiveTmuxSessionSwitcherDialog(
+                    ownerKey = "fixture-host",
                     catalog = TmuxSessionCatalog(
                         sessions = listOf(TmuxSession("session-id", "Production", 1, 0, 1)),
                         availability = TmuxAvailability.AVAILABLE,

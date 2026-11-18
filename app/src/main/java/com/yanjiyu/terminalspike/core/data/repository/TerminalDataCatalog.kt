@@ -72,6 +72,7 @@ internal data class TerminalDataCatalog(
     val defaultKeyboardProfileId: String,
     val unavailableSecretCount: Int,
     val migrationWarningCodes: List<String>,
+    val hiddenDefaultSnippetIds: Set<Long> = emptySet(),
 ) {
     fun hostPresentationId(persistentId: String): Long? =
         hosts.firstOrNull { it.profile.id == persistentId }?.presentationId
@@ -131,6 +132,7 @@ internal fun TerminalDataRecords.toCatalog(
     defaultKeyboardProfileId = defaultKeyboardProfile.id,
     unavailableSecretCount = unavailableSecretIds.size,
     migrationWarningCodes = migrationWarningCodes.toList(),
+    hiddenDefaultSnippetIds = hiddenDefaultSnippetIds.toSet(),
 )
 
 private fun SshCredential.toCatalog(

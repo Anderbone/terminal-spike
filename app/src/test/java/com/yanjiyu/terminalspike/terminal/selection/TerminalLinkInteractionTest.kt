@@ -138,6 +138,37 @@ class TerminalLinkInteractionTest {
     }
 
     @Test
+    fun openingPolicyRejectsSupplementaryFormatsInPathsAndQueries() {
+        for (format in listOf("\uDB40\uDC01", "\uDB40\uDC20", "\uD834\uDD73")) {
+            for (uri in listOf(
+                "https://example.test/a${format}b",
+                "http://127.0.0.1:8080/?q=a${format}b",
+                "obsidian://open?file=a${format}b",
+            )) {
+                assertFalse(TerminalLinkPolicy.canOpen(uri))
+            }
+        }
+    }
+
+    @Test
+    fun openingPolicyRejectsIsolatedUtf16Surrogates() {
+        for (surrogate in listOf("\uD800", "\uDC00")) {
+            assertFalse(TerminalLinkPolicy.canOpen("https://example.test/a${surrogate}b"))
+        }
+    }
+
+    @Test
+    fun openingPolicyKeepsVisibleSupplementaryAndEncodedInternationalPaths() {
+        for (uri in listOf(
+            "https://example.test/中文/🚀?q=שלום",
+            "http://127.0.0.1:8080/%E4%B8%AD%E6%96%87",
+            "obsidian://open?file=notes%2F中文🚀",
+        )) {
+            assertTrue(TerminalLinkPolicy.canOpen(uri))
+        }
+    }
+
+    @Test
     fun unsafeOsc8MetadataCanBeCopiedButCannotBeOpened() {
         val target = TerminalLinkResolver.find(
             selectable = TerminalSelectableLine(
@@ -350,6 +381,32 @@ class TerminalLinkInteractionTest {
         val source = linkSourceWithWidth(80, TerminalLine.plain(uri), TerminalLine.plain("more"))
         assertEquals(uri, TerminalLinkResolver.find(source, 0, 10, true, true)?.uri)
         assertNull(TerminalLinkResolver.find(source, 1, 1, true, true))
+    }
+
+    @Test
+    fun indentedLoginUrlResolvesAndCopiesFromEveryPaintedRow() {
+        val uri = "https://claude.ai/oauth/authorize?client_id=example&redirect_uri=" +
+            "https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode&code_challenge=" +
+            "a".repeat(1200) + "&state=keep-exactly&scope=user%3Ainference"
+        val parts = uri.chunked(30)
+        val source = linkSourceWithWidth(32, *parts.map { TerminalLine.plain("  $it") }.toTypedArray())
+        for (row in parts.indices) {
+            val target = requireNotNull(TerminalLinkResolver.find(source, row, 3, true, true))
+            assertEquals("row=$row", uri, target.uri)
+            assertTrue(TerminalLinkPolicy.canOpen(target.uri))
+            assertEquals(2, target.startColumn)
+            assertEquals(source.selectionLineAt(parts.lastIndex)?.anchor, target.endLine)
+            // Copy uses the resolved URI, not the indented, hard-wrapped selection text.
+            assertFalse(target.uri.contains('\n'))
+        }
+    }
+
+    @Test
+    fun urlBeyondScanLimitIsNotOpenedAsATruncatedLoginUrl() {
+        val uri = "https://example.test/?state=" + "x".repeat(8192)
+        assertNull(TerminalLinkResolver.find(
+            TerminalSelectableLine(anchor, TerminalLine.plain(uri)), 12, false, true,
+        ))
     }
 
     private fun linkSourceWithWidth(width: Int, vararg lines: TerminalLine): TerminalSelectionSource =

@@ -16,6 +16,9 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+from terminal_test_markers import has_terminal_marker, marker_input_argument
+from owned_process import stop_owned_child
+
 
 APP_PACKAGE = "com.yanjiyu.terminalspike"
 ACTIVITY_COMPONENT = f"{APP_PACKAGE}/.MainActivity"
@@ -25,7 +28,6 @@ FIXTURE_USER = "terminal"
 FIXTURE_PASSWORD = "terminal-spike-test-only"
 NOTIFICATION_ID = "2001"
 SAFE_SERIAL = re.compile(r"^[A-Za-z0-9._:-]+$")
-SAFE_MARKER = re.compile(r"^[A-Z0-9_]+$")
 
 
 class LifecycleFailure(RuntimeError):
@@ -477,10 +479,10 @@ class Runner:
     def wait_for_text(self, text: str) -> None:
         self.wait_for_node("text", text)
 
-    def wait_for_text_containing(self, text: str) -> None:
+    def wait_for_terminal_marker(self, marker: str) -> None:
         self.poll(
             "terminal output marker",
-            lambda: any(text in node.attrib.get("text", "") for node in self.dump_ui().iter("node")),
+            lambda: has_terminal_marker(self.dump_ui(), marker),
         )
 
     def tap_node(
@@ -537,13 +539,12 @@ class Runner:
         self.wait_for_terminal()
 
     def send_marker(self, marker: str) -> None:
-        if not SAFE_MARKER.fullmatch(marker):
-            raise LifecycleFailure("internal terminal marker is unsafe")
+        encoded_input = marker_input_argument(marker)
         self.wait_for_terminal()
         self.tap_node("content-desc", "Native terminal renderer")
-        self.adb("shell", "input", "text", f"printf%s{marker}", label="terminal marker input")
+        self.adb("shell", "input", "text", encoded_input, label="terminal marker input")
         self.adb("shell", "input", "keyevent", "KEYCODE_ENTER", label="terminal marker enter")
-        self.wait_for_text_containing(marker)
+        self.wait_for_terminal_marker(marker)
 
     def current_pid(self) -> str | None:
         output = self.adb(
@@ -872,57 +873,58 @@ class Runner:
         )
         path.write_text(result.stdout, encoding="utf-8")
 
+    def stop_owned_emulator(self) -> None:
+        process = self.emulator_process
+        if process is None:
+            return
+        try:
+            stop_owned_child(process)
+        finally:
+            if process.poll() is not None:
+                self.emulator_process = None
+
     def cleanup(self) -> None:
-        restore_errors: list[str] = []
-        for restore in (self.restore_data_saver, self.restore_standby, self.restore_idle):
+        errors: list[str] = []
+
+        def attempt(label: str, operation) -> None:
             try:
-                restore()
+                operation()
             except Exception:
-                restore_errors.append(restore.__name__)
+                errors.append(label)
+
+        for restore in (self.restore_data_saver, self.restore_standby, self.restore_idle):
+            attempt(restore.__name__, restore)
         if self.fixture_started:
-            self.command(
-                [
-                    "docker",
-                    "compose",
-                    "--project-directory",
-                    self.fixture,
-                    "-f",
-                    self.fixture / "compose.yaml",
-                    "down",
-                    "--volumes",
-                    "--remove-orphans",
-                ],
-                label="fixture cleanup",
-                check=False,
-            )
+            def stop_fixture() -> None:
+                self.command(
+                    [
+                        "docker", "compose", "--project-directory", self.fixture,
+                        "-f", self.fixture / "compose.yaml", "down", "--volumes", "--remove-orphans",
+                    ],
+                    label="fixture cleanup",
+                )
+                self.fixture_started = False
+
+            attempt("fixture", stop_fixture)
         if self.emulator_process is not None and self.emulator_process.poll() is None:
             try:
                 logcat = self.capture_relevant_logcat(label="cleanup logcat capture")
                 self.write_redacted(logcat, self.output_dir / "lifecycle-logcat.txt")
             except Exception:
                 pass
-        if self.emulator_process is not None:
-            self.adb("emu", "kill", label="emulator cleanup", check=False)
-            try:
-                self.emulator_process.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self.emulator_process.terminate()
-                try:
-                    self.emulator_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self.emulator_process.kill()
-                    self.emulator_process.wait(timeout=5)
+        attempt("owned emulator process", self.stop_owned_emulator)
         if self.private_log is not None and self.private_log.is_file():
-            self.write_redacted(
+            attempt("emulator log redaction", lambda: self.write_redacted(
                 self.private_log.read_text(encoding="utf-8", errors="replace"),
                 self.output_dir / "lifecycle-emulator.txt",
-            )
+            ))
         if self.workspace is not None and self.workspace.is_dir():
-            shutil.rmtree(self.workspace)
-        if restore_errors:
-            raise LifecycleFailure(
-                "pressure-state cleanup failed: " + ", ".join(sorted(restore_errors))
-            )
+            if self.emulator_process is not None and self.emulator_process.poll() is None:
+                errors.append("workspace retained for live child")
+            else:
+                attempt("workspace", lambda: shutil.rmtree(self.workspace))
+        if errors:
+            raise LifecycleFailure("lifecycle cleanup failed: " + ", ".join(sorted(errors)))
 
     def run(self) -> None:
         self.preflight()

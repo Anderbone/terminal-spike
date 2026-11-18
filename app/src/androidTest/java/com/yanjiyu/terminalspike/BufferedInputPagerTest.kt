@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.input.TextFieldValue
@@ -43,12 +47,14 @@ import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
 import com.yanjiyu.terminalspike.terminal.view.FastTerminalView
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.TerminalAccessoryBar
+import com.yanjiyu.terminalspike.ui.resolve
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetsPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import com.yanjiyu.terminalspike.terminal.TerminalInputContext
 import org.junit.Test
+import org.junit.rules.RuleChain
 
 class BufferedInputPagerTest {
     @Test
@@ -56,7 +62,7 @@ class BufferedInputPagerTest {
         val draft = BufferedInputDraftState(initialText = "keep draft")
         val pressed = mutableListOf<TerminalExtraKey>()
         val inputLayout = mutableStateOf("toggle,tab,input,escape,enter")
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f))
@@ -85,6 +91,21 @@ class BufferedInputPagerTest {
             assertEquals(listOf(TerminalExtraKey.TAB, TerminalExtraKey.ESC), pressed)
             assertEquals("keep draft", draft.value.text)
         }
+        // Agent-configured six-key layout: three columns left of the same live draft.
+        composeRule.runOnIdle { inputLayout.value = "enter,toggle,escape,shift_left,arrow_up,arrow_down,input" }
+        val sixKeyField = composeRule.onNodeWithTag("buffered_terminal_input").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        for (key in listOf(TerminalExtraKey.ESC, TerminalExtraKey.SHIFT_LEFT, TerminalExtraKey.UP, TerminalExtraKey.DOWN)) {
+            val node = composeRule.onNodeWithContentDescription(key.accessibilityDescription.resolve(composeRule.activity.resources))
+                .assertIsDisplayed()
+            assertTrue(node.fetchSemanticsNode().boundsInRoot.right <= sixKeyField.left)
+            node.performClick()
+        }
+        assertTrue(sixKeyField.width >= 100 * composeRule.activity.resources.displayMetrics.density)
+        composeRule.runOnIdle {
+            assertEquals(listOf(TerminalExtraKey.TAB, TerminalExtraKey.ESC, TerminalExtraKey.ESC,
+                TerminalExtraKey.SHIFT_LEFT, TerminalExtraKey.UP, TerminalExtraKey.DOWN), pressed)
+            assertEquals("keep draft", draft.value.text)
+        }
         // Exercise the reported four-key layout: two adjacent columns on the left.
         composeRule.runOnIdle { inputLayout.value = "toggle,tab,escape,enter,input" }
         val secondColumn = composeRule.onNodeWithContentDescription("Terminal key ESC").fetchSemanticsNode().boundsInRoot
@@ -94,10 +115,17 @@ class BufferedInputPagerTest {
         val inputVerticalGap = firstColumnBottom.top - firstColumnTop.bottom
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithTag("buffered_terminal_input").assertDoesNotExist()
+        val enterBounds = composeRule.onNodeWithContentDescription("Terminal key ↵").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val controlBounds = composeRule.onNodeWithContentDescription(TerminalExtraKey.CTRL.accessibilityDescription.resolve(composeRule.activity.resources))
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithContentDescription("Terminal key ⌫").assertDoesNotExist()
+        val escBounds = composeRule.onNodeWithContentDescription("Terminal key ESC").fetchSemanticsNode().boundsInRoot
+        assertTrue(enterBounds.right <= escBounds.left)
+        assertTrue(controlBounds.top > enterBounds.bottom)
         val ordinaryKeyBounds = composeRule.onNodeWithContentDescription("Terminal key ESC")
             .fetchSemanticsNode().boundsInRoot
-        assertEquals("Input-mode key width must match the ordinary keyboard", ordinaryKeyBounds.width, customKeyBounds.width, 0.5f)
-        assertEquals("Input-mode key height must match the ordinary keyboard", ordinaryKeyBounds.height, customKeyBounds.height, 0.5f)
+        assertEquals("Input-mode key width must match the ordinary keyboard", enterBounds.width, customKeyBounds.width, 0.5f)
+        assertEquals("Input-mode key height must match the ordinary keyboard", enterBounds.height, customKeyBounds.height, 0.5f)
         val slash = composeRule.onNodeWithContentDescription("Terminal key /").fetchSemanticsNode().boundsInRoot
         val at = composeRule.onNodeWithContentDescription("Terminal key @").fetchSemanticsNode().boundsInRoot
         val ordinaryToggle = composeRule.onNodeWithTag("terminal_typing_toggle").fetchSemanticsNode().boundsInRoot
@@ -105,18 +133,29 @@ class BufferedInputPagerTest {
         assertEquals("Stacked input keys must use the ordinary row gap", ordinaryToggle.top - ordinaryKeyBounds.bottom, inputVerticalGap, 1f)
     }
 
+    private val toolbarPreferences = IsolatedPreferencesRule("snippet-toolbar")
+    private val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
+
     @get:Rule
-    val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
+    val rules: RuleChain = RuleChain.outerRule(toolbarPreferences).around(composeRule)
+
+    private fun setTestContent(content: @Composable () -> Unit) {
+        composeRule.setContent {
+            val base = LocalContext.current
+            val isolated = remember(base) { toolbarPreferences.wrap(base) }
+            CompositionLocalProvider(LocalContext provides isolated, content = content)
+        }
+    }
 
     @Test
     fun effortDropdownKeepsImeFocusAndTerminalBoundsAcrossRepeatedChanges() {
         val effort = mutableStateOf<String?>("medium")
         var changes = 0
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize().imePadding()) {
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxSize().testTag("effort_terminal"))
-                    com.yanjiyu.terminalspike.ui.terminal.CodexEffortMenu(
+                    com.yanjiyu.terminalspike.ui.terminal.AgentEffortMenu(
                         "pane-1", "codex", effort.value, true,
                     ) { id ->
                         changes++
@@ -160,7 +199,7 @@ class BufferedInputPagerTest {
         val target = androidx.compose.runtime.mutableStateOf(1L)
         var connection: android.view.inputmethod.InputConnection? = null
         val attributes = EditorInfo()
-        composeRule.setContent {
+        setTestContent {
             val sessionId = target.value
             androidx.compose.ui.platform.InterceptPlatformTextInput(
                 interceptor = { request, _ ->
@@ -210,11 +249,14 @@ class BufferedInputPagerTest {
     }
 
     @Test
-    fun pinnedSnippetsWrapContentAndStayAboveKeysOrDraft() = withPinnedSnippetsPreference {
+    fun pinnedSnippetsWrapContentAndStayAboveKeysOrDraft() {
+        // This case measures one snippet row. The extra built-in Codex button can
+        // wrap it on a narrow phone or at a larger system font scale.
+        assertTrue(toolbarPreferences.preferences.edit().putBoolean("codex-replaced", true).commit())
         val draft = BufferedInputDraftState()
         val placement = mutableStateOf(true)
         val terminalVisible = mutableStateOf(true)
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize()) {
                     if (terminalVisible.value) {
@@ -253,6 +295,9 @@ class BufferedInputPagerTest {
         assertTrue("One snippet row must not reserve a full input page", snippetsBounds.height < keysBounds.height / 2)
         assertEquals("No blank space between snippets and keys", snippetsBounds.bottom, keysBounds.top, 0.5f)
         composeRule.onNodeWithTag("terminal_toggle_pinned_snippets").performClick()
+        composeRule.runOnIdle {
+            assertEquals(false, toolbarPreferences.preferences.getBoolean("expanded", true))
+        }
         composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         composeRule.onNodeWithTag("terminal_pinned_snippets").assertDoesNotExist()
@@ -306,20 +351,6 @@ class BufferedInputPagerTest {
         composeRule.runOnIdle { assertEquals("preserve this", draft.value.text) }
     }
 
-    private fun withPinnedSnippetsPreference(block: () -> Unit) {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = context.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
-        val previous = if (preferences.contains("expanded")) preferences.getBoolean("expanded", true) else null
-        preferences.edit().remove("expanded").commit()
-        try {
-            block()
-        } finally {
-            preferences.edit().apply {
-                if (previous == null) remove("expanded") else putBoolean("expanded", previous)
-            }.commit()
-        }
-    }
-
     private fun withSoftwareKeyboard(block: () -> Unit) {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
@@ -368,7 +399,7 @@ class BufferedInputPagerTest {
         val draft = BufferedInputDraftState()
         val controller = TerminalController()
         lateinit var terminal: FastTerminalView
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize().imePadding()) {
                     AndroidView(
@@ -452,7 +483,7 @@ class BufferedInputPagerTest {
         val sent = mutableListOf<String>()
         val draft = BufferedInputDraftState()
         lateinit var terminal: FastTerminalView
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize().imePadding()) {
                     AndroidView(
@@ -532,7 +563,7 @@ class BufferedInputPagerTest {
     fun foregroundContextSelectsInputWithoutLosingDraftOrManualChoice() {
         val context = mutableStateOf(TerminalInputContext())
         val draft = BufferedInputDraftState()
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 ExtraKeysBar(
                     keys = TerminalExtraKey.DEFAULT_ORDER,
@@ -606,7 +637,7 @@ class BufferedInputPagerTest {
         val context = mutableStateOf(TerminalInputContext("herdr/1", true))
         val draft = BufferedInputDraftState()
         var directFocusRequests = 0
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 ExtraKeysBar(
                     keys = TerminalExtraKey.DEFAULT_ORDER,
@@ -658,7 +689,7 @@ class BufferedInputPagerTest {
         val submitted = mutableListOf<String>()
         var enterCount = 0
         val draftState = BufferedInputDraftState()
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 ExtraKeysBar(
                     keys = TerminalExtraKey.DEFAULT_ORDER,
@@ -723,7 +754,7 @@ class BufferedInputPagerTest {
         var sentText: String? = null
         val draftState = BufferedInputDraftState()
 
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 ExtraKeysBar(
                     keys = TerminalExtraKey.DEFAULT_ORDER,
@@ -830,7 +861,7 @@ class BufferedInputPagerTest {
         var sentText: String? = null
         val draftState = BufferedInputDraftState()
 
-        composeRule.setContent {
+        setTestContent {
             MaterialTheme {
                 ExtraKeysBar(
                     keys = TerminalExtraKey.DEFAULT_ORDER,

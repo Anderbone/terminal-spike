@@ -62,11 +62,11 @@ class MoshNativePredictionIntegrationTest {
         return generateSequence(workingDirectory) { it.parentFile }
             .flatMap { directory ->
                 sequenceOf(
-                    File(directory, "mosh-extension/$relativePath"),
+                    File(directory, "mosh-core/$relativePath"),
                     File(directory, relativePath),
                 )
             }
             .firstOrNull(File::isFile)
-            ?: error("Could not find Mosh extension source file: $relativePath")
+            ?: error("Could not find built-in Mosh source file: $relativePath")
     }
 }

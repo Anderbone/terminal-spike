@@ -14,4 +14,6 @@ data class TerminalRun(
         require(columnWidth >= -1)
         require((startColumn == -1) == (columnWidth == -1))
     }
+
+    internal val rendering: TerminalRunRendering? = TerminalRunRendering.from(text)
 }

@@ -186,7 +186,7 @@ class SessionNotificationActionTest {
             event = TerminalProgramNotificationEvent(
                 sessionId = 42L,
                 sessionTitle = "Terminal Spike dev",
-                message = "Build\t\u202Egpj.exe\u202C\u2066\u2069\n done\u0007",
+                message = "Build\t\uDB40\uDC01\u202Egpj.exe\u202C\u2066\u2069\n done\u0007",
             ),
             privacyEnabled = false,
         )
@@ -204,7 +204,7 @@ class SessionNotificationActionTest {
             event = TerminalProgramNotificationEvent(
                 sessionId = 42L,
                 sessionTitle = "Terminal Spike dev",
-                message = "\u0000\u001B\u202E\u2069",
+                message = "\u0000\u001B\u202E\u2069\uDB40\uDC01",
             ),
             privacyEnabled = false,
         )
@@ -212,6 +212,25 @@ class SessionNotificationActionTest {
         assertEquals(
             context.getString(R.string.terminal_program_notification_text),
             notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+    }
+
+    @Test
+    fun terminalProgramNotificationKeepsWholeUnicodeAtMessageAndTaskTitleLimits() {
+        val context = ApplicationProvider.getApplicationContext<TerminalSpikeApplication>()
+        val task = com.yanjiyu.terminalspike.connection.HerdrAgentState(
+            "w6:p1", "terminal1", "chat1", "idle", 2,
+            taskTitle = "t".repeat(119) + "🙂suffix",
+        )
+        val notification = SessionNotificationFactory(context).buildTerminalProgramNotification(
+            event = TerminalProgramNotificationEvent(42, "Project", "m".repeat(511) + "🙂suffix", task),
+            privacyEnabled = false,
+        )
+
+        assertEquals("m".repeat(511), notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertEquals(
+            context.getString(R.string.terminal_task_reply_title, "t".repeat(119)),
+            notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString(),
         )
     }
 

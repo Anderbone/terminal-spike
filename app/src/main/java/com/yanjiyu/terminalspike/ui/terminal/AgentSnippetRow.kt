@@ -23,7 +23,7 @@ import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.settings.AgentTerminalSnippets
 
 @Composable
-internal fun CodexEffortMenu(
+internal fun AgentEffortMenu(
     contextKey: String,
     agentId: String,
     effort: String?,
@@ -33,18 +33,20 @@ internal fun CodexEffortMenu(
     // Agent detection briefly clears while New Codex restarts. Keep the slot so
     // the surrounding snippets do not reflow when the effort menu disappears.
     Box(Modifier.width(96.dp)) {
-        if (agentId != "codex") return@Box
-        var open by remember(contextKey) { mutableStateOf(false) }
+        val snippets = AgentTerminalSnippets.forAgent(agentId)
+        if (snippets.isEmpty()) return@Box
+        var open by remember(contextKey, agentId) { mutableStateOf(false) }
         val value = effort?.let { if (it == "xhigh") "Extra High" else it.replaceFirstChar(Char::uppercase) } ?: stringResource(R.string.ai_agents_effort)
         FilledTonalButton(
             enabled = canSend, onClick = { open = !open },
-            modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp).width(96.dp).testTag("codex_effort_menu"),
+            modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp).width(96.dp).testTag("${agentId}_effort_menu"),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
         ) { Text("$value ▾", style = MaterialTheme.typography.labelMedium) }
         DropdownMenu(expanded = open && canSend, onDismissRequest = { open = false },
             properties = PopupProperties(focusable = false)) {
-            AgentTerminalSnippets.codex.forEach { snippet ->
-                val selected = snippet.command.substringAfter("--reasoning=") == effort
+            snippets.forEach { snippet ->
+                val selected = (if (agentId == "codex") snippet.command.substringAfter("--reasoning=")
+                    else snippet.command.substringAfter("/effort ")) == effort
                 DropdownMenuItem(
                     text = { Text(if (selected) "✓ ${snippet.label}" else snippet.label) },
                     modifier = Modifier.testTag("agent_snippet_${snippet.id}"),

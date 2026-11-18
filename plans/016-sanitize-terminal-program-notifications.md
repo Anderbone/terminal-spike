@@ -1,5 +1,9 @@
 # Plan 016: Sanitize remote terminal text before Android notifications
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Treat OSC 9 payloads as hostile remote input.
 > Preserve ordinary international visible text while removing invisible control
 > and Unicode-format characters that can reorder or disguise system UI.
@@ -7,7 +11,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/terminal/engine/VtTerminalEngine.kt app/src/main/java/com/yanjiyu/terminalspike/SessionForegroundService.kt app/src/main/java/com/yanjiyu/terminalspike/connection/SshSessionRepository.kt app/src/test app/src/androidTest`
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: S
@@ -17,26 +21,29 @@
 - **Planned at**: commit `93d070a`, 2026-09-03
 - **Execution**: DONE locally on 2026-09-03
 
-The parser already rejects Unicode format characters in OSC input. A shared
+The parser already had OSC character validation. A shared
 bounded sanitizer now independently protects both the engine event boundary and
 the Android notification builder, preserving visible international text and
 falling back for empty unsafe input. Focused API 35 notification tests, API 37
 boundary coverage, and the full repository gate pass.
 
+This is a completed implementation record. The baseline and steps below describe the original
+defense-in-depth change; their test counts are historical, not a new current-build result.
+
 ## Why this matters
 
-An SSH host controls OSC 9 text that can escape the terminal surface into an
-Android system notification. Invisible bidi overrides and related format
-characters currently survive, allowing the displayed message to be reordered
-or disguised outside the app.
+An SSH host controls OSC 9 text that can leave the terminal surface in an Android
+notification. Invisible bidi overrides and related format characters can disguise
+system UI if admitted. Alongside the parser's OSC validation, the completed change
+added independent sanitization at the event and notification-builder boundaries.
 
-## Current state
+## Pre-fix state at `93d070a`
 
-- `VtTerminalEngine.enqueueTerminalNotification()` at lines 726-731 only trims
+- `VtTerminalEngine.enqueueTerminalNotification()` only trims
   and truncates the remote payload.
-- `SessionForegroundService.buildTerminalProgramNotification()` at lines
-  500-509 only collapses whitespace and truncates it when privacy is disabled.
-- `SshSessionRepository.kt:1937-1960` already removes ISO controls and all
+- `SessionForegroundService.buildTerminalProgramNotification()` only collapses
+  whitespace and truncates it when privacy is disabled.
+- `SshSessionRepository.kt` already removes ISO controls and all
   `Character.FORMAT` characters from neighboring untrusted labels/titles.
 - `VtTerminalEngineTest.osc9PublishesBoundedOneShotTerminalNotificationsWithoutRenderingText`
   and `SessionNotificationActionTest` cover ordinary text, not bidi/control input.
@@ -57,7 +64,7 @@ or disguised outside the app.
 - ASCII transliteration or removal of ordinary RTL script characters
 - terminal cell rendering and title policy beyond safe helper reuse
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -65,11 +72,11 @@ or disguised outside the app.
 | Focused emulator | `scripts/run-android-emulator-tests.sh --api 35 --suite boundary --test-filter com.yanjiyu.terminalspike.SessionNotificationActionTest` | exact class passes |
 | Full gate | `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest` | `BUILD SUCCESSFUL` |
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty-tree work. Do not commit, push, or open a PR unless asked.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Define one bounded sanitizer contract
 
@@ -109,7 +116,7 @@ visible text.
 `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest`
 → `BUILD SUCCESSFUL`.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] OSC 9 controls and Unicode format/bidi characters cannot reach system UI.
 - [x] Legitimate visible international text remains intact.
@@ -123,7 +130,7 @@ visible text.
 - Parser: hostile OSC 9 produces only sanitized one-shot event text.
 - Android notification: both privacy-off text and privacy-on fallback are safe.
 
-## STOP conditions
+## Historical stop conditions
 
 - The proposed sanitizer removes visible RTL letters rather than only controls.
 - Sanitization would happen only after raw remote text is persisted or logged.

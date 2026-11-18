@@ -116,6 +116,71 @@ class TerminalAccessoryActionTest {
     }
 
     @Test
+    fun shiftedTabDispatchOwnsBytesAfterEveryPress() {
+        for (state in listOf(AccessoryModifierState.ARMED, AccessoryModifierState.LOCKED)) {
+            val shift = AccessoryModifierSnapshot(shift = state)
+            assertFreshAfterWipe("\u001b[Z".encodeToByteArray()) {
+                TerminalExtraKey.TAB.toAccessoryAction().resolvedBytes(shift)
+            }
+        }
+    }
+
+    @Test
+    fun configuredControlTabPrefixOwnsBytesAfterEveryPress() {
+        assertFreshAfterWipe(byteArrayOf(0x09)) {
+            TerminalAccessoryAction.TmuxPrefix("C-Tab").resolvedBytes()
+        }
+    }
+
+    @Test
+    fun configuredControlEnterPrefixOwnsBytesAfterEveryPress() {
+        assertFreshAfterWipe(byteArrayOf(0x0d)) {
+            TerminalAccessoryAction.TmuxPrefix("C-Enter").resolvedBytes()
+        }
+    }
+
+    @Test
+    fun configuredControlEscapePrefixOwnsBytesAfterEveryPress() {
+        assertFreshAfterWipe(byteArrayOf(0x1b)) {
+            TerminalAccessoryAction.TmuxPrefix("C-Escape").resolvedBytes()
+        }
+    }
+
+    @Test
+    fun configuredTextControlAndMetaPrefixesKeepIndependentExactBytes() {
+        val chords = mapOf(
+            "x" to byteArrayOf(0x78),
+            "C-b" to byteArrayOf(0x02),
+            "C-Space" to byteArrayOf(0x00),
+            "M-Tab" to byteArrayOf(0x1b, 0x09),
+            "M-Enter" to byteArrayOf(0x1b, 0x0d),
+            "M-Escape" to byteArrayOf(0x1b, 0x1b),
+        )
+        for ((chord, expected) in chords) {
+            assertFreshAfterWipe(expected) {
+                TerminalAccessoryAction.TmuxPrefix(chord).resolvedBytes()
+            }
+        }
+    }
+
+    @Test
+    fun everySupportedDeckModifierCombinationOwnsItsOutgoingBytes() {
+        for (key in TerminalExtraKey.entries.filter { it.bytes != null && !it.isModifier && !it.isLocalAction }) {
+            for (mask in 0..7) {
+                fun state(bit: Int) = if (mask and bit != 0) {
+                    AccessoryModifierState.ARMED
+                } else {
+                    AccessoryModifierState.OFF
+                }
+                val modifiers = AccessoryModifierSnapshot(state(1), state(2), state(4))
+                val action = key.toAccessoryAction()
+                val dispatch = action.resolve(modifiers) as? TerminalAccessoryDispatch.Bytes ?: continue
+                assertFreshAfterWipe(dispatch.value.copyOf()) { action.resolvedBytes(modifiers) }
+            }
+        }
+    }
+
+    @Test
     fun configuredTmuxChordEncodesWithoutBorrowingLiveModifiers() {
         assertArrayEquals(
             byteArrayOf(0x02),
@@ -145,6 +210,19 @@ class TerminalAccessoryActionTest {
         )
 
         assertTrue(dispatch is TerminalAccessoryDispatch.Unsupported)
+    }
+
+    private fun assertFreshAfterWipe(expected: ByteArray, resolve: () -> ByteArray) {
+        val first = resolve()
+        assertArrayEquals(expected, first)
+        val original = first.copyOf()
+        try {
+            first.fill(0)
+            assertArrayEquals(expected, resolve())
+        } finally {
+            // Restore a borrowed baseline array even when the old implementation fails this probe.
+            original.copyInto(first)
+        }
     }
 
     private fun TerminalAccessoryAction.resolvedBytes(

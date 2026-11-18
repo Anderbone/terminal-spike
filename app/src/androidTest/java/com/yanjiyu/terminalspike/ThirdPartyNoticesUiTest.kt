@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
@@ -10,7 +11,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import com.yanjiyu.terminalspike.ui.settings.SettingsCategoryListContentDescription
 import org.junit.Rule
 import org.junit.Test
 
@@ -18,15 +18,17 @@ class ThirdPartyNoticesUiTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
+    private fun string(@StringRes id: Int): String = composeRule.activity.getString(id)
+
     @Test
     fun packagedThirdPartyNoticesAreAccessibleFromAbout() {
-        composeRule.onNodeWithContentDescription("Open settings").performClick()
-        composeRule.onNodeWithContentDescription(SettingsCategoryListContentDescription)
-            .performScrollToNode(hasText("About"))
-        composeRule.onNodeWithText("About").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.navigation_open_settings)).performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.settings_category_list_description))
+            .performScrollToNode(hasText(string(R.string.settings_category_about)))
+        composeRule.onNodeWithText(string(R.string.settings_category_about)).assertIsDisplayed().performClick()
 
-        composeRule.onNodeWithText("About Terminal Spike").assertIsDisplayed()
-        composeRule.onNodeWithText("Third-party notices").assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.about_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.about_third_party_notices)).assertIsDisplayed()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("third_party_notices_body")
                 .fetchSemanticsNodes().isNotEmpty()

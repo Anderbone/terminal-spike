@@ -25,3 +25,26 @@ class CiEvidenceTest(unittest.TestCase):
     def test_invalid_identity_cannot_escape_archive(self):
         with self.assertRaises(ValueError):
             MODULE.preserve(Path("missing"), Path("archive"), "../escape", "1", "report")
+
+    def test_dot_and_parent_identities_fail_before_creating_any_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "archive"
+            for index in range(3):
+                for part in (".", ".."):
+                    identity = ["123", "1", "report"]
+                    identity[index] = part
+                    with self.subTest(index=index, part=part):
+                        with self.assertRaisesRegex(ValueError, "Unsafe CI evidence identity"):
+                            MODULE.preserve(Path(temporary) / "missing", archive, *identity)
+                        self.assertFalse(archive.exists())
+
+    def test_names_containing_dots_are_still_separate_safe_segments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "report.txt").write_text("sanitized result")
+            for name in ("..report", "report..", "api-26.shard_0"):
+                destination = MODULE.preserve(source, root / "archive", "123", "1", name)
+                self.assertEqual(root / "archive" / "123" / "1" / name, destination)
+                self.assertEqual("sanitized result", (destination / "report.txt").read_text())

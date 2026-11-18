@@ -1,6 +1,5 @@
 package com.yanjiyu.terminalspike.ui.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,47 +8,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.yanjiyu.terminalspike.ui.theme.AppDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.core.backup.BackupContentSummary
-import com.yanjiyu.terminalspike.core.backup.BackupEnvelopeFormat
 import com.yanjiyu.terminalspike.core.backup.BackupImportResult
 import com.yanjiyu.terminalspike.core.backup.BackupImportStrategy
-import com.yanjiyu.terminalspike.core.backup.BackupMode
-import com.yanjiyu.terminalspike.ui.WipeableSecretInput
-import com.yanjiyu.terminalspike.ui.WipeableSecretInputState
-import java.text.DateFormat
-import java.util.Date
+import com.yanjiyu.terminalspike.ui.theme.AppDialog
 
 internal data class BackupSettingsActions(
     val onBeginExport: () -> Unit,
-    val onSubmitExport: (BackupMode, Boolean, CharArray) -> Unit,
     val onBeginRestore: () -> Unit,
-    val onSubmitRestorePassphrase: (CharArray) -> Unit,
-    val onSelectStrategy: (BackupImportStrategy) -> Unit,
-    val onPrepareImport: () -> Unit,
     val onApplyImport: () -> Unit,
     val onRecover: () -> Unit,
     val onDismiss: () -> Unit,
@@ -57,11 +39,7 @@ internal data class BackupSettingsActions(
     companion object {
         val NONE = BackupSettingsActions(
             onBeginExport = {},
-            onSubmitExport = { _, _, passphrase -> passphrase.fill('\u0000') },
             onBeginRestore = {},
-            onSubmitRestorePassphrase = { passphrase -> passphrase.fill('\u0000') },
-            onSelectStrategy = {},
-            onPrepareImport = {},
             onApplyImport = {},
             onRecover = {},
             onDismiss = {},
@@ -189,220 +167,6 @@ internal fun BackupWorkflowDialogs(
         BackupWorkflowStep.WAITING_FOR_EXPORT_DOCUMENT,
         BackupWorkflowStep.WAITING_FOR_RESTORE_DOCUMENT -> Unit
     }
-}
-
-@Composable
-private fun ExportSetupDialog(
-    error: BackupWorkflowError?,
-    actions: BackupSettingsActions,
-) {
-    var mode by remember { mutableStateOf(BackupMode.STANDARD) }
-    var includeCustomFonts by remember { mutableStateOf(false) }
-    val passphrase = remember { WipeableSecretInputState() }
-    val confirmation = remember { WipeableSecretInputState() }
-    val minimum = SettingsBackupWorkflow.minimumExportPassphraseCharacters(mode)
-    val matches = passphrase.contentEquals(confirmation)
-    val valid = matches && passphrase.characterCount >= minimum
-    fun dismissAndWipe() {
-        passphrase.wipe()
-        confirmation.wipe()
-        actions.onDismiss()
-    }
-    AppDialog(
-        onDismissRequest = ::dismissAndWipe,
-        title = { Text(stringResource(R.string.settings_backup_create_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                BackupModeChoice(
-                    selected = mode == BackupMode.STANDARD,
-                    title = stringResource(R.string.settings_backup_standard),
-                    summary = stringResource(R.string.settings_backup_standard_summary),
-                    onClick = { mode = BackupMode.STANDARD },
-                )
-                BackupModeChoice(
-                    selected = mode == BackupMode.FULL,
-                    title = stringResource(R.string.settings_backup_full),
-                    summary = stringResource(R.string.settings_backup_full_summary),
-                    onClick = { mode = BackupMode.FULL },
-                )
-                if (mode == BackupMode.FULL) {
-                    Text(
-                        text = stringResource(R.string.settings_backup_full_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { includeCustomFonts = !includeCustomFonts }
-                        .testTag(BackupIncludeCustomFontsTestTag)
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = includeCustomFonts,
-                        onCheckedChange = { includeCustomFonts = it },
-                    )
-                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                        Text(stringResource(R.string.settings_backup_include_custom_fonts))
-                        Text(
-                            text = stringResource(R.string.settings_backup_include_custom_fonts_warning),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                WipeableSecretInput(
-                    state = passphrase,
-                    label = stringResource(R.string.settings_backup_passphrase),
-                    testTag = BackupPassphraseTestTag,
-                    imeAction = ImeAction.Next,
-                    maxCharacters = BackupEnvelopeFormat.MAX_PASSPHRASE_CHARS,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                WipeableSecretInput(
-                    state = confirmation,
-                    label = stringResource(R.string.settings_backup_confirm_passphrase),
-                    testTag = BackupPassphraseConfirmationTestTag,
-                    imeAction = ImeAction.Done,
-                    maxCharacters = BackupEnvelopeFormat.MAX_PASSPHRASE_CHARS,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = stringResource(R.string.settings_backup_passphrase_requirement, minimum),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (confirmation.hasValue && !matches) {
-                    Text(
-                        text = stringResource(R.string.settings_backup_passphrase_mismatch),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                error?.let { BackupErrorText(it) }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = valid,
-                onClick = {
-                    val owned = passphrase.takeChars()
-                    confirmation.wipe()
-                    try {
-                        actions.onSubmitExport(mode, includeCustomFonts, owned)
-                    } catch (error: Throwable) {
-                        owned.fill('\u0000')
-                        throw error
-                    }
-                },
-            ) { Text(stringResource(R.string.settings_backup_choose_location)) }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = ::dismissAndWipe,
-            ) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun RestorePassphraseDialog(
-    state: BackupWorkflowUiState,
-    actions: BackupSettingsActions,
-) {
-    val passphrase = remember { WipeableSecretInputState() }
-    fun dismissAndWipe() {
-        passphrase.wipe()
-        actions.onDismiss()
-    }
-    AppDialog(
-        onDismissRequest = ::dismissAndWipe,
-        title = { Text(stringResource(R.string.settings_backup_unlock_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                state.header?.let { HeaderSummary(it) }
-                WipeableSecretInput(
-                    state = passphrase,
-                    label = stringResource(R.string.settings_backup_passphrase),
-                    testTag = BackupPassphraseTestTag,
-                    imeAction = ImeAction.Done,
-                    maxCharacters = BackupEnvelopeFormat.MAX_PASSPHRASE_CHARS,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                state.error?.let { BackupErrorText(it) }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = passphrase.hasValue,
-                onClick = {
-                    val owned = passphrase.takeChars()
-                    try {
-                        actions.onSubmitRestorePassphrase(owned)
-                    } catch (error: Throwable) {
-                        owned.fill('\u0000')
-                        throw error
-                    }
-                },
-            ) { Text(stringResource(R.string.settings_backup_unlock_action)) }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = ::dismissAndWipe,
-            ) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun AuthenticatedPreviewDialog(
-    state: BackupWorkflowUiState,
-    actions: BackupSettingsActions,
-) {
-    val archive = state.archive ?: return
-    AppDialog(
-        onDismissRequest = actions.onDismiss,
-        title = { Text(stringResource(R.string.settings_backup_authenticated_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                HeaderSummary(archive.header)
-                ContentSummary(archive.content)
-                if (archive.incompatibleRecords + archive.skippedRecords > 0) {
-                    Text(
-                        text = stringResource(
-                            R.string.settings_backup_archive_skips,
-                            archive.incompatibleRecords,
-                            archive.skippedRecords,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.settings_backup_strategy_heading),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                BackupImportStrategy.entries.forEach { strategy ->
-                    StrategyChoice(
-                        strategy = strategy,
-                        selected = state.selectedStrategy == strategy,
-                        onClick = { actions.onSelectStrategy(strategy) },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = actions.onPrepareImport) {
-                Text(stringResource(R.string.settings_backup_preview_changes))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = actions.onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
 }
 
 @Composable
@@ -543,74 +307,6 @@ private fun BackupFailureDialog(
 }
 
 @Composable
-private fun BackupModeChoice(
-    selected: Boolean,
-    title: String,
-    summary: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(summary, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun StrategyChoice(
-    strategy: BackupImportStrategy,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(strategyTitle(strategy), style = MaterialTheme.typography.titleSmall)
-            Text(strategySummary(strategy), style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun BackupModeExplanation(title: String, summary: String, detail: String) {
-    Column(modifier = Modifier.padding(vertical = 6.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Text(summary, style = MaterialTheme.typography.bodyMedium)
-        Text(
-            detail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun HeaderSummary(header: BackupHeaderUiSummary) {
-    val created = remember(header.createdAtEpochMillis) {
-        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-            .format(Date(header.createdAtEpochMillis))
-    }
-    Text(
-        text = stringResource(
-            R.string.settings_backup_header_summary,
-            modeTitle(header.mode),
-            created,
-            header.appVersionName,
-            header.payloadSchemaVersion,
-        ),
-        style = MaterialTheme.typography.bodyMedium,
-    )
-}
-
-@Composable
 private fun ContentSummary(content: BackupContentSummary) {
     Text(
         text = stringResource(
@@ -689,26 +385,11 @@ private fun BackupErrorText(error: BackupWorkflowError) {
 }
 
 @Composable
-private fun modeTitle(mode: BackupMode): String = when (mode) {
-    BackupMode.STANDARD -> stringResource(R.string.settings_backup_standard)
-    BackupMode.FULL -> stringResource(R.string.settings_backup_full)
-}
-
-@Composable
 private fun strategyTitle(strategy: BackupImportStrategy): String = when (strategy) {
     BackupImportStrategy.MERGE -> stringResource(R.string.settings_backup_strategy_merge)
     BackupImportStrategy.REPLACE_CORRESPONDING ->
         stringResource(R.string.settings_backup_strategy_replace)
     BackupImportStrategy.KEEP_BOTH -> stringResource(R.string.settings_backup_strategy_keep_both)
-}
-
-@Composable
-private fun strategySummary(strategy: BackupImportStrategy): String = when (strategy) {
-    BackupImportStrategy.MERGE -> stringResource(R.string.settings_backup_strategy_merge_summary)
-    BackupImportStrategy.REPLACE_CORRESPONDING ->
-        stringResource(R.string.settings_backup_strategy_replace_summary)
-    BackupImportStrategy.KEEP_BOTH ->
-        stringResource(R.string.settings_backup_strategy_keep_both_summary)
 }
 
 @Composable
@@ -743,5 +424,3 @@ internal const val BackupRestoreSettingsTestTag = "backup-restore-settings"
 internal const val BackupSaveActionTestTag = "backup-save-action"
 internal const val BackupRestoreActionTestTag = "backup-restore-action"
 internal const val BackupPassphraseTestTag = "backup-passphrase"
-internal const val BackupPassphraseConfirmationTestTag = "backup-passphrase-confirmation"
-internal const val BackupIncludeCustomFontsTestTag = "backup-include-custom-fonts"

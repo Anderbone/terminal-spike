@@ -5,6 +5,7 @@
  *
  * Modified 2026-08-09. This replaces the process-global CLI frontend with
  * one explicitly owned native session in each isolated Android worker process.
+ * Modified 2026-11-15: recheck cancellation after registering native session control.
  */
 #include <jni.h>
 
@@ -203,6 +204,18 @@ void notify_connected( JNIEnv *environment, jobject listener, uint64_t generatio
   }
   environment->DeleteLocalRef( listener_class );
   if ( environment->ExceptionCheck() ) environment->ExceptionClear();
+}
+
+bool cancellation_requested( JNIEnv *environment, jobject listener ) {
+  jclass listener_class = environment->GetObjectClass( listener );
+  if ( listener_class == nullptr ) return false;
+  jmethodID callback = environment->GetMethodID(
+    listener_class, "isCancellationRequested", "()Z" );
+  const bool requested = callback != nullptr &&
+    environment->CallBooleanMethod( listener, callback ) == JNI_TRUE;
+  environment->DeleteLocalRef( listener_class );
+  // The caller handles a pending lookup/callback exception before entering transport code.
+  return requested;
 }
 
 int run_transport( JNIEnv *environment,
@@ -535,17 +548,25 @@ Java_com_yanjiyu_terminalspike_mosh_MoshNativeBridge_nativeRunSession(
 
   int result = kInternalError;
   try {
-    result = run_transport(
-      environment,
-      control,
-      server_address.get(),
-      udp_port,
-      key_fd,
-      terminal_input,
-      terminal_output,
-      initial_columns,
-      initial_rows,
-      listener );
+    // A Binder stop before g_control was registered could not reach native state. Once this
+    // check starts, any later stop can see g_control; an earlier one is retained by Java.
+    const bool cancelled = cancellation_requested( environment, listener );
+    if ( environment->ExceptionCheck() ) {
+      environment->ExceptionClear();
+    } else {
+      if ( cancelled ) control.stop_requested.store( true, std::memory_order_release );
+      result = run_transport(
+        environment,
+        control,
+        server_address.get(),
+        udp_port,
+        key_fd,
+        terminal_input,
+        terminal_output,
+        initial_columns,
+        initial_rows,
+        listener );
+    }
   } catch ( const std::exception & ) {
     result = kInternalError;
   } catch ( ... ) {

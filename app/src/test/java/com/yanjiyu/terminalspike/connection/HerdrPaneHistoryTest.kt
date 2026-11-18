@@ -101,6 +101,50 @@ class HerdrPaneHistoryTest {
         assertNull("A focused pane must fit the reported surface", capture(80, null, false))
     }
 
+    @Test fun claudeInlineHistoryUsesTheSameFractionalReaderAsCodexAndPi() {
+        val history = requireNotNull(captureHerdrPaneHistory(
+            { fixtureResponse(it, agent = "claude") },
+            HerdrStartupChoice("/usr/bin/herdr", "default"), null, false,
+        ))
+        val reader = HerdrHistoryViewport()
+        reader.beginScroll(history, 20f, -3.25f)
+        reader.scrollBy(-3.25f)
+        assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
+        reader.scrollBy(-20000f)
+        assertEquals(0f, reader.viewport.scrollY, 0f)
+        assertEquals((1..1000).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+    }
+
+    @Test fun agentReplacementDuringCaptureDiscardsTheOldTranscript() {
+        var gets = 0
+        val result = readHerdrPaneHistory({ command ->
+            fixtureResponse(command, agent = if ("'get'" in command && ++gets == 2) "pi" else "codex")
+        }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+        assertEquals(HerdrHistoryRead.Unavailable, result)
+    }
+
+    @Test fun claudePinnedReaderRetainsHistoryAcrossLiveReset() {
+        val choice = HerdrStartupChoice("/usr/bin/herdr", "default")
+        val source = requireNotNull(captureHerdrPaneHistory({ fixtureResponse(it, agent = "claude") }, choice, null, false))
+        val result = readHerdrPaneHistory({ command ->
+            assertFalse("Pinned rows should not be downloaded again", "'read'" in command)
+            val output = fixtureResponse(command, agent = "claude")
+            output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                .replace("\"viewport_rows\":24", "\"max_offset_from_bottom\":0,\"viewport_rows\":24").toByteArray())
+        }, choice, source, true)
+        assertEquals(HerdrHistoryRead.Available(source), result)
+    }
+
+    @Test fun fullscreenClaudeDoesNotMistakeWrappedScreenRowsForHistory() {
+        val result = readHerdrPaneHistory({ command ->
+            assertFalse("No history read for an application-owned fullscreen viewport", "'read'" in command)
+            val output = fixtureResponse(command, agent = "claude")
+            output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                .replace("\"viewport_rows\":24", "\"max_offset_from_bottom\":0,\"viewport_rows\":24").toByteArray())
+        }, HerdrStartupChoice("/usr/bin/herdr", "default"), null, false)
+        assertEquals(HerdrHistoryRead.Unavailable, result)
+    }
+
     @Test fun piRegularModeRetainsOrderedNativeHistory() {
         val captured = requireNotNull(captureHerdrPaneHistory(
             { fixtureResponse(it, agent = "pi") },

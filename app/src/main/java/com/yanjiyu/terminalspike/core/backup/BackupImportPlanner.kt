@@ -97,7 +97,13 @@ class BackupImportPlan internal constructor(
     /** Only Replace changes global settings and therefore requires an internal recovery snapshot. */
     val applyGlobalSettings: Boolean,
     val requiresRecoverySnapshot: Boolean,
+    internal val archiveCompatibility: BackupPayloadCompatibilityReport = BackupPayloadCompatibilityReport(),
 ) : AutoCloseable {
+    internal val incompatibleRecordCount = (
+        incompatibleIncomingRecords.map { it.recordId } + archiveCompatibility.incompatibleRecords.map { it.recordId }
+    ).toSet().size
+    internal val skippedRecordCount = skippedIncomingRecordIds.size + archiveCompatibility.skippedRecordCount
+
     override fun close() = snapshotToApply.close()
 }
 
@@ -124,6 +130,13 @@ class BackupImportPlanner(
         source = BackupImportSource.EXTERNAL_ARCHIVE,
     )
 
+    internal fun plan(
+        current: BackupPayloadSnapshot,
+        incoming: BackupPayloadSnapshot,
+        strategy: BackupImportStrategy,
+        archiveCompatibility: BackupPayloadCompatibilityReport,
+    ): BackupImportPlan = plan(current, incoming, strategy, BackupImportSource.EXTERNAL_ARCHIVE, archiveCompatibility)
+
     /**
      * Plans a same-device recovery snapshot captured directly from this app's persistence model.
      *
@@ -147,6 +160,7 @@ class BackupImportPlanner(
         incoming: BackupPayloadSnapshot,
         strategy: BackupImportStrategy,
         source: BackupImportSource,
+        archiveCompatibility: BackupPayloadCompatibilityReport = BackupPayloadCompatibilityReport(),
     ): BackupImportPlan {
         try {
             if (source == BackupImportSource.INTERNAL_RECOVERY) {
@@ -155,7 +169,7 @@ class BackupImportPlanner(
                 }
             }
             val compatibility = when (source) {
-                BackupImportSource.EXTERNAL_ARCHIVE -> projectSupportedRecords(incoming)
+                BackupImportSource.EXTERNAL_ARCHIVE -> projectSupportedRecords(incoming, archiveCompatibility)
                 BackupImportSource.INTERNAL_RECOVERY -> SupportedImportProjection(
                     snapshot = incoming,
                     incompatibleRecords = emptyList(),
@@ -303,6 +317,7 @@ class BackupImportPlanner(
             externallyResolvedReferences = external,
             applyGlobalSettings = false,
             requiresRecoverySnapshot = false,
+            archiveCompatibility = compatibility.archiveCompatibility,
         )
     }
 
@@ -350,8 +365,9 @@ class BackupImportPlanner(
                 }
                 .mapTo(linkedSetOf(), BackupImportConflict::existingRecordId),
             externallyResolvedReferences = external,
-            applyGlobalSettings = true,
+            applyGlobalSettings = compatibility.archiveCompatibility.globalSettingsAvailable,
             requiresRecoverySnapshot = true,
+            archiveCompatibility = compatibility.archiveCompatibility,
         )
     }
 
@@ -481,6 +497,7 @@ class BackupImportPlanner(
             externallyResolvedReferences = external,
             applyGlobalSettings = false,
             requiresRecoverySnapshot = false,
+            archiveCompatibility = compatibility.archiveCompatibility,
         )
     }
 
@@ -503,6 +520,7 @@ class BackupImportPlanner(
     /** External archives activate a custom font only when its validated byte record is present. */
     private fun projectSupportedRecords(
         incoming: BackupPayloadSnapshot,
+        archiveCompatibility: BackupPayloadCompatibilityReport,
     ): SupportedImportProjection {
         val includedFontIds = incoming.customFonts.mapTo(hashSetOf()) { it.fontId }
         val needsProjection = incoming.terminalProfiles.any { profile ->
@@ -511,7 +529,7 @@ class BackupImportPlanner(
         val referencedIncludedFonts = incoming.terminalProfiles.mapTo(hashSetOf()) { it.fontId }
             .intersect(includedFontIds)
         if (!needsProjection && referencedIncludedFonts.size == incoming.customFonts.size) {
-            return SupportedImportProjection(incoming, emptyList(), emptySet())
+            return SupportedImportProjection(incoming, emptyList(), emptySet(), archiveCompatibility)
         }
         val supported = BackupPayloadSnapshot(
             mode = incoming.mode,
@@ -539,6 +557,7 @@ class BackupImportPlanner(
             snapshot = supported,
             incompatibleRecords = emptyList(),
             skippedRecordIds = emptySet(),
+            archiveCompatibility = archiveCompatibility,
         )
     }
 
@@ -557,6 +576,7 @@ private data class SupportedImportProjection(
     val snapshot: BackupPayloadSnapshot,
     val incompatibleRecords: List<BackupImportIncompatibleRecord>,
     val skippedRecordIds: Set<String>,
+    val archiveCompatibility: BackupPayloadCompatibilityReport = BackupPayloadCompatibilityReport(),
 )
 
 private fun BackupPayloadSnapshot.recordKinds(): Map<String, BackupImportRecordKind> = buildMap {

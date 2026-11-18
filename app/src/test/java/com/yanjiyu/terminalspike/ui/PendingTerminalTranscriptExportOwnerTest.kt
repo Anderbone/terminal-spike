@@ -1,6 +1,6 @@
 package com.yanjiyu.terminalspike.ui
 
-import com.yanjiyu.terminalspike.terminal.TerminalTranscriptSnapshot
+import com.yanjiyu.terminalspike.terminal.terminalTranscriptSnapshot
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -12,11 +12,11 @@ class PendingTerminalTranscriptExportOwnerTest {
     @Test
     fun retainedOwnerKeepsOneSnapshotAndConsumesItExactlyOnce() {
         val owner = PendingTerminalTranscriptExportOwner()
-        val first = TerminalTranscriptSnapshot.fromLines(
+        val first = terminalTranscriptSnapshot(
             lines = listOf(TerminalLine.plain("first")),
             sourceId = 1L,
         )
-        val second = TerminalTranscriptSnapshot.fromLines(
+        val second = terminalTranscriptSnapshot(
             lines = listOf(TerminalLine.plain("second")),
             sourceId = 2L,
         )

@@ -11,6 +11,24 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProjectControllerTest {
+    @Test fun deeplyNestedBranchingTreesDoNotUseTheCallStack() {
+        val levels = 1_800
+        val files = buildList {
+            var directory = ""
+            repeat(levels) {
+                directory += "d/"
+                add(directory + "side.kt")
+            }
+            add(directory + "leaf.kt")
+        }
+        assertTrue(files.sumOf { it.length + 1 } < MAX_PROJECT_BYTES)
+        val entries = projectTreeEntries(files, expandAll = true)
+        assertEquals(levels * 2 + 1, entries.size)
+        assertEquals(levels, entries.maxOf { it.depth })
+        assertEquals("d/side.kt", entries.last().path)
+        assertEquals(1, entries.count { it.path.endsWith("leaf.kt") })
+    }
+
     @Test fun refreshWaitsForReconnectAndRetriesRememberedDirectoryAfterFailure() = runTest {
         val store = MemoryProjectStore()
         store.rememberDirectory("host", "/repo")

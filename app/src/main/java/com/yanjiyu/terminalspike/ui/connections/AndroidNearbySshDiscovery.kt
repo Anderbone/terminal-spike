@@ -1,19 +1,22 @@
 package com.yanjiyu.terminalspike.ui.connections
 
 import android.content.Context
-import android.net.nsd.DiscoveryRequest
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.MainThread
 import java.util.concurrent.Executor
 
-/** Android-only NSD adapter. It browses `_ssh._tcp` and never performs address-range probes. */
+/** Main-thread-owned NSD adapter. Framework callbacks may arrive on legacy binder handlers. */
+@MainThread
 internal class AndroidNearbySshDiscoveryBoundary(
     context: Context,
     private val sdkInt: Int = Build.VERSION.SDK_INT,
-    private val nsdManager: NsdManager = context.getSystemService(NsdManager::class.java),
+    private val platform: NearbySshNsdPlatform = AndroidNsdPlatform(
+        context.getSystemService(NsdManager::class.java), sdkInt,
+    ),
     private val callbackExecutor: Executor = MainThreadExecutor,
 ) : NearbySshDiscoveryBoundary {
     private val serviceInfoById = linkedMapOf<String, NsdServiceInfo>()
@@ -21,6 +24,7 @@ internal class AndroidNearbySshDiscoveryBoundary(
     private var nextCandidateId = 0L
     private var activeDiscoveryListener: NsdManager.DiscoveryListener? = null
     private var activeResolveListener: NsdManager.ResolveListener? = null
+    private var closed = false
 
     override val pickerMode: NearbySshPickerMode = if (sdkInt >= Build.VERSION_CODES.CINNAMON_BUN) {
         NearbySshPickerMode.SYSTEM
@@ -28,21 +32,21 @@ internal class AndroidNearbySshDiscoveryBoundary(
         NearbySshPickerMode.IN_APP
     }
 
-    @Suppress("NewApi")
     override fun start(listener: NearbySshDiscoveryBoundary.DiscoveryListener) {
+        if (closed) return
         stopDiscovery()
         serviceInfoById.clear()
         candidateIdByKey.clear()
         val frameworkListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) = Unit
 
-            override fun onDiscoveryStopped(serviceType: String) {
-                if (activeDiscoveryListener === this) activeDiscoveryListener = null
+            override fun onDiscoveryStopped(serviceType: String) = dispatchDiscovery(this) {
+                activeDiscoveryListener = null
                 listener.onDiscoveryStopped()
             }
 
-            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                if (!serviceInfo.serviceType.isSshDnsSdType()) return
+            override fun onServiceFound(serviceInfo: NsdServiceInfo) = dispatchDiscovery(this) {
+                if (!serviceInfo.serviceType.isSshDnsSdType()) return@dispatchDiscovery
                 val candidateId = candidateIdFor(serviceInfo)
                 serviceInfoById[candidateId] = serviceInfo
                 listener.onServiceFound(
@@ -58,50 +62,44 @@ internal class AndroidNearbySshDiscoveryBoundary(
                 )
             }
 
-            override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) = dispatchDiscovery(this) {
+                if (!serviceInfo.serviceType.isSshDnsSdType()) return@dispatchDiscovery
                 val key = serviceKey(serviceInfo)
-                val candidateId = candidateIdByKey.remove(key) ?: return
+                val candidateId = candidateIdByKey.remove(key) ?: return@dispatchDiscovery
                 serviceInfoById.remove(candidateId)
                 listener.onServiceLost(candidateId)
             }
 
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                if (activeDiscoveryListener === this) activeDiscoveryListener = null
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = dispatchDiscovery(this) {
+                activeDiscoveryListener = null
                 listener.onFailure(errorCode.toBoundaryFailure(resolve = false))
             }
 
-            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                if (activeDiscoveryListener === this) activeDiscoveryListener = null
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = dispatchDiscovery(this) {
+                activeDiscoveryListener = null
                 listener.onFailure(errorCode.toBoundaryFailure(resolve = false))
             }
         }
         activeDiscoveryListener = frameworkListener
-        if (sdkInt >= Build.VERSION_CODES.CINNAMON_BUN) {
-            val request = DiscoveryRequest.Builder(SSH_DNS_SD_SERVICE_TYPE)
-                .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
-                .build()
-            nsdManager.discoverServices(request, callbackExecutor, frameworkListener)
-        } else {
-            @Suppress("DEPRECATION")
-            nsdManager.discoverServices(
-                SSH_DNS_SD_SERVICE_TYPE,
-                NsdManager.PROTOCOL_DNS_SD,
-                frameworkListener,
-            )
+        try {
+            platform.discover(callbackExecutor, frameworkListener)
+        } catch (failure: Exception) {
+            if (activeDiscoveryListener === frameworkListener) activeDiscoveryListener = null
+            throw failure
         }
     }
 
     override fun stopDiscovery() {
         val listener = activeDiscoveryListener ?: return
         activeDiscoveryListener = null
-        runCatching { nsdManager.stopServiceDiscovery(listener) }
+        runCatching { platform.stopDiscovery(listener) }
     }
 
-    @Suppress("DEPRECATION")
     override fun resolve(
         candidateId: String,
         listener: NearbySshDiscoveryBoundary.ResolutionListener,
     ) {
+        if (closed) return
         stopResolution()
         val candidate = serviceInfoById[candidateId]
         if (candidate == null) {
@@ -109,44 +107,59 @@ internal class AndroidNearbySshDiscoveryBoundary(
             return
         }
         val frameworkListener = object : NsdManager.ResolveListener {
-            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                if (activeResolveListener === this) activeResolveListener = null
+            override fun onServiceResolved(serviceInfo: NsdServiceInfo) = dispatchResolution(this) {
+                activeResolveListener = null
                 listener.onResolved(serviceInfo.toResolvedNearbySshService())
             }
 
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                if (activeResolveListener === this) activeResolveListener = null
+            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = dispatchResolution(this) {
+                activeResolveListener = null
                 listener.onFailure(errorCode.toBoundaryFailure(resolve = true))
             }
         }
         activeResolveListener = frameworkListener
-        // The executor overload also depends on a T extension level that is not guaranteed by
-        // the platform API number. The original callback overload is available across our full
-        // API 26+ range and also resolves the service selected by the API 37 system picker.
-        nsdManager.resolveService(candidate, frameworkListener)
+        try {
+            platform.resolve(candidate, frameworkListener)
+        } catch (failure: Exception) {
+            if (activeResolveListener === frameworkListener) activeResolveListener = null
+            throw failure
+        }
     }
 
-    @Suppress("NewApi")
     override fun stopResolution() {
         val listener = activeResolveListener ?: return
         activeResolveListener = null
-        if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            runCatching { nsdManager.stopServiceResolution(listener) }
-        }
-        // API 26-33 has no cancellation API. Clearing the active listener makes its late
-        // callback inert at the controller operation boundary.
+        runCatching { platform.stopResolution(listener) }
     }
 
     override fun close() {
+        if (closed) return
+        closed = true
         stopDiscovery()
         stopResolution()
         serviceInfoById.clear()
         candidateIdByKey.clear()
     }
 
+    private fun dispatchDiscovery(owner: NsdManager.DiscoveryListener, callback: () -> Unit) {
+        callbackExecutor.execute {
+            if (!closed && activeDiscoveryListener === owner) callback()
+        }
+    }
+
+    private fun dispatchResolution(owner: NsdManager.ResolveListener, callback: () -> Unit) {
+        callbackExecutor.execute {
+            if (!closed && activeResolveListener === owner) callback()
+        }
+    }
+
     private fun candidateIdFor(serviceInfo: NsdServiceInfo): String {
         val key = serviceKey(serviceInfo)
         return candidateIdByKey.getOrPut(key) {
+            if (candidateIdByKey.size >= MAX_DISCOVERED_SSH_SERVICES) {
+                val oldestKey = candidateIdByKey.keys.first()
+                serviceInfoById.remove(candidateIdByKey.remove(oldestKey))
+            }
             nextCandidateId += 1
             "nearby-ssh-$nextCandidateId"
         }
@@ -156,7 +169,7 @@ internal class AndroidNearbySshDiscoveryBoundary(
     private fun serviceKey(serviceInfo: NsdServiceInfo): String = buildString {
         append(serviceInfo.serviceName.orEmpty())
         append('\u0000')
-        append(serviceInfo.serviceType.orEmpty())
+        append(SSH_DNS_SD_SERVICE_TYPE)
         if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
             append('\u0000')
             append(serviceInfo.network?.networkHandle ?: 0L)

@@ -92,19 +92,34 @@ class HerdrInputContextTest {
         }
     }
 
+    @Test fun unrelatedLayoutChangesDoNotClearTheFocusedCodex() {
+        var layouts = 0
+        val result = captureHerdrInputContext({ command ->
+            val output = response(command)
+            if ("'layout'" in command) {
+                output.copy(stdout = output.stdout.toString(Charsets.UTF_8)
+                    .replace("\"tab_id\":\"w1:t1\"", "\"tab_id\":\"w1:t1\",\"revision\":${++layouts}")
+                    .toByteArray())
+            } else output
+        }, choice)
+        assertTrue(result.observationAvailable)
+        assertEquals("codex", result.agentId)
+        assertEquals("medium", result.reasoningEffort)
+    }
+
     @Test fun paneSwitchDuringInspectionDiscardsTheOldResult() {
         var layouts = 0
         val result = captureHerdrInputContext({ command ->
             val switched = "'layout'" in command && ++layouts == 2
             response(command, paneId = if (switched) "w1:p3" else "w1:p2")
         }, choice)
-        assertEquals(TerminalInputContext(), result)
+        assertFalse(result.observationAvailable)
     }
 
-    @Test fun unavailableMalformedAndOversizedMetadataDefaultToDirectInput() {
+    @Test fun unavailableMalformedAndOversizedMetadataAreNotConfirmedAgentExits() {
         for (output in listOf(TmuxExecOutput(byteArrayOf(), 1), TmuxExecOutput("{}".toByteArray(), 0),
             TmuxExecOutput(ByteArray(65_537), 0))) {
-            assertEquals(TerminalInputContext(), captureHerdrInputContext({ output }, choice))
+            assertFalse(captureHerdrInputContext({ output }, choice).observationAvailable)
         }
     }
 }

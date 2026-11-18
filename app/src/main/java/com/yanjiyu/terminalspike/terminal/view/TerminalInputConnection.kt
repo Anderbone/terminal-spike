@@ -69,6 +69,9 @@ internal class TerminalInputConnection(
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return true
+        if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) {
+            resetComposingInput()
+        }
         TerminalKeySequences.forModifiedKeyCode(
             keyCode = event.keyCode,
             shift = event.isShiftPressed,

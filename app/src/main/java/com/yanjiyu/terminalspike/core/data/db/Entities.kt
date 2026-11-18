@@ -541,3 +541,13 @@ data class LegacyMigrationStateEntity(
         const val STATE_DISCARDED_AFTER_RECOVERY = "discarded_after_recovery"
     }
 }
+
+/** Device-local suppression of shipped snippets, independent of replacement row lifetime. */
+@Entity(tableName = "snippet_toolbar_state")
+data class SnippetToolbarStateEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "singleton_id")
+    val singletonId: Int = 0,
+    @ColumnInfo(name = "hidden_default_ids")
+    val hiddenDefaultIds: String,
+)

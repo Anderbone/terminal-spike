@@ -557,9 +557,11 @@ exactly the secondary-button press/release, with no extra click or local text
 selection. The existing font/keyboard resizing, pane-selection, and mobile
 switcher regressions remain in place.
 
-The checked-in CI workflow runs the full inventory in its API 26/35 runtime
-jobs for pushes and pull requests; missing methods and unexpected skips fail
-the inventory check. `scripts/verify-android.sh` runs unit tests and compiles
+The current checked-in CI workflow runs the full inventory in its API 26/35
+runtime jobs for pushes to `main` or `codex/ci-fix-*`, and manual runs on `main`;
+it has no pull-request trigger. Missing methods and unexpected skips fail the
+inventory check. See [CI and releasing](CI-AND-RELEASING.md) for the current gates.
+`scripts/verify-android.sh` runs unit tests and compiles
 the instrumentation APK but does not execute these native touch tests locally.
 Use `HerdrContextMenuRecoveryTest` with `TerminalSpikeTestRunner` on the
 model-verified old USB phone for the focused device gate. Never run it on the

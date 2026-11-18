@@ -4,7 +4,7 @@ This is a development-only OpenSSH server for Terminal Spike connection, authent
 known-host, and SFTP file-operation tests. Nothing in this directory is included in an Android
 source set or APK. The server uses OpenSSH's built-in `internal-sftp` subsystem.
 
-The container is pinned to Alpine 3.24.1 by digest and OpenSSH 10.3p1-r0. It listens only on
+The container is pinned to Alpine 3.24.1 by digest and OpenSSH 10.3p1-r1. It listens only on
 `127.0.0.1:22222` by default. The generated Ed25519 client key and ECDSA P-256 host key live
 under ignored `.state/`; no private key is tracked.
 

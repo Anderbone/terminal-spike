@@ -1,5 +1,7 @@
 package com.yanjiyu.terminalspike.terminal.view
 
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -132,7 +134,103 @@ class TerminalClipboardClearSchedulerTest {
         assertEquals(emptyList<String>(), later.attempted)
     }
 
+    @Test
+    fun disablingAfterExpiryPreventsTheAlreadyDispatchedClear() = runTest {
+        val dispatcher = QueuedClipboardDispatcher()
+        val scheduler = TerminalClipboardClearScheduler(backgroundScope, dispatcher)
+        val target = RecordingClearTarget()
+        scheduler.updateDelaySeconds(30)
+        scheduler.schedule(target, token("disabled"))
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(1, dispatcher.pendingCount)
+
+        scheduler.updateDelaySeconds(0)
+        dispatcher.drain()
+        runCurrent()
+
+        assertEquals(emptyList<String>(), target.attempted)
+    }
+
+    @Test
+    fun closingAfterExpiryPreventsTheAlreadyDispatchedClear() = runTest {
+        val dispatcher = QueuedClipboardDispatcher()
+        val scheduler = TerminalClipboardClearScheduler(backgroundScope, dispatcher)
+        val target = RecordingClearTarget()
+        scheduler.updateDelaySeconds(30)
+        scheduler.schedule(target, token("closed"))
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(1, dispatcher.pendingCount)
+
+        scheduler.close()
+        dispatcher.drain()
+        runCurrent()
+
+        assertEquals(emptyList<String>(), target.attempted)
+    }
+
+    @Test
+    fun replacementWriteInvalidatesTheAlreadyDispatchedClear() = runTest {
+        val dispatcher = QueuedClipboardDispatcher()
+        val scheduler = TerminalClipboardClearScheduler(backgroundScope, dispatcher)
+        val target = RecordingClearTarget()
+        scheduler.updateDelaySeconds(30)
+        scheduler.schedule(target, token("older"))
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(1, dispatcher.pendingCount)
+
+        scheduler.schedule(target, token("newer"))
+        dispatcher.drain()
+        runCurrent()
+        assertEquals(emptyList<String>(), target.attempted)
+
+        advanceTimeBy(30_000)
+        runCurrent()
+        dispatcher.drain()
+        runCurrent()
+        assertEquals(listOf("newer"), target.cleared)
+    }
+
+    @Test
+    fun concurrentExpiredRetriesConsumeTheTokenOnlyOnce() = runTest {
+        val dispatcher = QueuedClipboardDispatcher()
+        val scheduler = TerminalClipboardClearScheduler(backgroundScope, dispatcher)
+        scheduler.updateDelaySeconds(30)
+        val unavailable = RecordingClearTarget(TerminalClipboardClearResult.TEMPORARILY_UNAVAILABLE)
+        scheduler.schedule(unavailable, token("retry"))
+        advanceTimeBy(30_000)
+        runCurrent()
+        dispatcher.drain()
+        runCurrent()
+        assertEquals(listOf("retry"), unavailable.attempted)
+        val resumed = RecordingClearTarget()
+
+        scheduler.retryExpiredClear(resumed)
+        scheduler.retryExpiredClear(resumed)
+        runCurrent()
+        assertEquals(2, dispatcher.pendingCount)
+        dispatcher.drain()
+        runCurrent()
+
+        assertEquals(listOf("retry"), resumed.cleared)
+    }
+
     private fun token(value: String) = TerminalClipboardToken(value)
+}
+
+private class QueuedClipboardDispatcher : CoroutineDispatcher() {
+    private val queue = ArrayDeque<Runnable>()
+    val pendingCount: Int get() = queue.size
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        queue.addLast(block)
+    }
+
+    fun drain() {
+        while (queue.isNotEmpty()) queue.removeFirst().run()
+    }
 }
 
 private class RecordingClearTarget(

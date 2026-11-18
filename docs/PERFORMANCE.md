@@ -1,10 +1,17 @@
 # Performance notes
 
+Measured results below belong to their dated builds. They do not establish performance of the
+current workspace, and historical command transcripts are not new device-test instructions.
+
 ## Expected hot path
 
 The main-thread hot path is `TerminalController` frame drain → ring-buffer append or latest full-screen swap → `FastTerminalView.onDraw`. Drawing visits only visible and overscan rows. It does not create Compose nodes, row Views, cells, or a scrollback bitmap.
 
-The renderer caches font metrics, line height, estimated cell width, terminal padding, typefaces, Paint instances, and viewport geometry. Styled text is drawn per contiguous run. Long runs are clipped and their draw range is bounded to the viewport.
+The renderer caches font metrics, line height, estimated cell width, terminal padding, typefaces, Paint instances, and viewport geometry. Contiguous narrow text keeps its shared shaping; wide, supplementary-base and replacement grapheme clusters are placed and clipped to their terminal cells because fallback-font advances can differ from the grid. Long runs are clipped by visible terminal columns, including overscan, rather than by UTF-16 unit count.
+
+`TerminalRunRendering` prepares immutable sparse offsets when a run is created. Ordinary ASCII runs retain no extra layout object. Combining marks, supplementary characters, ZWJ sequences and regional-indicator pairs keep complete cell boundaries. A cell containing more than 64 UTF-16 units is displayed as a replacement glyph (plus a space for a wide cell); subsequent cells still render. The original `TerminalRun.text` and `TerminalLine.text` remain intact for copying, selection and history. This is a draw-work limit; the parser independently replaces cells exceeding its 4,096-unit storage limit before constructing these runs. Original text retained by the parser remains exact here. Layout construction scans source text; no rendering speed improvement is claimed without a new measurement.
+
+`TerminalRunRenderingTest` checks parser-column agreement, oversized-cell isolation and copy/sanitization behavior. `FastTerminalUnicodeRenderingTest` uses real VT frames and native Canvas pixels, checks each following marker cell and compares it with an independent explicit-column reference. Existing workload, batching, viewport, scrollback and smoke gates remain required.
 
 ## Frame scheduling and scrolling
 
@@ -32,16 +39,26 @@ ordinary non-tmux Auto and explicit local/remote branches retain their existing 
 
 ## Platform graphics data
 
+Before each device run, resolve an authorized target with `adb devices -l`, set `ANDROID_SERIAL`
+to its exact current serial, and verify its model. Apply the repository's scenario-specific target
+rules; never run tests or benchmarks on the Wi-Fi foldable. Keep the serial pinned for the run:
+
+```bash
+adb devices -l
+# Set ANDROID_SERIAL to the selected authorized serial before proceeding.
+adb -s "${ANDROID_SERIAL:?Select an authorized phone first}" shell getprop ro.product.model
+```
+
 Reset counters before each fixed scenario:
 
 ```bash
-adb shell dumpsys gfxinfo com.yanjiyu.terminalspike reset
+adb -s "${ANDROID_SERIAL:?Select and verify the target first}" shell dumpsys gfxinfo com.yanjiyu.terminalspike reset
 ```
 
 After exercising the scenario, collect them:
 
 ```bash
-adb shell dumpsys gfxinfo com.yanjiyu.terminalspike
+adb -s "${ANDROID_SERIAL:?Select and verify the target first}" shell dumpsys gfxinfo com.yanjiyu.terminalspike
 ```
 
 Record device model, Android version, refresh rate, build type, workload/rate, scrollback size, test duration, power mode, and thermal state. Avoid comparing a warm throttled run with a cold run.
@@ -127,8 +144,10 @@ When the pinned API 35 system image is unavailable, an already-authorized physic
 collect the same local profile and Macrobenchmark evidence without changing source configuration:
 
 ```bash
-./gradlew -PterminalSpikeUseConnectedBenchmarkDevices=true :app:generateBaselineProfile
-./gradlew -PterminalSpikeUseConnectedBenchmarkDevices=true \
+ANDROID_SERIAL="${ANDROID_SERIAL:?Select and verify the target first}" \
+  ./gradlew -PterminalSpikeUseConnectedBenchmarkDevices=true :app:generateBaselineProfile
+ANDROID_SERIAL="${ANDROID_SERIAL:?Select and verify the target first}" \
+  ./gradlew -PterminalSpikeUseConnectedBenchmarkDevices=true \
   :benchmark:connectedBenchmarkReleaseAndroidTest
 ```
 
@@ -148,7 +167,7 @@ Still collect device/API/refresh rate, build revision, battery mode, and thermal
 result. The infrastructure does not yet substitute for measured input-to-render latency,
 tap-to-Connecting latency, rotation/resize, or simultaneous live-session evidence.
 
-## Current release-candidate evidence
+## Historical release-candidate evidence
 
 ### 2026-09-03 primary-navigation trace diagnosis
 

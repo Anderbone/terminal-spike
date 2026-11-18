@@ -1,5 +1,9 @@
 # Plan 002: Make SSH runtime settings, trust, and keyboard-interactive authentication truthful
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Execute this plan only after Plan 001 is DONE.
 > Read the complete plan first, preserve unrelated dirty changes, and run every
 > gate. Never weaken strict host-key checking or convert secrets to immutable
@@ -13,7 +17,7 @@
 > `git diff --stat ff8435bc100f381f6925202259017e7834f7233d..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/connection app/src/main/java/com/yanjiyu/terminalspike/ui/TerminalSpikeViewModel.kt app/src/main/java/com/yanjiyu/terminalspike/ui/SshConnectionBar.kt app/src/main/java/com/yanjiyu/terminalspike/core/model`.
 > If any Current-state contract differs semantically, stop and report.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: L
@@ -54,7 +58,7 @@ The result of this plan is a typed host-identity decision state machine, genuine
 bounded keyboard-interactive challenges with wipeable responses, and exact TERM
 and startup behavior shared by normal connections and Test Connection.
 
-## Current state
+## Original state
 
 - `connection/Connection.kt:17-19` exposes `answerPrompt(Boolean)` and
   `HostKeyPrompt` only contains the newly offered key.
@@ -82,7 +86,7 @@ and startup behavior shared by normal connections and Test Connection.
 - Authentication arrays are currently cleared in `applyAuthentication` finally
   blocks. Preserve and extend that ownership discipline.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 ```bash
 export JAVA_HOME=/home/jiyu/.cache/terminal-spike-tools/jdk
@@ -156,14 +160,14 @@ fi
   contract is in scope
 - terminal chrome/session-action redesign (Plan 003)
 
-## Git workflow
+## Historical Git workflow
 
 - Preserve the shared dirty worktree; never reset or overwrite sibling changes.
 - If commits are authorized, use focused conventional messages such as
   `feat: add explicit ssh host trust decisions`.
 - Do not push, publish, or include credentials/build outputs.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Replace Boolean host trust with typed decisions
 
@@ -325,7 +329,7 @@ assert_no_match -n 'private const val TERMINAL_TYPE|setPtyType\(TERMINAL_TYPE' a
 - Add a local OpenSSH integration fixture later in Plan 005, but make protocol
   behavior deterministic at this layer first.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] First-contact prompts support Reject, Trust once, and Trust and save.
 - [x] Changed-key prompts show previous/new SHA-256 fingerprints and require an
@@ -341,7 +345,7 @@ assert_no_match -n 'private const val TERMINAL_TYPE|setPtyType\(TERMINAL_TYPE' a
       on every authorized phone and MainActivity is foreground (or no-device skip
       is explicitly reported).
 
-## STOP conditions
+## Historical stop conditions
 
 Stop and report if:
 

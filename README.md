@@ -32,6 +32,25 @@ Mosh requires `mosh-server` on your server.
 For setup help, open **Settings → User guide** in the app.
 See [Herdr setup](docs/HERDR-SETUP.md) or the [browser & code-server guide](docs/EMBEDDED-BROWSER.md).
 
+For smooth touch scrolling in Herdr, the agent must expose terminal scrollback.
+Start **pi** with `pi --tui-mode regular`, or choose **regular** in `/settings`
+(`"tuiMode": "regular"` in `~/.pi/agent/settings.json` makes it the default).
+For **Claude Code**, the recommended default is to start it inline inside Herdr only:
+add `[ -n "$HERDR_ENV" ] && export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` to
+`~/.bashrc`/`~/.zshrc` (fish: `if set -q HERDR_ENV; set -gx CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN 1; end`
+in `~/.config/fish/conf.d/`) on the computer running Herdr. New Herdr panes pick it up;
+running sessions are untouched. To switch a conversation that is already running,
+run `/tui default` in it. Use the
+in-session command instead of changing the global `tui` setting while Claude is
+running: a live settings change can leave an existing full-screen pane blank.
+The command preserves the conversation when renderer switching is supported;
+a running pi session can switch through `/settings`.
+Full-screen modes keep their own history and may scroll by rows or pages instead
+of using Android's pixel scrolling and inertia. To restore them, choose
+**fullscreen** in pi or run `/tui fullscreen` in Claude Code.
+See [Herdr scrolling](docs/HERDR-SETUP.md#smooth-scrolling) for details.
+
+
 [Report a bug](https://github.com/Anderbone/terminal-spike/issues) · [Discord](https://discord.gg/yMPzeCeWMT) · [Website](https://yanjiyu.com/terminal-spike/) · [Buy me a coffee](https://buymeacoffee.com/jiyuyan)
 
 [Build & contribute](docs/DEVELOPING.md) · [Security](SECURITY.md) · [GPL-3.0-or-later](LICENSING.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)

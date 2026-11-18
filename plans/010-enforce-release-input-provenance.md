@@ -1,5 +1,9 @@
 # Plan 010: Enforce release input provenance and repository validators
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Do not guess checksums or CI action revisions.
 > Resolve them from authoritative upstream release metadata, record provenance,
 > and stop if they cannot be independently verified.
@@ -7,7 +11,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- gradle/wrapper/gradle-wrapper.properties gradle/verification-metadata.xml .github/workflows/android-ci.yml app/build.gradle.kts scripts store-assets docs/DEPENDENCIES.md`
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: M
@@ -26,7 +30,7 @@ metadata is absent, and actions use movable major tags. Existing font, store-
 asset, and evidence-parser validators also are not part of CI. A compromised or
 silently changed input can therefore enter a nominally green public build.
 
-## Current state
+## Original state
 
 - `gradle/wrapper/gradle-wrapper.properties:3` pins the Gradle 9.5.0 URL but has
   no `distributionSha256Sum`.
@@ -41,7 +45,7 @@ silently changed input can therefore enter a nominally green public build.
 - `app/build.gradle.kts:800-836` shows the local convention: release packaging
   verification is attached directly to release/check tasks.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -69,11 +73,11 @@ silently changed input can therefore enter a nominally green public build.
 - signing credentials, Play upload, or publishing
 - disabling verification because one artifact lacks metadata
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated work. Do not commit/push unless asked.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Pin the Gradle distribution checksum
 
@@ -136,7 +140,7 @@ actually distributed in the APK.
 - Store metadata/image validation.
 - Workflow assertion that no movable external action tag remains.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Gradle wrapper distribution is checksum-pinned.
 - [x] All release-gate artifacts pass strict dependency verification from a
@@ -162,7 +166,7 @@ actually distributed in the APK.
 - All nine bundled fonts, all localized Play metadata and graphics, 37
   repository script tests, workflow YAML parsing, and `git diff --check` passed.
 
-## STOP conditions
+## Historical stop conditions
 
 - An upstream checksum/action commit cannot be verified from its authoritative
   source.

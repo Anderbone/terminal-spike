@@ -2,6 +2,7 @@ package com.yanjiyu.terminalspike.terminal.view
 
 import android.accessibilityservice.AccessibilityService
 import android.app.UiAutomation
+import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.os.Build
@@ -17,6 +18,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
@@ -31,6 +34,56 @@ import kotlinx.coroutines.cancel
 
 @RunWith(AndroidJUnit4::class)
 class TerminalClipboardWriterTest {
+    private var originalClipboard: ClipData? = null
+    private var clipboardCaptured = false
+
+    @Before
+    fun preserveClipboard() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            dismissPendingAutofillSavePrompts()
+            scenario.withResumedFocusedActivity { activity ->
+                val clipboard = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
+                val original = clipboard.primaryClip
+                // Replacing a URI clip can revoke grants needed to restore it. Fail before any
+                // test write rather than discard a user's non-restorable clipboard selection.
+                check(original == null || (0 until original.itemCount).all {
+                    val item = original.getItemAt(it)
+                    item.uri == null && item.intent == null
+                }) {
+                    "Clipboard writer tests require only text clipboard items."
+                }
+                originalClipboard = original
+                clipboardCaptured = true
+            }
+        }
+    }
+
+    @After
+    fun restoreClipboard() {
+        if (!clipboardCaptured) return
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.withResumedFocusedActivity { activity ->
+                val clipboard = requireNotNull(activity.getSystemService(ClipboardManager::class.java))
+                val original = originalClipboard
+                if (original != null) clipboard.setPrimaryClip(original)
+                else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) clipboard.clearPrimaryClip()
+                else clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+                val restored = clipboard.primaryClip
+                check(if (original != null) {
+                    restored != null && restored.itemCount == original.itemCount &&
+                        (0 until original.itemCount).all {
+                            original.getItemAt(it).text?.toString() == restored.getItemAt(it).text?.toString() &&
+                                original.getItemAt(it).htmlText == restored.getItemAt(it).htmlText
+                        }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    restored == null || restored.itemCount == 0
+                } else {
+                    restored?.getItemAt(0)?.text?.isEmpty() == true
+                }) { "The original clipboard text was not restored." }
+            }
+        }
+    }
+
     @Test
     fun explicitRemoteClipboardPathWritesVisiblePlainText() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

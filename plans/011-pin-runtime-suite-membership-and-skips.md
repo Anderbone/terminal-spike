@@ -1,5 +1,9 @@
 # Plan 011: Make runtime gates fail on silent test or skip erosion
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Follow this plan step by step. Run every verification command and
 > confirm the expected result before moving on. Preserve the full/default, boundary, and OpenSSH
 > suites; do not remove or weaken tests to make their inventories easier to express. If a STOP
@@ -11,7 +15,7 @@
 > The worktree was intentionally dirty when this plan was written. Also inspect the live unstaged
 > diff for these paths and compare the facts below before editing.
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: M
@@ -31,7 +35,7 @@ skipped test can therefore reduce coverage while CI remains green. The OpenSSH s
 the stronger pattern: it rejects assumption skips and requires named methods. Apply that standard
 to every required runtime suite without making normal test additions painful.
 
-## Current state
+## Original state
 
 - `scripts/run-android-emulator-tests.sh:41-54` defines the full, boundary, and OpenSSH suites.
 - `scripts/run-android-emulator-tests.sh:252-268` rejects skips and checks required names only for
@@ -54,7 +58,7 @@ durable output, Python `unittest` host tests, and Android Test Orchestrator with
 `clearPackageData=true`. Match `scripts/run-real-mosh-device-tests.sh` for a fixed expected method
 set and `scripts/instrumentation-output-to-junit.py` for parser behavior.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -83,11 +87,11 @@ set and `scripts/instrumentation-output-to-junit.py` for parser behavior.
 - requiring opt-in SSH/SFTP/Mosh/Codex methods in the default suite
 - physical-device operations or Mosh fixture changes
 
-## Git workflow
+## Historical Git workflow
 
 Preserve all unrelated dirty work. Do not commit, push, or open a PR unless the operator asks.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Define a reviewable runtime-suite contract
 
@@ -139,7 +143,7 @@ docs with newly measured counts and explain that membership plus skip identity i
 - Clean AVD boundary acceptance on APIs 28, 29, 32, and 33.
 - Existing fixed OpenSSH five-test suite remains zero-skip and green.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Full and boundary suites fail if any required test silently disappears.
 - [x] Full and boundary suites fail on any skip not explicitly allowed for that API.
@@ -149,7 +153,7 @@ docs with newly measured counts and explain that membership plus skip identity i
 - [x] Full unit/lint/debug/release/Android-test/benchmark gate and `git diff --check` pass.
 - [x] No physical device was targeted by the emulator runner.
 
-## STOP conditions
+## Historical stop conditions
 
 - Instrumentation output cannot uniquely identify parameterized cases; stop with sanitized examples
   rather than merging distinct tests.

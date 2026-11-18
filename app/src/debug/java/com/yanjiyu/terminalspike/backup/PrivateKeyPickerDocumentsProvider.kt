@@ -8,27 +8,39 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import com.yanjiyu.terminalspike.BuildConfig
 import java.io.File
+import java.io.FileNotFoundException
 
 /** Enabled only for the picker regression; supplies an extensionless opaque document. */
 class PrivateKeyPickerDocumentsProvider : DocumentsProvider() {
+    companion object {
+        const val AUTHORITY = BuildConfig.APPLICATION_ID + ".test.keypicker.documents"
+    }
+
     override fun onCreate() = true
 
     override fun queryRoots(projection: Array<out String>?): Cursor =
         MatrixCursor(projection ?: arrayOf(Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID,
             Root.COLUMN_TITLE, Root.COLUMN_FLAGS, Root.COLUMN_MIME_TYPES)).apply {
-            newRow().add(Root.COLUMN_ROOT_ID, "root").add(Root.COLUMN_DOCUMENT_ID, "root")
-                .add(Root.COLUMN_TITLE, "SSH key picker fixture").add(Root.COLUMN_FLAGS, Root.FLAG_LOCAL_ONLY)
-                .add(Root.COLUMN_MIME_TYPES, "*/*")
+            addRow(columnNames.map { column ->
+                when (column) {
+                    Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID -> "root"
+                    Root.COLUMN_TITLE -> "SSH key picker fixture"
+                    Root.COLUMN_FLAGS -> Root.FLAG_LOCAL_ONLY
+                    Root.COLUMN_MIME_TYPES -> "*/*"
+                    else -> null
+                }
+            })
         }
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor =
         cursor(projection).apply { include(documentId) }
 
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
-        require(parentDocumentId == "root")
+        if (parentDocumentId != "root") throw FileNotFoundException(parentDocumentId)
         return cursor(projection).apply {
-            directory().listFiles().orEmpty().filterNot { it.name.endsWith(".mime") }
+            directory().listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".mime") }
                 .forEach { include(it.name) }
         }
     }
@@ -52,19 +64,37 @@ class PrivateKeyPickerDocumentsProvider : DocumentsProvider() {
         Document.COLUMN_FLAGS, Document.COLUMN_SIZE,
     ))
 
+    override fun getDocumentType(documentId: String): String =
+        if (documentId == "root") Document.MIME_TYPE_DIR else mimeType(file(documentId))
+
     private fun MatrixCursor.include(id: String) {
-        newRow().add(Document.COLUMN_DOCUMENT_ID, id)
-            .add(Document.COLUMN_DISPLAY_NAME, if (id == "root") "SSH key picker fixture" else id)
-            .add(Document.COLUMN_MIME_TYPE, if (id == "root") Document.MIME_TYPE_DIR else
-                directory().resolve("$id.mime").takeIf { it.isFile }?.readText()
-                    ?: "application/x-ssh-private-key")
-            .add(Document.COLUMN_FLAGS, 0)
-            .add(Document.COLUMN_SIZE, if (id == "root") 0L else file(id).length())
+        // Validate before resolving metadata, including when the projection omits the ID.
+        val document = if (id == "root") null else file(id)
+        addRow(columnNames.map { column ->
+            when (column) {
+                Document.COLUMN_DOCUMENT_ID -> id
+                Document.COLUMN_DISPLAY_NAME -> if (id == "root") "SSH key picker fixture" else id
+                Document.COLUMN_MIME_TYPE -> document?.let(::mimeType) ?: Document.MIME_TYPE_DIR
+                Document.COLUMN_FLAGS -> 0
+                Document.COLUMN_SIZE -> document?.length() ?: 0L
+                else -> null
+            }
+        })
     }
+
+    private fun mimeType(document: File): String =
+        directory().resolve("${document.name}.mime").takeIf { it.isFile }?.readText()?.trim()
+            ?.takeIf { it.isNotEmpty() } ?: "application/x-ssh-private-key"
 
     private fun directory() = requireNotNull(context).filesDir.resolve("key-picker-fixtures")
     private fun file(id: String): File {
-        require(id != "root" && id.isNotEmpty() && id.none { it == '/' || it == '\\' || it.isISOControl() })
-        return directory().resolve(id)
+        if (id == "root" || id.isEmpty() || id == "." || id == ".." ||
+            id.any { it == '/' || it == '\\' || it.isISOControl() }) {
+            throw FileNotFoundException(id)
+        }
+        val directory = directory().canonicalFile
+        val document = directory.resolve(id).canonicalFile
+        if (document.parentFile != directory || !document.isFile) throw FileNotFoundException(id)
+        return document
     }
 }

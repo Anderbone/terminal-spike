@@ -1,5 +1,9 @@
 # Plan 001: Make backup import and crash recovery one authoritative mutation path
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Follow every step and verification gate in order.
 > Preserve all unrelated uncommitted work. Do not reset, clean, checkout, or
 > mass-format the repository. If a STOP condition occurs, stop and report rather
@@ -11,7 +15,7 @@
 > “Commands you will need”. If either worktree hash differs, inspect every
 > in-scope symbol against “Current state”; any semantic mismatch is a STOP.
 
-## Status
+## Historical status
 
 - **Priority**: P0
 - **Effort**: L
@@ -46,7 +50,7 @@ This plan establishes one process authority gate, mandatory startup recovery,
 cache generation/invalidation, and exact optional-field restoration. It must
 land before adding more persistence writers.
 
-## Current state
+## Original state
 
 - `core/backup/BackupImportCoordinator.kt:303-367` writes a recovery snapshot,
   applies data, and clears the marker only afterward.
@@ -73,7 +77,7 @@ land before adding more persistence writers.
   Match `AppLockUiState`/`AppLockGate` and the non-cancellable reconciliation in
   `TerminalDataRepository.authorizedMutation`.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 Run from the repository root with:
 
@@ -176,7 +180,7 @@ fi
 - deleting user data or silently discarding a pending recovery marker
 - broad repository refactors or UI visual redesign
 
-## Git workflow
+## Historical Git workflow
 
 - Work on the current branch unless the operator explicitly requests another.
 - Make small logical commits only if authorized; use conventional messages such
@@ -185,7 +189,7 @@ fi
 - Never include APKs, build outputs, `local.properties`, SDK/JDK paths, signing
   material, or test credentials.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Add one process authority/generation gate
 
@@ -300,7 +304,7 @@ and Room test commands exit 0.
 - Add a live-ViewModel import test proving Workspace and Connections refresh
   without restart.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] A pending recovery marker prevents all normal catalog/settings mutation.
 - [x] Startup automatically resolves a valid marker or shows only a fail-closed
@@ -317,7 +321,7 @@ and Room test commands exit 0.
 - [x] No file outside Scope changed, except pre-existing shared-tree changes and
       the status row in `plans/README.md`.
 
-## STOP conditions
+## Historical stop conditions
 
 Stop and report if:
 

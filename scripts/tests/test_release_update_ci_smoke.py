@@ -1,13 +1,17 @@
 from pathlib import Path
 import os
 import hashlib
+import io
 import json
+import runpy
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +30,7 @@ class ReleaseUpdateCiSmokeTest(unittest.TestCase):
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         shutil.copy2(SOURCE_ROOT / "scripts/install-android-sdk.py", self.scripts / "install-android-sdk.py")
+        shutil.copy2(SOURCE_ROOT / "scripts/owned_process.py", self.scripts / "owned_process.py")
         shutil.copy2(
             SOURCE_ROOT / "scripts/run-release-update-ci-smoke.py",
             self.scripts / "run-release-update-ci-smoke.py",
@@ -80,7 +85,8 @@ while not (state / 'emulator-stop').exists():
         self.write_tool(jdk / "jarsigner", self.fake_jarsigner_body())
         self.write_tool(self.root / "gradlew", self.fake_gradle_body())
         self.write_tool(self.fixture / "release-app-install-update-smoke.sh", self.fake_smoke_body())
-        self.write_tool(self.bin / "docker", "log('docker ' + ' '.join(sys.argv[1:]))\n")
+        self.write_tool(self.bin / "docker", "log('docker ' + ' '.join(sys.argv[1:]))\n"
+                        "raise SystemExit(int(os.environ.get('FAKE_DOCKER_CLEANUP_FAIL', '0')))\n")
 
         self.env = os.environ.copy()
         for name in SIGNING_NAMES:
@@ -188,9 +194,18 @@ if not all(values):
     raise SystemExit(9)
 if os.environ.get('FAKE_BUILD_FAIL') == '1':
     raise SystemExit(1)
-root = Path(__file__).resolve().parent
-apk = root / 'app/build/outputs/apk/release/app-release.apk'
-aab = root / 'app/build/outputs/bundle/release/app-release.aab'
+private_root = os.environ.get('TERMINAL_SPIKE_ACCEPTANCE_BUILD_ROOT')
+if private_root:
+    init_path = Path(sys.argv[sys.argv.index('--init-script') + 1])
+    if not init_path.is_file() or init_path.parent != Path(private_root).parent:
+        raise SystemExit(10)
+    app_output = Path(private_root) / 'projects/app/outputs'
+    apk = app_output / 'apk/release/app-release.apk'
+    aab = app_output / 'bundle/release/app-release.aab'
+else:
+    root = Path(__file__).resolve().parent
+    apk = root / 'app/build/outputs/apk/release/app-release.apk'
+    aab = root / 'app/build/outputs/bundle/release/app-release.aab'
 apk.parent.mkdir(parents=True, exist_ok=True)
 apk.write_bytes(b'signed apk')
 if os.environ.get('FAKE_MISSING_AAB') != '1':
@@ -261,7 +276,91 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
         self.assertEqual([], list(self.root.glob("terminal-spike-release-ci.*")))
         self.assertFalse((self.root / "app/build/outputs/apk/release").exists())
         self.assertFalse((self.root / "app/build/outputs/bundle/release").exists())
-        self.assertTrue(any(line.startswith("docker compose") for line in self.commands()))
+        fixture_requested = any(line.startswith("release-smoke ") for line in self.commands())
+        self.assertEqual(fixture_requested, any(line.startswith("docker compose") for line in self.commands()))
+
+    def preserve_existing_release_outputs(self) -> dict[Path, bytes]:
+        artifacts = {
+            self.root / "app/build/outputs/apk/release/app-release.apk": b"owned preexisting release APK",
+            self.root / "app/build/outputs/bundle/release/app-release.aab": b"owned preexisting release AAB",
+        }
+        for path, content in artifacts.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        return artifacts
+
+    def assert_artifacts_preserved(self, artifacts: dict[Path, bytes]) -> None:
+        for path, content in artifacts.items():
+            self.assertTrue(path.is_file(), str(path))
+            self.assertEqual(content, path.read_bytes())
+
+    def test_preflight_rejection_preserves_existing_outputs_and_never_stops_a_fixture(self) -> None:
+        artifacts = self.preserve_existing_release_outputs()
+
+        result = self.run_runner(env=self.fresh_env(TERMINAL_SPIKE_RELEASE_STORE_PASSWORD="owned-rejected-input"))
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("must be unset", result.stderr)
+        self.assert_artifacts_preserved(artifacts)
+        self.assertFalse(any(line.startswith("docker ") for line in self.commands()))
+        self.assertFalse(any(line.startswith("keytool ") for line in self.commands()))
+
+    def test_verified_artifact_mode_preserves_both_inputs_and_preexisting_outputs(self) -> None:
+        artifacts = self.preserve_existing_release_outputs()
+        source = self.prepare_verified_artifacts()
+        inputs = {path: path.read_bytes() for path in source.iterdir()}
+
+        result = self.run_runner(extra=("--verified-release-dir", str(source)))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assert_artifacts_preserved({**artifacts, **inputs})
+        self.assertFalse(any(line.startswith("gradlew ") for line in self.commands()))
+        self.assertEqual([], list(self.root.glob("terminal-spike-release-ci.*")))
+
+    def test_local_build_preserves_preexisting_outputs(self) -> None:
+        artifacts = self.preserve_existing_release_outputs()
+
+        result = self.run_runner()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assert_artifacts_preserved(artifacts)
+        self.assertEqual([], list(self.root.glob("terminal-spike-release-ci.*")))
+
+    def test_failed_local_build_does_not_remove_preexisting_outputs_or_stop_a_fixture(self) -> None:
+        artifacts = self.preserve_existing_release_outputs()
+
+        result = self.run_runner(env=self.fresh_env(FAKE_BUILD_FAIL="1"))
+
+        self.assertNotEqual(0, result.returncode)
+        self.assert_artifacts_preserved(artifacts)
+        self.assertFalse(any(line.startswith("docker ") for line in self.commands()))
+        self.assertEqual([], list(self.root.glob("terminal-spike-release-ci.*")))
+
+    def test_unset_or_empty_java_home_resolves_signing_tools_from_path(self) -> None:
+        for value in (None, ""):
+            with self.subTest(JAVA_HOME=value):
+                env = self.env.copy()
+                if value is None:
+                    env.pop("JAVA_HOME", None)
+                else:
+                    env["JAVA_HOME"] = value
+                env["PATH"] = str(self.root / "jdk/bin") + os.pathsep + env["PATH"]
+
+                result = self.run_runner(env=env)
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertTrue(any(line.startswith("keytool ") for line in self.commands()))
+                self.assertTrue(any(line.startswith("jarsigner ") for line in self.commands()))
+                self.reset()
+
+    def test_fixture_cleanup_failure_is_reported_after_owned_resources_are_released(self) -> None:
+        result = self.run_runner(env=self.fresh_env(FAKE_DOCKER_CLEANUP_FAIL="1"))
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("cleanup failed", result.stderr)
+        self.assertIn("stage=complete status=fail reason=cleanup", result.stdout)
+        self.assertNotIn("stage=complete status=pass", result.stdout)
+        self.assert_clean()
 
     def test_dry_run_is_status_only_and_runs_no_tools(self) -> None:
         result = self.run_runner(extra=("--dry-run",))
@@ -489,6 +588,47 @@ print('RELEASE_APP_UPDATE_SMOKE ' + ' '.join(values))
         self.assertNotIn("app-release.aab", job)
         self.assertNotIn(".p12", job)
         self.assertNotIn("acceptance key", job.lower())
+
+
+class ReleaseArtifactHashTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with patch.object(sys, "path", [str(SOURCE_ROOT / "scripts"), *sys.path]):
+            namespace = runpy.run_path(str(SOURCE_ROOT / "scripts/run-release-update-ci-smoke.py"))
+        cls.hash_file = staticmethod(namespace["sha256_file"])
+
+    def test_empty_and_multichunk_binary_inputs_are_hashed_completely_with_bounded_reads(self) -> None:
+        class BoundedReader(io.BytesIO):
+            def read(self, size: int = -1) -> bytes:
+                if not 0 < size <= 1024 * 1024:
+                    raise AssertionError("Artifact hashing must use bounded reads")
+                return super().read(size)
+
+        for payload in (b"", bytes(range(256)) * 8193):
+            with self.subTest(size=len(payload)):
+                reader = BoundedReader(payload)
+                path = Mock(spec=Path)
+                path.open.return_value = reader
+                self.assertEqual(hashlib.sha256(payload).hexdigest(), self.hash_file(path))
+                self.assertTrue(reader.closed)
+                path.open.assert_called_once_with("rb")
+
+    def test_read_failure_closes_the_stream_and_preserves_the_original_error(self) -> None:
+        failure = OSError("Owned artifact read failure")
+
+        class FailingReader(io.BytesIO):
+            def read(self, size: int = -1) -> bytes:
+                if self.tell():
+                    raise failure
+                return super().read(size)
+
+        reader = FailingReader(b"owned input")
+        path = Mock(spec=Path)
+        path.open.return_value = reader
+        with self.assertRaises(OSError) as caught:
+            self.hash_file(path)
+        self.assertIs(failure, caught.exception)
+        self.assertTrue(reader.closed)
 
 
 if __name__ == "__main__":

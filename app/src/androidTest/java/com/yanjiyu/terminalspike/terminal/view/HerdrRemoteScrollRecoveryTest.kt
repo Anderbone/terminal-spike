@@ -75,6 +75,8 @@ class HerdrRemoteScrollRecoveryTest {
 
     @Test fun letterPaneNumberKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("w6:pC")
 
+    @Test fun claudePaneKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("wK:p5", agent = "claude")
+
     @Test fun piPaneKeepsNativeMotionAndLatestInput() = verifyNativeRecovery("wK:p4", agent = "pi")
 
     @Test fun screenOnlyCodexPaneReceivesOlderAndNewerScrollGestures() = verifyScreenOnlyGestures("codex")

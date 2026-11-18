@@ -6,13 +6,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -47,6 +50,7 @@ import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import com.yanjiyu.terminalspike.TerminalSpikeComponentTestActivity
+import com.yanjiyu.terminalspike.IsolatedPreferencesRule
 import com.yanjiyu.terminalspike.core.model.ConnectionProtocol
 import com.yanjiyu.terminalspike.core.model.SnippetTapAction
 import com.yanjiyu.terminalspike.core.model.SshKeyOrigin
@@ -61,39 +65,52 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
 import org.hamcrest.Matchers.equalTo
 
 class ConnectionsScreenTest {
-    @get:Rule
     val composeRule = createAndroidComposeRule<TerminalSpikeComponentTestActivity>()
+    private val connectionOrder = IsolatedPreferencesRule("connection_order")
+
+    @get:Rule
+    val rules: TestRule = RuleChain.outerRule(connectionOrder).around(composeRule)
+
+    @Composable
+    private fun TestTheme(
+        themeMode: AppThemeMode,
+        updateSystemBarIcons: Boolean,
+        content: @Composable () -> Unit,
+    ) {
+        val base = LocalContext.current
+        val isolated = remember(base) { connectionOrder.wrap(base) }
+        CompositionLocalProvider(LocalContext provides isolated) {
+            TerminalSpikeTheme(themeMode, updateSystemBarIcons = updateSystemBarIcons, content = content)
+        }
+    }
 
     @Test
     fun longPressDragReordersLocalAndRemoteConnectionsAndPersists() {
-        val preferences = composeRule.activity.getSharedPreferences("connection_order", android.content.Context.MODE_PRIVATE)
-        preferences.edit().clear().commit()
+        val preferences = connectionOrder.preferences
         var opened = false
-        try {
-            render(populatedState(), callbacks = callbacks().copy(onOpenLocalArch = { opened = true }))
-            val local = composeRule.onNodeWithTag("connections-local-arch")
-            val host = composeRule.onNodeWithTag("connections-host-$HOST_ID")
-            val distance = host.fetchSemanticsNode().boundsInRoot.center.y -
-                local.fetchSemanticsNode().boundsInRoot.center.y
-            local.performTouchInput {
-                down(center)
-                advanceEventTime(700)
-                moveTo(center, delayMillis = 16)
-                for (step in 1..20) {
-                    moveTo(center + Offset(0f, distance * step / 20), delayMillis = 16)
-                }
-                up()
+        render(populatedState(), callbacks = callbacks().copy(onOpenLocalArch = { opened = true }))
+        val local = composeRule.onNodeWithTag("connections-local-arch")
+        val host = composeRule.onNodeWithTag("connections-host-$HOST_ID")
+        val distance = host.fetchSemanticsNode().boundsInRoot.center.y -
+            local.fetchSemanticsNode().boundsInRoot.center.y
+        local.performTouchInput {
+            down(center)
+            advanceEventTime(700)
+            moveTo(center, delayMillis = 16)
+            for (step in 1..20) {
+                moveTo(center + Offset(0f, distance * step / 20), delayMillis = 16)
             }
-            composeRule.waitForIdle()
-            assertTrue("order=${preferences.getString("ids", null)} local=${local.fetchSemanticsNode().boundsInRoot} host=${host.fetchSemanticsNode().boundsInRoot}", host.fetchSemanticsNode().boundsInRoot.top < local.fetchSemanticsNode().boundsInRoot.top)
-            assertEquals("[\"host:$HOST_ID\",\"local-arch\"]", preferences.getString("ids", null))
-            assertTrue(!opened)
-        } finally {
-            preferences.edit().clear().commit()
+            up()
         }
+        composeRule.waitForIdle()
+        assertTrue("order=${preferences.getString("ids", null)} local=${local.fetchSemanticsNode().boundsInRoot} host=${host.fetchSemanticsNode().boundsInRoot}", host.fetchSemanticsNode().boundsInRoot.top < local.fetchSemanticsNode().boundsInRoot.top)
+        assertEquals("[\"host:$HOST_ID\",\"local-arch\"]", preferences.getString("ids", null))
+        assertTrue(!opened)
     }
 
     @Test
@@ -346,7 +363,7 @@ class ConnectionsScreenTest {
             onClearHostEditorDraft = { token -> retainedDrafts.remove(token) },
         )
         restorationTester.setContent {
-            TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
+            TestTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 ConnectionsScreen(
                     state = state,
                     callbacks = callbacks,
@@ -457,7 +474,7 @@ class ConnectionsScreenTest {
         var attempts = 0
         val passphrases = mutableListOf<String>()
         composeRule.setContent {
-            TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
+            TestTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 if (visible.value) {
                     GenerateKeyDialog(
                         onDismiss = { visible.value = false },
@@ -506,7 +523,7 @@ class ConnectionsScreenTest {
             searchQuery = "does-not-exist", hostFilters = HostFilters(favouritesOnly = true),
         ))
         composeRule.setContent {
-            TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
+            TestTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 ConnectionsScreen(
                     state = renderedState.value,
                     primaryDestination = com.yanjiyu.terminalspike.ui.AppDestination.SETTINGS,
@@ -559,7 +576,7 @@ class ConnectionsScreenTest {
             ConnectionsUiState(loadState = ConnectionsLoadState.Loading),
         )
         composeRule.setContent {
-            TerminalSpikeTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
+            TestTheme(themeMode = AppThemeMode.LIGHT, updateSystemBarIcons = false) {
                 ConnectionsScreen(
                     state = renderedState.value,
                     callbacks = callbacks(onRetry = { retries += 1 }),
@@ -709,7 +726,7 @@ class ConnectionsScreenTest {
         val themeMode = mutableStateOf(AppThemeMode.LIGHT)
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
-                TerminalSpikeTheme(themeMode = themeMode.value, updateSystemBarIcons = false) {
+                TestTheme(themeMode = themeMode.value, updateSystemBarIcons = false) {
                     Box(
                         Modifier
                             .requiredSize(599.dp, 900.dp)
@@ -749,7 +766,7 @@ class ConnectionsScreenTest {
     ) {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
-                TerminalSpikeTheme(themeMode = themeMode, updateSystemBarIcons = false) {
+                TestTheme(themeMode = themeMode, updateSystemBarIcons = false) {
                     Box(
                         Modifier
                             .requiredSize(width, height)

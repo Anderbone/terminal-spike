@@ -20,16 +20,25 @@ import com.yanjiyu.terminalspike.mosh.internal.IMoshWorker
 import com.yanjiyu.terminalspike.mosh.internal.IMoshWorkerCallback
 import java.net.InetAddress
 import java.util.Locale
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-public abstract class BaseMoshWorkerService : Service() {
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
+/** The executor must dispatch asynchronously; native work must never run on a Binder thread. */
+public abstract class BaseMoshWorkerService protected constructor(
+    private val executor: ExecutorService = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(1),
+    ) { runnable ->
         Thread(runnable, "mosh-native-session").apply { isDaemon = true }
-    }
+    },
+) : Service() {
     private val stateLock = Any()
     private var runningSession: RunningSession? = null
+    private var destroyed = false
 
     private val binder = object : IMoshWorker.Stub() {
         override fun startSession(
@@ -69,37 +78,11 @@ public abstract class BaseMoshWorkerService : Service() {
                 return
             }
 
+            lateinit var session: RunningSession
             val deathRecipient = IBinder.DeathRecipient {
-                runCatching { MoshNativeBridge.stop(sessionId) }
+                requestStop(session, MoshStopReason.APP_SHUTDOWN, preserveReason = true)
             }
-            val session = RunningSession(
-                sessionId = sessionId,
-                callback = callback,
-                callbackDeathRecipient = deathRecipient,
-            )
-            synchronized(stateLock) {
-                if (runningSession != null) {
-                    descriptors.forEach { it.closeQuietly() }
-                    callback.safeEvent(
-                        sessionId = sessionId,
-                        state = MoshSessionState.ERROR,
-                        errorCode = MoshErrorCode.INTERNAL_REDACTED,
-                        detail = "Worker process is already occupied",
-                    )
-                    return
-                }
-                runningSession = session
-            }
-
-            try {
-                callback.asBinder().linkToDeath(deathRecipient, 0)
-            } catch (_: RemoteException) {
-                synchronized(stateLock) { runningSession = null }
-                descriptors.forEach { it.closeQuietly() }
-                return
-            }
-
-            executor.execute {
+            val task = Runnable {
                 runNativeSession(
                     session = session,
                     serverAddress = serverAddress,
@@ -111,12 +94,70 @@ public abstract class BaseMoshWorkerService : Service() {
                     rows = initialRows,
                 )
             }
+            session = RunningSession(
+                sessionId = sessionId,
+                callback = callback,
+                callbackDeathRecipient = deathRecipient,
+                descriptors = descriptors,
+                task = task,
+            )
+            val rejection = synchronized(stateLock) {
+                when {
+                    destroyed -> NativeFinalEvent(
+                        state = MoshSessionState.ERROR,
+                        errorCode = MoshErrorCode.CANCELLED,
+                        detail = "Worker process is stopping",
+                    )
+                    runningSession != null -> NativeFinalEvent(
+                        state = MoshSessionState.ERROR,
+                        errorCode = MoshErrorCode.INTERNAL_REDACTED,
+                        detail = "Worker process is already occupied",
+                    )
+                    else -> {
+                        runningSession = session
+                        null
+                    }
+                }
+            }
+            if (rejection != null) {
+                finishSession(session, rejection)
+                return
+            }
+
+            try {
+                synchronized(stateLock) {
+                    // A stop may win admission; never register a callback after its cleanup.
+                    if (session.finished) return
+                    callback.asBinder().linkToDeath(deathRecipient, 0)
+                    if (session.finished) return
+                }
+            } catch (_: RemoteException) {
+                finishSession(session)
+                return
+            }
+
+            try {
+                synchronized(stateLock) {
+                    if (session.finished) return
+                    // Serialize placement with queued cancellation so removal cannot precede it.
+                    executor.execute(session.task)
+                }
+            } catch (_: RejectedExecutionException) {
+                finishSession(
+                    session,
+                    NativeFinalEvent(
+                        state = MoshSessionState.ERROR,
+                        errorCode = MoshErrorCode.NATIVE_INITIALIZATION_FAILED,
+                        detail = "Could not schedule the native Mosh session",
+                    ),
+                )
+            }
         }
 
         override fun resizeSession(sessionId: String, columns: Int, rows: Int) {
             enforceSameApplicationCaller()
             if (sessionId == synchronized(stateLock) { runningSession?.sessionId }) {
-            runCatching { MoshNativeBridge.resize(sessionId, columns, rows) }
+                runCatching { MoshNativeBridge.resize(sessionId, columns, rows) }
             }
         }
 
@@ -133,8 +174,7 @@ public abstract class BaseMoshWorkerService : Service() {
             enforceSameApplicationCaller()
             val session = synchronized(stateLock) { runningSession }
             if (session?.sessionId == sessionId) {
-                session.stopReason.set(reason)
-                runCatching { MoshNativeBridge.stop(sessionId) }
+                requestStop(session, reason)
             }
         }
     }
@@ -142,9 +182,12 @@ public abstract class BaseMoshWorkerService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
-        synchronized(stateLock) { runningSession }?.let { session ->
-            session.stopReason.compareAndSet(0, MoshStopReason.APP_SHUTDOWN)
-            runCatching { MoshNativeBridge.stop(session.sessionId) }
+        val session = synchronized(stateLock) {
+            destroyed = true
+            runningSession
+        }
+        session?.let {
+            requestStop(it, MoshStopReason.APP_SHUTDOWN, preserveReason = true)
         }
         executor.shutdownNow()
         super.onDestroy()
@@ -160,70 +203,106 @@ public abstract class BaseMoshWorkerService : Service() {
         columns: Int,
         rows: Int,
     ) {
-        val numericAddress = runCatching { InetAddress.getByAddress(serverAddress).hostAddress }
-            .getOrNull()
-        if (numericAddress.isNullOrBlank()) {
-            listOf(moshKeyRead, terminalInputRead, terminalOutputWrite)
-                .forEach { it.closeQuietly() }
-            session.callback.safeEvent(
-                sessionId = session.sessionId,
-                state = MoshSessionState.ERROR,
-                errorCode = MoshErrorCode.INVALID_REQUEST,
-                detail = "Invalid numeric server address",
-            )
-            finishSession(session)
-            return
-        }
-
-        val listener = object : MoshNativeListener {
-            override fun onConnected(connectivityGeneration: Long) {
-                session.callback.safeEvent(
-                    sessionId = session.sessionId,
-                    state = MoshSessionState.CONNECTED,
-                    connectivityGeneration = connectivityGeneration,
-                )
+        val canRun = synchronized(stateLock) {
+            if (session.finished || destroyed || runningSession !== session || session.stopReason.get() != 0) {
+                false
+            } else {
+                session.nativeStarted = true
+                true
             }
         }
-        val descriptors = listOf(moshKeyRead, terminalInputRead, terminalOutputWrite)
-        val result = try {
-            MoshNativeBridge.runSession(
-                sessionId = session.sessionId,
-                serverAddress = numericAddress,
-                udpPort = udpPort,
-                keyReadFd = moshKeyRead.fd,
-                terminalInputReadFd = terminalInputRead.fd,
-                terminalOutputWriteFd = terminalOutputWrite.fd,
-                initialColumns = columns,
-                initialRows = rows,
-                listener = listener,
-            )
-        } catch (_: Throwable) {
-            MoshNativeResult.INTERNAL_ERROR
-        } finally {
-            // JNI borrows these descriptors and duplicates them before native work. Keeping Java
-            // ownership until this finally block also closes them if class loading or JNI symbol
-            // resolution fails before native code is entered.
-            descriptors.forEach { it.closeQuietly() }
-        }
+        if (!canRun) return
 
-        val finalEvent = nativeResultEvent(result, session.stopReason.get())
-        session.callback.safeEvent(
-            sessionId = session.sessionId,
-            state = finalEvent.state,
-            disconnectReason = finalEvent.disconnectReason,
-            errorCode = finalEvent.errorCode,
-            detail = finalEvent.detail,
-            connectivityGeneration = session.connectivityGeneration.get(),
-        )
-        finishSession(session)
+        try {
+            val numericAddress = runCatching { InetAddress.getByAddress(serverAddress).hostAddress }
+                .getOrNull()
+            if (numericAddress.isNullOrBlank()) {
+                finishSession(
+                    session,
+                    NativeFinalEvent(
+                        state = MoshSessionState.ERROR,
+                        errorCode = MoshErrorCode.INVALID_REQUEST,
+                        detail = "Invalid numeric server address",
+                    ),
+                )
+                return
+            }
+
+            val listener = object : MoshNativeListener {
+                override fun isCancellationRequested() = session.stopReason.get() != 0
+
+                override fun onConnected(connectivityGeneration: Long) {
+                    session.callback.safeEvent(
+                        sessionId = session.sessionId,
+                        state = MoshSessionState.CONNECTED,
+                        connectivityGeneration = connectivityGeneration,
+                        onFailure = {
+                            requestStop(session, MoshStopReason.APP_SHUTDOWN, preserveReason = true)
+                        },
+                    )
+                }
+            }
+            val result = try {
+                // JNI borrows these descriptors. This session retains their Java ownership
+                // until native work returns, including class-loading/JNI-dispatch failures.
+                MoshNativeBridge.runSession(
+                    sessionId = session.sessionId,
+                    serverAddress = numericAddress,
+                    udpPort = udpPort,
+                    keyReadFd = moshKeyRead.fd,
+                    terminalInputReadFd = terminalInputRead.fd,
+                    terminalOutputWriteFd = terminalOutputWrite.fd,
+                    initialColumns = columns,
+                    initialRows = rows,
+                    listener = listener,
+                )
+            } catch (_: Throwable) {
+                MoshNativeResult.INTERNAL_ERROR
+            }
+            finishSession(session, nativeResultEvent(result, session.stopReason.get()))
+        } finally {
+            finishSession(session)
+        }
     }
 
-    private fun finishSession(session: RunningSession) {
-        runCatching { session.callback.asBinder().unlinkToDeath(session.callbackDeathRecipient, 0) }
-        synchronized(stateLock) {
-            if (runningSession === session) runningSession = null
+    private fun requestStop(session: RunningSession, reason: Int, preserveReason: Boolean = false) {
+        val queued = synchronized(stateLock) {
+            if (session.finished) return
+            if (preserveReason) session.stopReason.compareAndSet(0, reason) else session.stopReason.set(reason)
+            !session.nativeStarted
         }
-        stopSelf()
+        if (queued) {
+            finishSession(session, nativeResultEvent(MoshNativeResult.CANCELLED, session.stopReason.get()))
+        } else {
+            runCatching { MoshNativeBridge.stop(session.sessionId) }
+        }
+    }
+
+    private fun finishSession(session: RunningSession, event: NativeFinalEvent? = null) {
+        val wasCurrent = synchronized(stateLock) {
+            if (session.finished) return
+            session.finished = true
+            if (!session.nativeStarted) {
+                (executor as? ThreadPoolExecutor)?.remove(session.task)
+            }
+            (runningSession === session).also { if (it) runningSession = null }
+        }
+        session.descriptors.forEach { it.closeQuietly() }
+        runCatching { session.callback.asBinder().unlinkToDeath(session.callbackDeathRecipient, 0) }
+        try {
+            event?.let {
+                session.callback.safeEvent(
+                    sessionId = session.sessionId,
+                    state = it.state,
+                    disconnectReason = it.disconnectReason,
+                    errorCode = it.errorCode,
+                    detail = it.detail,
+                    connectivityGeneration = session.connectivityGeneration.get(),
+                )
+            }
+        } finally {
+            if (wasCurrent) stopSelf()
+        }
     }
 
     private fun enforceSameApplicationCaller() {
@@ -236,9 +315,15 @@ public abstract class BaseMoshWorkerService : Service() {
         val sessionId: String,
         val callback: IMoshWorkerCallback,
         val callbackDeathRecipient: IBinder.DeathRecipient,
+        val descriptors: List<ParcelFileDescriptor>,
+        val task: Runnable,
         val stopReason: AtomicInteger = AtomicInteger(0),
         val connectivityGeneration: AtomicLong = AtomicLong(0),
-    )
+    ) {
+        // Admission, native ownership and finalization are serialized by stateLock.
+        var nativeStarted = false
+        var finished = false
+    }
 }
 
 public class MoshWorker0Service : BaseMoshWorkerService()
@@ -337,6 +422,7 @@ private fun IMoshWorkerCallback.safeEvent(
     errorCode: Int = MoshErrorCode.NONE,
     detail: String = "",
     connectivityGeneration: Long = 0,
+    onFailure: () -> Unit = {},
 ) {
     try {
         onSessionEvent(
@@ -348,7 +434,7 @@ private fun IMoshWorkerCallback.safeEvent(
             connectivityGeneration,
         )
     } catch (_: RemoteException) {
-        runCatching { MoshNativeBridge.stop(sessionId) }
+        onFailure()
     }
 }
 

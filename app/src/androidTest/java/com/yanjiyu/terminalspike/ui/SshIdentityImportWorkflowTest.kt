@@ -136,6 +136,10 @@ class SshIdentityImportWorkflowTest {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val name = "spike-import-custom-${System.nanoTime()}"
         val invalidName = "$name-invalid"
+        fun persistedPermissions() = context.contentResolver.persistedUriPermissions.map {
+            Triple(it.uri, it.isReadPermission, it.isWritePermission)
+        }.toSet()
+        val originalPermissions = persistedPermissions()
         val key = KeyPair.genKeyPair(JSch(), KeyPair.RSA, 2048)
         val bytes = ByteArrayOutputStream().also(key::writePrivateKey).toByteArray()
         key.dispose()
@@ -290,6 +294,9 @@ class SshIdentityImportWorkflowTest {
             compose.activityRule.scenario.recreate()
             assertKeyListed(name)
             assertEquals(name, runBlocking { container.sshKeyIdentities.get(requireNotNull(importedId)) }?.name)
+            compose.waitUntil(5_000) { persistedPermissions() == originalPermissions }
+            assertTrue("Import must release its document grant and retain existing grants",
+                persistedPermissions() == originalPermissions)
         } catch (failure: Throwable) {
             runCatching { device.dumpWindowHierarchy(context.filesDir.resolve("key-import-workflow-failure.xml")) }
                 .exceptionOrNull()?.let(failure::addSuppressed)

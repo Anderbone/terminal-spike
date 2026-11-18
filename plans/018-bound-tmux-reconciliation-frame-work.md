@@ -1,5 +1,9 @@
 # Plan 018: Enforce a bounded per-frame budget for tmux history reconciliation
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Before changing any tmux history, touch routing,
 > viewport, or fling code, read the entire canonical living record at
 > `/home/jiyu/Documents/Jiyu-obsidian/plannow/2026-08-31-tmux-native-smooth-scroll-investigation.md`.
@@ -9,7 +13,7 @@
 > **Drift check (run first)**:
 > `git diff --stat 93d070a..HEAD -- app/src/main/java/com/yanjiyu/terminalspike/terminal app/src/main/java/com/yanjiyu/terminalspike/connection/TmuxSessionSelector.kt app/src/test/java/com/yanjiyu/terminalspike/terminal benchmark docs/PERFORMANCE.md`
 
-## Status
+## Historical status
 
 - **State**: DONE (2026-09-03; final fold/user acceptance remains owned by Plan 005 and the living record)
 - **Priority**: P1
@@ -29,7 +33,7 @@ and up to eight snapshots can be pending. This is bounded—not an unbounded
 200,000-row scan—but it can still turn one smooth-scroll frame into substantial
 comparison/allocation/mutation work.
 
-## Current state
+## Original state
 
 - `TerminalController.kt:805-853` drains every pending snapshot and applies all
   of them under `queueLock` in one frame callback.
@@ -64,7 +68,7 @@ comparison/allocation/mutation work.
 - copying source from another terminal application
 - claiming success from only synthetic or emulator evidence
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -76,11 +80,11 @@ Physical benchmark and real-terminal commands must come from the current living
 record and guarded repository entrypoints after exact serial/model resolution;
 do not paste a stale serial into this plan.
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty-tree work. Do not commit, push, or open a PR unless asked.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Add a deterministic red work-budget test
 
@@ -164,7 +168,7 @@ Log, Open Questions, and Next Step with exact red and green evidence.
 `./gradlew test lint assembleDebug assembleRelease assembleDebugAndroidTest :benchmark:assemble`
 → `BUILD SUCCESSFUL`.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] Snapshot comparison/mutation work has an explicit enforced per-frame bound.
 - [x] No stale or partial reconciliation can become visible.
@@ -201,7 +205,7 @@ The final process-isolated old-phone app suite also matched the exact API-36 con
 - Physical E2E: actual Codex first gesture in app-selected tmux, zero wheels,
   sub-row drag/fling/catch, complete ordered history, recreation when applicable.
 
-## STOP conditions
+## Historical stop conditions
 
 - A design would discard real rows, weaken ordered-history assertions, or route
   app-selected Auto gestures to remote wheel input.

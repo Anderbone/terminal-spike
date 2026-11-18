@@ -319,7 +319,7 @@ class HerdrContextMenuRecoveryTest {
         }
     }
 
-    @Test fun recentProjectsLongPressHandlesRealMobileScrollThumbInBothInputModes() {
+    @Test fun recentProjectsTapAndHoldSwapMobileNewWorkspaceInBothInputModes() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val terminal = DefaultSshSessionTerminalFactory.create()
             val controller = requireNotNull(terminal.controller)
@@ -350,25 +350,39 @@ class HerdrContextMenuRecoveryTest {
                     await { controller.isMouseTrackingEnabled() && controller.isHerdrContextMenuCell(1, 5) }
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     connection.sent.clear()
-                    val now = SystemClock.uptimeMillis()
-                    fun event(actionType: Int) = scenario.onActivity {
-                        val density = view.resources.displayMetrics.density
-                        val motion = MotionEvent.obtain(now, SystemClock.uptimeMillis(), actionType,
-                            8f * density + 1.5f * view.terminalCellWidthPx,
-                            5f * density + 5.5f * controller.viewport.lineHeightPx, 0)
-                        try { view.onTouchEvent(motion) } finally { motion.recycle() }
+                    fun gesture(hold: Boolean) {
+                        val now = SystemClock.uptimeMillis()
+                        fun event(actionType: Int) = scenario.onActivity {
+                            val density = view.resources.displayMetrics.density
+                            val motion = MotionEvent.obtain(now, SystemClock.uptimeMillis(), actionType,
+                                8f * density + 1.5f * view.terminalCellWidthPx,
+                                5f * density + 5.5f * controller.viewport.lineHeightPx, 0)
+                            try { view.onTouchEvent(motion) } finally { motion.recycle() }
+                        }
+                        event(MotionEvent.ACTION_DOWN)
+                        if (hold) {
+                            SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 100L)
+                            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                        }
+                        event(MotionEvent.ACTION_UP)
                     }
-                    event(MotionEvent.ACTION_DOWN)
-                    SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 100L)
-                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-                    event(MotionEvent.ACTION_UP)
+                    gesture(hold = false)
+                    await { controller.herdrProjectPicker.value === connection }
                     scenario.onActivity {
-                        assertSame("Real long press must open the local picker: direct=$direct action=$action",
-                            connection, controller.herdrProjectPicker.value)
-                        assertTrue("No remote click, wheel or shell input", connection.sent.isEmpty())
+                        assertTrue("Short tap opens the local list without remote input: direct=$direct action=$action",
+                            connection.sent.isEmpty())
                         assertNull(view.selectedTextForTesting())
                         controller.dismissHerdrProjectPicker()
                     }
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 50L)
+                    gesture(hold = true)
+                    scenario.onActivity {
+                        assertNull("Holding New must not open the picker", controller.herdrProjectPicker.value)
+                        assertEquals("Holding New sends its original primary click once, including release",
+                            listOf("\u001B[<0;2;6M\u001B[<0;2;6m"), connection.sent)
+                        assertNull(view.selectedTextForTesting())
+                    }
+                    SystemClock.sleep(ViewConfiguration.getDoubleTapTimeout().toLong() + 50L)
                 }
             } finally {
                 scenario.onActivity { terminal.stopAndClear() }

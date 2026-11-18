@@ -25,8 +25,9 @@ a security boundary against malicious guest programs.
 ## Supported operations
 
 - App appearance: get/update light, dark or system mode, system dynamic colours,
-  and existing accent presets. Appearance revisions are safe-integer fingerprints
-  of these three fields. The check occurs inside DataStore's atomic transform;
+  existing accent presets, button colours and input-bar preferences. Appearance
+  revisions are safe-integer fingerprints of the editable appearance fields.
+  The check occurs inside DataStore's atomic transform;
   unrelated preferences, account data, and security settings remain unchanged.
 - Terminal appearance: list/get/update existing profiles' theme, available font,
   size, line height, letter spacing, bold/ligature/pinch settings, and cursor style
@@ -111,7 +112,30 @@ Skill discovery follows [OpenAI's agent skill documentation](https://learn.chatg
 
 Input bar preferences use `appearance.get` / `appearance.update` with revision checking:
 `spikectl appearance update --revision NUMBER --input-buttons-on-right true --voice-input-enabled false`.
-Both fields are boolean and share the app Settings preferences. Long-press the buffered input toggle to swap the Enter/toggle column and text field. Voice input defaults to disabled; enable it explicitly in Settings.
+Both fields are boolean and share the app Settings preferences. Long-press the buffered input toggle in the default layout to swap the Enter/toggle column and text field. Voice input defaults to disabled; enable it explicitly in Settings.
+
+Input-field buttons have their own global layout, separate from `keyboard.update`
+and its shortcut deck. `appearance.get` returns the saved `inputKeyboardLayout`
+string and the `effectiveInputKeyboardLayout` token array (including defaults).
+Read it, preserve unrelated buttons, then update using its latest revision:
+
+```bash
+spikectl appearance update --revision NUMBER \
+  --input-keyboard-layout 'enter,toggle,escape,shift_left,arrow_up,arrow_down,input'
+```
+
+This places six buttons in three columns on the left of the field: Enter/toggle,
+ESC/⇧←, then ↑/↓. Tokens before `input` go left and those after it go right;
+each side fills columns top-to-bottom with two keys per column. The field may
+also sit between independently configured left/right keys. Duplicates are allowed.
+`capabilities` advertises `inputKeyboardTokens`, `inputKeyboardMaxButtons` (six,
+including the typing toggle), `inputKeyboardRequiredTokens`, and
+`inputKeyboardKeysPerColumn`. Exactly one `input` and at least one `toggle` are
+required. Invalid layouts reject the whole update; stale revisions return CONFLICT.
+An empty string resets the layout to the default Enter/toggle pair, whose side
+is selected by `inputButtonsOnRight`. Custom layouts take precedence over that
+legacy side preference. Changes persist through the shared DataStore, apply
+immediately to the live input bar, and participate in existing backup/restore.
 
 Accessory button colours can be changed through the same authorized AI chat control route.
 Read `appearance.get`, then send `appearance.update` with its `revision` and a

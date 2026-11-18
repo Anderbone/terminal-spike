@@ -1,5 +1,9 @@
 # Plan 012: Prove honest recovery across real app-process death and background pressure
 
+> **Historical record (August–September 2026).** Status, commands and evidence below
+> refer to the original implementation. Use the [current workflow](README.md#current-workflow)
+> before resuming a requirement; these instructions do not override current project rules.
+
 > **Executor instructions**: Follow this plan exactly. This is an external host-driven E2E because
 > instrumentation inside the target process cannot prove its own death and restart. Start on a
 > disposable named AVD. Run optional physical acceptance only on the exact authorized old
@@ -10,7 +14,7 @@
 > `git diff --stat 93d070a..HEAD -- app/src/main app/src/debug app/src/androidTest integration-tests/openssh scripts docs/architecture.md docs/PUBLISHING.md`
 > The worktree was intentionally dirty when planned; inspect live unstaged changes too.
 
-## Status
+## Historical status
 
 - **Priority**: P1
 - **Effort**: L
@@ -29,7 +33,7 @@ promise socket survival; it promises honest loss, persisted recent metadata, saf
 behavior, and no stale foreground-service state. A public terminal app should prove that boundary
 with a real SSH connection rather than infer it from JVM state-machine tests.
 
-## Current state
+## Original state
 
 - `docs/architecture.md:81-85` says the application process owns transports, process death does not
   preserve sockets, and persisted recent metadata may offer an honest reconnect.
@@ -52,7 +56,7 @@ Constraints: retain native Kotlin/Compose shell and the custom terminal renderer
 Compose state, analytics, crash upload, cloud services, or secret-bearing output; preserve terminal
 and tmux gates.
 
-## Commands you will need
+## Historical commands (do not execute as current instructions)
 
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -82,11 +86,11 @@ and tmux gates.
 - tests or installs on the foldable `SM_F976B`
 - actual-Codex/tmux or Mosh roaming acceptance
 
-## Git workflow
+## Historical Git workflow
 
 Preserve unrelated dirty work. Do not commit, push, or open a PR without operator instruction.
 
-## Steps
+## Historical implementation steps
 
 ### Step 1: Define observable post-death invariants
 
@@ -162,7 +166,7 @@ Optimised/Restricted modes and long soak open unless actually observed.
 - AVD background/idle/standby cases with exact state restoration.
 - Host failures for every identity, kill, poll, assertion, and cleanup boundary.
 
-## Done criteria
+## Historical acceptance checklist
 
 - [x] A real external OS process kill—not Activity recreation or force-stop—is observed.
 - [x] Pre-death and post-reconnect real SSH markers pass.
@@ -174,7 +178,7 @@ Optimised/Restricted modes and long soak open unless actually observed.
 - [ ] CI, host tests, full Gradle gate, and documentation are green/current (local host/Gradle/docs
   are green; the first hosted job remains pending).
 
-## STOP conditions
+## Historical stop conditions
 
 - Exact process ownership cannot be proved before the kill.
 - The available command behaves as package force-stop rather than process death.

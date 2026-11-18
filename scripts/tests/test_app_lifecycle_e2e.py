@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -15,7 +16,7 @@ class AppLifecycleE2eTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
-        for name in ("run-app-lifecycle-e2e.py", "redact-android-test-log.py", "install-android-sdk.py"):
+        for name in ("run-app-lifecycle-e2e.py", "redact-android-test-log.py", "install-android-sdk.py", "terminal_test_markers.py", "owned_process.py"):
             shutil.copy2(SOURCE_ROOT / "scripts" / name, self.scripts / name)
             (self.scripts / name).chmod(0o755)
         self.runner = self.scripts / "run-app-lifecycle-e2e.py"
@@ -97,7 +98,6 @@ if os.environ.get('FAKE_FIXTURE_FAIL') == '1':
         prelude = """#!/usr/bin/env python3
 import os
 from pathlib import Path
-import sqlite3
 import sys
 import time
 state = Path(os.environ['FAKE_STATE_DIR'])
@@ -195,6 +195,7 @@ elif f'shell dumpsys activity exit-info {package}' in joined:
 elif 'shell logcat -d' in joined:
     print('lifecycle log is privacy safe')
 elif joined.endswith(f'exec-out run-as {package} cat databases/terminal-spike.db'):
+    import sqlite3
     database_path = state / 'terminal-spike.db'
     database_path.unlink(missing_ok=True)
     with sqlite3.connect(database_path) as database:
@@ -210,6 +211,7 @@ elif joined.endswith(f'exec-out run-as {package} cat databases/terminal-spike.db
 elif f'exec-out run-as {package} cat databases/terminal-spike.db-' in joined:
     raise SystemExit(1)
 elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
+    import html
     if os.environ.get('FAKE_FIRST_RUN_GUIDE') == '1' and not (state / 'guide-dismissed').exists():
         print('<hierarchy><node text="Getting started" bounds="[0,0][500,100]" />'
               '<node text="Next" bounds="[1000,0][1080,100]" /></hierarchy>')
@@ -223,10 +225,7 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
     markers = (state / 'markers').read_text().splitlines() if (state / 'markers').exists() else []
     if os.environ.get('FAKE_RECONNECT_MARKER_MISSING') == '1':
         markers = [marker for marker in markers if marker != 'LIFECYCLE_RECONNECTED_42']
-    marker_nodes = ''.join(
-        f'<node text="{marker}" class="android.widget.TextView" bounds="[0,1000][500,1100]" />'
-        for marker in markers
-    )
+    native_text = '"' + html.escape('\n'.join(markers), quote=True).replace('\n', '&#10;') + '"'
     print(f'''<?xml version="1.0" encoding="UTF-8"?>
 <hierarchy>
 <node text="Connections" class="android.widget.TextView" bounds="[0,0][100,100]" />
@@ -240,8 +239,7 @@ elif joined.endswith('exec-out cat /sdcard/terminal-spike-window.xml'):
 <node text="Trust once" class="android.widget.TextView" bounds="[0,600][100,700]" />
 <node text="Trust and save" class="android.widget.TextView" bounds="[0,700][100,800]" />
 <node text="No terminal session is open." class="android.widget.TextView" bounds="[0,800][200,900]" />
-{marker_nodes}
-<node text="" content-desc="Native terminal renderer" class="android.widget.EditText" bounds="[0,1100][500,1400]" />
+<node text={native_text} content-desc="Native terminal renderer" class="android.widget.EditText" bounds="[0,1100][500,1400]" />
 <node text="" class="android.widget.EditText" bounds="[0,1400][100,1500]" />
 <node text="" class="android.widget.EditText" bounds="[0,1500][100,1600]" />
 <node text="" class="android.widget.EditText" bounds="[0,1600][100,1700]" />
@@ -252,10 +250,16 @@ elif joined.endswith('shell input tap 1040 50'):
     page_path.write_text(str(page))
     if page == 4 and os.environ.get('FAKE_GUIDE_STUCK') != '1':
         (state / 'guide-dismissed').touch()
-elif 'shell input text printf%s' in joined:
-    marker = joined.split('printf%s', 1)[1]
+elif 'shell input text ' in joined and args[-1].startswith('\"printf%s'):
+    import re
+    import shlex
+    import subprocess
+    typed = shlex.split(args[-1])[0]
+    if not re.fullmatch(r"printf%s'(?:\\[0-7]{3})+'", typed):
+        raise SystemExit('unexpected owned marker input format')
+    output = subprocess.check_output(['sh', '-c', typed.replace('%s', ' ')], text=True, timeout=2)
     with (state / 'markers').open('a', encoding='utf-8') as stream:
-        stream.write(marker + '\n')
+        stream.write(output)
 """
 
     def run_runner(
@@ -264,6 +268,7 @@ elif 'shell input text printf%s' in joined:
         env: dict[str, str] | None = None,
         physical_serial: str | None = None,
         dry_run: bool = False,
+        fixture_timeout: float = 15,
     ) -> subprocess.CompletedProcess[str]:
         arguments = [
             str(self.runner),
@@ -276,15 +281,60 @@ elif 'shell input text printf%s' in joined:
             arguments.extend(("--physical-serial", physical_serial))
         if dry_run:
             arguments.append("--dry-run")
-        return subprocess.run(
+        process = subprocess.Popen(
             arguments,
             cwd=self.root,
             env=env or self.env,
-            check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=15,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=fixture_timeout)
+        except subprocess.TimeoutExpired as error:
+            # This group contains only this test's fake SDK/ADB/fixture processes. Like run(),
+            # preserve the timeout failure, but kill descendants as well as their parent.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            error.output, error.stderr = process.communicate(timeout=5)
+            raise
+        return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
+
+    def test_fixture_timeout_does_not_leave_its_fake_emulator_running(self) -> None:
+        self.write_python_tool(
+            self.root / "sdk/emulator/emulator",
+            "(state / 'emulator.pid').write_text(str(os.getpid()))\n"
+            "while True: time.sleep(0.01)\n",
+        )
+        body = self.fake_adb_body().replace(
+            "elif joined.endswith('shell getprop sys.boot_completed'):\n",
+            "elif joined.endswith('shell getprop sys.boot_completed'):\n    time.sleep(60)\n",
+        )
+        self.write_python_tool(self.root / "sdk/platform-tools/adb", body)
+        pid = None
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.run_runner(fixture_timeout=5)
+            pid = int((self.state / "emulator.pid").read_text())
+            try:
+                status = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1]
+            except (FileNotFoundError, ProcessLookupError):
+                status = "exited"
+            self.assertTrue(status == "exited" or status.startswith("Z "))
+        finally:
+            # The old implementation deliberately leaves this child alive in the red probe.
+            if pid is None and (self.state / "emulator.pid").exists():
+                pid = int((self.state / "emulator.pid").read_text())
+            if pid is not None:
+                try:
+                    args = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+                    if str(self.root / "sdk/emulator/emulator").encode() in args:
+                        os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, FileNotFoundError):
+                    pass
 
     def commands(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []

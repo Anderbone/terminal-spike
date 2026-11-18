@@ -41,6 +41,7 @@ class TerminalTaskIndicatorTest {
                         canAddSession = true, onDismiss = {}, onSelect = {}, onClose = {}, onNewSession = {},
                     )
                     2 -> ActiveTmuxSessionSwitcherDialog(
+                        ownerKey = "fixture-host",
                         catalog = TmuxSessionCatalog(listOf(tmux), TmuxAvailability.AVAILABLE),
                         onDismiss = {}, onRefresh = {}, onSelect = {}, onDelete = {},
                     )

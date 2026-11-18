@@ -45,7 +45,6 @@
     <string name="notice_saved_host_unavailable">That saved host is no longer available.</string>
     <string name="notice_saved_host_unsupported">That saved host uses a protocol or authentication method unavailable here.</string>
     <string name="notice_mosh_extension_unavailable">The built-in Mosh transport is not ready. SSH remains available.</string>
-    <string name="notice_session_limit">Close a session before opening another.</string>
     <string name="notice_settings_available_again">Encrypted local data is available again.</string>
     <string name="notice_settings_locked_preserved">Saved connections and settings could not be unlocked. The encrypted data was preserved for recovery.</string>
     <plurals name="notice_migrated_credentials_unavailable">
@@ -124,10 +123,6 @@
     <string name="notice_session_duplicate_failed">That session could not be duplicated.</string>
     <string name="notice_saved_host_private_key_unavailable">The private key for that saved host is unavailable. Re-import the key in Connections.</string>
     <string name="notice_saved_host_invalid">That saved host has invalid connection settings.</string>
-    <string name="notice_profile_name_length">Profile name must be 1–%1$d characters.</string>
-    <string name="notice_profile_name_unsupported">Profile name contains unsupported characters.</string>
-    <string name="notice_host_editor_incompatible">That host uses settings this editor cannot safely change yet.</string>
-    <string name="notice_delete_profile_before_add">Delete a profile before adding another.</string>
     <string name="notice_saved_password_removed">Saved password removed from this device.</string>
     <string name="notice_saved_password_remove_failed">Could not remove the saved password.</string>
     <string name="notice_key_import_deferred">The selected key will be imported when local data is available.</string>
@@ -150,10 +145,7 @@
     <string name="notice_snippet_queue_failed">Could not queue that snippet. Nothing was sent.</string>
     <string name="notice_terminal_unavailable_draft_kept">That terminal session is no longer available. The draft was kept.</string>
     <string name="notice_buffer_queue_failed">Could not queue buffered input. The draft was kept.</string>
-    <string name="notice_keep_one_extra_key">Keep at least one extra key visible.</string>
-    <string name="notice_keyboard_profile_edit_full">Edit this keyboard profile in the full profile editor first.</string>
     <string name="notice_terminal_keys_saved">Terminal keys saved.</string>
-    <string name="notice_terminal_keys_save_failed">Could not save terminal keys.</string>
     <string name="notice_change_saved">Your change was saved.</string>
     <string name="notice_change_saved_refresh_failed">Your change was saved, but local data could not be refreshed.</string>
 
@@ -221,4 +213,11 @@
     <string name="notice_key_import_invalid_format">Could not import: the file is not a supported SSH private key, or it is damaged. Select the private key, not the public key.</string>
     <string name="notice_key_import_too_large">Could not import: the file exceeds the 256 KiB private-key limit.</string>
     <string name="notice_key_import_read_failed">Could not import: the selected file could not be read. Check that it is available and select it again.</string>
+    <string name="terminal_key_mouse_left">Left click</string>
+    <string name="terminal_key_mouse_right">Right click</string>
+    <string name="terminal_key_mouse_left_description">Left mouse click at the terminal cursor</string>
+    <string name="terminal_key_mouse_right_description">Right mouse click at the terminal cursor</string>
+    <string name="key_import_interrupted_title">Check key import</string>
+    <string name="key_import_interrupted_message">The app restarted before key import completion was confirmed. Your saved data has been kept. Check the key list, then select the file again or paste the key if needed.</string>
+    <string name="notice_paste_control_blocked">Paste blocked: the text contains an unsafe paste control sequence. The original text was kept; edit it before trying again.</string>
 </resources>

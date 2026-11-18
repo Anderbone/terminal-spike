@@ -4,6 +4,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -25,19 +30,26 @@ import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerItemTestTagPre
 import com.yanjiyu.terminalspike.ui.terminal.TerminalSnippetPickerTestTag
 import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
 import org.junit.Assert.assertEquals
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
 
 class TerminalSnippetPickerDialogTest {
-    @get:Rule
     val composeRule = createComposeRule()
+    private val toolbarPreferences = IsolatedPreferencesRule("snippet-toolbar")
+    private val authoritativeHidden = androidx.compose.runtime.mutableStateOf(emptySet<Long>())
 
-    @Before
-    fun resetToolbarPreferences() {
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
-            .getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
-            .edit().clear().commit()
+    @get:Rule
+    val rules: TestRule = RuleChain.outerRule(toolbarPreferences).around(composeRule)
+
+    @Composable
+    private fun TestTheme(content: @Composable () -> Unit) {
+        val base = LocalContext.current
+        val isolated = remember(base) { toolbarPreferences.wrap(base) }
+        CompositionLocalProvider(LocalContext provides isolated) {
+            TerminalSpikeTheme(content = content)
+        }
     }
 
     @Test
@@ -47,7 +59,7 @@ class TerminalSnippetPickerDialogTest {
         val ready = androidx.compose.runtime.mutableStateOf(true)
         val sent = mutableListOf<Long>()
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(
                     listOf(snippet(31, "Status", false)), true, true,
                     onSend = { sent += it }, onNewCodex = { error("Effort must not start Codex") },
@@ -80,11 +92,89 @@ class TerminalSnippetPickerDialogTest {
     }
 
     @Test
+    fun claudeEffortMenuUsesClaudeCommandsAndDoesNotGuessTheCurrentEffort() {
+        val agent = androidx.compose.runtime.mutableStateOf("claude")
+        val ready = androidx.compose.runtime.mutableStateOf(true)
+        val sent = mutableListOf<Long>()
+        composeRule.setContent {
+            TestTheme {
+                TerminalSnippetsPage(
+                    listOf(snippet(31, "Status", false)), true, true,
+                    onSend = { sent += it }, onNewCodex = {}, onSave = { Result.success(Unit) }, onEditorClosed = {},
+                    agentContextKey = "same-pane", detectedAgentId = agent.value,
+                    currentAgentEffort = null, canSendAgentSnippets = ready.value,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("claude_effort_menu").assertIsDisplayed().assertIsEnabled()
+        composeRule.onNodeWithText("Effort ▾").performClick()
+        composeRule.onNodeWithTag("agent_snippet_-204").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(-204L), sent) }
+        composeRule.onNodeWithText("Effort ▾").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("agent_snippet_-206").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(-204L, -206L), sent); ready.value = false }
+        composeRule.onNodeWithTag("claude_effort_menu").assertIsNotEnabled()
+        composeRule.runOnIdle { ready.value = true }
+        composeRule.onNodeWithText("Effort ▾").performClick()
+        composeRule.runOnIdle { agent.value = "codex" }
+        composeRule.onNodeWithTag("claude_effort_menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("agent_snippet_-201").assertDoesNotExist()
+        composeRule.onNodeWithTag("codex_effort_menu").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("agent_snippet_-101").assertExists()
+        composeRule.onNodeWithTag("agent_snippet_-201").assertDoesNotExist()
+    }
+
+    @Test
+    fun effortButtonSurvivesFailedSamplesAndBusyFootersWithoutReflow() {
+        val controller = com.yanjiyu.terminalspike.terminal.TerminalController()
+        val confirmed = com.yanjiyu.terminalspike.terminal.TerminalInputContext(
+            "herdr/session/pane/terminal", true, agentId = "codex", reasoningEffort = "low", agentProcessId = 10,
+        )
+        controller.publishInputContext(confirmed)
+        val context = androidx.compose.runtime.mutableStateOf(controller.inputContext.value)
+        composeRule.setContent {
+            TestTheme {
+                TerminalSnippetsPage(
+                    listOf(snippet(31, "Status", false)), true, true,
+                    onSend = {}, onNewCodex = {}, onSave = { Result.success(Unit) }, onEditorClosed = {},
+                    agentContextKey = context.value.identity, detectedAgentId = context.value.agentId,
+                    currentAgentEffort = context.value.reasoningEffort,
+                    canSendAgentSnippets = context.value.observationAvailable,
+                )
+            }
+        }
+        val bounds = composeRule.onNodeWithText("Status").fetchSemanticsNode().boundsInRoot
+        repeat(5) {
+            composeRule.runOnIdle {
+                controller.publishInputContext(com.yanjiyu.terminalspike.terminal.TerminalInputContext(observationAvailable = false))
+                context.value = controller.inputContext.value
+            }
+            composeRule.onNodeWithText("Low ▾").assertIsDisplayed().assertIsNotEnabled()
+            composeRule.runOnIdle {
+                controller.publishInputContext(confirmed.copy(reasoningEffort = null))
+                context.value = controller.inputContext.value
+            }
+            composeRule.onNodeWithText("Low ▾").assertIsDisplayed().assertIsEnabled()
+            assertEquals(bounds, composeRule.onNodeWithText("Status").fetchSemanticsNode().boundsInRoot)
+        }
+        composeRule.runOnIdle {
+            controller.publishInputContext(confirmed.copy(reasoningEffort = "high"))
+            context.value = controller.inputContext.value
+        }
+        composeRule.onNodeWithText("High ▾").assertIsDisplayed()
+        composeRule.runOnIdle {
+            controller.publishInputContext(confirmed.copy(agent = false, agentId = "", reasoningEffort = null, agentProcessId = null))
+            context.value = controller.inputContext.value
+        }
+        composeRule.onNodeWithTag("codex_effort_menu").assertDoesNotExist()
+    }
+
+    @Test
     fun effortControlStaysHiddenWithoutCodexAndNeverGuessesUnknownEffort() {
         val agent = androidx.compose.runtime.mutableStateOf("")
         val sent = mutableListOf<Long>()
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 Box(Modifier.width(360.dp)) {
                     TerminalSnippetsPage(
                         listOf(snippet(31, "Git commit & push", false),
@@ -120,9 +210,16 @@ class TerminalSnippetPickerDialogTest {
     fun builtInTextSnippetsCanBeEditedAndReplaced() {
         val saved = mutableListOf<Snippet>()
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(
                     com.yanjiyu.terminalspike.settings.DefaultTerminalSnippets.text, true, true,
+                    hiddenDefaultSnippetIds = authoritativeHidden.value,
+                    onHideDefault = { authoritativeHidden.value = authoritativeHidden.value + it },
+                    onReplaceDefault = { id, snippet ->
+                        saved += snippet
+                        authoritativeHidden.value = authoritativeHidden.value + id
+                        Result.success(Unit)
+                    },
                     onSend = { error("Editing must not send") }, onNewCodex = {},
                     onSave = { saved += it; Result.success(Unit) }, onEditorClosed = {},
                 )
@@ -142,9 +239,29 @@ class TerminalSnippetPickerDialogTest {
             }
         }
         composeRule.runOnIdle {
-            val preferences = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
-                .targetContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
-            assertEquals(setOf("-1", "-2"), preferences.getStringSet("replaced-defaults", emptySet()))
+            val preferences = toolbarPreferences.preferences
+            assertEquals(setOf(-1L, -2L), authoritativeHidden.value)
+            assertEquals(false, preferences.contains("replaced-defaults"))
+        }
+    }
+
+    @Test
+    fun defaultReplacementCannotFallBackToTheOrdinarySavedSnippetCallback() {
+        var ordinarySaves = 0
+        composeRule.setContent {
+            TestTheme {
+                TerminalSnippetsPage(emptyList(), true, true,
+                    onSend = {}, onNewCodex = {},
+                    onSave = { ordinarySaves++; Result.success(Unit) }, onEditorClosed = {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        composeRule.onNodeWithText("New Codex").performClick()
+        composeRule.onNodeWithTag("snippet-editor-save").performClick()
+        composeRule.onNodeWithTag("snippet-editor-dialog").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(0, ordinarySaves)
+            assertEquals(false, toolbarPreferences.preferences.contains("codex-replaced"))
         }
     }
 
@@ -152,8 +269,15 @@ class TerminalSnippetPickerDialogTest {
     fun defaultCodexCanBeEditedAndReplaced() {
         var saved: Snippet? = null
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(emptyList(), true, true,
+                    hiddenDefaultSnippetIds = authoritativeHidden.value,
+                    onHideDefault = { authoritativeHidden.value = authoritativeHidden.value + it },
+                    onReplaceDefault = { id, snippet ->
+                        saved = snippet
+                        authoritativeHidden.value = authoritativeHidden.value + id
+                        Result.success(Unit)
+                    },
                     onSend = { error("Editing must not send") },
                     onNewCodex = { error("Editing must not start Codex") },
                     onSave = { saved = it; Result.success(Unit) }, onEditorClosed = {})
@@ -172,8 +296,10 @@ class TerminalSnippetPickerDialogTest {
     @Test
     fun defaultCodexDeletionPersists() {
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(emptyList(), true, true,
+                    hiddenDefaultSnippetIds = authoritativeHidden.value,
+                    onHideDefault = { authoritativeHidden.value = authoritativeHidden.value + it },
                     onSend = {}, onNewCodex = {},
                     onSave = { error("Deleting must not save") }, onEditorClosed = {})
             }
@@ -184,9 +310,9 @@ class TerminalSnippetPickerDialogTest {
         composeRule.onNodeWithText("Delete snippet").performClick()
         composeRule.onNodeWithText("New Codex").assertDoesNotExist()
         composeRule.runOnIdle {
-            val preferences = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
-                .targetContext.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
-            assertEquals(true, preferences.getBoolean("codex-replaced", false))
+            val preferences = toolbarPreferences.preferences
+            assertEquals(setOf(0L), authoritativeHidden.value)
+            assertEquals(false, preferences.contains("codex-replaced"))
         }
     }
 
@@ -194,7 +320,7 @@ class TerminalSnippetPickerDialogTest {
     fun listsExistingSnippetsAndReturnsSelectedSnippet() {
         var selectedId: Long? = null
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetPickerDialog(
                     sessionTitle = "Production",
                     snippets = listOf(
@@ -219,7 +345,7 @@ class TerminalSnippetPickerDialogTest {
     @Test
     fun emptyPickerStaysAQuickDialog() {
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetPickerDialog(
                     sessionTitle = "Terminal",
                     snippets = emptyList(),
@@ -237,7 +363,7 @@ class TerminalSnippetPickerDialogTest {
     fun accessoryPageAddsPlainTextWithoutSendingIt() {
         var saved: Snippet? = null
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(emptyList(), true, true,
                     onSend = { error("Saving must not execute a snippet") },
                     onNewCodex = { error("Adding a snippet must not start Codex") },
@@ -258,7 +384,7 @@ class TerminalSnippetPickerDialogTest {
     fun accessoryPageRunsNewCodexWithoutOpeningEditor() {
         var starts = 0
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(emptyList(), false, true,
                     onSend = { error("New Codex must not select a saved snippet") },
                     onNewCodex = { starts++ },
@@ -277,7 +403,7 @@ class TerminalSnippetPickerDialogTest {
         var sends = 0
         var starts = 0
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(
                     listOf(snippet(31, "Status", false)), true, true,
                     onSend = { sends++ }, onNewCodex = { starts++ },
@@ -311,7 +437,7 @@ class TerminalSnippetPickerDialogTest {
     @Test
     fun accessoryManagementCanEditWithoutTerminalInput() {
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(
                     listOf(snippet(31, "Status", false)), true, false,
                     onSend = { error("Management must not send") },
@@ -332,7 +458,7 @@ class TerminalSnippetPickerDialogTest {
         var sends = 0
         var starts = 0
         composeRule.setContent {
-            TerminalSpikeTheme {
+            TestTheme {
                 TerminalSnippetsPage(
                     listOf(snippet(31, "Status", false)), true, true,
                     onSend = { sends++ }, onNewCodex = { starts++ },
@@ -352,49 +478,42 @@ class TerminalSnippetPickerDialogTest {
 
     @Test
     fun accessoryDragPersistsOrderWithoutSending() {
-        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = context.getSharedPreferences("snippet-toolbar", android.content.Context.MODE_PRIVATE)
-        val previous = preferences.getString("order", null)
-        preferences.edit().remove("order").commit()
-        try {
-            composeRule.setContent {
-                TerminalSpikeTheme {
-                    TerminalSnippetsPage(
-                        listOf(snippet(31, "First", false), snippet(32, "Second", false)),
-                        true, true,
-                        onSend = { error("Dragging must not send") },
-                        onNewCodex = { error("Dragging must not start Codex") },
-                        onSave = { Result.success(Unit) }, onEditorClosed = {},
-                    )
-                }
+        val preferences = toolbarPreferences.preferences
+        composeRule.setContent {
+            TestTheme {
+                TerminalSnippetsPage(
+                    listOf(snippet(31, "First", false), snippet(32, "Second", false)),
+                    true, true,
+                    onSend = { error("Dragging must not send") },
+                    onNewCodex = { error("Dragging must not start Codex") },
+                    onSave = { Result.success(Unit) }, onEditorClosed = {},
+                )
             }
-            composeRule.onNodeWithContentDescription("Manage snippets").performClick()
-            val first = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
-            val second = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
-            composeRule.onNodeWithText("First").performTouchInput {
-                down(center)
-                advanceEventTime(700)
-                moveTo(center + (second.center - first.center), delayMillis = 200)
-                up()
-            }
-            composeRule.runOnIdle {
-                assertEquals("32,31,0", preferences.getString("order", null))
-            }
-            val movedFirst = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
-            val movedSecond = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
-            org.junit.Assert.assertTrue(movedSecond.left < movedFirst.left)
-            val codex = composeRule.onNodeWithText("New Codex").fetchSemanticsNode().boundsInRoot
-            composeRule.onNodeWithText("New Codex").performTouchInput {
-                down(center)
-                advanceEventTime(700)
-                moveTo(center + (movedFirst.center - codex.center), delayMillis = 200)
-                up()
-            }
-            composeRule.runOnIdle {
-                assertEquals("32,0,31", preferences.getString("order", null))
-            }
-        } finally {
-            preferences.edit().putString("order", previous).commit()
+        }
+        composeRule.onNodeWithContentDescription("Manage snippets").performClick()
+        val first = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
+        val second = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithText("First").performTouchInput {
+            down(center)
+            advanceEventTime(700)
+            moveTo(center + (second.center - first.center), delayMillis = 200)
+            up()
+        }
+        composeRule.runOnIdle {
+            assertEquals("32,31,0", preferences.getString("order", null))
+        }
+        val movedFirst = composeRule.onNodeWithText("First").fetchSemanticsNode().boundsInRoot
+        val movedSecond = composeRule.onNodeWithText("Second").fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue(movedSecond.left < movedFirst.left)
+        val codex = composeRule.onNodeWithText("New Codex").fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithText("New Codex").performTouchInput {
+            down(center)
+            advanceEventTime(700)
+            moveTo(center + (movedFirst.center - codex.center), delayMillis = 200)
+            up()
+        }
+        composeRule.runOnIdle {
+            assertEquals("32,0,31", preferences.getString("order", null))
         }
     }
 

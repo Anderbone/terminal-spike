@@ -33,7 +33,8 @@ class AppDatabaseMigrationTest {
             old.execSQL("INSERT INTO keyboard_profiles (id, name, row_count, modifier_policy_code, haptic_enabled, key_repeat_enabled, input_mode_code, tmux_prefix, created_at_epoch_millis, updated_at_epoch_millis) VALUES (?, 'Custom keys', 2, 'one_shot', 0, 1, 'raw', 'C-b', 1, 2)", arrayOf(PROFILE_ID))
             old.execSQL("INSERT INTO keyboard_profile_keys (profile_id, position, action_code) VALUES (?, 0, 'f1')", arrayOf(PROFILE_ID))
         }
-        val db = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME).build()
+        val db = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME)
+            .addMigrations(SnippetToolbarStateInitializer { emptySet() }.migration).build()
         try {
             val stored = requireNotNull(db.keyboardProfileDao().findWithKeys(PROFILE_ID))
             assertEquals("Custom keys", stored.profile.name)
@@ -77,7 +78,7 @@ class AppDatabaseMigrationTest {
             instrumentation.targetContext,
             AppDatabase::class.java,
             DATABASE_NAME,
-        ).build()
+        ).addMigrations(SnippetToolbarStateInitializer { emptySet() }.migration).build()
         try {
             assertEquals(AppDatabase.SCHEMA_VERSION, migrated.openHelper.writableDatabase.version)
             val host = migrated.hostProfileDao().findById(HOST_ID)
@@ -104,7 +105,7 @@ class AppDatabaseMigrationTest {
             instrumentation.targetContext,
             AppDatabase::class.java,
             DATABASE_NAME,
-        ).build()
+        ).addMigrations(SnippetToolbarStateInitializer { emptySet() }.migration).build()
         try {
             val profile = requireNotNull(migrated.terminalProfileDao().findById(PROFILE_ID))
             assertEquals(true, profile.boldRenderingEnabled)
@@ -125,7 +126,8 @@ class AppDatabaseMigrationTest {
     @Test
     fun versionThreeAddsEmptyForwardsAndRulesSurviveReopen() = runBlocking {
         migration.createDatabase(DATABASE_NAME, 3).use { it.insert("host_profiles", 0, versionOneHost()) }
-        fun open() = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME).build()
+        fun open() = Room.databaseBuilder(instrumentation.targetContext, AppDatabase::class.java, DATABASE_NAME)
+            .addMigrations(SnippetToolbarStateInitializer { emptySet() }.migration).build()
         val encoded = com.yanjiyu.terminalspike.core.model.PortForwardRules.encode(listOf(
             com.yanjiyu.terminalspike.core.model.PortForwardRule(listenPort = 8080, destinationPort = 80),
         ))

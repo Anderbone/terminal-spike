@@ -18,6 +18,14 @@ All responses are JSON. A failed request exits nonzero. No command executes snip
   spikectl appearance update --revision NUMBER
       [--theme-mode system|light|dark] [--dynamic-color-enabled true|false]
       [--accent-preset mint|blue|violet|amber|coral]
+      [--input-keyboard-layout 'enter,toggle,escape,shift_left,arrow_up,arrow_down,input']
+      [--input-buttons-on-right true|false] [--voice-input-enabled true|false]
+  Input-bar layout is a comma-separated string, distinct from keyboard update's deck.
+  Exactly one input field and at least one toggle are required; up to six buttons.
+  Tokens before input go left; tokens after it go right. Each side fills columns
+  top-to-bottom, two buttons per column. Use capabilities.inputKeyboardTokens.
+  Duplicates are allowed. An empty layout restores the default enter/toggle pair;
+  input-buttons-on-right selects its side only when the layout is empty.
   spikectl terminal list
   spikectl terminal get --id UUID
   spikectl terminal update --id UUID --revision NUMBER

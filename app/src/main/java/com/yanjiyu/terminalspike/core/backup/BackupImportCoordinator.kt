@@ -99,8 +99,8 @@ class PreparedBackupImportPlan internal constructor(
         conflicts = plan.conflicts.count {
             it.incomingKind != BackupImportRecordKind.GLOBAL_SETTINGS
         },
-        skippedRecords = plan.skippedIncomingRecordIds.size,
-        incompatibleRecords = plan.incompatibleIncomingRecords.map { it.recordId }.distinct().size,
+        skippedRecords = plan.skippedRecordCount,
+        incompatibleRecords = plan.incompatibleRecordCount,
         externallyResolvedReferences = plan.externallyResolvedReferences.size,
         recordIdRewrites = plan.recordIdRewrites.size,
         secretIdRewrites = plan.secretIdRewrites.size,
@@ -223,11 +223,20 @@ class BackupImportCoordinator internal constructor(
     suspend fun prepare(
         incoming: PreparedBackupImport,
         strategy: BackupImportStrategy,
-    ): PreparedBackupImportPlan = prepare(incoming.takeSnapshot(), strategy)
+    ): PreparedBackupImportPlan {
+        val payload = incoming.takePayload()
+        return prepare(payload.snapshot, strategy, payload.compatibility)
+    }
 
     suspend fun prepare(
         incoming: BackupPayloadSnapshot,
         strategy: BackupImportStrategy,
+    ): PreparedBackupImportPlan = prepare(incoming, strategy, BackupPayloadCompatibilityReport())
+
+    private suspend fun prepare(
+        incoming: BackupPayloadSnapshot,
+        strategy: BackupImportStrategy,
+        archiveCompatibility: BackupPayloadCompatibilityReport,
     ): PreparedBackupImportPlan {
         var prepared: PreparedBackupImportPlan? = null
         try {
@@ -235,7 +244,7 @@ class BackupImportCoordinator internal constructor(
                 authority.withRead {
                     val current = persistence.capture()
                     try {
-                        val plan = planner.plan(current.snapshot, incoming, strategy)
+                        val plan = planner.plan(current.snapshot, incoming, strategy, archiveCompatibility)
                         PreparedBackupImportPlan(
                             plan = plan,
                             expectedRevision = current.revision,
@@ -989,8 +998,8 @@ private fun BackupImportPlan.toResult(
     terminalThemesApplied = snapshotToApply.terminalThemes.size,
     keyboardProfilesApplied = snapshotToApply.keyboardProfiles.size,
     unavailableSecretPlaceholders = unavailableSecretPlaceholders,
-    skippedRecords = skippedIncomingRecordIds.size,
-    incompatibleRecords = incompatibleIncomingRecords.map { it.recordId }.distinct().size,
+    skippedRecords = skippedRecordCount,
+    incompatibleRecords = incompatibleRecordCount,
     recoveryMarkerRemoved = recoveryMarkerRemoved,
     customFontsApplied = snapshotToApply.customFonts.size,
 )

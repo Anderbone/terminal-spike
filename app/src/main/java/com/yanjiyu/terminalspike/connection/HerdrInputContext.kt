@@ -68,11 +68,18 @@ internal fun captureHerdrInputContext(
             com.yanjiyu.terminalspike.terminal.codexEffortFromLiveFooter(output.stdout.toString(Charsets.UTF_8))
         } else null
     }.getOrNull() else null
-    require(layout() == initialLayout)
+    val finalLayout = layout()
+    // Other panes and layout decoration can change while this foreground process is stable.
+    require(focus(finalLayout) == focused)
+    if (piScrollPane != null) {
+        fun focusedRect(value: JsonObject) = (value["panes"] as? JsonArray)
+            ?.mapNotNull { it as? JsonObject }?.singleOrNull { it.string("pane_id") == paneId }?.get("rect")
+        require(focusedRect(finalLayout) == focusedRect(initialLayout))
+    }
     TerminalInputContext(
         "herdr/${choice.sessionName}/$paneId/${pane.string("terminal_id")}", agentForeground, piScrollPane,
         agentId = agentId, reasoningEffort = effort,
         agentProcessId = (process.getValue("foreground_processes") as JsonArray).mapNotNull { it as? JsonObject }
             .firstOrNull { it.string("name") == agentId }?.get("pid")?.let { (it as? JsonPrimitive)?.longOrNull },
     )
-}.getOrDefault(TerminalInputContext())
+}.getOrDefault(TerminalInputContext(observationAvailable = false))
