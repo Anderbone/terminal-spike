@@ -494,7 +494,7 @@ class MoshRealEndToEndTest {
     }
 
     @Test
-    fun fourConcurrentSessionsResizeIndependentlyAndOneCloseDoesNotStopTheOthers() = runBlocking {
+    fun fourConcurrentSessionsResizeIndependentlyAndOneCloseDoesNotStopTheOthers(): Unit = runBlocking {
         val arguments = InstrumentationRegistry.getArguments()
         val host = arguments.getString(ARG_HOST).orEmpty()
         val username = arguments.getString(ARG_USERNAME).orEmpty()

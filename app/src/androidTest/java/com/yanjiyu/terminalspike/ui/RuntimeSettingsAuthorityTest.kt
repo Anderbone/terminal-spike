@@ -3,6 +3,7 @@ package com.yanjiyu.terminalspike.ui
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import com.yanjiyu.terminalspike.MainActivity
 import com.yanjiyu.terminalspike.TerminalSpikeApplication
 import com.yanjiyu.terminalspike.settings.AiAgent
@@ -28,7 +29,13 @@ import org.junit.Test
 /** Exercises the real ViewModel and process-owned DataStore while another authority owner holds it. */
 class RuntimeSettingsAuthorityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    private val container get() = (compose.activity.application as TerminalSpikeApplication).container
+    // The container is process-owned. Reading it from the Application avoids
+    // ActivityScenario.onActivity, whose off-main-thread waitForIdleSync() is unbounded and
+    // was reached from IO workers while this test deliberately holds the authority gate.
+    private val container get() = (
+        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+            as TerminalSpikeApplication
+        ).container
 
     private fun readyModel(): TerminalSpikeViewModel {
         lateinit var model: TerminalSpikeViewModel
