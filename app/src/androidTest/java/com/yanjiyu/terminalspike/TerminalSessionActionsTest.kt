@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.connection.ConnectionState
@@ -386,7 +387,8 @@ class TerminalSessionActionsTest {
             }
         }
 
-        composeRule.onNodeWithText("Close tab").performClick()
+        // The action sheet scrolls; bring the last row on screen before tapping it.
+        composeRule.onNodeWithText("Close tab").performScrollTo().performClick()
         composeRule.onNodeWithText("Close Alpha?").assertDoesNotExist()
         composeRule.runOnIdle {
             assertEquals(11L, closedId)
