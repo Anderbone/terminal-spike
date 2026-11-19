@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository-scoped, bounded local Codex repair loop; never merges or releases."""
+"""Repository-scoped, bounded local Claude Code repair loop; never merges or releases."""
 from __future__ import annotations
 
 import argparse
@@ -22,6 +22,16 @@ MAX_ATTEMPTS = 5
 AGENT_SECONDS = 3600
 MAX_AGE_SECONDS = 24 * 3600
 DEFAULT_STATE = Path.home() / ".local/state/terminal-spike-ci-autofix"
+AGENT_MODEL = os.environ.get("CI_AUTOFIX_MODEL", "claude-opus-5-5")
+# Build/dependency hosts the sandboxed agent may reach; everything else is denied by its proxy.
+AGENT_DOMAINS = ["repo.maven.apache.org", "repo1.maven.org", "dl.google.com", "maven.google.com",
+                 "plugins.gradle.org", "plugins-artifacts.gradle.org", "services.gradle.org",
+                 "downloads.gradle.org", "jitpack.io", "github.com", "objects.githubusercontent.com"]
+# Git, GitHub and device writes stay with the controller; the agent only edits the worktree.
+AGENT_DENIED = ["Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Bash(git reset:*)",
+                "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git stash:*)", "Bash(git rebase:*)",
+                "Bash(git merge:*)", "Bash(gh:*)", "Bash(adb:*)", "WebFetch"]
+CONTRACT = "scripts/android-test-contract.json"
 PROTECTED = (".github/", "AGENTS.md", "scripts/ci-autofix", "scripts/ci-host-check.py", "scripts/install-ci-autofix",
              "scripts/systemd/", "store-assets/", "THIRD_PARTY_NOTICES.md", "LICENSE")
 
@@ -113,6 +123,45 @@ def changed_paths(directory):
             raise RuntimeError("Git returned an unsupported change status; preserve the worktree for review")
         paths.append(record[3:])
     return paths
+
+
+def claude_command(extra_dirs=()):
+    settings = {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True,
+                            "allowUnsandboxedCommands": False,
+                            "network": {"allowedDomains": AGENT_DOMAINS}}}
+    args = ["claude", "-p", "--output-format", "stream-json", "--verbose",
+            "--permission-mode", "auto", "--model", AGENT_MODEL, "--no-session-persistence",
+            "--settings", json.dumps(settings)]
+    for directory in extra_dirs:
+        args += ["--add-dir", str(directory)]
+    return args + ["--disallowedTools", *AGENT_DENIED]
+
+
+def agent_result(log_path):
+    """Return the final report from a stream-json transcript, or raise on agent failure."""
+    result = None
+    for line in log_path.read_text(errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            result = event
+    if result is None:
+        raise RuntimeError(f"Claude produced no final result; see {log_path}")
+    if result.get("is_error") or result.get("subtype") != "success":
+        raise RuntimeError(f"Claude ended with {result.get('subtype')}: {str(result.get('result', ''))[:500]}")
+    return str(result.get("result", ""))
+
+
+def contract_only_adds(directory, base):
+    """The test contract may gain members for new tests, never lose them."""
+    def tests(text):
+        suites = json.loads(text)["suites"]
+        return {(name, test) for name, suite in suites.items() for test in suite.get("required_tests", [])}
+    before = tests(command(["git", "show", f"{base}:{CONTRACT}"], directory))
+    after = tests((directory / CONTRACT).read_text())
+    return before <= after
 
 
 def app_version(workspace):
@@ -223,8 +272,10 @@ class Loop:
         for path in ('scripts', '.github', 'gradlew', 'gradle', 'build.gradle.kts',
                      'settings.gradle.kts', 'gradle.properties', 'app/build.gradle.kts',
                      'mosh-api/build.gradle.kts', 'mosh-core/build.gradle.kts'):
-            if command(['git', 'diff', chain['sha'], '--', path], directory):
+            if command(['git', 'diff', chain['sha'], '--', path, f':(exclude){CONTRACT}'], directory):
                 raise RuntimeError('Host verification harness changed; manual review required')
+        if not contract_only_adds(directory, chain['sha']):
+            raise RuntimeError('Test contract lost members; manual review required')
         output = evidence / ('host-baseline' if baseline else f"host-validation-{chain['attempts']}")
         import importlib.util
         spec = importlib.util.spec_from_file_location('host_gate', Path(__file__).with_name('ci-host-check.py'))
@@ -295,7 +346,12 @@ Read AGENTS.md. The following task-specific scope overrides routine release defa
 - Preserve assertions and test membership. Do not skip tests, relax bounds/timeouts, remove
   scenarios, or change expectations merely to turn failures green. Diagnose product behavior,
   outdated contracts, deterministic harness defects and infrastructure failures separately.
-- The model sandbox cannot access KVM by design. Host baseline reproduction is in
+- The latest main commit is the product source of truth. When git history shows a deliberate
+  product/UI change that older tests still contradict, update those expectations to the new
+  behavior and assert it precisely. Fix real product regressions in source.
+- {CONTRACT} may gain entries for newly added test methods (keep lists sorted); never
+  remove entries. All other scripts/ files remain off limits.
+- Your Bash sandbox cannot access KVM by design. Host baseline reproduction is in
   the evidence host-baseline directory. Read it before editing. The controller runs
   the same affected classes and final gate on the host after your patch. Do not stop
   solely because KVM is unavailable inside your sandbox. Never bypass the sandbox.
@@ -303,16 +359,14 @@ Read AGENTS.md. The following task-specific scope overrides routine release defa
   JVM checks available in the sandbox. The host owns emulator reproduction and the final gate;
   do not duplicate the full gate inside the sandbox. Group related fixes.
 - No full API 26–37 sweep, full CI rerun, or indefinite waiting. The PR CI checks the next commit.
-- If credentials, product decisions, protected files, external state, or lack of a valid fix
-  block progress, leave source untouched and clearly report the blocker.
+- Only if credentials, protected files, external state or lack of any valid fix block progress,
+  leave source untouched and clearly report the blocker.
 Write a concise final report: root causes, changes, exact checks and remaining limitations.
 This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         output = self.root / "logs" / f"agent-{int(time.time())}.log"
         output.parent.mkdir(parents=True, exist_ok=True)
         report = directory / "build/ci-autofix-report.md"
-        args = ["codex", "exec", "--sandbox", "workspace-write", "-c", 'approval_policy="never"',
-                "-c", "sandbox_workspace_write.network_access=true", "--cd", str(directory),
-                "--add-dir", str(Path.home() / ".gradle"), "--output-last-message", str(report), prompt]
+        args = claude_command([Path.home() / ".gradle"])
         active = self.state.get("active")
         chain = self.state["chains"].get(active, {})
         chain.update(report_path=str(report), agent_log=str(output), phase="repairing",
@@ -321,10 +375,13 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         temporary.mkdir(parents=True, exist_ok=True)
         environment = dict(os.environ, TMPDIR=str(temporary))
         environment["JAVA_TOOL_OPTIONS"] = os.environ.get("JAVA_TOOL_OPTIONS", "") + f' -Djava.io.tmpdir="{temporary}"'
-        with output.open("w") as log:
-            process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+        prompt_file = self.root / "logs" / f"prompt-{int(time.time())}.md"
+        prompt_file.write_text(prompt)
+        with output.open("w") as log, prompt_file.open() as stdin:
+            process = subprocess.Popen(args, cwd=directory, stdin=stdin, stdout=log, stderr=subprocess.STDOUT,
+                                       start_new_session=True, env=environment)
             chain["agent_pid"] = process.pid
-            self.status("Codex is repairing; see agent_log and report_path")
+            self.status("Claude is repairing; see agent_log and report_path")
             try:
                 code = process.wait(timeout=AGENT_SECONDS)
             except subprocess.TimeoutExpired:
@@ -336,8 +393,11 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                     process.wait()
                 raise RuntimeError(f"Agent exceeded {AGENT_SECONDS}s; see {output}") from None
         if code:
-            raise RuntimeError(f"Codex exited {code}; see {output}")
-        return report.read_text() if report.exists() else "See local Codex logs."
+            raise RuntimeError(f"Claude exited {code}; see {output}")
+        text = agent_result(output)
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(text)
+        return text
 
     def repair(self, run, chain):
         key = run_key(run)

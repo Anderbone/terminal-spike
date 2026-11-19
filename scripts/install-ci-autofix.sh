@@ -2,7 +2,7 @@
 # Install a repository-specific watcher; it never enables automatic merge or release.
 set -euo pipefail
 checkout_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-for tool in python3 codex gh git systemctl; do
+for tool in python3 claude gh git systemctl; do
     command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
 # Resolve mise auto-updating shell wrappers once; never run those wrappers in the timer.
@@ -10,16 +10,16 @@ tool_paths="$(python3 - <<'PY'
 from pathlib import Path
 import shutil
 import subprocess
-for name in ('codex', 'gh'):
+for name in ('claude', 'gh'):
     selected = Path(shutil.which(name)).resolve()
     if selected.stat().st_size < 8192 and b'mise use -g' in selected.read_bytes():
         selected = Path(subprocess.check_output(['mise', 'which', name], text=True).strip()).resolve()
     print(selected)
 PY
 )"
-codex_bin="${tool_paths%%$'\n'*}"
+claude_bin="${tool_paths%%$'\n'*}"
 gh_bin="${tool_paths#*$'\n'}"
-"$codex_bin" login status
+"$claude_bin" auth status >/dev/null
 "$gh_bin" auth status >/dev/null 2>&1
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/terminal-spike-ci-autofix"
 install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/terminal-spike-ci-autofix"
@@ -29,25 +29,25 @@ for script in ci-autofix.py ci-status.py ci-host-check.py; do
     install -m 0755 "$checkout_dir/scripts/$script" "$install_dir/$script.next"
     mv "$install_dir/$script.next" "$install_dir/$script"
 done
-python3 - "$checkout_dir" "$install_dir" "$unit_dir" "$state_dir" "$codex_bin" "$gh_bin" <<'PY'
+python3 - "$checkout_dir" "$install_dir" "$unit_dir" "$state_dir" "$claude_bin" "$gh_bin" <<'PY'
 from pathlib import Path
 import os
 import sys
-checkout, installed, units, state, codex_bin, gh_bin = map(Path, sys.argv[1:])
+checkout, installed, units, state, claude_bin, gh_bin = map(Path, sys.argv[1:])
 if any('\n' in str(path) or '\r' in str(path) for path in (checkout, installed, units, state)):
     raise SystemExit('Installation paths cannot contain line breaks')
 def quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
 # Pin the installed controller copy. Agent branch edits cannot replace it.
 service = f'''[Unit]
-Description=Terminal Spike bounded Codex CI repair
+Description=Terminal Spike bounded Claude CI repair
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory={str(checkout).replace('%', '%%')}
-Environment={quote('PATH=' + str(codex_bin.parent) + ':' + str(gh_bin.parent) + ':' + os.environ['PATH'])}
+Environment={quote('PATH=' + str(claude_bin.parent) + ':' + str(gh_bin.parent) + ':' + os.environ['PATH'])}
 ExecStart=/usr/bin/python3 {quote(installed / 'ci-autofix.py')} --checkout {quote(checkout)} --state-dir {quote(state)}
 TimeoutStartSec=3h
 KillMode=control-group
