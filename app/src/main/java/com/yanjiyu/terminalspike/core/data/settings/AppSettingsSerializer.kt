@@ -14,6 +14,7 @@ internal object AppSettingsSerializer : Serializer<AppSettings> {
         .setSchemaRevision(CURRENT_APP_SETTINGS_SCHEMA)
         .setThemeMode(AppSettings.ThemeMode.THEME_MODE_SYSTEM)
         .setAccentPreset("mint")
+        .setInputKeyboardLayout(com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.NEW_INSTALL_LAYOUT)
         .setDefaultTerminalProfileId("df558cdb-05fb-50f3-baf9-e7dd6e911ce5")
         .setDefaultKeyboardProfileId("f23f85fd-3122-5f8b-b28a-d0320f402866")
         .setKeepaliveIntervalSeconds(30)

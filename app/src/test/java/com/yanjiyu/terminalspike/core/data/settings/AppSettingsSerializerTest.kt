@@ -21,7 +21,10 @@ class AppSettingsSerializerTest {
         AppSettingsSerializer.writeTo(settings, bytes)
         val restored = AppSettingsSerializer.readFrom(ByteArrayInputStream(bytes.toByteArray()))
         assertEquals(settings.inputKeyboardLayout, restored.inputKeyboardLayout)
-        assertEquals("", AppSettingsSerializer.defaultValue.inputKeyboardLayout)
+        assertEquals(
+            com.yanjiyu.terminalspike.core.model.InputKeyboardLayout.NEW_INSTALL_LAYOUT,
+            AppSettingsSerializer.defaultValue.inputKeyboardLayout,
+        )
     }
 
     @Test

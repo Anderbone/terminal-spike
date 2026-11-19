@@ -40,7 +40,10 @@ class LegacyMigrationBatchBuilderTest {
         )
         assertEquals(LegacyIds.defaultKeyboardProfile, absentSettings.keyboardProfiles.single().id)
         assertEquals(2, absentSettings.keyboardProfiles.single().rowCount)
-        assertEquals(20, absentSettings.keyboardKeys.size)
+        assertEquals(
+            com.yanjiyu.terminalspike.core.model.KeyboardAction.NEW_INSTALL_ORDER.map { it.wireCode },
+            absentSettings.keyboardKeys.sortedBy { it.position }.map { it.actionCode },
+        )
         assertEquals(LegacyMigrationBatchBuilder.STATE_ABSENT, absentSettings.completion.stateCode)
         assertNull(absentSettings.completion.sourceDigestSha256)
         assertNull(absentSettings.completion.sourceVersion)

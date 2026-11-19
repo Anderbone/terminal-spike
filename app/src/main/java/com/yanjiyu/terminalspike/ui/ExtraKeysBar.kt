@@ -814,12 +814,12 @@ private fun BufferedInputPage(
             when (token) {
                 "toggle" -> TypingToggle(
                     active = true, onClick = onToggleTyping, modifier = keyModifier,
-                    onLongClick = if (customLayout == null) ({ onInputButtonsOnRight(!inputButtonsOnRight) }) else null,
+                    onLongClick = { onInputButtonsOnRight(!inputButtonsOnRight) },
                 )
                 "enter" -> ExtraKeyButton(
                     label = stringResource(R.string.terminal_enter_short), description = enterDescription,
                     enabled = sendEnabled && validationMessage == null, onClick = { sendDraft(true) },
-                    onLongClick = if (customLayout == null) ({ onInputButtonsOnRight(!inputButtonsOnRight) }) else null,
+                    onLongClick = { onInputButtonsOnRight(!inputButtonsOnRight) },
                     onLongClickLabel = stringResource(R.string.settings_input_buttons_right_summary),
                     modifier = keyModifier.testTag("buffered_input_enter"),
                 )

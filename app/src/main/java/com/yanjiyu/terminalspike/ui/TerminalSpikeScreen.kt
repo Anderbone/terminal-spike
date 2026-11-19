@@ -1740,7 +1740,7 @@ fun TerminalSpikeScreen(
                                     inputButtonsOnRight = state.inputButtonsOnRight,
                                     inputKeyboardLayout = state.inputKeyboardLayout,
                                     buttonColors = state.buttonColors,
-                                    onInputButtonsOnRight = viewModel::setInputButtonsOnRight,
+                                    onInputButtonsOnRight = { viewModel.swapInputKeyboardSides() },
                                     customizationEnabled = state.settingsReady,
                                     inputTargetId = state.activeSessionId,
                                     bufferedInputSendEnabled = state.canSendTerminalInput,

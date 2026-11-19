@@ -3,8 +3,17 @@ package com.yanjiyu.terminalspike.core.model
 /** A single flexible field surrounded by columns of at most two accessory keys. */
 object InputKeyboardLayout {
     const val MAX_KEYS = 8
+
+    /** Written only into a brand-new settings file; existing installs keep their saved layout. */
+    const val NEW_INSTALL_LAYOUT = "enter,toggle,tab,shift_left,slash,ai_agents,arrow_up,arrow_down,input"
     fun defaultTokens(onRight: Boolean): List<String> =
         if (onRight) listOf("input", "enter", "toggle") else listOf("enter", "toggle", "input")
+
+    /** Moves every key column to the opposite side of the field, keeping their order readable. */
+    fun mirrored(tokens: List<String>): List<String> {
+        val field = tokens.indexOf("input")
+        return tokens.drop(field + 1) + "input" + tokens.take(field)
+    }
 
     fun parse(value: String): List<String>? {
         if (value.isEmpty()) return null

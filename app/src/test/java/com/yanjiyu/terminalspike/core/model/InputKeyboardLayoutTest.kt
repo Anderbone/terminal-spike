@@ -17,6 +17,13 @@ class InputKeyboardLayoutTest {
         assertNotNull(InputKeyboardLayout.parse("toggle,enter,input,toggle,enter"))
     }
 
+    @Test fun mirroringMovesKeyBlockAcrossTheFieldAndBack() {
+        val left = listOf("enter", "toggle", "tab", "shift_left", "input")
+        val right = InputKeyboardLayout.mirrored(left)
+        assertEquals(listOf("input", "enter", "toggle", "tab", "shift_left"), right)
+        assertEquals(left, InputKeyboardLayout.mirrored(right))
+    }
+
     @Test fun unusableLayoutsFallBackWithoutLosingModeSwitch() {
         listOf("input,enter", "toggle,enter", "toggle,input,input", "toggle,input,unknown",
             "input,tab,tab", "toggle,input,tab,enter,escape,control,alt,shift,home,end").forEach {

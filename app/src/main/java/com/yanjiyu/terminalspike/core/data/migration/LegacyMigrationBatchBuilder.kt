@@ -284,7 +284,7 @@ internal object LegacyMigrationBatchBuilder {
                     rowCount = 2,
                 ),
             ),
-            keyboardKeys = KeyboardAction.DEFAULT_ORDER.mapIndexed { position, action ->
+            keyboardKeys = KeyboardAction.NEW_INSTALL_ORDER.mapIndexed { position, action ->
                 KeyboardProfileKeyEntity(
                     profileId = LegacyIds.defaultKeyboardProfile,
                     position = position,

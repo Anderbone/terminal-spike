@@ -3648,6 +3648,35 @@ class TerminalSpikeViewModel(
         }
     }
 
+    /** Long-press on the typing toggle swaps the key block and the input field. */
+    fun swapInputKeyboardSides() {
+        viewModelScope.launch {
+            try {
+                appContainer.settingsMutations.mutate {
+                    write {
+                        appContainer.settings.update { builder ->
+                            val custom = com.yanjiyu.terminalspike.core.model.InputKeyboardLayout
+                                .parse(builder.inputKeyboardLayout)
+                            if (custom != null) {
+                                builder.setInputKeyboardLayout(
+                                    com.yanjiyu.terminalspike.core.model.InputKeyboardLayout
+                                        .mirrored(custom).joinToString(","),
+                                )
+                            } else {
+                                builder.setInputButtonsOnRight(!builder.inputButtonsOnRight)
+                            }
+                        }
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                appLogger.warning(AppLogEvent.SETTINGS_WRITE_FAILED, error)
+                _uiState.update { it.copy(notice = uiText(R.string.settings_change_failed)) }
+            }
+        }
+    }
+
     fun dismissNotificationPermissionPrompt() {
         _uiState.update { it.copy(notificationPermissionPromptVisible = false) }
     }

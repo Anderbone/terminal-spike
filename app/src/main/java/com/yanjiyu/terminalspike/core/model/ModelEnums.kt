@@ -257,6 +257,16 @@ enum class KeyboardAction(override val wireCode: String) : WireCoded {
             HIDE_KEYBOARD,
         )
 
+        /**
+         * Seeded only for a fresh install. It intentionally differs from [DEFAULT_ORDER], so it
+         * is stored as an explicit layout and existing default-following profiles never inherit it.
+         */
+        val NEW_INSTALL_ORDER: List<KeyboardAction> = listOf(
+            ENTER, TAB, SLASH, AT_SIGN, DOLLAR, SELECT_IMAGES, ARROW_UP, HOME, END, SNIPPETS,
+            SHIFT_LEFT, AI_AGENTS, CTRL_C, EXPANDED_KEYBOARD, ARROW_LEFT, ARROW_DOWN, ARROW_RIGHT,
+            CONTROL, HIDE_KEYBOARD,
+        )
+
         fun fromWireCode(wireCode: String): KeyboardAction = decodeWireCode(wireCode, entries)
     }
 }
