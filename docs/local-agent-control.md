@@ -128,7 +128,7 @@ This places six buttons in three columns on the left of the field: Enter/toggle,
 ESC/⇧←, then ↑/↓. Tokens before `input` go left and those after it go right;
 each side fills columns top-to-bottom with two keys per column. The field may
 also sit between independently configured left/right keys. Duplicates are allowed.
-`capabilities` advertises `inputKeyboardTokens`, `inputKeyboardMaxButtons` (six,
+`capabilities` advertises `inputKeyboardTokens`, `inputKeyboardMaxButtons` (eight,
 including the typing toggle), `inputKeyboardRequiredTokens`, and
 `inputKeyboardKeysPerColumn`. Exactly one `input` and at least one `toggle` are
 required. Invalid layouts reject the whole update; stale revisions return CONFLICT.

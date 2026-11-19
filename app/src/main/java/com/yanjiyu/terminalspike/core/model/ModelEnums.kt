@@ -229,6 +229,7 @@ enum class KeyboardAction(override val wireCode: String) : WireCoded {
     AMPERSAND("ampersand"),
     CARET("caret"),
     PERCENT("percent"),
+    EXPANDED_KEYBOARD("expanded_keyboard"),
     ;
 
     companion object {

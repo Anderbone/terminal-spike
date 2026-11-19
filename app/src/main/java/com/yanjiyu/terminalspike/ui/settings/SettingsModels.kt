@@ -700,6 +700,10 @@ private fun KeyboardAction.toRuntimeAccessoryActionOrNull(
         action = TerminalLocalAccessoryAction.AI_AGENTS,
         stableId = wireCode,
     )
+    KeyboardAction.EXPANDED_KEYBOARD -> TerminalAccessoryAction.Local(
+        action = TerminalLocalAccessoryAction.EXPANDED_KEYBOARD,
+        stableId = wireCode,
+    )
     KeyboardAction.TMUX_SESSIONS -> TerminalAccessoryAction.Local(
         action = TerminalLocalAccessoryAction.TMUX_SESSIONS,
         stableId = wireCode,
@@ -793,6 +797,7 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.TMUX_SESSIONS,
     KeyboardAction.AI_AGENTS,
     KeyboardAction.KEYBOARD_SETTINGS,
+    KeyboardAction.EXPANDED_KEYBOARD,
     -> null
     else -> runCatching { TerminalExtraKey.valueOf(name) }.getOrNull()
 }

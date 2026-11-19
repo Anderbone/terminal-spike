@@ -303,7 +303,7 @@ fun TerminalAccessoryBar(
                 val rowCount = layout.rowCount
                 val displayedActions = displayedAccessoryActions(actions)
                 val shortcutActions = displayedActions.drop(1).filterNot {
-                    it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+                    actions.matchDefaultAccessoryDeck() && it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
                 }
                 val shortcutPages = terminalAccessoryPages(
                     shortcutActions, columnCount, rowCount,
@@ -566,7 +566,7 @@ internal fun TerminalShortcutPreview(
             val keyWidth = terminalAccessoryKeyWidth(maxWidth)
             val displayedActions = displayedAccessoryActions(actions)
             val shortcuts = displayedActions.drop(1).filterNot {
-                it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+                actions.matchDefaultAccessoryDeck() && it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
             }
             val pages = terminalAccessoryPages(shortcuts, columns, layout.rowCount,
                 !actions.matchDefaultAccessoryDeck())
@@ -1138,7 +1138,7 @@ private fun ExtraKeyRow(
                     onPressFeedback = onPressFeedback,
                     onClick = onCustomize,
                 )
-            } else if (cell == defaultSnippetToggle) {
+            } else if ((cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.SNIPPETS) {
                 val expanded = onToggleSnippets != null && snippetsExpanded
                 val description = stringResource(
                     if (expanded) R.string.terminal_hide_pinned_snippets

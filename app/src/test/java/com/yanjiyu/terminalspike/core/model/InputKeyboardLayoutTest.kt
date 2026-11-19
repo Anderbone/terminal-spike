@@ -19,7 +19,7 @@ class InputKeyboardLayoutTest {
 
     @Test fun unusableLayoutsFallBackWithoutLosingModeSwitch() {
         listOf("input,enter", "toggle,enter", "toggle,input,input", "toggle,input,unknown",
-            "input,tab,tab", "toggle,input,tab,enter,escape,control,alt,shift").forEach {
+            "input,tab,tab", "toggle,input,tab,enter,escape,control,alt,shift,home,end").forEach {
             assertNull(it, InputKeyboardLayout.parse(it))
         }
     }

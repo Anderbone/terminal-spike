@@ -137,7 +137,7 @@ class AppearanceControlTest {
         for (value in listOf(
             JsonNull, JsonPrimitive(123), JsonArray(listOf(JsonPrimitive("input"), JsonPrimitive("toggle"))),
             JsonPrimitive("toggle,input,input"), JsonPrimitive("input,escape"), JsonPrimitive("toggle,escape"),
-            JsonPrimitive("toggle,input,unknown"), JsonPrimitive("toggle,input,tab,enter,escape,control,alt,shift"),
+            JsonPrimitive("toggle,input,unknown"), JsonPrimitive("toggle,input,tab,enter,escape,control,alt,shift,home,end"),
         )) {
             assertThrows(IllegalArgumentException::class.java) {
                 patchControlAppAppearance(current, buildJsonObject {

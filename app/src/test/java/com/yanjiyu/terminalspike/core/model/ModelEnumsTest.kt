@@ -47,7 +47,7 @@ class ModelEnumsTest {
             "colon", "semicolon", "hash", "dollar", "equals", "space", "exclamation", "question",
             "asterisk", "plus", "period", "comma", "left_paren", "right_paren", "left_bracket",
             "right_bracket", "left_brace", "right_brace", "single_quote", "double_quote",
-            "less_than", "greater_than", "ampersand", "caret", "percent",
+            "less_than", "greater_than", "ampersand", "caret", "percent", "expanded_keyboard",
         )
 
         assertEquals(expectedCodes, KeyboardAction.entries.map { it.wireCode }.toSet())

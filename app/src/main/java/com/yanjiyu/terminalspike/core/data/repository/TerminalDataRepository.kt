@@ -1349,5 +1349,6 @@ private fun KeyboardAction.toTerminalExtraKeyOrNull(): TerminalExtraKey? = when 
     KeyboardAction.TMUX_SESSIONS,
     KeyboardAction.AI_AGENTS,
     KeyboardAction.KEYBOARD_SETTINGS,
+    KeyboardAction.EXPANDED_KEYBOARD,
     -> null
 }

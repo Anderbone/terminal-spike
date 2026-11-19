@@ -21,7 +21,7 @@ All responses are JSON. A failed request exits nonzero. No command executes snip
       [--input-keyboard-layout 'enter,toggle,escape,shift_left,arrow_up,arrow_down,input']
       [--input-buttons-on-right true|false] [--voice-input-enabled true|false]
   Input-bar layout is a comma-separated string, distinct from keyboard update's deck.
-  Exactly one input field and at least one toggle are required; up to six buttons.
+  Exactly one input field and at least one toggle are required; up to eight buttons.
   Tokens before input go left; tokens after it go right. Each side fills columns
   top-to-bottom, two buttons per column. Use capabilities.inputKeyboardTokens.
   Duplicates are allowed. An empty layout restores the default enter/toggle pair;

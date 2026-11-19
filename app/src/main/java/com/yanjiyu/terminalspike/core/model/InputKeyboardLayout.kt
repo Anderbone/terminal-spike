@@ -2,7 +2,7 @@ package com.yanjiyu.terminalspike.core.model
 
 /** A single flexible field surrounded by columns of at most two accessory keys. */
 object InputKeyboardLayout {
-    const val MAX_KEYS = 6
+    const val MAX_KEYS = 8
     fun defaultTokens(onRight: Boolean): List<String> =
         if (onRight) listOf("input", "enter", "toggle") else listOf("enter", "toggle", "input")
 

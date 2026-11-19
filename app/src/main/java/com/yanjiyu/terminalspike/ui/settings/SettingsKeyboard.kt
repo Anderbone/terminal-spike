@@ -670,6 +670,7 @@ internal fun keyboardActionLabel(action: KeyboardAction): String = when (action)
     KeyboardAction.TMUX_SESSIONS -> stringResource(R.string.settings_keyboard_action_tmux_sessions)
     KeyboardAction.HIDE_KEYBOARD -> stringResource(R.string.settings_keyboard_action_hide)
     KeyboardAction.KEYBOARD_SETTINGS -> stringResource(R.string.settings_keyboard_action_keys)
+    KeyboardAction.EXPANDED_KEYBOARD -> stringResource(R.string.terminal_more_keys_label)
     KeyboardAction.COLON -> ":"
     KeyboardAction.SEMICOLON -> ";"
     KeyboardAction.HASH -> "#"
