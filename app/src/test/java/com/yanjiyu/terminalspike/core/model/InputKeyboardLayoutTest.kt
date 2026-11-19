@@ -18,9 +18,9 @@ class InputKeyboardLayoutTest {
     }
 
     @Test fun mirroringMovesKeyBlockAcrossTheFieldAndBack() {
-        val left = listOf("enter", "toggle", "tab", "shift_left", "input")
+        val left = listOf("enter", "toggle", "tab", "shift_left", "arrow_up", "arrow_down", "input")
         val right = InputKeyboardLayout.mirrored(left)
-        assertEquals(listOf("input", "enter", "toggle", "tab", "shift_left"), right)
+        assertEquals(listOf("input", "arrow_up", "arrow_down", "tab", "shift_left", "enter", "toggle"), right)
         assertEquals(left, InputKeyboardLayout.mirrored(right))
     }
 

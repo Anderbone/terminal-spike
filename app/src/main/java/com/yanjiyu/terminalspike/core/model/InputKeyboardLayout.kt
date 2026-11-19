@@ -9,10 +9,11 @@ object InputKeyboardLayout {
     fun defaultTokens(onRight: Boolean): List<String> =
         if (onRight) listOf("input", "enter", "toggle") else listOf("enter", "toggle", "input")
 
-    /** Moves every key column to the opposite side of the field, keeping their order readable. */
+    /** Mirrors the bar around its centre: column order reverses, each column keeps top/bottom. */
     fun mirrored(tokens: List<String>): List<String> {
         val field = tokens.indexOf("input")
-        return tokens.drop(field + 1) + "input" + tokens.take(field)
+        fun flip(side: List<String>) = side.chunked(2).reversed().flatten()
+        return flip(tokens.drop(field + 1)) + "input" + flip(tokens.take(field))
     }
 
     fun parse(value: String): List<String>? {
