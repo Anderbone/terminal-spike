@@ -135,6 +135,8 @@ class CiAutofixTest(unittest.TestCase):
         settings = json.loads(args[args.index("--settings") + 1])
         self.assertTrue(settings["sandbox"]["enabled"])
         self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
+        # GitHub stays unreachable so credential helpers cannot publish around the Bash deny rules.
+        self.assertFalse([d for d in settings["sandbox"]["network"]["allowedDomains"] if "github" in d])
         denied = args[args.index("--disallowedTools") + 1:]
         for rule in ["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh:*)", "Bash(adb:*)"]:
             self.assertIn(rule, denied)

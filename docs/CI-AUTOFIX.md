@@ -15,7 +15,7 @@ credential is uploaded to GitHub and no other repository is watched.
 3. The controller reproduces affected API 26/35 test classes on the host using retained
    XML reports and the fixed `ci-host-check.py` gate. Claude reads that evidence and edits
    relevant source/tests inside the Claude Code Bash sandbox (writes limited to the worktree, network limited to
-   build hosts, Git/GitHub/ADB writes denied). The controller then
+   Maven/Google/Gradle build hosts with GitHub unreachable, Git/GitHub/ADB writes denied). The controller then
    runs the shared local gate and those classes on the host. A failing host check feeds
    new evidence back to Claude within the same attempt budget. A patch is committed and
    pushed only after host verification succeeds, then one PR is opened against `main`.

@@ -26,7 +26,7 @@ AGENT_MODEL = os.environ.get("CI_AUTOFIX_MODEL", "claude-opus-5-5")
 # Build/dependency hosts the sandboxed agent may reach; everything else is denied by its proxy.
 AGENT_DOMAINS = ["repo.maven.apache.org", "repo1.maven.org", "dl.google.com", "maven.google.com",
                  "plugins.gradle.org", "plugins-artifacts.gradle.org", "services.gradle.org",
-                 "downloads.gradle.org", "jitpack.io", "github.com", "objects.githubusercontent.com"]
+                 "downloads.gradle.org"]
 # Git, GitHub and device writes stay with the controller; the agent only edits the worktree.
 AGENT_DENIED = ["Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Bash(git reset:*)",
                 "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git stash:*)", "Bash(git rebase:*)",
