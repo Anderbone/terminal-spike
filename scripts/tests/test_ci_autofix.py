@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -95,7 +96,7 @@ class CiAutofixTest(unittest.TestCase):
                 shutil.copy2(source / name, scripts / name)
             binaries = root / "bin"
             binaries.mkdir()
-            for name in ["codex", "gh", "systemctl"]:
+            for name in ["claude", "gh", "systemctl"]:
                 executable = binaries / name
                 executable.write_text('#!/bin/sh\nexit 0\n')
                 executable.chmod(0o755)
@@ -113,6 +114,52 @@ class CiAutofixTest(unittest.TestCase):
             if shutil.which("systemd-analyze"):
                 subprocess.run(["systemd-analyze", "--user", "verify", str(service), str(timer)],
                                check=True, capture_output=True)
+
+    def test_claude_result_is_the_report_and_failures_are_not_reports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / "agent.log"
+            log.write_text('{"type":"system"}\nnot json\n'
+                           '{"type":"result","subtype":"success","is_error":false,"result":"Fixed X"}\n')
+            self.assertEqual("Fixed X", MODULE.agent_result(log))
+            log.write_text('{"type":"result","subtype":"error_max_turns","is_error":true}\n')
+            with self.assertRaises(RuntimeError):
+                MODULE.agent_result(log)
+            log.write_text('{"type":"assistant"}\n')
+            with self.assertRaises(RuntimeError):
+                MODULE.agent_result(log)
+
+    def test_claude_command_sandboxes_and_denies_git_publication(self):
+        args = MODULE.claude_command([Path("/g")])
+        self.assertEqual(["claude", "-p"], args[:2])
+        self.assertNotIn("--dangerously-skip-permissions", args)
+        settings = json.loads(args[args.index("--settings") + 1])
+        self.assertTrue(settings["sandbox"]["enabled"])
+        self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
+        # GitHub stays unreachable so credential helpers cannot publish around the Bash deny rules.
+        self.assertFalse([d for d in settings["sandbox"]["network"]["allowedDomains"] if "github" in d])
+        denied = args[args.index("--disallowedTools") + 1:]
+        for rule in ["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh:*)", "Bash(adb:*)"]:
+            self.assertIn(rule, denied)
+
+    def test_test_contract_may_gain_but_never_lose_members(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            contract = repo / MODULE.CONTRACT
+            contract.parent.mkdir(parents=True)
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x"]}}}))
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"],
+                           cwd=repo, check=True)
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x", "a#y"]}}}))
+            self.assertTrue(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#y"]}}}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x", "a#y"]}},
+                                            "allowed_skip_rules": [{"id": "r", "tests": ["a#x"]}]}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x"], "api": 26}}}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
 
     def test_checkout_cannot_redirect_repairs_to_another_repository(self):
         MODULE.validate_origin(f"https://github.com/{MODULE.REPO}.git")
@@ -167,7 +214,7 @@ class CiAutofixTest(unittest.TestCase):
             MODULE.validate_changes([], [], [])
         MODULE.validate_changes(["app/src/test/RegressionTest.kt", "scripts/run-test.sh"], [], [])
 
-    def test_attempt_limit_and_repeated_run_never_launch_codex(self):
+    def test_attempt_limit_and_repeated_run_never_launch_agent(self):
         with tempfile.TemporaryDirectory() as temp:
             loop = MODULE.Loop(Path(temp), Path(temp))
             run = self.run_record()
