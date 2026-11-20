@@ -4,7 +4,7 @@ This opt-in local service watches **Anderbone/terminal-spike only**. The user au
 it on 2026-11-11. GitHub schedules CI on the existing `epee` self-hosted runner; the
 repair controller uses the local Claude Code CLI (`claude -p`, model `claude-opus-5-5`,
 overridable with `CI_AUTOFIX_MODEL`) and its existing claude.ai login. It replaced the
-earlier Claude agent on 2026-11-19 at the user's request. No model
+earlier Codex agent on 2026-11-19 at the user's request. No model
 credential is uploaded to GitHub and no other repository is watched.
 
 ## Lifecycle
@@ -103,8 +103,9 @@ The local Claude Code CLI must retain a valid login (`claude auth status`) and a
 model allowance. The branch prefix stays `codex/ci-fix-` because the CI workflow trigger
 is scoped to it.
 
-The test contract `scripts/android-test-contract.json` may gain entries for newly added
-test methods; the controller rejects any patch that removes entries. The latest `main`
+The test contract `scripts/android-test-contract.json` may gain `required_tests` entries for newly
+added test methods; the controller rejects any patch that removes entries or changes any
+other field, including `allowed_skip_rules`. The latest `main`
 commit is the product source of truth when an older test contradicts a deliberate change.
 Authentication/quota errors stop the attempt and appear in the local journal/state;
 if a PR already exists, its body also records the blocker. This service cannot

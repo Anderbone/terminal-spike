@@ -155,13 +155,16 @@ def agent_result(log_path):
 
 
 def contract_only_adds(directory, base):
-    """The test contract may gain members for new tests, never lose them."""
-    def tests(text):
-        suites = json.loads(text)["suites"]
-        return {(name, test) for name, suite in suites.items() for test in suite.get("required_tests", [])}
-    before = tests(command(["git", "show", f"{base}:{CONTRACT}"], directory))
-    after = tests((directory / CONTRACT).read_text())
-    return before <= after
+    """The test contract may only gain required_tests entries; every other field must stay identical."""
+    def split(text):
+        contract = json.loads(text)
+        tests = {}
+        for name, suite in contract.get("suites", {}).items():
+            tests[name] = set(suite.pop("required_tests", []))
+        return contract, tests
+    before, before_tests = split(command(["git", "show", f"{base}:{CONTRACT}"], directory))
+    after, after_tests = split((directory / CONTRACT).read_text())
+    return before == after and all(tests <= after_tests.get(name, set()) for name, tests in before_tests.items())
 
 
 def app_version(workspace):
@@ -275,7 +278,7 @@ class Loop:
             if command(['git', 'diff', chain['sha'], '--', path, f':(exclude){CONTRACT}'], directory):
                 raise RuntimeError('Host verification harness changed; manual review required')
         if not contract_only_adds(directory, chain['sha']):
-            raise RuntimeError('Test contract lost members; manual review required')
+            raise RuntimeError('Test contract changed beyond added required tests; manual review required')
         output = evidence / ('host-baseline' if baseline else f"host-validation-{chain['attempts']}")
         import importlib.util
         spec = importlib.util.spec_from_file_location('host_gate', Path(__file__).with_name('ci-host-check.py'))
@@ -349,8 +352,8 @@ Read AGENTS.md. The following task-specific scope overrides routine release defa
 - The latest main commit is the product source of truth. When git history shows a deliberate
   product/UI change that older tests still contradict, update those expectations to the new
   behavior and assert it precisely. Fix real product regressions in source.
-- {CONTRACT} may gain entries for newly added test methods (keep lists sorted); never
-  remove entries. All other scripts/ files remain off limits.
+- {CONTRACT} may gain required_tests entries for newly added test methods (keep lists sorted); never
+  remove entries or change skip rules or any other field. All other scripts/ files remain off limits.
 - Your Bash sandbox cannot access KVM by design. Host baseline reproduction is in
   the evidence host-baseline directory. Read it before editing. The controller runs
   the same affected classes and final gate on the host after your patch. Do not stop

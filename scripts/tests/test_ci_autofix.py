@@ -153,6 +153,11 @@ class CiAutofixTest(unittest.TestCase):
             self.assertTrue(MODULE.contract_only_adds(repo, "HEAD"))
             contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#y"]}}}))
             self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x", "a#y"]}},
+                                            "allowed_skip_rules": [{"id": "r", "tests": ["a#x"]}]}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x"], "api": 26}}}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
 
     def test_checkout_cannot_redirect_repairs_to_another_repository(self):
         MODULE.validate_origin(f"https://github.com/{MODULE.REPO}.git")
