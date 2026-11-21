@@ -32,6 +32,8 @@ AGENT_DENIED = ["Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Ba
                 "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git stash:*)", "Bash(git rebase:*)",
                 "Bash(git merge:*)", "Bash(gh:*)", "Bash(adb:*)", "WebFetch"]
 CONTRACT = "scripts/android-test-contract.json"
+# Claude Code disables its sandbox for the session, rather than exiting, when initialization fails.
+SANDBOX_FAILURE = "Sandbox is enabled but failed to initialize"
 PROTECTED = (".github/", "AGENTS.md", "scripts/ci-autofix", "scripts/ci-host-check.py", "scripts/install-ci-autofix",
              "scripts/systemd/", "store-assets/", "THIRD_PARTY_NOTICES.md", "LICENSE")
 
@@ -137,8 +139,14 @@ def claude_command(extra_dirs=()):
     return args + ["--disallowedTools", *AGENT_DENIED]
 
 
+def sandbox_failed(log_path):
+    return log_path.exists() and SANDBOX_FAILURE in log_path.read_text(errors="replace")
+
+
 def agent_result(log_path):
     """Return the final report from a stream-json transcript, or raise on agent failure."""
+    if sandbox_failed(log_path):
+        raise RuntimeError(f"Claude sandbox failed to initialize; refusing unsandboxed output; see {log_path}")
     result = None
     for line in log_path.read_text(errors="replace").splitlines():
         try:
@@ -376,7 +384,11 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                      activity="AI 正在根据失败证据和宿主复现结果修改代码")
         temporary = directory / "build/ci-autofix-temp"
         temporary.mkdir(parents=True, exist_ok=True)
-        environment = dict(os.environ, TMPDIR=str(temporary))
+        # The sandbox's Unix bridge sockets live under TMPDIR; a long worktree path exceeds the
+        # 108-byte socket limit, so the agent gets a short TMPDIR while Java keeps the disk one.
+        agent_temporary = self.root / "agent-tmp"
+        agent_temporary.mkdir(parents=True, exist_ok=True)
+        environment = dict(os.environ, TMPDIR=str(agent_temporary))
         environment["JAVA_TOOL_OPTIONS"] = os.environ.get("JAVA_TOOL_OPTIONS", "") + f' -Djava.io.tmpdir="{temporary}"'
         prompt_file = self.root / "logs" / f"prompt-{int(time.time())}.md"
         prompt_file.write_text(prompt)
@@ -385,16 +397,26 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
                                        start_new_session=True, env=environment)
             chain["agent_pid"] = process.pid
             self.status("Claude is repairing; see agent_log and report_path")
-            try:
-                code = process.wait(timeout=AGENT_SECONDS)
-            except subprocess.TimeoutExpired:
+            def stop():
                 os.killpg(process.pid, signal.SIGTERM)
                 try:
                     process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
-                raise RuntimeError(f"Agent exceeded {AGENT_SECONDS}s; see {output}") from None
+            deadline = time.monotonic() + AGENT_SECONDS
+            while True:
+                try:
+                    code = process.wait(timeout=2)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if sandbox_failed(output):
+                    stop()
+                    raise RuntimeError(f"Claude sandbox failed to initialize; agent stopped; see {output}")
+                if time.monotonic() > deadline:
+                    stop()
+                    raise RuntimeError(f"Agent exceeded {AGENT_SECONDS}s; see {output}")
         if code:
             raise RuntimeError(f"Claude exited {code}; see {output}")
         text = agent_result(output)

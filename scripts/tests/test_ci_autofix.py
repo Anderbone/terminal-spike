@@ -127,6 +127,10 @@ class CiAutofixTest(unittest.TestCase):
             log.write_text('{"type":"assistant"}\n')
             with self.assertRaises(RuntimeError):
                 MODULE.agent_result(log)
+            log.write_text('{"type":"system","text":"' + MODULE.SANDBOX_FAILURE + ': bridge sockets"}\n'
+                           '{"type":"result","subtype":"success","is_error":false,"result":"Fixed X"}\n')
+            with self.assertRaisesRegex(RuntimeError, "sandbox"):
+                MODULE.agent_result(log)
 
     def test_claude_command_sandboxes_and_denies_git_publication(self):
         args = MODULE.claude_command([Path("/g")])
