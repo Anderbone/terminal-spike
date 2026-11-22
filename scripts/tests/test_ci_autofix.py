@@ -321,6 +321,7 @@ class CiAutofixTest(unittest.TestCase):
             process = Mock(pid=1)
             process.wait.return_value = 0
             with patch.dict(os.environ, HOME=temp), patch.object(MODULE, "command", return_value="") as command, \
+                    patch.object(MODULE, "contract_only_adds", return_value=True), \
                     patch.object(MODULE.subprocess, "Popen", return_value=process), patch("builtins.print"):
                 loop.host_check(root, evidence, baseline=True)
             self.assertTrue(all(args[0][0][:2] == ["git", "diff"] for args in command.call_args_list))
