@@ -14,6 +14,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import com.yanjiyu.terminalspike.TerminalSpikeComponentTestActivity
+import com.yanjiyu.terminalspike.awaitBoundsSettled
 import com.yanjiyu.terminalspike.connection.RecentHerdrProject
 import com.yanjiyu.terminalspike.ui.theme.AppThemeMode
 import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
@@ -57,6 +58,8 @@ class HerdrRecentProjectsPickerTest {
     @Test fun orderedRowsKeepTimesOnTheRightAndSelectionDisablesOtherActions() {
         show(refreshing = true)
         compose.onNodeWithText("Loading projects…").assertDoesNotExist()
+        // Compare row geometry only after the IME-driven dialog move on API 26–27 has finished.
+        compose.awaitBoundsSettled(hasTestTag("recent-project:${rows[1].path}"))
         val first = compose.onNodeWithTag("recent-project:${rows[0].path}").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val second = compose.onNodeWithTag("recent-project:${rows[1].path}").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(first.bottom <= second.top)

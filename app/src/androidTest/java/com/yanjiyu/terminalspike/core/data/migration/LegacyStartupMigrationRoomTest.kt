@@ -7,6 +7,7 @@ import com.yanjiyu.terminalspike.core.data.credential.CredentialEpochClock
 import com.yanjiyu.terminalspike.core.data.credential.RoomCredentialCiphertextStore
 import com.yanjiyu.terminalspike.core.data.db.AppDatabase
 import com.yanjiyu.terminalspike.core.data.db.LegacyMigrationStateEntity
+import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.core.security.credential.AesGcmCredentialStore
 import com.yanjiyu.terminalspike.core.security.credential.CredentialId
 import com.yanjiyu.terminalspike.core.security.credential.CredentialKeyProvider
@@ -188,7 +189,11 @@ class LegacyStartupMigrationRoomTest {
                 database.keyboardProfileDao().findWithKeys(LegacyIds.defaultKeyboardProfile),
             )
             assertEquals(2, defaultKeyboard.profile.rowCount)
-            assertEquals(TerminalExtraKey.DEFAULT_ORDER.size, defaultKeyboard.keys.size)
+            // A discarded legacy source has no keyboard to keep, so it is seeded like a fresh install.
+            assertEquals(
+                KeyboardAction.NEW_INSTALL_ORDER.map { it.wireCode },
+                defaultKeyboard.keys.sortedBy { it.position }.map { it.actionCode },
+            )
 
             val afterRestart = coordinator().migrate()
 

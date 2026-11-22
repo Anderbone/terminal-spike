@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.TerminalSpikeComponentTestActivity
+import com.yanjiyu.terminalspike.awaitBoundsSettled
 import com.yanjiyu.terminalspike.core.model.Snippet
 import com.yanjiyu.terminalspike.core.model.SshKeyOrigin
 import com.yanjiyu.terminalspike.ui.theme.TerminalSpikeTheme
@@ -46,6 +48,8 @@ class ConnectionEditorSavingTest {
             }
         }
 
+        // The IME-driven dialog move on API 26–27 must finish before taps resolve coordinates.
+        composeRule.awaitBoundsSettled(hasTestTag(SnippetEditorSaveTestTag))
         val options = composeRule.onAllNodes(isToggleable()).assertCountEquals(2)
         options[0].performScrollTo().performClick().assertIsOn()
         options[1].assertIsOff()
@@ -81,6 +85,8 @@ class ConnectionEditorSavingTest {
             }
         }
 
+        // The IME-driven dialog move on API 26–27 must finish before taps resolve coordinates.
+        composeRule.awaitBoundsSettled(hasTestTag(SnippetEditorSaveTestTag))
         val options = composeRule.onAllNodes(isToggleable()).assertCountEquals(2)
         options[0].performScrollTo().performClick()
         options[1].performScrollTo().performClick()

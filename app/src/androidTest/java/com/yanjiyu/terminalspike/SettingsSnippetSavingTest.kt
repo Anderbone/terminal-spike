@@ -184,6 +184,7 @@ class SettingsSnippetSavingTest {
                 )
             }
         }
+        awaitSettledEditor()
         compose.onNodeWithText("Save").performClick()
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
         compose.runOnIdle { selected.value = CommandSnippet(8, "Second fixture", "ls", true) }
@@ -198,6 +199,7 @@ class SettingsSnippetSavingTest {
         var submittedId: Long? = 99L
         render { submittedId = it; Result.failure(IllegalStateException("fixture new snippet write failed")) }
         compose.onNodeWithText("Add snippet").performClick()
+        awaitSettledEditor()
         compose.onNode(hasSetTextAction() and hasText("Name")).performTextReplacement("New fixture")
         compose.onNode(hasSetTextAction() and hasText("Command")).performTextReplacement("pwd")
         compose.onNodeWithText("Save").performClick()
@@ -215,7 +217,10 @@ class SettingsSnippetSavingTest {
     private fun edit(label: String) {
         compose.onNodeWithText(label).performScrollTo().performClick()
         compose.onNodeWithText("Edit command snippet").assertIsDisplayed()
+        awaitSettledEditor()
     }
+
+    private fun awaitSettledEditor() = compose.awaitBoundsSettled(hasText("Save"))
 
     private fun render(
         snippets: List<CommandSnippet> = emptyList(),

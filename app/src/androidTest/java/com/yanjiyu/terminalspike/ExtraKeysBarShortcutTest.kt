@@ -22,6 +22,7 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
+import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalLocalAccessoryAction
 import com.yanjiyu.terminalspike.terminal.view.AccessoryModifierSnapshot
@@ -206,16 +207,27 @@ class ExtraKeysBarShortcutTest {
         assertShortcutAreaIsNineByTwo()
     }
 
+    private fun description(key: TerminalExtraKey): String =
+        if (key == TerminalExtraKey.CTRL_W) "Open expanded terminal keyboard"
+        else key.toAccessoryAction().accessibilityDescription.resolve(
+            InstrumentationRegistry.getInstrumentation().targetContext.resources,
+        )
+
+    /**
+     * Default deck: Enter leads beside the typing toggle; Esc moves into the deck,
+     * Backspace is replaced by the pinned-snippet toggle at the top-right, Ctrl takes
+     * Enter's old slot and Shift-Left takes Ctrl's. Tab and Page Up stay off the deck.
+     */
     private fun assertShortcutAreaIsNineByTwo() {
-        val firstPageBounds = TerminalExtraKey.DEFAULT_ORDER.filterNot {
-            it == TerminalExtraKey.ESC || it == TerminalExtraKey.TAB || it == TerminalExtraKey.PAGE_UP
-        }.map { if (it == TerminalExtraKey.CTRL) TerminalExtraKey.SHIFT_LEFT else it }.map { key ->
-            composeRule.onNodeWithContentDescription(
-                if (key == TerminalExtraKey.CTRL_W) "Open expanded terminal keyboard"
-                else key.accessibilityDescription.resolve(
-                    InstrumentationRegistry.getInstrumentation().targetContext.resources,
-                ),
-            )
+        val deckKeys = listOf(
+            TerminalExtraKey.ESC, TerminalExtraKey.SLASH, TerminalExtraKey.AT, TerminalExtraKey.DOLLAR,
+            TerminalExtraKey.HOME, TerminalExtraKey.UP, TerminalExtraKey.END, TerminalExtraKey.CTRL_B,
+            TerminalExtraKey.SHIFT_LEFT, TerminalExtraKey.ALT, TerminalExtraKey.CTRL_C, TerminalExtraKey.CTRL_W,
+            TerminalExtraKey.LEFT, TerminalExtraKey.DOWN, TerminalExtraKey.RIGHT, TerminalExtraKey.CTRL,
+            TerminalExtraKey.HIDE_KEYBOARD,
+        )
+        val firstPageBounds = deckKeys.map { key ->
+            composeRule.onNodeWithContentDescription(description(key))
                 .assertIsDisplayed()
                 .assertHeightIsAtLeast(48.dp)
                 .fetchSemanticsNode()
@@ -224,25 +236,25 @@ class ExtraKeysBarShortcutTest {
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
             .fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithContentDescription(description(TerminalExtraKey.BACKSPACE)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(description(TerminalExtraKey.TAB)).assertDoesNotExist()
         val deckBounds = composeRule.onNodeWithTag("terminal_input_pager")
             .fetchSemanticsNode()
             .boundsInRoot
         val rows = firstPageBounds.groupBy { bounds -> bounds.top.toInt() }
-        val backspaceBounds = composeRule.onNodeWithContentDescription("Terminal key ⌫")
-            .fetchSemanticsNode().boundsInRoot
         val toggleBounds = composeRule.onNodeWithTag("terminal_toggle_pinned_snippets")
             .fetchSemanticsNode().boundsInRoot
-        assertEquals(backspaceBounds.top, toggleBounds.top, 0.5f)
-        assertTrue(backspaceBounds.right < toggleBounds.left)
+        // The snippet toggle is the top-right cell of the deck.
+        assertEquals(firstPageBounds.minOf { it.top }, toggleBounds.top, 0.5f)
         assertEquals(firstPageBounds.maxOf { it.right }, toggleBounds.right, 0.5f)
 
-        val escapeBounds = composeRule.onNodeWithContentDescription("Terminal key ESC")
+        val leadingBounds = composeRule.onNodeWithContentDescription(description(TerminalExtraKey.ENTER))
             .fetchSemanticsNode().boundsInRoot
         val typingBounds = composeRule.onNodeWithTag("terminal_typing_toggle")
             .fetchSemanticsNode().boundsInRoot
         for (bounds in firstPageBounds + typingBounds) {
-            assertEquals(escapeBounds.width, bounds.width, 1f)
-            assertEquals(escapeBounds.height, bounds.height, 1f)
+            assertEquals(leadingBounds.width, bounds.width, 1f)
+            assertEquals(leadingBounds.height, bounds.height, 1f)
         }
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         val activeTypingBounds = composeRule.onNodeWithTag("terminal_typing_toggle")
@@ -250,7 +262,7 @@ class ExtraKeysBarShortcutTest {
         val enterBounds = composeRule.onNodeWithTag("buffered_input_enter")
             .fetchSemanticsNode().boundsInRoot
         assertEquals(typingBounds, activeTypingBounds)
-        assertEquals(escapeBounds, enterBounds)
+        assertEquals(leadingBounds, enterBounds)
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
         assertEquals(
             typingBounds,

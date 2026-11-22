@@ -223,7 +223,8 @@ class MainScreenSmokeTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("terminal_typing_toggle").performClick()
-        composeRule.onNodeWithContentDescription(string(R.string.terminal_key_description, "ESC")).assertIsDisplayed()
+        // Ctrl+C is on both the legacy default deck and the fresh-install deck, which has no ESC.
+        composeRule.onNodeWithContentDescription(string(R.string.terminal_key_control_c)).assertIsDisplayed()
         onView(isAssignableFrom(FastTerminalView::class.java)).check(matches(hasFocus()))
     }
 
