@@ -652,7 +652,8 @@ class FastTerminalSelectionInteractionTest {
                 scenario.onActivity {
                     val info = AccessibilityNodeInfo.obtain()
                     view.onInitializeAccessibilityNodeInfo(info)
-                    assertFalse(info.actionList.any { it.id == R.id.terminal_action_copy_single_line })
+                    // Offered for every selection: a one-row word can still be part of a wrapped path.
+                    assertTrue(info.actionList.any { it.id == R.id.terminal_action_copy_single_line })
                     info.recycle()
                     assertTrue(view.performAccessibilityAction(R.id.terminal_action_select_all, null))
                 }
