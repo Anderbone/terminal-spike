@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location("ci_autofix", Path(__file__).resolve().parents[1] / "ci-autofix.py")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -283,6 +283,57 @@ class CiAutofixTest(unittest.TestCase):
                     patch.object(loop, "repair") as repair:
                 loop.tick()
                 repair.assert_not_called()
+
+    def test_retry_plans_and_reads_evidence_from_the_run_being_repaired_not_the_chain_origin(self):
+        def report(home, run, test_class):
+            path = home / f".local/state/terminal-spike-ci-evidence/{run}/1/android-runtime-api-26-shard-1"
+            path.mkdir(parents=True)
+            (path / "TEST-api26-full.xml").write_text(
+                f'<testsuite><testcase classname="com.yanjiyu.terminalspike.{test_class}" name="t">'
+                '<failure>boom</failure></testcase></testsuite>')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report(root, 10, "AlreadyFixedTest")
+            report(root, 20, "NewlyFailingTest")
+            (root / "app").mkdir()
+            (root / "app/build.gradle.kts").write_text('versionName = "0.0.24"\n')
+            loop = MODULE.Loop(root, root / "state")
+            branch = MODULE.PREFIX + "10"
+            chain = {"branch": branch, "sha": "a" * 40, "pr": 3, "origin_run": 10, "attempts": 1,
+                     "started": MODULE.time.time()}
+            loop.state.update(active=branch)
+            loop.state["chains"][branch] = chain
+            evidence = root / "evidence"
+            evidence.mkdir()
+            seen = {}
+            def agent(directory, evidence_dir, attempt):
+                seen.update(run=chain["evidence_run"], attempt=chain["evidence_attempt"])
+                raise RuntimeError("fixture: stop after evidence selection")
+            retry = dict(self.run_record(), id=20, head_branch=branch)
+            with patch.dict(os.environ, HOME=temp), patch.object(loop, "workspace", return_value=root), \
+                    patch.object(loop, "evidence", return_value=evidence), \
+                    patch.object(loop, "agent", side_effect=agent), patch.object(loop, "update_pr"), \
+                    patch.object(MODULE, "gh") as gh, patch("builtins.print"):
+                loop.repair(retry, chain)
+            gh.assert_not_called()
+            self.assertEqual({"run": 20, "attempt": 1}, seen)
+
+            process = Mock(pid=1)
+            process.wait.return_value = 0
+            with patch.dict(os.environ, HOME=temp), patch.object(MODULE, "command", return_value="") as command, \
+                    patch.object(MODULE.subprocess, "Popen", return_value=process), patch("builtins.print"):
+                loop.host_check(root, evidence, baseline=True)
+            self.assertTrue(all(args[0][0][:2] == ["git", "diff"] for args in command.call_args_list))
+            plan = MODULE.json.loads((root / "state/host-plans/20.json").read_text())
+            self.assertEqual({"26": ["com.yanjiyu.terminalspike.NewlyFailingTest"]}, plan)
+
+            with patch.dict(os.environ, HOME=temp), patch.object(MODULE.os, "access", return_value=True), \
+                    patch.object(loop, "host_check", side_effect=RuntimeError("fixture: stop before agent")):
+                with self.assertRaises(RuntimeError):
+                    loop.agent(root, evidence, 2)
+            copied = (evidence / "android-runtime-api-26-shard-1/TEST-api26-full.xml").read_text()
+            self.assertIn("NewlyFailingTest", copied)
+            self.assertNotIn("AlreadyFixedTest", copied)
 
     def test_human_branch_update_stops_automatic_edits(self):
         with tempfile.TemporaryDirectory() as temp:

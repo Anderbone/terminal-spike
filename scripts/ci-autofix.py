@@ -276,6 +276,14 @@ class Loop:
             raise RuntimeError(f"No failure evidence could be retrieved; inspect {evidence}")
         return evidence
 
+    @staticmethod
+    def runtime_archive(chain):
+        # Each retry must plan and read evidence from the CI run it is repairing; the chain's
+        # first failed run is stale once an earlier repair has changed which tests fail.
+        run = chain.get('evidence_run', chain['origin_run'])
+        attempt = chain.get('evidence_attempt', 1)
+        return Path.home() / f".local/state/terminal-spike-ci-evidence/{run}/{attempt}"
+
     def host_check(self, directory, evidence, baseline=False):
         chain = self.state['chains'][self.state['active']]
         chain.update(phase='validating', agent_pid=None)
@@ -292,14 +300,13 @@ class Loop:
         spec = importlib.util.spec_from_file_location('host_gate', Path(__file__).with_name('ci-host-check.py'))
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
-        archive = Path.home() / f".local/state/terminal-spike-ci-evidence/{chain['origin_run']}"
-        plan = helper.failure_plan(archive)
+        plan = helper.failure_plan(self.runtime_archive(chain))
         failure_type = EnvironmentBlocked if baseline else RuntimeError
         if not plan:
             raise failure_type('No retained runtime XML for focused host validation')
         chain['activity'] = ('正在复现原始失败' if baseline else '正在验证修复') + ' · ' + '、'.join(f"API {api} 的 {len(classes)} 个测试类" for api, classes in sorted(plan.items()))
         self.status(chain['activity'])
-        plan_file = self.root / 'host-plans' / f"{chain['origin_run']}.json"
+        plan_file = self.root / 'host-plans' / f"{chain.get('evidence_run', chain['origin_run'])}.json"
         save(plan_file, plan)
         args = [sys.executable, str(Path(__file__).with_name('ci-host-check.py')),
                 '--evidence', str(evidence), '--output', str(output), '--plan-file', str(plan_file)]
@@ -336,9 +343,9 @@ class Loop:
             if not os.access(executable, os.X_OK):
                 raise EnvironmentBlocked(f"Android runtime tool is unavailable: {executable}; no agent was launched")
 
-        archive = Path.home() / f".local/state/terminal-spike-ci-evidence/{self.state['chains'][self.state['active']]['origin_run']}"
+        archive = self.runtime_archive(self.state['chains'][self.state['active']])
         import shutil
-        for source in archive.glob("*/android-runtime*/TEST-api*-full.xml"):
+        for source in archive.glob("android-runtime*/TEST-api*-full.xml"):
             destination = evidence / source.parent.name
             destination.mkdir(exist_ok=True)
             shutil.copy2(source, destination / source.name)
@@ -438,7 +445,8 @@ This is repair attempt {attempt}/{MAX_ATTEMPTS}."""
         try:
             directory = self.workspace(chain["branch"], chain["sha"])
             evidence = self.evidence(run, directory)
-            chain["evidence_path"] = str(evidence)
+            chain.update(evidence_path=str(evidence), evidence_run=run["id"],
+                         evidence_attempt=run.get("run_attempt", 1))
             chain["attempts"] += 1
             version = app_version(directory)
             report = self.agent(directory, evidence, chain["attempts"])
