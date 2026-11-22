@@ -2,19 +2,23 @@
 
 This opt-in local service watches **Anderbone/terminal-spike only**. The user authorized
 it on 2026-11-11. GitHub schedules CI on the existing `epee` self-hosted runner; the
-repair controller uses the local Codex CLI and its existing ChatGPT login. No model
+repair controller uses the local Claude Code CLI (`claude -p`, model `claude-opus-5-5`,
+overridable with `CI_AUTOFIX_MODEL`) and its existing claude.ai login. It replaced the
+earlier Codex agent on 2026-11-19 at the user's request. No model
 credential is uploaded to GitHub and no other repository is watched.
 
 ## Lifecycle
 
 1. A completed, failed `Android CI` push run must match the current `main` commit.
 2. The controller creates an isolated worktree and `codex/ci-fix-<run-id>` branch,
-   downloads report artifacts and failed-job logs, and starts a bounded Codex session.
+   downloads report artifacts and failed-job logs, and starts a bounded Claude session.
 3. The controller reproduces affected API 26/35 test classes on the host using retained
-   XML reports and the fixed `ci-host-check.py` gate. Codex reads that evidence and edits
-   relevant source/tests inside its existing workspace sandbox. The controller then
+   XML reports and the fixed `ci-host-check.py` gate. Claude reads that evidence and edits
+   relevant source/tests inside the Claude Code Bash sandbox (writes limited to the worktree, network limited to
+   Maven/Google/Gradle build hosts with GitHub unreachable, Git/GitHub/ADB writes denied; a sandbox that fails to initialize stops the agent instead of
+   running unsandboxed). The controller then
    runs the shared local gate and those classes on the host. A failing host check feeds
-   new evidence back to Codex within the same attempt budget. A patch is committed and
+   new evidence back to Claude within the same attempt budget. A patch is committed and
    pushed only after host verification succeeds, then one PR is opened against `main`.
    Host plans are stored outside the model worktree; class names and API levels are
    validated, no model-supplied shell command is executed, and harness/build changes
@@ -28,8 +32,8 @@ credential is uploaded to GitHub and no other repository is watched.
 6. Green CI stops the chain and updates the PR body for human review. Closing/merging
    that PR rearms the watcher for future failures on `main`.
 
-The limit is **5 Codex attempts per chain, 60 minutes per attempt, and 24 hours per
-chain**. CI queue time does not consume a Codex attempt. Reaching a limit, no valid
+The limit is **5 Claude attempts per chain, 60 minutes per attempt, and 24 hours per
+chain**. CI queue time does not consume a Claude attempt. Reaching a limit, no valid
 patch, protected-file edits, a dirty worktree, an unexpected branch update, or an
 agent error stops the chain and preserves the evidence for review. A stopped open PR
 requires human attention; timer restarts do not silently reset its budget.
@@ -49,7 +53,7 @@ tests merely to obtain green checks. Test/harness changes remain visible for rev
 ## Install and observe
 
 Requirements: Linux user systemd, Python 3, Git, authenticated `gh`, authenticated
-`codex`, and the existing Android/JDK toolchain. Use a dedicated clean checkout for
+`claude`, and the existing Android/JDK toolchain. Use a dedicated clean checkout for
 the installed controller, leaving developer worktrees untouched:
 
 ```bash
@@ -62,7 +66,7 @@ python3 scripts/ci-status.py
 
 The timer checks every minute when idle, with a process lock as an additional overlap
 guard. It runs while the laptop is awake and the user systemd manager is running;
-sleep/offline periods delay checks until reconnection. Codex sessions use
+sleep/offline periods delay checks until reconnection. Claude sessions use
 `workspace-write` with network access and the Gradle cache as an additional writable
 directory. They inherit the user's model configuration. Agent logs are private local
 files; summaries and normal CI logs are visible on GitHub.
@@ -73,7 +77,7 @@ live under `~/.local/state/terminal-spike-ci-autofix/`. The installed controller
 a pinned copy under `~/.local/share/terminal-spike-ci-autofix/`; editing a repair
 branch cannot replace the running controller. Re-run the installer after reviewing
 controller updates, including the pinned host-check companion. Existing signing material stays outside all repair worktrees.
-The installer resolves local mise auto-update wrappers to the installed Codex/GitHub
+The installer resolves local mise auto-update wrappers to the installed Claude/GitHub
 CLI binaries; background checks do not upgrade tools or rewrite mise configuration.
 
 ```bash
@@ -96,7 +100,14 @@ other stopped chains after inspecting their logs/worktree, make a
 reviewed manual correction on the PR or close it and fix/push `main`; automatic
 repair is deliberately paused while the stopped PR remains open.
 
-The local Codex process must retain a valid login and available model allowance.
+The local Claude Code CLI must retain a valid login (`claude auth status`) and available
+model allowance. The branch prefix stays `codex/ci-fix-` because the CI workflow trigger
+is scoped to it.
+
+The test contract `scripts/android-test-contract.json` may gain `required_tests` entries for newly
+added test methods; the controller rejects any patch that removes entries or changes any
+other field, including `allowed_skip_rules`. The latest `main`
+commit is the product source of truth when an older test contradicts a deliberate change.
 Authentication/quota errors stop the attempt and appear in the local journal/state;
 if a PR already exists, its body also records the blocker. This service cannot
 guarantee that every CI failure has an automatic fix.
@@ -107,17 +118,17 @@ guarantee that every CI failure has an automatic fix.
 an interactive agent session. The controller records agent PID, log/report paths,
 evidence directory and a specific blocker even if no patch is produced. Repeated
 idle checks update `checked_at`, not the last actual status transition `updated_at`.
-The background `codex exec` process is not registered as a Herdr workspace.
+The background `claude -p` process is not registered as a Herdr workspace.
 
 Artifact collection records missing files in `collection.json` and continues with
-other reports and failed-job logs. Evidence-only failures do not consume a Codex
+other reports and failed-job logs. Evidence-only failures do not consume a Claude
 attempt. Host KVM and emulator-tool preflight blocks before launching the agent;
 the agent must still verify capabilities inside its own execution context. A
 blocked environment never authorizes disabling assertions or widening permissions.
 
 ## Host verification and phone status
 
-The controller can access KVM even when the Codex workspace sandbox cannot. Keep
+The controller can access KVM even when the Claude workspace sandbox cannot. Keep
 that sandbox enabled: the host gate owns emulator runs and the final shared gate.
 Both artifact downloads and build tools use dedicated disk temporary directories.
 Host validation has bounded process groups; a timeout terminates its emulator

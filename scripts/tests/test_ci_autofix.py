@@ -1,11 +1,12 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location("ci_autofix", Path(__file__).resolve().parents[1] / "ci-autofix.py")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -95,7 +96,7 @@ class CiAutofixTest(unittest.TestCase):
                 shutil.copy2(source / name, scripts / name)
             binaries = root / "bin"
             binaries.mkdir()
-            for name in ["codex", "gh", "systemctl"]:
+            for name in ["claude", "gh", "systemctl"]:
                 executable = binaries / name
                 executable.write_text('#!/bin/sh\nexit 0\n')
                 executable.chmod(0o755)
@@ -113,6 +114,56 @@ class CiAutofixTest(unittest.TestCase):
             if shutil.which("systemd-analyze"):
                 subprocess.run(["systemd-analyze", "--user", "verify", str(service), str(timer)],
                                check=True, capture_output=True)
+
+    def test_claude_result_is_the_report_and_failures_are_not_reports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / "agent.log"
+            log.write_text('{"type":"system"}\nnot json\n'
+                           '{"type":"result","subtype":"success","is_error":false,"result":"Fixed X"}\n')
+            self.assertEqual("Fixed X", MODULE.agent_result(log))
+            log.write_text('{"type":"result","subtype":"error_max_turns","is_error":true}\n')
+            with self.assertRaises(RuntimeError):
+                MODULE.agent_result(log)
+            log.write_text('{"type":"assistant"}\n')
+            with self.assertRaises(RuntimeError):
+                MODULE.agent_result(log)
+            log.write_text('{"type":"system","text":"' + MODULE.SANDBOX_FAILURE + ': bridge sockets"}\n'
+                           '{"type":"result","subtype":"success","is_error":false,"result":"Fixed X"}\n')
+            with self.assertRaisesRegex(RuntimeError, "sandbox"):
+                MODULE.agent_result(log)
+
+    def test_claude_command_sandboxes_and_denies_git_publication(self):
+        args = MODULE.claude_command([Path("/g")])
+        self.assertEqual(["claude", "-p"], args[:2])
+        self.assertNotIn("--dangerously-skip-permissions", args)
+        settings = json.loads(args[args.index("--settings") + 1])
+        self.assertTrue(settings["sandbox"]["enabled"])
+        self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
+        # GitHub stays unreachable so credential helpers cannot publish around the Bash deny rules.
+        self.assertFalse([d for d in settings["sandbox"]["network"]["allowedDomains"] if "github" in d])
+        denied = args[args.index("--disallowedTools") + 1:]
+        for rule in ["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh:*)", "Bash(adb:*)"]:
+            self.assertIn(rule, denied)
+
+    def test_test_contract_may_gain_but_never_lose_members(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            contract = repo / MODULE.CONTRACT
+            contract.parent.mkdir(parents=True)
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x"]}}}))
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"],
+                           cwd=repo, check=True)
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x", "a#y"]}}}))
+            self.assertTrue(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#y"]}}}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x", "a#y"]}},
+                                            "allowed_skip_rules": [{"id": "r", "tests": ["a#x"]}]}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
+            contract.write_text(json.dumps({"suites": {"boundary": {"required_tests": ["a#x"], "api": 26}}}))
+            self.assertFalse(MODULE.contract_only_adds(repo, "HEAD"))
 
     def test_checkout_cannot_redirect_repairs_to_another_repository(self):
         MODULE.validate_origin(f"https://github.com/{MODULE.REPO}.git")
@@ -167,7 +218,7 @@ class CiAutofixTest(unittest.TestCase):
             MODULE.validate_changes([], [], [])
         MODULE.validate_changes(["app/src/test/RegressionTest.kt", "scripts/run-test.sh"], [], [])
 
-    def test_attempt_limit_and_repeated_run_never_launch_codex(self):
+    def test_attempt_limit_and_repeated_run_never_launch_agent(self):
         with tempfile.TemporaryDirectory() as temp:
             loop = MODULE.Loop(Path(temp), Path(temp))
             run = self.run_record()
@@ -232,6 +283,58 @@ class CiAutofixTest(unittest.TestCase):
                     patch.object(loop, "repair") as repair:
                 loop.tick()
                 repair.assert_not_called()
+
+    def test_retry_plans_and_reads_evidence_from_the_run_being_repaired_not_the_chain_origin(self):
+        def report(home, run, test_class):
+            path = home / f".local/state/terminal-spike-ci-evidence/{run}/1/android-runtime-api-26-shard-1"
+            path.mkdir(parents=True)
+            (path / "TEST-api26-full.xml").write_text(
+                f'<testsuite><testcase classname="com.yanjiyu.terminalspike.{test_class}" name="t">'
+                '<failure>boom</failure></testcase></testsuite>')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report(root, 10, "AlreadyFixedTest")
+            report(root, 20, "NewlyFailingTest")
+            (root / "app").mkdir()
+            (root / "app/build.gradle.kts").write_text('versionName = "0.0.24"\n')
+            loop = MODULE.Loop(root, root / "state")
+            branch = MODULE.PREFIX + "10"
+            chain = {"branch": branch, "sha": "a" * 40, "pr": 3, "origin_run": 10, "attempts": 1,
+                     "started": MODULE.time.time()}
+            loop.state.update(active=branch)
+            loop.state["chains"][branch] = chain
+            evidence = root / "evidence"
+            evidence.mkdir()
+            seen = {}
+            def agent(directory, evidence_dir, attempt):
+                seen.update(run=chain["evidence_run"], attempt=chain["evidence_attempt"])
+                raise RuntimeError("fixture: stop after evidence selection")
+            retry = dict(self.run_record(), id=20, head_branch=branch)
+            with patch.dict(os.environ, HOME=temp), patch.object(loop, "workspace", return_value=root), \
+                    patch.object(loop, "evidence", return_value=evidence), \
+                    patch.object(loop, "agent", side_effect=agent), patch.object(loop, "update_pr"), \
+                    patch.object(MODULE, "gh") as gh, patch("builtins.print"):
+                loop.repair(retry, chain)
+            gh.assert_not_called()
+            self.assertEqual({"run": 20, "attempt": 1}, seen)
+
+            process = Mock(pid=1)
+            process.wait.return_value = 0
+            with patch.dict(os.environ, HOME=temp), patch.object(MODULE, "command", return_value="") as command, \
+                    patch.object(MODULE, "contract_only_adds", return_value=True), \
+                    patch.object(MODULE.subprocess, "Popen", return_value=process), patch("builtins.print"):
+                loop.host_check(root, evidence, baseline=True)
+            self.assertTrue(all(args[0][0][:2] == ["git", "diff"] for args in command.call_args_list))
+            plan = MODULE.json.loads((root / "state/host-plans/20.json").read_text())
+            self.assertEqual({"26": ["com.yanjiyu.terminalspike.NewlyFailingTest"]}, plan)
+
+            with patch.dict(os.environ, HOME=temp), patch.object(MODULE.os, "access", return_value=True), \
+                    patch.object(loop, "host_check", side_effect=RuntimeError("fixture: stop before agent")):
+                with self.assertRaises(RuntimeError):
+                    loop.agent(root, evidence, 2)
+            copied = (evidence / "android-runtime-api-26-shard-1/TEST-api26-full.xml").read_text()
+            self.assertIn("NewlyFailingTest", copied)
+            self.assertNotIn("AlreadyFixedTest", copied)
 
     def test_human_branch_update_stops_automatic_edits(self):
         with tempfile.TemporaryDirectory() as temp:
