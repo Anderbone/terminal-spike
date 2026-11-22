@@ -10,6 +10,8 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import com.yanjiyu.terminalspike.R
 import com.yanjiyu.terminalspike.terminal.selection.terminalTextAsSingleLine
+import com.yanjiyu.terminalspike.terminal.selection.widestRow
+import com.yanjiyu.terminalspike.terminal.selection.cellsOf
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkPolicy
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkTarget
 import com.yanjiyu.terminalspike.terminal.selection.TerminalTextExtraction
@@ -56,18 +58,13 @@ internal fun showTerminalTextActions(
     val dialog = AlertDialog.Builder(context)
         .setView(content)
         .setPositiveButton(R.string.terminal_action_copy, null)
+        .setNeutralButton(R.string.terminal_copy_single_line, null)
         .setNegativeButton(android.R.string.cancel, null)
         .create()
     more.setOnClickListener {
         PopupMenu(context, more).apply {
             fun item(label: Int, action: () -> Unit) {
                 menu.add(label).setOnMenuItemClickListener { action(); true }
-            }
-            item(R.string.terminal_copy_single_line) {
-                val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
-                val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(start)
-                val text = terminalTextAsSingleLine(editor.text.substring(start, end))
-                if (text.isNotEmpty() && copy(text, TerminalClipboardContentKind.SELECTION)) dialog.dismiss()
             }
             item(R.string.terminal_select_logical_line) {
                 val text = editor.text.toString()
@@ -118,6 +115,14 @@ internal fun showTerminalTextActions(
             val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
             val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(start)
             if (end > start && copy(editor.text.substring(start, end), TerminalClipboardContentKind.SELECTION)) dialog.dismiss()
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(start)
+            val all = editor.text.toString()
+            val prefix = all.substring(all.lastIndexOf('\n', start - 1) + 1, start)
+            val text = terminalTextAsSingleLine(all.substring(start, end), widestRow(all), cellsOf(prefix))
+            if (text.isNotEmpty() && copy(text, TerminalClipboardContentKind.SELECTION)) dialog.dismiss()
         }
     }
     dialog.show()

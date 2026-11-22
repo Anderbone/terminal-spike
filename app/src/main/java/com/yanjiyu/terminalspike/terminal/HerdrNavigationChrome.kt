@@ -168,6 +168,8 @@ internal object HerdrNavigationChrome {
             column in maxOf(0, start - 1) until minOf(start + 4, sidebar - 1)
     }
 
+    private const val NEW_WORKSPACE_TAP_SLOP = 2
+
     private fun isNewWorkspaceActionCell(line: TerminalLine, column: Int, endColumn: Int): Boolean {
         // Match within verified workspace chrome, independent of row or indentation.
         // A scrollbar can occupy column zero; it is never part of the action.
@@ -177,7 +179,12 @@ internal object HerdrNavigationChrome {
         val action = label.trim()
         if (action != "+ new workspace" && action != "+") return false
         val start = TerminalLineGeometry.columnAtOffset(line, visible.indexOf(action))
-        return column in start until start + action.length
+        // A bare "+" is one cell wide; a slightly missed tap must not fall through
+        // to Herdr's direct create. Column zero stays reserved for a scrollbar.
+        val slop = if (action == "+") NEW_WORKSPACE_TAP_SLOP else 0
+        val low = if (start == 0) 0 else maxOf(1, start - slop)
+        val high = minOf(endColumn, start + action.length + slop)
+        return column in low until high
     }
 
     /** Workspace headings only; task rows, section headings and actions stay untouched. */

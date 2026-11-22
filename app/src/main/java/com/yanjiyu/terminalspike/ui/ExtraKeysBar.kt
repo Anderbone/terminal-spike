@@ -493,11 +493,23 @@ private fun ShortcutDeckPage(
         Column(Modifier.width(keyWidth + 3.dp).fillMaxHeight().padding(vertical = 3.dp)
             .padding(start = 3.dp),
             verticalArrangement = Arrangement.spacedBy(TerminalAccessoryRowGap)) {
-            ExtraKeyButton(
-                label = leadingAction.label.resolve(),
-                description = leadingAction.accessibilityDescription.resolve(),
-                onClick = { onAction(leadingAction) },
-                modifier = keyModifier(leadingAction).weight(1f).fillMaxWidth(),
+            // The leading key shares the deck renderer so long-press, icons and
+            // modifier lock semantics match every other shortcut cell.
+            ExtraKeyRow(
+                cells = listOf(leadingAction),
+                columnCount = 1,
+                modifiers = modifiers,
+                customizationEnabled = customizationEnabled,
+                keyRepeatEnabled = keyRepeatEnabled,
+                onPressFeedback = onPressFeedback,
+                onAction = onAction,
+                onCustomize = onCustomize,
+                snippetsExpanded = snippetsExpanded,
+                onToggleSnippets = onToggleSnippets,
+                onSelectFiles = onSelectFiles,
+                onEditAiAgents = onEditAiAgents,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                keyModifier = keyModifier,
             )
             TypingToggle(
                 active = false,

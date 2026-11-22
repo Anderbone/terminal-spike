@@ -3,6 +3,7 @@ package com.yanjiyu.terminalspike.terminal
 import com.yanjiyu.terminalspike.terminal.model.TerminalBuffer
 import com.yanjiyu.terminalspike.terminal.model.TerminalLine
 import com.yanjiyu.terminalspike.terminal.model.TerminalRun
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -150,7 +151,8 @@ class HerdrTabTargetTest {
                 screen[actionRow] = TerminalLine.plain(" ".repeat(indent) + "+")
                 for (column in 0 until 40) {
                     org.junit.Assert.assertEquals("row=$actionRow indent=$indent column=$column",
-                        column == indent, HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, column, actionRow))
+                        column in maxOf(if (indent == 0) 0 else 1, indent - 2)..minOf(39, indent + 2),
+                        HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, column, actionRow))
                 }
                 screen[top] = TerminalLine.plain("shell output")
                 assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 40, 10, indent, actionRow))
@@ -196,7 +198,10 @@ class HerdrTabTargetTest {
                 ))
                 val actionColumn = scrollbar.length + indent
                 assertTrue(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn, actionRow))
-                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn + 1, actionRow))
+                // A bare "+" tolerates a two-cell miss, but never crosses the sidebar edge.
+                assertEquals(actionColumn + 2 < 26,
+                    HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn + 2, actionRow))
+                assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, actionColumn + 3, actionRow))
                 assertFalse(HerdrNavigationChrome.isNewSpaceCell(screen, 60, 8, 34, tabRow))
                 val paneRow = if (actionRow == 3) 4 else 3
                 screen[paneRow] = TerminalLine.plain(" ".repeat(40) + "+")

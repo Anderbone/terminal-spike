@@ -60,6 +60,7 @@ import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkResolver
 import com.yanjiyu.terminalspike.terminal.selection.TerminalLinkTarget
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionEndpoint
 import com.yanjiyu.terminalspike.terminal.selection.terminalTextAsSingleLine
+import com.yanjiyu.terminalspike.terminal.selection.widestRow
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionSnapshot
 import com.yanjiyu.terminalspike.terminal.selection.TerminalSelectionSource
 import com.yanjiyu.terminalspike.terminal.model.TerminalViewport
@@ -1110,7 +1111,7 @@ class FastTerminalView @JvmOverloads constructor(
         )
         if (selection.hasSelection) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COPY)
-            if (hasMultilineTextSelection()) info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction(
                 R.id.terminal_action_copy_single_line, context.getString(R.string.terminal_copy_single_line),
             ))
             info.addAction(AccessibilityNodeInfo.AccessibilityAction(
@@ -1704,10 +1705,9 @@ class FastTerminalView @JvmOverloads constructor(
         if (selection.hasSelection) {
             menu.add(Menu.NONE, android.R.id.copy, 0, R.string.terminal_action_copy)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            if (hasMultilineTextSelection()) {
-                menu.add(Menu.NONE, R.id.terminal_action_copy_single_line, 1, R.string.terminal_copy_single_line)
-                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            }
+            // Always offered: a wrapped path may resolve as a link or sit on one logical row.
+            menu.add(Menu.NONE, R.id.terminal_action_copy_single_line, 1, R.string.terminal_copy_single_line)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             menu.add(Menu.NONE, android.R.id.selectAll, 2, R.string.terminal_action_select_all)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         }
@@ -1721,18 +1721,14 @@ class FastTerminalView @JvmOverloads constructor(
         }
     }
 
-    private fun hasMultilineTextSelection(): Boolean {
-        if (activeLink != null) return false // Link Copy already uses its complete resolved URI.
-        val source = selectionSource() ?: return false
-        val range = selection.normalizedRange(source) ?: return false
-        return range.start.line != range.end.line
-    }
-
     private fun copySelectionToClipboard(singleLine: Boolean = false): Boolean {
-        if (activeLink != null) return requestActiveLinkAction(TerminalLinkAction.COPY)
+        if (activeLink != null && !singleLine) return requestActiveLinkAction(TerminalLinkAction.COPY)
         val controller = terminalController ?: return false
-        val original = selection.selectedText(selectionSource() ?: controller) ?: return false
-        val text = if (singleLine) terminalTextAsSingleLine(original) else original
+        val source = selectionSource() ?: controller
+        val original = selection.selectedText(source) ?: return false
+        val text = if (singleLine) terminalTextAsSingleLine(
+            original, selectedRowWidth(source), selection.normalizedRange(source)?.start?.column ?: 0,
+        ) else original
         if (text.isEmpty()) return false
         if (
             !clipboardActionCallback.onCopyRequested(
@@ -1747,6 +1743,18 @@ class FastTerminalView @JvmOverloads constructor(
         }
         announceTerminalAccessibility(context.getString(R.string.terminal_selection_copied))
         return true
+    }
+
+    /** Widest physical row touched by the selection, so partial edge rows do not shrink it. */
+    private fun selectedRowWidth(source: TerminalSelectionSource): Int {
+        val range = selection.normalizedRange(source) ?: return 0
+        val first = source.selectionIndexOf(range.start.line) ?: return 0
+        val last = source.selectionIndexOf(range.end.line) ?: return 0
+        val widest = (first..last).maxOfOrNull { row ->
+            source.selectionLineAt(row)?.line?.text?.let(::widestRow) ?: 0
+        } ?: 0
+        val columns = source.selectionColumnCount
+        return if (columns > 0) minOf(widest, columns) else widest
     }
 
     private fun selectAllOutput(): Boolean {
