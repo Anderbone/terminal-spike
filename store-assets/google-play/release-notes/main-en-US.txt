@@ -1,5 +1,4 @@
-• More reliable session lifecycle: safer cleanup when connections or sessions end.
-• Replacing a default snippet now saves atomically, so it cannot be half-applied.
-• Terminal accessibility now reports the rows you actually see.
-• Safer private-key import and paste handling.
-• Internal settings and storage structure reorganized for stability.
+• Long-press an ordinary accessory key to replace it directly.
+• Native Herdr history now supports agy transcripts.
+• Disconnected Mosh servers expire after 24 hours to avoid orphaned sessions.
+• Improved terminal text selection and connection reliability.

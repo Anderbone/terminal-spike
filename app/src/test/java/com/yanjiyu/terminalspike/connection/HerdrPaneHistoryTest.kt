@@ -101,18 +101,20 @@ class HerdrPaneHistoryTest {
         assertNull("A focused pane must fit the reported surface", capture(80, null, false))
     }
 
-    @Test fun claudeInlineHistoryUsesTheSameFractionalReaderAsCodexAndPi() {
-        val history = requireNotNull(captureHerdrPaneHistory(
-            { fixtureResponse(it, agent = "claude") },
-            HerdrStartupChoice("/usr/bin/herdr", "default"), null, false,
-        ))
-        val reader = HerdrHistoryViewport()
-        reader.beginScroll(history, 20f, -3.25f)
-        reader.scrollBy(-3.25f)
-        assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
-        reader.scrollBy(-20000f)
-        assertEquals(0f, reader.viewport.scrollY, 0f)
-        assertEquals((1..1000).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+    @Test fun inlineAgentsUseTheSameFractionalReader() {
+        for (agent in listOf("codex", "pi", "claude", "agy")) {
+            val history = requireNotNull(captureHerdrPaneHistory(
+                { fixtureResponse(it, agent = agent) },
+                HerdrStartupChoice("/usr/bin/herdr", "default"), null, false,
+            ))
+            val reader = HerdrHistoryViewport()
+            reader.beginScroll(history, 20f, -3.25f)
+            reader.scrollBy(-3.25f)
+            assertEquals(reader.viewport.maximumScrollY - 3.25f, reader.viewport.scrollY, 0f)
+            reader.scrollBy(-20000f)
+            assertEquals(0f, reader.viewport.scrollY, 0f)
+            assertEquals((1..1000).map { "row $it" }, reader.snapshot!!.lines.map { it.text })
+        }
     }
 
     @Test fun agentReplacementDuringCaptureDiscardsTheOldTranscript() {

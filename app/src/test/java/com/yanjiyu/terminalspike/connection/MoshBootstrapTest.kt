@@ -217,7 +217,7 @@ class MoshBootstrapTest {
         val request = MoshBootstrapRequest(ssh = config())
         val choice = HerdrStartupChoice("/usr/bin/herdr", "work space")
         assertEquals(
-            "'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' " +
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' 'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' " +
                 "'--' '/usr/bin/herdr' 'session' 'attach' 'work space'",
             buildMoshServerCommand(request, herdrSession = choice),
         )
@@ -277,16 +277,29 @@ class MoshBootstrapTest {
         )
 
         assertEquals(
-            "'/opt/O'\\''Brien mosh;echo pwned' 'new' '-c' '256' '-s' " +
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' '/opt/O'\\''Brien mosh;echo pwned' 'new' '-c' '256' '-s' " +
                 "'-p' '60000:60010' '-l' 'LANG=en_GB.UTF-8'",
             buildMoshServerCommand(request),
         )
     }
 
     @Test
+    fun everyLaunchBoundsAnOrphanedServerWithTheUpstreamNetworkTimeout() {
+        val prefix = "'env' 'MOSH_SERVER_NETWORK_TMOUT=$MOSH_SERVER_NETWORK_TIMEOUT_SECONDS' "
+        val herdr = HerdrStartupChoice("/usr/bin/herdr", "default")
+        listOf(
+            buildMoshServerCommand(MoshBootstrapRequest(ssh = config())),
+            buildMoshServerCommand(MoshBootstrapRequest(ssh = config(), serverCommand = "/opt/mosh-server")),
+            buildMoshServerCommand(MoshBootstrapRequest(ssh = config()), herdrSession = herdr),
+            buildMoshServerCommand(MoshBootstrapRequest(ssh = config()), startNewTmuxSession = true),
+        ).forEach { command -> assertTrue(command, command.startsWith(prefix)) }
+        assertTrue(MOSH_SERVER_NETWORK_TIMEOUT_SECONDS >= 86_400) // Survives an overnight offline phone.
+    }
+
+    @Test
     fun singlePortAndDefaultServerAreEncodedWithoutShellInterpolation() {
         assertEquals(
-            "'mosh-server' 'new' '-c' '256' '-s' '-p' '60001' '-l' 'LANG=en_US.UTF-8'",
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' 'mosh-server' 'new' '-c' '256' '-s' '-p' '60001' '-l' 'LANG=en_US.UTF-8'",
             buildMoshServerCommand(
                 MoshBootstrapRequest(
                     ssh = config(),

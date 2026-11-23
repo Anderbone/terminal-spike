@@ -114,7 +114,7 @@ internal fun readHerdrPaneHistory(
             val before = result("pane", "get", paneId).getValue("pane") as JsonObject
             require(before.string("pane_id") == paneId && before.string("tab_id") == layout.string("tab_id"))
             // Only supported transcript UIs may hand passive history to the native reader.
-            require((before["agent"] as? JsonPrimitive)?.content in setOf("codex", "pi", "claude"))
+            require((before["agent"] as? JsonPrimitive)?.content in setOf("codex", "pi", "claude", "agy"))
             val scroll = before.getValue("scroll") as JsonObject
             val viewportRows = scroll.integer("viewport_rows")
             require(viewportRows > 0)

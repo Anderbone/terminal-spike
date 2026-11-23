@@ -242,6 +242,7 @@
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#customDeckKeepsAdditionalKeysAndCustomizeActionOnASecondPage",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#expandedKeyboardReplacesControlWAndDispatchesTabAndF2WithoutClosing",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#imageKeyTapSelectsPhotosAndLongPressSelectsFilesWithoutAlsoOpeningPhotos",
+        "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#ordinaryKeyLongPressReplacesWithoutSendingAndCanBeDismissed",
         "com.yanjiyu.terminalspike.ExtraKeysBarShortcutTest#phoneWidthDeckKeepsNineUnclippedShortcutsBesideTheFixedControls",
         "com.yanjiyu.terminalspike.IsolatedPreferencesRuleTest#applicationContextKeepsTheSamePreferenceIsolation",
         "com.yanjiyu.terminalspike.IsolatedPreferencesRuleTest#innerDisposalPrecedesFixtureDeletionAndPreservesTheBodyFailure",

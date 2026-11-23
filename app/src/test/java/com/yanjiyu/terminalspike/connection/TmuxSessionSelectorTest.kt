@@ -720,17 +720,17 @@ class TmuxSessionSelectorTest {
         )
 
         assertEquals(
-            "'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' 'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
                 "'tmux' 'attach-session' '-t' '\$9'",
             buildMoshServerCommand(request, "\$9"),
         )
         assertEquals(
-            "'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' 'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
                 "'tmux' 'new-session'",
             buildMoshServerCommand(request, startNewTmuxSession = true),
         )
         assertEquals(
-            "'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
+            "'env' 'MOSH_SERVER_NETWORK_TMOUT=86400' 'mosh-server' 'new' '-c' '256' '-s' '-l' 'LANG=en_US.UTF-8' '--' " +
                 "'/home/operator/bin/tmux' 'attach-session' '-t' '\$9'",
             buildMoshServerCommand(
                 request = request,

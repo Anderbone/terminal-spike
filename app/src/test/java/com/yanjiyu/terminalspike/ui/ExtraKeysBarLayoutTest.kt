@@ -1,5 +1,6 @@
 package com.yanjiyu.terminalspike.ui
 
+import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.terminal.view.TerminalExtraKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -7,6 +8,19 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ExtraKeysBarLayoutTest {
+    @Test
+    fun liveReplacementMaterializesDisplayedKeysAndKeepsOtherSlots() {
+        val visible = editableAccessoryKeyboardActions(com.yanjiyu.terminalspike.ui.settings.defaultRuntimeAccessoryActions())
+        assertEquals(KeyboardAction.ENTER, visible.first())
+        assertEquals(visible.size, visible.distinct().size)
+        org.junit.Assert.assertTrue(KeyboardAction.EXPANDED_KEYBOARD in visible)
+        org.junit.Assert.assertTrue(KeyboardAction.SNIPPETS in visible)
+        val index = visible.indexOf(KeyboardAction.ESCAPE)
+        val changed = com.yanjiyu.terminalspike.ui.settings.replaceKeyboardActionAt(visible, index, KeyboardAction.F2)
+        assertEquals(KeyboardAction.F2, changed[index])
+        assertEquals(visible.filterIndexed { i, _ -> i != index }, changed.filterIndexed { i, _ -> i != index })
+    }
+
     @Test
     fun configuredOrderIsPreservedAcrossBoundedTwoRowPages() {
         val configured = listOf(

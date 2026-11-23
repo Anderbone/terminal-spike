@@ -117,9 +117,14 @@ import com.yanjiyu.terminalspike.terminal.view.resolve
 import com.yanjiyu.terminalspike.terminal.view.toAccessoryAction
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyph
 import com.yanjiyu.terminalspike.ui.connections.ConnectionsGlyphIcon
+import com.yanjiyu.terminalspike.ui.settings.KeyboardKeyReplacementDialog
+import com.yanjiyu.terminalspike.ui.settings.replaceKeyboardActionAt
+import com.yanjiyu.terminalspike.ui.settings.toInputAccessoryAction
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+private val LocalReplaceAccessoryKey = staticCompositionLocalOf<((TerminalAccessoryAction) -> Unit)?> { null }
 
 private val LocalButtonColors = staticCompositionLocalOf<Map<String, String>> { emptyMap() }
 
@@ -239,7 +244,23 @@ fun TerminalAccessoryBar(
     onEditAiAgents: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     buttonColors: Map<String, String> = emptyMap(),
+    onReplaceActions: ((List<TerminalAccessoryAction>, List<KeyboardAction>) -> Unit)? = null,
 ) {
+    var replacementTarget by remember(actions, inputTargetId) { mutableStateOf<TerminalAccessoryAction?>(null) }
+    replacementTarget?.let { target ->
+        val editableActions = editableAccessoryKeyboardActions(actions)
+        val index = editableActions.indexOf(accessoryKeyboardAction(target))
+        if (index >= 0) KeyboardKeyReplacementDialog(
+            current = editableActions[index],
+            onDismiss = { replacementTarget = null },
+            onSelect = { replacement ->
+                if (replacement != editableActions[index]) {
+                    onReplaceActions?.invoke(actions, replaceKeyboardActionAt(editableActions, index, replacement))
+                }
+                replacementTarget = null
+            },
+        )
+    }
     CompositionLocalProvider(LocalButtonColors provides buttonColors) {
         var expandedKeyboard by remember(inputTargetId) { mutableStateOf(false) }
         BackHandler(enabled = expandedKeyboard) { expandedKeyboard = false }
@@ -356,18 +377,22 @@ fun TerminalAccessoryBar(
                     }
                 }
                 val shortcutContent: @Composable (Int) -> Unit = { page ->
-                    ShortcutDeckPage(
-                        shortcutPages, page, keyWidth, columnCount, rowCount, modifiers,
-                        customizationEnabled, keyRepeatEnabled,
-                        onPressFeedback = {
-                            if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
-                        },
-                        onAction = dispatchAction, onCustomize = onCustomize,
-                        leadingAction = displayedActions.firstOrNull() ?: TerminalExtraKey.ESC.toAccessoryAction(),
-                        onTyping = { manualInputMode = true }, onSelectFiles = onSelectFiles,
-                        onEditAiAgents = onEditAiAgents,
-                        snippetsExpanded = pinSnippets && pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
-                    )
+                    val replaceKey: ((TerminalAccessoryAction) -> Unit)? =
+                        if (customizationEnabled && onReplaceActions != null) ({ replacementTarget = it }) else null
+                    CompositionLocalProvider(LocalReplaceAccessoryKey provides replaceKey) {
+                        ShortcutDeckPage(
+                            shortcutPages, page, keyWidth, columnCount, rowCount, modifiers,
+                            customizationEnabled, keyRepeatEnabled,
+                            onPressFeedback = {
+                                if (hapticFeedbackEnabled) hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                            },
+                            onAction = dispatchAction, onCustomize = onCustomize,
+                            leadingAction = displayedActions.firstOrNull() ?: TerminalExtraKey.ESC.toAccessoryAction(),
+                            onTyping = { manualInputMode = true }, onSelectFiles = onSelectFiles,
+                            onEditAiAgents = onEditAiAgents,
+                            snippetsExpanded = pinSnippets && pinnedSnippetsExpanded, onToggleSnippets = onToggleSnippets,
+                        )
+                    }
                 }
 
                 Column {
@@ -838,7 +863,7 @@ private fun BufferedInputPage(
                 else -> {
                     val action = KeyboardAction.entries.firstOrNull { it.wireCode == token }?.let { code ->
                         availableActions.firstOrNull { it.stableId == code.wireCode }
-                            ?: com.yanjiyu.terminalspike.ui.settings.toInputAccessoryAction(code)
+                            ?: toInputAccessoryAction(code)
                     }
                     if (action != null) ExtraKeyRow(
                         cells = listOf(action), columnCount = 1, modifiers = modifiers,
@@ -1129,6 +1154,7 @@ private fun ExtraKeyRow(
     modifier: Modifier = Modifier,
     keyModifier: (TerminalAccessoryAction) -> Modifier = { Modifier },
 ) {
+    val replaceKey = LocalReplaceAccessoryKey.current
     val editLabel = stringResource(R.string.terminal_edit_keys_short)
     val customizeDescription = stringResource(R.string.terminal_customize_keys)
     Row(
@@ -1165,6 +1191,8 @@ private fun ExtraKeyRow(
                     glyphRotation = if (expanded) -90f else 90f,
                     onPressFeedback = onPressFeedback,
                     onClick = onToggleSnippets ?: { onAction(cell) },
+                    onLongClick = replaceKey?.let { { it(cell) } },
+                    onLongClickLabel = customizeDescription,
                 )
             } else {
                 val dispatch = cell.resolve(modifiers)
@@ -1195,12 +1223,13 @@ private fun ExtraKeyRow(
                     onLongClick = when ((cell as? TerminalAccessoryAction.Local)?.action) {
                         TerminalLocalAccessoryAction.SELECT_IMAGES -> onSelectFiles
                         TerminalLocalAccessoryAction.AI_AGENTS -> onEditAiAgents
-                        else -> null
+                        else -> replaceKey?.let { { it(cell) } }
                     },
-                    onLongClickLabel = stringResource(
-                        if ((cell as? TerminalAccessoryAction.Local)?.action == TerminalLocalAccessoryAction.AI_AGENTS)
-                            R.string.ai_agents_choose else R.string.terminal_select_files,
-                    ),
+                    onLongClickLabel = when ((cell as? TerminalAccessoryAction.Local)?.action) {
+                        TerminalLocalAccessoryAction.AI_AGENTS -> stringResource(R.string.ai_agents_choose)
+                        TerminalLocalAccessoryAction.SELECT_IMAGES -> stringResource(R.string.terminal_select_files)
+                        else -> customizeDescription
+                    },
                 )
             }
         }
@@ -1404,4 +1433,24 @@ internal fun rememberTerminalKeyboardVisible(insets: WindowInsets = WindowInsets
     return remember(insets, density) {
         derivedStateOf { insets.getBottom(density) > 0 }
     }.value
+}
+
+/** Materialize the visible shipped deck before editing so other keys stay in place. */
+internal fun editableAccessoryKeyboardActions(actions: List<TerminalAccessoryAction>): List<KeyboardAction> =
+    displayedAccessoryActions(actions).filterNot {
+        actions.matchDefaultAccessoryDeck() && it.defaultDeckKeyOrNull() == TerminalExtraKey.TAB
+    }.map { requireNotNull(accessoryKeyboardAction(it)) }
+
+private fun accessoryKeyboardAction(action: TerminalAccessoryAction): KeyboardAction? {
+    fun identity(value: TerminalAccessoryAction): Any = when (value) {
+        is TerminalAccessoryAction.Key -> value.key
+        is TerminalAccessoryAction.Modifier -> value.modifier
+        is TerminalAccessoryAction.Local -> value.action
+        is TerminalAccessoryAction.TmuxPrefix -> value.chord
+    }
+    return KeyboardAction.entries.firstOrNull {
+        toInputAccessoryAction(it)?.let { candidate ->
+            identity(candidate) == identity(action)
+        } == true
+    } ?: KeyboardAction.entries.firstOrNull { it.wireCode == action.stableId }
 }

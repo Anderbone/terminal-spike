@@ -3633,6 +3633,32 @@ class TerminalSpikeViewModel(
         return sendBufferedInput(targetSessionId, agent.launchCommand, appendEnter = true)
     }
 
+    fun replaceAccessoryKeyboardActions(expected: List<TerminalAccessoryAction>, replacement: List<KeyboardAction>) {
+        val state = _uiState.value
+        val profileId = keyboardProfileForSession(state, state.activeSessionId)?.id ?: return
+        viewModelScope.launch {
+            try {
+                appContainer.settingsMutations.mutate {
+                    val current = appContainer.keyboardProfiles.get(profileId) ?: return@mutate
+                    // Ignore a stale picker after another settings edit.
+                    if (current.toRuntimeAccessoryActionsOrNull() != expected) return@mutate
+                    write {
+                        check(appContainer.keyboardProfiles.update(current.copy(
+                            orderedActions = replacement,
+                            defaultLayoutState = null,
+                            updatedAtEpochMillis = System.currentTimeMillis(),
+                        )))
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                appLogger.warning(AppLogEvent.SETTINGS_WRITE_FAILED, error)
+                _uiState.update { it.copy(notice = uiText(R.string.settings_change_failed)) }
+            }
+        }
+    }
+
     fun setInputButtonsOnRight(value: Boolean) {
         viewModelScope.launch {
             try {

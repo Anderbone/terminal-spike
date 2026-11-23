@@ -1714,6 +1714,7 @@ fun TerminalSpikeScreen(
                                         )
                                     },
                                     actions = state.accessoryActions,
+                                    onReplaceActions = viewModel::replaceAccessoryKeyboardActions,
                                     modifiers = AccessoryModifierSnapshot(
                                         control = accessoryModifierState(
                                             state.ctrlArmed,

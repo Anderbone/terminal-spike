@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.platform.app.InstrumentationRegistry
+import com.yanjiyu.terminalspike.core.model.KeyboardAction
 import com.yanjiyu.terminalspike.ui.resolve
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.Density
@@ -38,6 +39,58 @@ import org.junit.Test
 class ExtraKeysBarShortcutTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun ordinaryKeyLongPressReplacesWithoutSendingAndCanBeDismissed() {
+        val received = mutableListOf<TerminalAccessoryAction>()
+        val actions = androidx.compose.runtime.mutableStateOf(com.yanjiyu.terminalspike.ui.settings.defaultRuntimeAccessoryActions())
+        var replacement: List<KeyboardAction>? = null
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    TerminalAccessoryBar(
+                        actions = actions.value,
+                        modifiers = AccessoryModifierSnapshot(),
+                        customizationEnabled = true, inputTargetId = 11L,
+                        bufferedInputSendEnabled = true,
+                        bufferedInputDraftState = remember { BufferedInputDraftState() },
+                        onAction = { received += it },
+                        onReplaceActions = { _, updated ->
+                            replacement = updated
+                            actions.value = updated.map { requireNotNull(com.yanjiyu.terminalspike.ui.settings.toInputAccessoryAction(it)) }
+                        },
+                        onCustomize = {}, onSendBufferedInput = { _, _ -> true },
+                        onBufferedInputModeChanged = {}, onDirectInputMode = {},
+                    )
+                }
+            }
+        }
+        val escape = composeRule.onNodeWithContentDescription(description(TerminalExtraKey.ESC))
+        escape.performTouchInput { down(center) }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasTestTag("keyboard-replacement-grid")).fetchSemanticsNodes().isNotEmpty()
+        }
+        escape.performTouchInput { up() }
+        composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.runOnIdle {
+            assertEquals(emptyList<TerminalAccessoryAction>(), received)
+            assertEquals(null, replacement)
+        }
+        escape.performTouchInput { down(center) }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasTestTag("keyboard-replacement-grid")).fetchSemanticsNodes().isNotEmpty()
+        }
+        escape.performTouchInput { up() }
+        composeRule.onNodeWithContentDescription("Replace with Tab").performClick()
+        composeRule.runOnIdle {
+            assertEquals(emptyList<TerminalAccessoryAction>(), received)
+            assertEquals(KeyboardAction.TAB, replacement!![1])
+        }
+        composeRule.onNodeWithContentDescription(description(TerminalExtraKey.TAB)).performClick()
+        composeRule.runOnIdle {
+            assertEquals(TerminalExtraKey.TAB, (received.single() as TerminalAccessoryAction.Key).key)
+        }
+    }
 
     @Test
     fun aiAgentTapRunsAndLongPressEditsWithoutAlsoRunning() {

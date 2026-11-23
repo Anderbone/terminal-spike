@@ -1007,6 +1007,11 @@ internal fun buildMoshServerCommand(
     val server = request.serverCommand ?: DEFAULT_MOSH_SERVER_COMMAND
     validateMoshServerCommand(server)
     val arguments = buildList {
+        // The app never resumes an earlier mosh-server: each connection bootstraps a fresh one.
+        // A client lost without a graceful shutdown (process death, dead network on reconnect)
+        // would otherwise leave its server, and any attached Herdr/tmux client, running forever.
+        add("env")
+        add("$MOSH_SERVER_NETWORK_TIMEOUT_ENV=$MOSH_SERVER_NETWORK_TIMEOUT_SECONDS")
         add(server)
         add("new")
         add("-c")
@@ -1049,6 +1054,10 @@ internal fun buildMoshServerCommand(
         require(command.length <= MAX_BUILT_MOSH_COMMAND_LENGTH) { "Built Mosh command is too long." }
     }
 }
+
+/** Upstream mosh-server exits after this long without hearing from its client. */
+private const val MOSH_SERVER_NETWORK_TIMEOUT_ENV = "MOSH_SERVER_NETWORK_TMOUT"
+internal const val MOSH_SERVER_NETWORK_TIMEOUT_SECONDS = 86_400
 
 private const val DEFAULT_TMUX_EXECUTABLE = "tmux"
 private const val MAX_TMUX_EXECUTABLE_PATH_CHARS = 1_024

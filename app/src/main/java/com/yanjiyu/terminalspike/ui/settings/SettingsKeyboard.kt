@@ -279,7 +279,7 @@ private fun KeyboardDeckPreview(
 }
 
 @Composable
-private fun KeyboardKeyReplacementDialog(
+internal fun KeyboardKeyReplacementDialog(
     current: KeyboardAction,
     onDismiss: () -> Unit,
     onSelect: (KeyboardAction) -> Unit,
